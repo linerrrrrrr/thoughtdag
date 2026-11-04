@@ -2,9 +2,9 @@
 // over stdio, newline-delimited). A run is one turn on one thread: fresh
 // (`thread/start` in the working directory), continued (`thread/resume`),
 // or branched (`thread/fork`). The server's notifications become the same
-// event kinds the Pi runtime emits, so the renderer reads nothing new:
-// text and reasoning deltas, tool starts and ends, questions (the server's
-// own approval and user-input requests), run_end. Codex keeps its rollout
+// shared runtime events plus structured activity snapshots: messages,
+// reasoning summaries, command output, tools, plans, and lifecycle details.
+// Questions are the server's own approval and user-input requests. Codex keeps its rollout
 // files, login and model list; the shell only asks.
 'use strict';
 
@@ -13,6 +13,7 @@ const path = require('node:path');
 const fs = require('node:fs');
 const os = require('node:os');
 const { randomUUID } = require('node:crypto');
+const { StringDecoder } = require('node:string_decoder');
 const { snapshotDir, diffSnapshots } = require('./fs-diff.cjs');
 
 const fsp = fs.promises;
@@ -42,6 +43,140 @@ const threadIdOf = (sessionPath) => {
   const all = String(sessionPath ?? '').match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi);
   return all && all.length ? all[all.length - 1] : null;
 };
+
+const ACTIVITY_LIMIT = 100000;
+const activityText = (value) => typeof value === 'string' ? value : value == null ? '' : JSON.stringify(value);
+const itemStatus = (item, completed) => {
+  if (['failed', 'declined', 'rejected', 'error'].includes(item.status) || item.error || item.success === false || (typeof item.exitCode === 'number' && item.exitCode !== 0)) return 'failed';
+  if (['interrupted', 'cancelled', 'canceled', 'incomplete'].includes(item.status)) return 'interrupted';
+  return completed ? 'completed' : 'running';
+};
+
+/** Project the public app-server lifecycle into ordered, replaceable UI items.
+ *  Complete items are authoritative; deltas never append a second copy of them.
+ *  Only readable reasoning summaries are displayed, never encrypted/raw blocks. */
+function createCodexEventProjector(run) {
+  const items = new Map();
+  const messages = new Map();
+  const summaries = new Map();
+  let serial = 0;
+  const put = (id, patch) => {
+    const prior = items.get(id);
+    const next = { id, kind: 'unknown', status: 'running', startedAt: Date.now(), ...prior, ...patch };
+    for (const key of ['text', 'output', 'command']) {
+      if (typeof next[key] === 'string' && next[key].length > ACTIVITY_LIMIT) {
+        next[key] = key === 'output' ? next[key].slice(-ACTIVITY_LIMIT) : next[key].slice(0, ACTIVITY_LIMIT);
+        next.truncated = true;
+      }
+    }
+    if (next.details !== undefined) {
+      const json = JSON.stringify(next.details, (key, value) => /^(encrypted_content|encryptedContent|content|result)$/.test(key) && typeof value === 'string' && value.length > ACTIVITY_LIMIT ? `[${value.length} characters omitted]` : /^(encrypted_content|encryptedContent)$/.test(key) ? undefined : value);
+      if (json && json.length > ACTIVITY_LIMIT) { next.details = json.slice(0, ACTIVITY_LIMIT); next.truncated = true; }
+      else if (json) next.details = JSON.parse(json);
+    }
+    if (next.status !== 'running' && !next.endedAt) next.endedAt = Date.now();
+    items.set(id, next);
+    run.emit({ type: 'activity', item: next });
+    return next;
+  };
+  const syncText = (id) => {
+    const text = [...messages.values()].filter((m) => m.phase !== 'commentary').map((m) => m.text).filter(Boolean).join('\n\n');
+    if (text === run.text) return;
+    const previous = run.text;
+    run.text = text;
+    run.final = text;
+    const phase = messages.get(id)?.phase;
+    run.emit({ type: 'message_update', itemId: id, phase, assistantMessageEvent: text.startsWith(previous)
+      ? { type: 'text_delta', delta: text.slice(previous.length) }
+      : { type: 'text_replace', text } });
+  };
+  const message = (id, patch, completed = false) => {
+    const next = { text: '', ...messages.get(id), ...patch };
+    messages.set(id, next);
+    put(id, { kind: next.phase === 'commentary' ? 'commentary' : 'message', sourceType: 'agentMessage', phase: next.phase, text: next.text, status: completed ? 'completed' : 'running', ...(patch.startedAt ? { startedAt: patch.startedAt } : {}), ...(patch.endedAt ? { endedAt: patch.endedAt } : {}) });
+    syncText(id);
+  };
+  const lifecycle = (it, completed, params = {}) => {
+    if (!it.id || it.type === 'userMessage') return;
+    const time = { ...(typeof (it.startedAtMs ?? params.startedAtMs) === 'number' ? { startedAt: it.startedAtMs ?? params.startedAtMs } : {}), ...(typeof (it.completedAtMs ?? params.completedAtMs) === 'number' ? { endedAt: it.completedAtMs ?? params.completedAtMs } : {}) };
+    const common = { sourceType: it.type, status: itemStatus(it, completed), ...time };
+    if (it.type === 'agentMessage') return message(it.id, { text: typeof it.text === 'string' ? it.text : messages.get(it.id)?.text ?? '', ...(it.phase !== undefined ? { phase: it.phase } : {}), ...time }, completed);
+    if (it.type === 'reasoning') {
+      const summary = Array.isArray(it.summary) ? it.summary.map((s) => typeof s === 'string' ? s : s?.text ?? '') : null;
+      if (summary && (summary.length || completed)) summaries.set(it.id, summary);
+      const shown = put(it.id, { ...common, kind: 'reasoning', text: (summaries.get(it.id) ?? []).join('\n\n') });
+      if (completed) summaries.delete(it.id);
+      return shown;
+    }
+    if (it.type === 'commandExecution') return put(it.id, { ...common, kind: 'command', command: it.command, cwd: it.cwd, ...(typeof it.aggregatedOutput === 'string' ? { output: it.aggregatedOutput } : {}), exitCode: it.exitCode ?? null, durationMs: it.durationMs ?? null, details: { commandActions: it.commandActions, processId: it.processId, status: it.status } });
+    if (it.type === 'fileChange') return put(it.id, { ...common, kind: 'file', text: (it.changes ?? []).map((c) => c.path).join('\n'), details: { changes: it.changes, status: it.status } });
+    if (it.type === 'plan') return put(it.id, { ...common, kind: 'plan', text: it.text ?? '' });
+    if (it.type === 'mcpToolCall' || it.type === 'dynamicToolCall') return put(it.id, { ...common, kind: 'tool', title: it.server ? `${it.server}/${it.tool}` : it.tool, ...(it.result != null || it.error != null || it.contentItems != null ? { output: activityText(it.result ?? it.error ?? it.contentItems) } : {}), durationMs: it.durationMs ?? null, details: { arguments: it.arguments, status: it.status, error: it.error, appContext: it.appContext, mcpAppUi: it.mcpAppUi } });
+    if (['webSearch', 'imageView', 'imageGeneration', 'collabAgentToolCall', 'collabToolCall', 'subAgentActivity', 'functionCallOutput', 'sleep'].includes(it.type)) return put(it.id, { ...common, kind: 'tool', title: it.tool ?? it.name ?? it.type, text: it.query ?? it.path ?? it.prompt ?? it.agentPath ?? it.savedPath, ...(it.output != null ? { output: activityText(it.output) } : {}), details: it });
+    if (['contextCompaction', 'enteredReviewMode', 'exitedReviewMode', 'hookPrompt'].includes(it.type)) return put(it.id, { ...common, kind: 'status', text: it.review, details: it });
+    return put(it.id, { ...common, kind: 'unknown', title: it.type, details: it });
+  };
+  const finish = (how) => {
+    for (const item of items.values()) if (item.status === 'running') put(item.id, { status: item.sourceType === 'turn' && how === 'end' ? 'completed' : how === 'error' || how === 'exit' || how === 'idle' ? 'failed' : 'interrupted' });
+  };
+  function notification(method, params = {}, emittedAtMs) {
+    const id = String(params.itemId ?? '');
+    const old = items.get(id);
+    switch (method) {
+      case 'item/started': return lifecycle(params.item ?? {}, false, params);
+      case 'item/completed': return lifecycle(params.item ?? {}, true, params);
+      case 'item/agentMessage/delta': return message(id, { text: (messages.get(id)?.text ?? '') + String(params.delta ?? '') });
+      case 'item/reasoning/summaryPartAdded': {
+        const parts = summaries.get(id) ?? [];
+        parts[params.summaryIndex ?? parts.length] ??= '';
+        summaries.set(id, parts);
+        return put(id, { kind: 'reasoning', sourceType: 'reasoning', text: parts.join('\n\n') });
+      }
+      case 'item/reasoning/summaryTextDelta': {
+        const parts = summaries.get(id) ?? [];
+        const index = params.summaryIndex ?? 0;
+        const delta = String(params.delta ?? '');
+        const length = parts.reduce((total, part) => total + part.length, 0);
+        parts[index] = (parts[index] ?? '') + delta.slice(0, Math.max(0, ACTIVITY_LIMIT - length));
+        summaries.set(id, parts);
+        return put(id, { kind: 'reasoning', sourceType: 'reasoning', text: parts.join('\n\n'), ...(length + delta.length > ACTIVITY_LIMIT ? { truncated: true } : {}) });
+      }
+      case 'item/reasoning/textDelta':
+        // Raw reasoning is not a user-facing summary and must not be mixed in.
+        if (!old) return put(id, { kind: 'reasoning', sourceType: 'reasoning', text: '' });
+        return;
+      case 'item/commandExecution/outputDelta':
+      case 'item/fileChange/outputDelta': return put(id, { kind: method.includes('commandExecution') ? 'command' : 'file', sourceType: method.includes('commandExecution') ? 'commandExecution' : 'fileChange', output: (old?.output ?? '') + String(params.delta ?? '') });
+      case 'item/commandExecution/terminalInteraction': return put(id, { kind: 'command', sourceType: 'commandExecution', details: { ...(old?.details && typeof old.details === 'object' ? old.details : {}), terminalInteraction: params } });
+      case 'item/fileChange/patchUpdated': return put(id, { kind: 'file', sourceType: 'fileChange', text: (params.changes ?? []).map((c) => c.path).join('\n'), details: { changes: params.changes } });
+      case 'item/mcpToolCall/progress': return put(id, { kind: 'tool', sourceType: 'mcpToolCall', text: String(params.message ?? '') });
+      case 'item/plan/delta': return put(id, { kind: 'plan', sourceType: 'plan', text: (old?.text ?? '') + String(params.delta ?? '') });
+      case 'turn/started':
+        run.turnId = params.turn?.id ?? run.turnId;
+        return put(`turn:${run.turnId ?? 'active'}`, { kind: 'status', sourceType: 'turn', status: 'running', details: { status: params.turn?.status } });
+      case 'turn/completed':
+        for (const item of params.turn?.items ?? []) lifecycle(item, true);
+        put(`turn:${params.turn?.id ?? run.turnId ?? 'active'}`, { kind: 'status', sourceType: 'turn', status: itemStatus(params.turn ?? {}, true), details: { status: params.turn?.status, error: params.turn?.error } });
+        return finish(params.turn?.status === 'failed' ? 'error' : params.turn?.status === 'interrupted' ? 'aborted' : 'end');
+      case 'turn/plan/updated': return put(`plan:${params.turnId ?? run.turnId}`, { kind: 'plan', sourceType: method, status: 'completed', text: params.explanation ?? '', details: { plan: params.plan ?? [] } });
+      case 'turn/diff/updated': return put(`diff:${params.turnId ?? run.turnId}`, { kind: 'file', sourceType: method, status: 'completed', output: params.diff ?? '' });
+      case 'thread/tokenUsage/updated': return put(`usage:${params.turnId ?? run.turnId}`, { kind: 'status', sourceType: method, status: 'completed', details: params.tokenUsage });
+      case 'thread/status/changed': return put(`thread:${params.threadId}`, { kind: 'status', sourceType: method, status: 'completed', details: params.status });
+      case 'mcpServer/startupStatus/updated': return put(`mcp:${params.name}`, { kind: 'status', sourceType: method, title: params.name, status: params.status === 'starting' ? 'running' : params.status === 'failed' ? 'failed' : params.status === 'cancelled' ? 'interrupted' : 'completed', text: params.error ?? '', details: params });
+      case 'error': return put(`error:${++serial}`, { kind: 'status', sourceType: method, status: params.willRetry ? 'completed' : 'failed', text: params.error?.message ?? params.message ?? '', details: params });
+      case 'warning':
+      case 'guardianWarning':
+      case 'configWarning': return put(`warning:${++serial}`, { kind: 'status', sourceType: method, status: 'completed', text: params.message ?? params.summary ?? '', details: params });
+      case 'item/autoApprovalReview/started':
+      case 'item/autoApprovalReview/completed': return put(`review:${params.reviewId}`, { kind: 'status', sourceType: 'autoApprovalReview', status: method.endsWith('/started') ? 'running' : 'completed', details: params });
+      case 'hook/started':
+      case 'hook/completed': return put(`hook:${params.run?.id ?? params.run?.hookId ?? ++serial}`, { kind: 'status', sourceType: 'hook', status: method.endsWith('/started') ? 'running' : itemStatus(params.run ?? {}, true), details: params.run });
+      default:
+        return put(`event:${++serial}`, { kind: 'unknown', sourceType: method, title: method, status: 'completed', details: params, ...(typeof emittedAtMs === 'number' ? { startedAt: emittedAtMs } : {}) });
+    }
+  }
+  return { notification, finish };
+}
 
 function createCodexRuntime({ log } = {}) {
   const say = log || (() => {});
@@ -87,7 +222,7 @@ function createCodexRuntime({ log } = {}) {
   const die = (reason) => {
     for (const p of pending.values()) p({ error: { message: reason } });
     pending.clear();
-    for (const r of runs.values()) { r.emit({ type: 'run_error', message: reason }); r.end('exit'); }
+    for (const r of runs.values()) { r.end('exit'); r.emit({ type: 'run_error', message: reason }); }
     proc = null; ready = null;
   };
 
@@ -95,10 +230,15 @@ function createCodexRuntime({ log } = {}) {
     if (proc && ready) return ready;
     const b = await bin();
     if (!b) throw new Error('codex is not installed (no `codex` on PATH or in the usual places)');
-    proc = spawn(b, ['app-server'], { env: childEnv(), stdio: ['pipe', 'pipe', 'pipe'] });
+    // Node cannot spawn an npm .cmd shim directly on Windows. Run the
+    // package entrypoint without involving a shell or interpolated commands.
+    const npmEntry = path.join(path.dirname(b), 'node_modules', '@openai', 'codex', 'bin', 'codex.js');
+    const npmShim = process.platform === 'win32' && /\.(cmd|bat)$/i.test(b) && fs.existsSync(npmEntry);
+    proc = spawn(npmShim ? process.execPath : b, npmShim ? [npmEntry, 'app-server'] : ['app-server'], { env: childEnv(), stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
     buf = '';
+    const decoder = new StringDecoder('utf8');
     proc.stdout.on('data', (d) => {
-      buf += d.toString();
+      buf += decoder.write(d);
       let i;
       while ((i = buf.indexOf('\n')) >= 0) {
         const line = buf.slice(0, i); buf = buf.slice(i + 1);
@@ -148,16 +288,14 @@ function createCodexRuntime({ log } = {}) {
     const params = msg.params ?? {};
     const run = runOf(params.threadId);
     if (msg.id !== undefined && msg.method) { serverRequest(msg, run); return; }
-    if (!run) return;
+    if (!run) {
+      if (['warning', 'guardianWarning', 'configWarning', 'deprecationNotice'].includes(msg.method)) {
+        for (const active of runs.values()) active.projector.notification(msg.method, params, msg.emittedAtMs);
+      }
+      return;
+    }
+    run.projector.notification(msg.method, params, msg.emittedAtMs);
     switch (msg.method) {
-      case 'item/agentMessage/delta':
-        run.text += String(params.delta ?? '');
-        run.emit({ type: 'message_update', assistantMessageEvent: { type: 'text_delta', delta: String(params.delta ?? '') } });
-        break;
-      case 'item/reasoning/textDelta':
-      case 'item/reasoning/summaryTextDelta':
-        run.emit({ type: 'message_update', assistantMessageEvent: { type: 'thinking_delta', delta: String(params.delta ?? '') } });
-        break;
       case 'item/started': {
         const it = params.item ?? {};
         const t = toolOf(it);
@@ -166,7 +304,6 @@ function createCodexRuntime({ log } = {}) {
       }
       case 'item/completed': {
         const it = params.item ?? {};
-        if (it.type === 'agentMessage' && typeof it.text === 'string') run.final = it.text;
         const t = toolOf(it);
         if (t) run.emit({ type: 'tool_execution_end', toolCallId: it.id, toolName: t.name, result: t.result, isError: t.isError });
         break;
@@ -175,6 +312,16 @@ function createCodexRuntime({ log } = {}) {
         const turn = params.turn ?? {};
         if (turn.status === 'failed') run.emit({ type: 'run_error', message: turn.error?.message ?? 'the turn failed' });
         run.end(turn.status === 'interrupted' ? 'aborted' : turn.status === 'failed' ? 'error' : 'end');
+        break;
+      }
+      case 'serverRequest/resolved': {
+        const id = `q-${params.requestId}`;
+        const ask = serverAsks.get(id);
+        if (ask?.runId === run.runId) {
+          serverAsks.delete(id);
+          run.waiting = [...serverAsks.values()].some((q) => q.runId === run.runId);
+          run.emit({ type: 'question_answered', id, outcome: 'cancelled', value: null });
+        }
         break;
       }
       default: break;
@@ -205,11 +352,11 @@ function createCodexRuntime({ log } = {}) {
     }
     const ask = (question, respond) => {
       const id = `q-${msg.id}`;
-      serverAsks.set(id, { rpcId: msg.id, respond });
+      serverAsks.set(id, { rpcId: msg.id, runId: run.runId, respond });
       run.waiting = true;
       run.emit({ type: 'question', id, ...question });
     };
-    const decided = (id, outcome, value, extra) => { run.waiting = false; run.emit({ type: 'question_answered', id, outcome, value: value ?? null, ...(extra ?? {}) }); };
+    const decided = (id, outcome, value, extra) => { run.waiting = [...serverAsks.values()].some((q) => q.runId === run.runId); run.emit({ type: 'question_answered', id, outcome, value: value ?? null, ...(extra ?? {}) }); };
     // a yes/no the conversation may have settled already: `rule` names what a
     // standing allowance covers; a match is accepted for the session without asking
     const settle = (rule, title, message, respondYes) => {
@@ -317,13 +464,14 @@ function createCodexRuntime({ log } = {}) {
       const state = { runId, threadId: null, turnId: null, text: '', final: null, waiting: false, emit, end: null, done: null,
         // what this conversation already allowed for good (see README: `rule`)
         allowRules: new Set(Array.isArray(req.allowRules) ? req.allowRules.filter((s) => typeof s === 'string' && s.startsWith('codex:')) : []) };
-      state.done = new Promise((resolve) => { state.end = (how) => { if (state.ended) return; state.ended = true; resolve(how); }; });
+      state.projector = createCodexEventProjector(state);
+      state.done = new Promise((resolve) => { state.end = (how) => { if (state.ended) return; state.ended = true; state.projector.finish(how); resolve(how); }; });
       runs.set(runId, state);
       void (async () => {
         const IDLE = Number(process.env.TD_AGENT_IDLE_MS) || 10 * 60 * 1000;
         let lastEvent = Date.now();
         const origEmit = state.emit;
-        state.emit = (event) => { lastEvent = Date.now(); if (event.type === 'question') state.waiting = true; if (event.type === 'question_answered') state.waiting = false; origEmit(event); };
+        state.emit = (event) => { lastEvent = Date.now(); origEmit(event); };
         const watchdog = setInterval(() => {
           if (state.waiting || Date.now() - lastEvent < IDLE) return;
           state.emit({ type: 'run_error', message: `no activity for ${IDLE >= 60000 ? Math.round(IDLE / 60000) + ' min' : Math.round(IDLE / 1000) + ' s'}; the turn was stopped` });
@@ -345,8 +493,9 @@ function createCodexRuntime({ log } = {}) {
           const input = [{ type: 'text', text: String(req.prompt ?? ''), text_elements: [] }];
           for (const img of Array.isArray(req.images) ? req.images : []) if (img && typeof img.data === 'string') input.push({ type: 'image', url: `data:${img.mimeType};base64,${img.data}` });
           const effort = req.effort && model ? effortFor(model, req.effort) : null;
-          const started = await send('turn/start', { threadId: thread.id, input, ...(model ? { model } : {}), ...(effort ? { effort } : {}) }, 60 * 1000);
+          const started = await send('turn/start', { threadId: thread.id, input, summary: 'auto', ...(model ? { model } : {}), ...(effort ? { effort } : {}) }, 60 * 1000);
           state.turnId = started?.turn?.id ?? null;
+          if (state.abortRequested && state.turnId) send('turn/interrupt', { threadId: state.threadId, turnId: state.turnId }).catch(() => {});
           const how = await state.done;
           const ran = await turnEffortOf(thread.path);
           if (ran) state.emit({ type: 'session', sessionId: thread.id, sessionFile: thread.path ?? null, model: model ? { provider: 'codex', id: model, name: model } : null, cwd, effort: ran });
@@ -356,11 +505,13 @@ function createCodexRuntime({ log } = {}) {
           }
           state.emit({ type: 'run_end', text: state.final ?? state.text, how });
         } catch (e) {
+          state.projector.finish('error');
           state.emit({ type: 'run_error', message: e instanceof Error ? e.message : String(e) });
           state.emit({ type: 'run_end', text: state.final ?? state.text, how: 'error' });
         } finally {
           clearInterval(watchdog);
           if (state.threadId) byThread.delete(state.threadId);
+          for (const [id, ask] of serverAsks) if (ask.runId === runId) serverAsks.delete(id);
           runs.delete(runId);
         }
       })();
@@ -370,15 +521,16 @@ function createCodexRuntime({ log } = {}) {
     abort(runId) {
       const r = runs.get(runId);
       if (!r) return false;
+      r.abortRequested = true;
       // withdraw any question still open for this run, then interrupt
-      for (const [id, ask] of serverAsks) { if (id.startsWith('q-')) { /* the server's own timeout covers it */ } void ask; }
+      for (const [id, ask] of serverAsks) if (ask.runId === runId) { serverAsks.delete(id); ask.respond({ confirmed: false, cancelled: true }, id); }
       if (r.threadId && r.turnId) send('turn/interrupt', { threadId: r.threadId, turnId: r.turnId }).catch(() => {});
       return true;
     },
 
     answer(runId, requestId, response) {
       const ask = serverAsks.get(String(requestId));
-      if (!ask || !runs.has(runId)) return false;
+      if (!ask || ask.runId !== runId || !runs.has(runId)) return false;
       serverAsks.delete(String(requestId));
       const a = response && typeof response === 'object' ? response : { confirmed: !!response };
       if (a.cancelled) { ask.respond({ confirmed: false, value: '' }, String(requestId)); return true; }
@@ -390,4 +542,4 @@ function createCodexRuntime({ log } = {}) {
   };
 }
 
-module.exports = { createCodexRuntime, findCodex };
+module.exports = { createCodexRuntime, findCodex, createCodexEventProjector };

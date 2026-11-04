@@ -1,4 +1,7 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useDismissableLayer } from '../../lib/use-dismissable-layer';
+import { useCanvasPanelPosition } from '../../lib/use-canvas-panel-position';
+import { useCanvasToolCard } from '../../lib/use-canvas-tool-card';
+import { useRef, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Camera, ExternalLink, KeyRound, Loader2, Plus, Trash2, X, Pencil, Scale } from 'lucide-react';
 import { startOpenRouterOAuth } from '../../lib/openrouter-oauth';
@@ -22,8 +25,10 @@ import { apiVisionModels } from '../../lib/background-model';
 
 export default function ApiKeyModal() {
   const t = useT();
-  const open = useUiStore((s) => s.apiKeyModalOpen);
+  const requestedOpen = useUiStore((s) => s.apiKeyModalOpen);
   const setOpen = useUiStore((s) => s.setApiKeyModalOpen);
+  const open = useCanvasToolCard('connection', requestedOpen, () => setOpen(false));
+  const panelPosition = useCanvasPanelPosition(open);
   const data = useModels();
   const [providers, setProviders] = useState<RuntimeProvider[]>(() => storedProviders());
   useEffect(() => { if (open) setProviders(storedProviders()); }, [open]);
@@ -88,11 +93,17 @@ export default function ApiKeyModal() {
   );
   const visionCount = apiVisionModels(data?.models ?? []).length;
 
-  if (!open) return null;
-
   const resetAdd = () => {
     setAdding(false); setProbed(null); setPicked(new Map()); setKey(''); setCustomURL(''); setCustomName(''); setFilter(''); setError('');
   };
+  const layerRef = useRef<HTMLDivElement>(null);
+  useDismissableLayer({ open, refs: [layerRef], onDismiss: (reason) => {
+    if (reason === 'escape') resetAdd();
+    setOpen(false);
+  } });
+  useEffect(() => { if (open) layerRef.current?.focus({ preventScroll: true }); }, [open]);
+
+  if (!open) return null;
 
   const commit = async (next: RuntimeProvider[]) => {
     setBusy(true);
@@ -223,24 +234,25 @@ export default function ApiKeyModal() {
       (sortMode === 'time' ? (b.created ?? 0) - (a.created ?? 0) : a.id.localeCompare(b.id)));
 
   return createPortal((
-    <div className="fixed inset-0 z-[60] bg-ink/30 backdrop-blur-sm flex items-center justify-center p-6" onClick={() => { setOpen(false); resetAdd(); }}>
-      <div className="bg-card rounded-2xl shadow-2xl border border-line w-[560px] max-h-[86vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center gap-2 px-5 py-3 border-b border-line shrink-0">
+    <div className="relative z-[60]">
+      <div ref={layerRef} role="dialog" aria-label={t('provider.title')} tabIndex={-1} style={panelPosition} data-model-connection-panel className="canvas-tool-panel flex flex-col" onClick={(e) => e.stopPropagation()}
+        onKeyDown={(event) => { if (event.key !== 'Escape' || event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) event.stopPropagation(); }}>
+        <div className="flex flex-wrap items-center gap-2 px-4 py-3 border-b border-line shrink-0">
           <KeyRound size={15} strokeWidth={1.75} className="text-accent shrink-0" />
-          <span className="text-sm font-semibold text-ink">{t('provider.title')}</span>
+          <span className="text-sm font-medium text-ink flex-1">{t('provider.title')}</span>
           {/* two doors, one per kind of model: the slow thinking that answers, the fast thinking that judges */}
-          <div className="flex-1 flex justify-center">
-            <div className="inline-flex rounded-lg border border-line bg-wash/60 p-0.5 text-xs" data-apikey-tabs>
-              <button onClick={() => { setJudgeView(false); resetAdd(); }} className={`px-3 py-1 rounded-md transition-colors ${!judgeView ? 'bg-card text-ink shadow-sm' : 'text-ink-muted hover:text-ink'}`} data-apikey-tab="slow">{t('provider.tabSlow')}</button>
-              <button onClick={() => { setJudgeView(true); resetAdd(); }} className={`px-3 py-1 rounded-md transition-colors ${judgeView ? 'bg-card text-ink shadow-sm' : 'text-ink-muted hover:text-ink'}`} data-apikey-tab="fast">{t('provider.tabFast')}</button>
+          <div className="order-last w-full flex">
+            <div className="inline-flex rounded-control border border-line bg-wash/60 p-0.5 text-xs" data-apikey-tabs>
+              <button onClick={() => { setJudgeView(false); resetAdd(); }} className={`px-3 py-1 rounded-control transition-colors ${!judgeView ? 'bg-card text-ink ' : 'text-ink-muted hover:text-ink'}`} data-apikey-tab="slow">{t('provider.tabSlow')}</button>
+              <button onClick={() => { setJudgeView(true); resetAdd(); }} className={`px-3 py-1 rounded-control transition-colors ${judgeView ? 'bg-card text-ink ' : 'text-ink-muted hover:text-ink'}`} data-apikey-tab="fast">{t('provider.tabFast')}</button>
             </div>
           </div>
-          <button onClick={() => { setOpen(false); resetAdd(); }} className="text-ink-faint hover:text-ink w-7 h-7 rounded-lg hover:bg-wash flex items-center justify-center transition-colors shrink-0">
+          <button onClick={() => setOpen(false)} aria-label={t('common.close')} className="text-ink-faint hover:text-ink w-7 h-7 rounded-control hover:bg-wash flex items-center justify-center transition-colors shrink-0">
             <X size={15} strokeWidth={1.75} />
           </button>
         </div>
 
-        <div className="flex-1 min-h-0 overflow-y-auto px-5 py-4 space-y-3">
+        <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-4 py-4 space-y-3">
           {judgeView && !adding && (<>
             <p className="text-xs text-ink-muted leading-relaxed">{t('provider.fastIntro')}</p>
             <JudgeSettings />
@@ -251,13 +263,13 @@ export default function ApiKeyModal() {
             )}
 
             {serverModels.length > 0 && (
-              <div className="border border-line rounded-xl px-3 py-2.5 bg-wash/50 text-xs text-ink-muted">
+              <div className="border border-line rounded-content px-3 py-2.5 bg-wash/50 text-xs text-ink-muted">
                 {fmt(t('provider.serverRow'), { n: serverModels.length })}
               </div>
             )}
 
             {providers.map((p) => (
-              <div key={p.baseURL} className="border border-line rounded-xl px-3 py-2.5 bg-surface flex items-start gap-2">
+              <div key={p.baseURL} className="border border-line rounded-content px-3 py-2.5 bg-surface flex items-start gap-2">
                 <div className="flex-1 min-w-0">
                   <div className="text-sm text-ink font-medium">{p.name}</div>
                   <div className="text-2xs text-ink-faint mt-0.5 font-mono truncate">{p.baseURL}</div>
@@ -266,10 +278,10 @@ export default function ApiKeyModal() {
                     {p.models.some((m) => m.vision) && <span> · 📷 {p.models.filter((m) => m.vision).length}</span>}
                   </div>
                 </div>
-                <button onClick={() => void refresh(p)} disabled={busy} title={t('provider.refreshTitle')} className="text-ink-faint hover:text-accent w-6 h-6 rounded-full flex items-center justify-center transition-colors shrink-0" data-provider-refresh>
+                <button onClick={() => void refresh(p)} disabled={busy} title={t('provider.refreshTitle')} className="text-ink-faint hover:text-accent w-6 h-6 rounded-control flex items-center justify-center transition-colors shrink-0" data-provider-refresh>
                   <Pencil size={13} strokeWidth={1.75} />
                 </button>
-                <button onClick={() => void remove(p.baseURL)} disabled={busy} title={t('common.delete')} className="text-ink-faint hover:text-red-500 w-6 h-6 rounded-full flex items-center justify-center transition-colors shrink-0">
+                <button onClick={() => void remove(p.baseURL)} disabled={busy} title={t('common.delete')} className="text-ink-faint hover:text-red-500 w-6 h-6 rounded-control flex items-center justify-center transition-colors shrink-0">
                   <Trash2 size={13} strokeWidth={1.75} />
                 </button>
               </div>
@@ -282,7 +294,7 @@ export default function ApiKeyModal() {
               </p>
             )}
 
-            <button onClick={() => setAdding(true)} className="flex items-center gap-1.5 text-xs text-accent hover:bg-accent/10 px-3 py-1.5 rounded-lg transition-colors" data-provider-add>
+            <button onClick={() => setAdding(true)} className="flex items-center gap-1.5 text-xs text-accent hover:bg-accent/10 px-3 py-1.5 rounded-control transition-colors" data-provider-add>
               <Plus size={14} strokeWidth={1.75} /> {t('provider.add')}
             </button>
 
@@ -310,7 +322,7 @@ export default function ApiKeyModal() {
                       if (existing) { void refresh(existing); return; }
                       setPreset(p); setProbed(null); setPicked(new Map()); setError('');
                     }}
-                    className={`text-xs px-3 py-1.5 rounded-full border transition-colors ${preset.id === p.id ? 'border-accent bg-accent/10 text-accent font-medium' : 'border-line text-ink-muted hover:bg-wash'}`}
+                    className={`text-xs px-3 py-1.5 rounded-control border transition-colors ${preset.id === p.id ? 'border-accent bg-accent/10 text-accent font-medium' : 'border-line text-ink-muted hover:bg-wash'}`}
                     data-preset={p.id}
                   >
                     {p.id === 'custom' ? t('provider.customName') : p.noKey ? `${p.name} · ${t('provider.local')}` : p.name}
@@ -323,21 +335,21 @@ export default function ApiKeyModal() {
               <div>
                 <label className="text-2xs font-medium text-ink-muted block mb-1.5">{t('provider.baseURL')}</label>
                 <input value={customURL} onChange={(e) => setCustomURL(e.target.value)} placeholder="https://…/v1"
-                  className="w-full bg-wash text-sm text-ink font-mono rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-accent/40 placeholder-ink-faint" data-provider-url />
+                  className="w-full bg-wash text-sm text-ink font-mono rounded-control px-3 py-2 focus:outline-none focus:ring-1 focus:ring-accent/40 placeholder-ink-faint" data-provider-url />
                 <p className="text-2xs text-ink-faint mt-1">{t('provider.baseURLHint')}</p>
               </div>
               <div>
                 <label className="text-2xs font-medium text-ink-muted block mb-1.5">{t('provider.displayName')}</label>
                 <input value={customName} onChange={(e) => setCustomName(e.target.value)} placeholder={t('provider.customName')}
-                  className="w-full bg-wash text-sm text-ink rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-accent/40 placeholder-ink-faint" />
+                  className="w-full bg-wash text-sm text-ink rounded-control px-3 py-2 focus:outline-none focus:ring-1 focus:ring-accent/40 placeholder-ink-faint" />
               </div>
             </>)}
 
             {preset.id === 'openrouter' && !probed && (
-              <div className="border border-accent/30 bg-accent/5 rounded-xl px-3 py-2.5 flex items-center gap-2.5" data-provider-oauth-row>
+              <div className="border border-accent/30 bg-accent/5 rounded-content px-3 py-2.5 flex flex-col items-stretch gap-2.5" data-provider-oauth-row>
                 <p className="text-2xs text-ink-muted leading-relaxed flex-1 min-w-0">{t('provider.oauthHint')}</p>
                 <button onClick={() => void startOpenRouterOAuth()} data-provider-oauth
-                  className="text-xs bg-accent text-white px-3 py-1.5 rounded-lg shrink-0 flex items-center gap-1.5">
+                  className="text-xs bg-action text-white px-3 py-1.5 rounded-control shrink-0 flex items-center justify-center gap-1.5">
                   <ExternalLink size={12} strokeWidth={1.75} /> {t('provider.oauthButton')}
                 </button>
               </div>
@@ -346,7 +358,7 @@ export default function ApiKeyModal() {
               <div>
                 <label className="text-2xs font-medium text-ink-muted block mb-1.5">API key</label>
                 <input type="password" value={key} onChange={(e) => setKey(e.target.value)} placeholder="sk-…" autoFocus
-                  className="w-full bg-wash text-sm text-ink font-mono rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-accent/40 placeholder-ink-faint" data-provider-key />
+                  className="w-full bg-wash text-sm text-ink font-mono rounded-control px-3 py-2 focus:outline-none focus:ring-1 focus:ring-accent/40 placeholder-ink-faint" data-provider-key />
                 {preset.keyUrl && (
                   <p className="text-2xs text-ink-faint mt-1.5">
                     {t('provider.keyHint')}{' '}
@@ -357,14 +369,14 @@ export default function ApiKeyModal() {
             )}
             {preset.noKey && <p className="text-2xs text-ink-faint leading-relaxed">{t((preset.hintKey ?? 'provider.localHint') as Parameters<typeof t>[0])}</p>}
             {hostedBridgeBlocked && (
-              <p className="text-2xs text-amber-700 bg-amber-500/10 rounded-lg px-2.5 py-2 leading-relaxed" data-bridge-hosted-notice>
+              <p className="text-2xs text-amber-700 bg-amber-500/10 rounded-content px-2.5 py-2 leading-relaxed" data-bridge-hosted-notice>
                 {t('provider.bridgeHostedNotice')}
               </p>
             )}
 
             {!probed && (
               <button onClick={() => void doProbe()} disabled={busy || hostedBridgeBlocked || (preset.id === 'custom' ? !customURL.trim() : !preset.noKey && !key.trim())}
-                className="text-xs bg-accent text-white px-4 py-1.5 rounded-lg disabled:opacity-40 flex items-center gap-1.5" data-provider-probe>
+                className="text-xs bg-action text-white px-4 py-1.5 rounded-control disabled:opacity-40 flex items-center gap-1.5" data-provider-probe>
                 {busy && <Loader2 size={12} className="animate-spin" />}
                 {busy ? t('provider.probing') : t('provider.probe')}
               </button>
@@ -376,19 +388,19 @@ export default function ApiKeyModal() {
                   <label className="text-2xs font-medium text-ink-muted flex-1">{fmt(t('provider.pickModels'), { n: probed.length })}</label>
                   {probed.length > 15 && (
                     <input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder={t('provider.filter')}
-                      className="bg-wash text-2xs text-ink rounded-md px-2 py-1 w-36 focus:outline-none focus:ring-1 focus:ring-accent/40 placeholder-ink-faint" />
+                      className="bg-wash text-2xs text-ink rounded-control px-2 py-1 w-36 focus:outline-none focus:ring-1 focus:ring-accent/40 placeholder-ink-faint" />
                   )}
                   {probed.some((m) => m.created) && (
                     <button
                       onClick={() => setSortMode((v) => (v === 'time' ? 'name' : 'time'))}
-                      className="text-2xs px-2.5 py-1.5 rounded-lg border border-line text-ink-muted hover:bg-wash transition-colors shrink-0"
+                      className="text-2xs px-2.5 py-1.5 rounded-tag border border-line text-ink-muted hover:bg-wash transition-colors shrink-0"
                       data-sort-toggle
                     >
                       {sortMode === 'time' ? t('provider.sortTime') : t('provider.sortName')}
                     </button>
                   )}
                 </div>
-                <div className="border border-line rounded-xl max-h-[220px] overflow-y-auto divide-y divide-line/60" data-provider-models>
+                <div className="border border-line rounded-content max-h-[220px] overflow-y-auto divide-y divide-line/60" data-provider-models>
                   {shown.slice(0, 200).map((m) => (
                     <label key={m.id} className="flex items-center gap-2 px-3 py-1.5 text-xs text-ink hover:bg-wash cursor-pointer">
                       <input type="checkbox" checked={picked.has(m.id)}
@@ -409,7 +421,7 @@ export default function ApiKeyModal() {
                         <button
                           onClick={(e) => { e.preventDefault(); const next = new Map(picked); next.set(m.id, !next.get(m.id)); setPicked(next); }}
                           title={t('provider.visionToggle')}
-                          className={`flex items-center gap-0.5 text-2xs px-1.5 py-0.5 rounded-full transition-colors ${picked.get(m.id) ? 'bg-accent/10 text-accent' : 'bg-wash text-ink-faint'}`}
+                          className={`flex items-center gap-0.5 text-2xs px-1.5 py-0.5 rounded-tag transition-colors ${picked.get(m.id) ? 'bg-accent/10 text-accent' : 'bg-wash text-ink-faint'}`}
                         >
                           <Camera size={11} strokeWidth={1.75} />
                         </button>
@@ -421,23 +433,23 @@ export default function ApiKeyModal() {
               </div>
             </>)}
 
-            <p className="text-2xs text-ink-faint leading-relaxed bg-wash rounded-lg px-3 py-2">{t('provider.privacy')}</p>
+            <p className="text-2xs text-ink-faint leading-relaxed bg-wash rounded-content px-3 py-2">{t('provider.privacy')}</p>
             {error && <p className="text-xs text-red-600 leading-relaxed">{error}</p>}
           </>)}
           {!adding && error && <p className="text-xs text-red-600 leading-relaxed">{error}</p>}
         </div>
 
-        <div className="flex items-center gap-2 px-5 py-3 border-t border-line shrink-0">
+        <div className="flex items-center gap-2 px-4 py-3 border-t border-line shrink-0">
           <div className="flex-1" />
           {adding ? (<>
-            <button onClick={resetAdd} className="text-xs text-ink-muted hover:text-ink px-3 py-1.5 rounded-lg hover:bg-wash transition-colors">{t('common.cancel')}</button>
+            <button onClick={resetAdd} className="text-xs text-ink-muted hover:text-ink px-3 py-1.5 rounded-control hover:bg-wash transition-colors">{t('common.cancel')}</button>
             <button onClick={() => void doAdd()} disabled={busy || picked.size === 0}
-              className="text-xs bg-accent text-white px-4 py-1.5 rounded-lg disabled:opacity-40 flex items-center gap-1.5" data-provider-save>
+              className="text-xs bg-action text-white px-4 py-1.5 rounded-control disabled:opacity-40 flex items-center gap-1.5" data-provider-save>
               {busy && <Loader2 size={12} className="animate-spin" />}
               {t('provider.save')}
             </button>
           </>) : (
-            <button onClick={() => { setOpen(false); resetAdd(); }} className="text-xs text-ink-muted hover:text-ink px-3 py-1.5 rounded-lg hover:bg-wash transition-colors">{t('common.close')}</button>
+            <button onClick={() => { setOpen(false); resetAdd(); }} className="text-xs text-ink-muted hover:text-ink px-3 py-1.5 rounded-control hover:bg-wash transition-colors">{t('common.close')}</button>
           )}
         </div>
       </div>

@@ -1,4 +1,6 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
+import { useDismissableLayer } from '../lib/use-dismissable-layer';
+import { useProjects } from '../store/projects';
 import { createPortal } from 'react-dom';
 import { Eye, Split, X } from 'lucide-react';
 import { useStore } from '../store';
@@ -29,13 +31,25 @@ export default function FanOutModal({
   const fanOut = useStore((s) => s.fanOut);
   const t = useT();
   const lang = useI18n((s) => s.lang);
-  const [mode, setMode] = useState<'once' | 'follow'>('once');
-  const [rounds, setRounds] = useState(1);
-  const [question, setQuestion] = useState(initialQuestion);
-  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const projectId = useProjects(s => s.activeId) ?? 'default';
+  const draftKey = `fan-out:${projectId}:${parentId}`;
+  const [saved] = useState(() => {
+    try { return JSON.parse(useUiStore.getState().drafts[draftKey] ?? 'null') as { mode: 'once' | 'follow'; rounds: number; question: string; picked: string[]; customText: string } | null; }
+    catch { return null; }
+  });
+  const [mode, setMode] = useState<'once' | 'follow'>(saved?.mode ?? 'once');
+  const [rounds, setRounds] = useState(saved?.rounds ?? 1);
+  const [question, setQuestion] = useState(saved?.question ?? initialQuestion);
+  const [picked, setPicked] = useState<Set<string>>(new Set(saved?.picked ?? []));
   const [customText, setCustomText] = useState(
-    (initialRoles ?? []).map((r) => `${r.name}: ${r.prompt}`).join('\n')
+    saved?.customText ?? (initialRoles ?? []).map((r) => `${r.name}: ${r.prompt}`).join('\n')
   );
+  const layerRef = useRef<HTMLDivElement>(null);
+  const close = () => {
+    useUiStore.getState().setDraft(draftKey, JSON.stringify({ mode, rounds, question, picked: [...picked], customText }));
+    onClose();
+  };
+  useDismissableLayer({ open: true, refs: [layerRef], onDismiss: close, modal: true });
 
   const switchMode = (m: 'once' | 'follow') => {
     setMode(m);
@@ -66,12 +80,13 @@ export default function FanOutModal({
   const run = () => {
     if (!question.trim() || roles.length === 0) return;
     void fanOut(parentId, question.trim(), roles, { follow: mode === 'follow', rounds });
+    useUiStore.getState().setDraft(draftKey, '');
     onClose();
   };
 
   return createPortal((
-    <div className="fixed inset-0 z-50 bg-ink/30 backdrop-blur-sm flex items-center justify-center p-6" onClick={onClose}>
-      <div className="bg-card border border-line rounded-2xl shadow-2xl w-full max-w-lg flex flex-col" onClick={(e) => e.stopPropagation()}>
+    <div className="fixed inset-0 z-50 bg-ink/30 flex items-center justify-center p-6">
+      <div ref={layerRef} role="dialog" aria-modal="true" aria-label={t('fanout.title')} tabIndex={-1} className="bg-card border border-line rounded-panel shadow-lg w-full max-w-lg flex flex-col" onClick={(e) => e.stopPropagation()}>
         <div className="px-6 py-4 border-b border-line flex items-start justify-between gap-4">
           <div>
             <h2 className="text-base font-semibold text-ink flex items-center gap-2">
@@ -79,7 +94,7 @@ export default function FanOutModal({
             </h2>
             <p className="text-xs text-ink-muted mt-1 leading-relaxed">{t('fanout.subtitle')}</p>
           </div>
-          <button onClick={onClose} className="text-ink-faint hover:text-ink transition-colors shrink-0 mt-0.5">
+          <button onClick={close} className="text-ink-faint hover:text-ink transition-colors shrink-0 mt-0.5">
             <X size={16} strokeWidth={1.75} />
           </button>
         </div>
@@ -95,7 +110,7 @@ export default function FanOutModal({
                 <button
                   key={m}
                   onClick={() => switchMode(m)}
-                  className={`text-xs px-3 py-2 rounded-lg transition-colors flex items-center gap-1.5 ${
+                  className={`text-xs px-3 py-2 rounded-control transition-colors flex items-center gap-1.5 ${
                     mode === m
                       ? (m === 'follow' ? 'bg-watch/10 text-watch font-medium ring-1 ring-watch/30' : 'bg-warm/15 text-warm font-medium ring-1 ring-warm/30')
                       : 'bg-wash text-ink-muted hover:bg-line'
@@ -115,7 +130,7 @@ export default function FanOutModal({
                   <button
                     key={r}
                     onClick={() => setRounds(r)}
-                    className={`text-2xs w-7 h-6 rounded-md transition-colors ${
+                    className={`text-2xs w-7 h-6 rounded-control transition-colors ${
                       rounds === r ? 'bg-watch/10 text-watch font-medium ring-1 ring-watch/30' : 'bg-wash text-ink-muted hover:bg-line'
                     }`}
                   >
@@ -133,7 +148,7 @@ export default function FanOutModal({
               value={question}
               onChange={(e) => setQuestion(e.target.value)}
               rows={2}
-              className="w-full text-sm border border-line rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-accent bg-surface resize-none leading-relaxed"
+              className="w-full text-sm border border-line rounded-control px-3 py-2 focus:outline-none focus:ring-1 focus:ring-accent bg-surface resize-none leading-relaxed"
             />
           </div>
 
@@ -149,7 +164,7 @@ export default function FanOutModal({
                     else next.add(tpl.id);
                     return next;
                   })}
-                  className={`text-2xs px-2.5 py-1.5 rounded-full transition-colors ${
+                  className={`text-2xs px-2.5 py-1.5 rounded-tag transition-colors ${
                     picked.has(tpl.id) ? 'bg-warm/15 text-warm font-medium' : 'bg-wash hover:bg-line text-ink-muted'
                   }`}
                 >
@@ -166,19 +181,19 @@ export default function FanOutModal({
               onChange={(e) => setCustomText(e.target.value)}
               rows={4}
               placeholder={t('fanout.customPlaceholder')}
-              className="w-full text-xs border border-line rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-accent bg-surface resize-y leading-relaxed font-mono"
+              className="w-full text-xs border border-line rounded-control px-3 py-2 focus:outline-none focus:ring-1 focus:ring-accent bg-surface resize-y leading-relaxed font-mono"
             />
           </div>
         </div>
 
         <div className="px-6 py-4 border-t border-line flex justify-end gap-2">
-          <button onClick={onClose} className="text-xs text-ink-muted hover:text-ink px-4 py-2 rounded-lg hover:bg-wash transition-colors">
+          <button onClick={() => { useUiStore.getState().setDraft(draftKey, ''); onClose(); }} className="text-xs text-ink-muted hover:text-ink px-4 py-2 rounded-control hover:bg-wash transition-colors">
             {t('common.cancel')}
           </button>
           <button
             onClick={run}
             disabled={!question.trim() || roles.length === 0}
-            className={`text-xs text-white px-5 py-2 rounded-lg transition-colors disabled:opacity-30 ${
+            className={`text-xs text-white px-5 py-2 rounded-control transition-colors disabled:opacity-30 ${
               mode === 'follow' ? 'bg-watch/90 hover:bg-watch' : 'bg-warm hover:bg-warm/90'
             }`}
           >

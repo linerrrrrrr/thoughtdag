@@ -22,6 +22,7 @@ import type { ModelInfo } from '../use-models';
 import type { AgentRuntime, AgentPermissionMode } from '../../types';
 import { useUiStore } from '../ui-store';
 import { useStore } from '../../store';
+import { isAgentActivity } from '../agent-activity';
 
 /** The runtimes the shell can run, keyed by the prefix of their picker ids. */
 export const AGENT_RUNTIMES: Record<AgentRuntime, { prefix: string; label: string; rootKey: string }> = {
@@ -282,11 +283,26 @@ export function compileForAgent(messages: ContextMessage[]): { question: string;
 
 type AgentEvent = { runId: string; event: Record<string, unknown> & { type: string } };
 const handlers = new Map<string, (event: AgentEvent['event']) => void>();
+// IPC/SSE may beat the run-id response. Only retain events while this client
+// is starting runs, and replay strictly by the returned run id.
+const earlyEvents = new Map<string, AgentEvent['event'][]>();
+const earlyOverflow = new Set<string>();
+let earlyRunOverflow = false;
+let startingRuns = 0;
 let subscribed = false;
 function subscribe() {
   if (subscribed || !window.desktopAgents) return;
   subscribed = true;
-  window.desktopAgents.onEvent(({ runId, event }) => { handlers.get(runId)?.(event); });
+  window.desktopAgents.onEvent(({ runId, event }) => {
+    const handle = handlers.get(runId);
+    if (handle) { handle(event); return; }
+    if (!startingRuns) return;
+    if (!earlyEvents.has(runId) && earlyEvents.size >= 32) { earlyRunOverflow = true; return; }
+    const pending = earlyEvents.get(runId) ?? [];
+    if (pending.length < 2000) pending.push(event);
+    else earlyOverflow.add(runId);
+    earlyEvents.set(runId, pending);
+  });
 }
 
 /** One line naming what a tool call does, for the node's progress row. */
@@ -337,7 +353,8 @@ export async function agentCallStream(
 
   let full = '';
   let reasoning = '';
-  let finalText = '';
+  let finalText: string | null = null;
+  startingRuns++;
   const done = new Promise<{ how: string; error?: string }>((resolve) => {
     void bridge.run({
       runtime: target.runtime, cwd, prompt,
@@ -348,7 +365,7 @@ export async function agentCallStream(
       ...(effort ? { effort } : {}),
       ...(allowRules.length ? { allowRules } : {}),
     }).then((runId) => {
-      const stop = () => { void bridge.abort(runId); };
+      const stop = () => { void bridge.abort(runId).catch(() => undefined); };
       if (signal?.aborted) { stop(); }
       signal?.addEventListener('abort', stop, { once: true });
       handlers.set(runId, (event) => {
@@ -367,12 +384,17 @@ export async function agentCallStream(
             break;
           }
           case 'message_update': {
-            const ev = event.assistantMessageEvent as { type?: string; delta?: string } | undefined;
+            const ev = event.assistantMessageEvent as { type?: string; delta?: string; text?: string } | undefined;
             if (ev?.type === 'text_delta' && ev.delta) { full += ev.delta; onChunk(ev.delta, full); }
+            else if (ev?.type === 'text_replace' && typeof ev.text === 'string') { full = ev.text; onChunk('', full); }
             else if (ev?.type === 'thinking_delta' && ev.delta) { reasoning += ev.delta; callbacks?.onReasoning?.(ev.delta, reasoning); }
             break;
           }
+          case 'activity':
+            if (isAgentActivity(event.item)) callbacks?.onAgentActivity?.(event.item);
+            break;
           case 'tool_execution_start': {
+            if (target.runtime === 'codex') break;
             const name = String(event.toolName ?? 'tool');
             // the trace, not the one-line placeholder: the node shows every call
             const query = toolQuery(name, event.args);
@@ -380,6 +402,7 @@ export async function agentCallStream(
             break;
           }
           case 'tool_execution_end':
+            if (target.runtime === 'codex') break;
             callbacks?.onAgentTool?.({ id: String(event.toolCallId ?? ''), name: String(event.toolName ?? 'tool'), query: '', phase: 'end', isError: !!event.isError });
             break;
           case 'extension_ui_cancelled': {
@@ -413,7 +436,7 @@ export async function agentCallStream(
             callbacks?.onAgentChanges?.({ changed: (event.changed as string[]) ?? [], added: (event.added as string[]) ?? [], removed: (event.removed as string[]) ?? [], truncated: !!event.truncated });
             break;
           case 'run_end':
-            finalText = typeof event.text === 'string' && event.text ? event.text : full;
+            finalText = typeof event.text === 'string' ? event.text : full;
             handlers.delete(runId);
             signal?.removeEventListener('abort', stop);
             resolve({ how: String(event.how ?? 'end') });
@@ -427,12 +450,24 @@ export async function agentCallStream(
             break;
         }
       });
-    }).catch((e: unknown) => resolve({ how: 'error', error: e instanceof Error ? e.message : String(e) }));
+      const pending = earlyEvents.get(runId);
+      earlyEvents.delete(runId);
+      if (earlyOverflow.delete(runId) || (!pending && earlyRunOverflow)) {
+        handlers.get(runId)?.({ type: 'run_error', message: 'The agent event buffer overflowed before the run connected. Please retry.' });
+        stop();
+      } else {
+        for (const event of pending ?? []) handlers.get(runId)?.(event);
+      }
+    }).catch((e: unknown) => resolve({ how: 'error', error: e instanceof Error ? e.message : String(e) }))
+      .finally(() => {
+        startingRuns--;
+        if (!startingRuns) { earlyEvents.clear(); earlyOverflow.clear(); earlyRunOverflow = false; }
+      });
   });
   const r = await done;
-  if (signal?.aborted) throw new DOMException('The operation was aborted.', 'AbortError');
+  if (signal?.aborted || r.how === 'aborted' || r.how === 'interrupted') throw new DOMException('The operation was aborted.', 'AbortError');
   if (r.how === 'error') throw new Error(r.error ?? 'agent run failed');
-  return finalText || full;
+  return finalText ?? full;
 }
 
 /** After a Pi run: the node becomes the mirror of the turn Pi just wrote —

@@ -212,6 +212,8 @@ export async function llmCallAnswered(contextMessages: ContextMessage[], images?
 }
 
 export interface StreamCallbacks {
+  /** An authoritative public runtime item snapshot, including progress and command output. */
+  onAgentActivity?: (item: import('../types').AgentActivityEntry) => void;
   /** The model started a tool call (web_search / arxiv_search / semantic_scholar). */
   onToolCall?: (name: string, query: string) => void;
   /** The gateway's built-in web search is active for this generation. */

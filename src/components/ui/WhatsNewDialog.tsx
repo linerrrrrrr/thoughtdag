@@ -1,3 +1,4 @@
+import { useDismissableLayer } from '../../lib/use-dismissable-layer';
 import { useEffect, useRef, useState } from 'react';
 import { useI18n, useT, fmt } from '../../i18n';
 import { useUiStore } from '../../lib/ui-store';
@@ -46,7 +47,7 @@ export function WhatsNewMediaView({ media, lang }: { media: WhatsNewMedia; lang:
   const src = media.src[lang];
   const isClip = /\.(mp4|webm)$/i.test(src);
   return (
-    <div className="mt-3 rounded-xl border border-line overflow-hidden bg-wash" style={{ aspectRatio: `${media.width} / ${media.height}` }} data-whats-new-media>
+    <div className="mt-3 rounded-content border border-line overflow-hidden bg-wash" style={{ aspectRatio: `${media.width} / ${media.height}` }} data-whats-new-media>
       {isClip
         ? <video src={`${import.meta.env.BASE_URL}${src}`} autoPlay loop muted playsInline className="w-full h-full object-cover" aria-label={media.alt[lang]} />
         : <img src={`${import.meta.env.BASE_URL}${src}`} alt={media.alt[lang]} className="w-full h-full object-cover" />}
@@ -61,7 +62,7 @@ export function WhatsNewItems({ items, lang }: { items: WhatsNewItem[]; lang: La
     <ol className="divide-y divide-line">
       {items.map((it, i) => (
         <li key={i} className="py-3 flex gap-3.5">
-          <span className="shrink-0 w-6 h-6 rounded-full bg-accent/10 text-accent text-xs font-semibold flex items-center justify-center mt-0.5">{i + 1}</span>
+          <span className="shrink-0 w-6 h-6 rounded-tag bg-accent/10 text-accent text-xs font-semibold flex items-center justify-center mt-0.5">{i + 1}</span>
           <div className="min-w-0">
             <div className="text-sm font-medium text-ink">{it.title[lang]}</div>
             <p className="text-sm text-ink-muted leading-relaxed mt-1 [overflow-wrap:anywhere]">{it.body[lang]}</p>
@@ -95,25 +96,17 @@ export default function WhatsNewDialog() {
     setEntries([]);
   };
 
-  useEffect(() => {
-    if (!open) return;
-    // Enter closes, so the button holds focus — taken without scrolling, or
-    // the panel would open scrolled to its foot and hide the title
-    okRef.current?.focus({ preventScroll: true });
-    const onKeyDown = (e: KeyboardEvent) => {
-      e.stopPropagation();
-      if (e.key === 'Escape' || e.key === 'Enter') close();
-    };
-    window.addEventListener('keydown', onKeyDown, true);
-    return () => window.removeEventListener('keydown', onKeyDown, true);
-  }, [open]);
+  const layerRef = useRef<HTMLDivElement>(null);
+  useDismissableLayer({ open: open, refs: [layerRef], onDismiss: close, modal: true });
+  useEffect(() => { if (open) okRef.current?.focus({ preventScroll: true }); }, [open]);
 
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-[100] bg-black/25 flex items-center justify-center animate-fade-in p-6" onClick={close}>
+    <div className="fixed inset-0 z-[100] bg-black/25 flex items-center justify-center animate-fade-in p-6">
       <div
-        className="bg-card border border-line rounded-2xl shadow-xl w-[680px] max-w-full max-h-[85vh] overflow-y-auto"
+        ref={layerRef} aria-modal="true" tabIndex={-1}
+        className="bg-card border border-line rounded-panel shadow-lg w-[680px] max-w-full max-h-[85vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-labelledby="whats-new-title"
@@ -157,7 +150,7 @@ export default function WhatsNewDialog() {
           <button
             ref={okRef}
             onClick={close}
-            className="text-xs text-white px-4 py-2 rounded-lg bg-accent hover:bg-accent-strong transition-colors"
+            className="text-xs text-white px-4 py-2 rounded-control bg-action hover:bg-action-strong transition-colors"
           >
             {t('whatsNew.ok')}
           </button>

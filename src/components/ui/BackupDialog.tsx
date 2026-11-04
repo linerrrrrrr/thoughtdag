@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useDismissableLayer } from '../../lib/use-dismissable-layer';
+import { useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { FolderSync, X } from 'lucide-react';
 import { useUiStore, toast } from '../../lib/ui-store';
@@ -16,6 +17,8 @@ export default function BackupDialog() {
   const t = useT();
   const [busy, setBusy] = useState(false);
   const close = () => useUiStore.getState().setBackupDialogOpen(false);
+  const layerRef = useRef<HTMLDivElement>(null);
+  useDismissableLayer({ open: open && backupCapable(), refs: [layerRef], onDismiss: close, modal: true });
   if (!open || !backupCapable()) return null;
 
   // Absolute clock time keeps the render pure (no Date.now() while rendering)
@@ -24,13 +27,13 @@ export default function BackupDialog() {
     : t('backup.lastNever');
 
   return createPortal((
-    <div className="fixed inset-0 z-[80] bg-ink/25 backdrop-blur-[2px] flex items-center justify-center animate-fade-in" onClick={close} data-backup-dialog>
-      <div className="bg-surface rounded-2xl shadow-2xl border border-line w-[min(440px,92vw)] p-5" onClick={(e) => e.stopPropagation()}>
+    <div className="fixed inset-0 z-[80] bg-ink/25 flex items-center justify-center animate-fade-in" data-backup-dialog>
+      <div ref={layerRef} role="dialog" aria-modal="true" aria-label={t('backup.dialogTitle')} tabIndex={-1} className="bg-surface rounded-panel shadow-lg border border-line w-[min(440px,92vw)] p-5" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-start justify-between mb-1">
           <div className="text-sm font-semibold text-ink flex items-center gap-2">
             <FolderSync size={15} strokeWidth={1.75} className={dir ? 'text-emerald-600' : 'text-accent'} /> {t('backup.dialogTitle')}
           </div>
-          <button onClick={close} className="w-7 h-7 rounded-lg text-ink-faint hover:bg-wash hover:text-ink flex items-center justify-center transition-colors">
+          <button onClick={close} className="w-7 h-7 rounded-control text-ink-faint hover:bg-wash hover:text-ink flex items-center justify-center transition-colors">
             <X size={15} strokeWidth={1.75} />
           </button>
         </div>
@@ -38,7 +41,7 @@ export default function BackupDialog() {
 
         {dir ? (
           <>
-            <div className="text-xs bg-wash border border-line rounded-lg px-3 py-2 mb-3 space-y-0.5">
+            <div className="text-xs bg-wash border border-line rounded-content px-3 py-2 mb-3 space-y-0.5">
               <div className="text-ink"><span className="text-ink-faint">{t('backup.folder')}</span> {dir}</div>
               <div className="text-ink-muted">{rel}</div>
             </div>
@@ -46,15 +49,15 @@ export default function BackupDialog() {
               <button
                 onClick={() => { setBusy(true); void backupActiveProject().then((name) => { if (name) toast('success', fmt(t('backup.wroteActive'), { name })); }).catch((err) => { toast('error', String(err?.message ?? err)); }).finally(() => setBusy(false)); }}
                 disabled={busy}
-                className="text-xs bg-accent hover:bg-accent-strong text-white px-4 py-2 rounded-lg transition-colors disabled:opacity-40"
+                className="text-xs bg-action hover:bg-action-strong text-white px-4 py-2 rounded-control transition-colors disabled:opacity-40"
                 data-backup-now
               >
                 {t('backup.now')}
               </button>
-              <button onClick={() => void enableAutoBackup()} className="text-xs border border-line text-ink-muted hover:bg-wash px-3 py-2 rounded-lg transition-colors">
+              <button onClick={() => void enableAutoBackup()} className="text-xs border border-line text-ink-muted hover:bg-wash px-3 py-2 rounded-control transition-colors">
                 {t('backup.changeFolder')}
               </button>
-              <button onClick={() => { void disableAutoBackup(); }} className="text-xs border border-line text-ink-muted hover:bg-wash hover:text-red-600 px-3 py-2 rounded-lg transition-colors">
+              <button onClick={() => { void disableAutoBackup(); }} className="text-xs border border-line text-ink-muted hover:bg-wash hover:text-red-600 px-3 py-2 rounded-control transition-colors">
                 {t('backup.stop')}
               </button>
             </div>
@@ -62,7 +65,7 @@ export default function BackupDialog() {
         ) : (
           <button
             onClick={() => void enableAutoBackup().then((ok) => { if (ok) close(); })}
-            className="text-xs bg-accent hover:bg-accent-strong text-white px-4 py-2 rounded-lg transition-colors"
+            className="text-xs bg-action hover:bg-action-strong text-white px-4 py-2 rounded-control transition-colors"
           >
             {t('backup.autoSetup')}
           </button>

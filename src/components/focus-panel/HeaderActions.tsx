@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
+import { useDismissableLayer } from '../../lib/use-dismissable-layer';
 import { Archive, ArchiveRestore, ClipboardCopy, Copy, Ellipsis, FileDown, GitFork, RefreshCw, Split, Square, Trash2, Undo2 } from 'lucide-react';
 import { useStore } from '../../store';
 import { contextChainMarkdown, downloadMarkdown, copyText } from '../../lib/export';
@@ -17,7 +18,6 @@ export default function HeaderActions({ nodeId, isLoading }: { nodeId: string; i
   const stopGeneration = useStore((s) => s.stopGeneration);
   const duplicateNode = useStore((s) => s.duplicateNode);
   const deleteNode = useStore((s) => s.deleteNode);
-  const setSelectedNodeId = useStore((s) => s.setSelectedNodeId);
   const setNodeModel = useStore((s) => s.setNodeModel);
   const nodeModel = useStore((s) => s.nodes.find((n) => n.id === nodeId)?.data.model);
   const setArchived = useStore((s) => s.setArchived);
@@ -48,16 +48,9 @@ export default function HeaderActions({ nodeId, isLoading }: { nodeId: string; i
   const [fanOutOpen, setFanOutOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    if (!menuOpen) return;
-    const handler = (e: MouseEvent) => {
-      if (!menuRef.current?.contains(e.target as Node)) setMenuOpen(false);
-    };
-    window.addEventListener('mousedown', handler);
-    return () => window.removeEventListener('mousedown', handler);
-  }, [menuOpen]);
+  useDismissableLayer({ dismissOnFocusOutside: true, open: menuOpen, refs: [menuRef], onDismiss: () => setMenuOpen(false) });
 
-  const iconBtn = 'text-ink-faint hover:text-ink hover:bg-line/50 rounded-lg w-8 h-8 flex items-center justify-center transition-colors';
+  const iconBtn = 'text-ink-faint hover:text-ink hover:bg-line/50 rounded-control w-8 h-8 flex items-center justify-center transition-colors';
   const menuItem = 'w-full text-left px-3 py-2 text-xs text-ink-muted hover:bg-wash transition-colors flex items-center gap-2';
 
   return (
@@ -66,7 +59,7 @@ export default function HeaderActions({ nodeId, isLoading }: { nodeId: string; i
         <button
           onClick={() => stopGeneration(nodeId)}
           title={t('actions.stop')}
-          className="text-white bg-red-500 hover:bg-red-600 rounded-lg w-8 h-8 flex items-center justify-center transition-colors"
+          className="text-white bg-red-500 hover:bg-red-600 rounded-control w-8 h-8 flex items-center justify-center transition-colors"
         >
           <Square size={12} strokeWidth={1.75} fill="currentColor" />
         </button>
@@ -83,7 +76,7 @@ export default function HeaderActions({ nodeId, isLoading }: { nodeId: string; i
       <button
         onClick={() => setArchived([nodeId], !isArchived)}
         title={isArchived ? t('archive.restoreTitle') : t('archive.title')}
-        className={isArchived ? 'text-amber-600 bg-amber-500/10 rounded-lg w-8 h-8 flex items-center justify-center' : iconBtn}
+        className={isArchived ? 'text-amber-600 bg-amber-500/10 rounded-control w-8 h-8 flex items-center justify-center' : iconBtn}
       >
         {isArchived ? <ArchiveRestore size={16} strokeWidth={1.75} /> : <Archive size={16} strokeWidth={1.75} />}
       </button>
@@ -94,7 +87,7 @@ export default function HeaderActions({ nodeId, isLoading }: { nodeId: string; i
           <Ellipsis size={17} strokeWidth={1.75} />
         </button>
         {menuOpen && (
-          <div className="absolute right-0 top-full mt-1 bg-card border border-line rounded-xl shadow-lg py-1 w-[210px] z-30 animate-fade-in">
+          <div className="absolute right-0 top-full mt-1 bg-card border border-line rounded-overlay shadow-lg py-1 w-[210px] z-30 animate-fade-in">
             <button className={menuItem} onClick={() => { setMenuOpen(false); setFanOutOpen(true); }} title={t('fanout.entryTitle')}>
               <Split size={15} strokeWidth={1.75} /> {t('fanout.entry')}
             </button>
@@ -118,7 +111,7 @@ export default function HeaderActions({ nodeId, isLoading }: { nodeId: string; i
             <div className="border-t border-line my-1" />
             <button
               className="w-full text-left px-3 py-2 text-xs text-red-500 hover:bg-red-50 transition-colors flex items-center gap-2"
-              onClick={() => { setMenuOpen(false); deleteNode(nodeId); setSelectedNodeId(null); }}
+              onClick={() => { setMenuOpen(false); deleteNode(nodeId); }}
             >
               <Trash2 size={15} strokeWidth={1.75} /> {t('common.delete')}
             </button>

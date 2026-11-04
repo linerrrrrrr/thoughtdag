@@ -1,0 +1,200 @@
+// Isolated fixtures: grouped resize, selection types, atomic edge editing, and drafts.
+import assert from 'node:assert/strict';
+import { existsSync } from 'node:fs';
+import { mkdir, writeFile } from 'node:fs/promises';
+import { chromium } from 'playwright-core';
+
+const executablePath = process.env.CHROME_PATH ?? ['C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe', 'C:/Program Files/Google/Chrome/Application/chrome.exe', '/usr/bin/chromium'].find(existsSync);
+const browser = await chromium.launch({ executablePath, headless: true });
+const context = await browser.newContext({ locale: 'zh-CN', viewport: { width: 1600, height: 1000 }, reducedMotion: 'reduce' });
+// Concurrent workspace edits must not hot-replace the store during a gesture.
+await context.routeWebSocket(/.*/, socket => socket.close());
+const page = await context.newPage();
+page.setDefaultTimeout(10000);
+const output = 'local-tests/selection-editing';
+await mkdir(output, { recursive: true });
+const errors = [], writes = [], checks = [];
+page.on('pageerror', error => errors.push(error.message));
+await context.route('**/api/**', route => {
+  if (['GET', 'HEAD', 'OPTIONS'].includes(route.request().method())) return route.continue();
+  writes.push(route.request().url()); return route.abort();
+});
+await page.addInitScript(() => {
+  localStorage.setItem('thoughtdag.seeded', 'yes');
+  localStorage.setItem('thoughtdag.tutorialDone', '1');
+  localStorage.setItem('thoughtdag.autoRefreshPaused', 'yes');
+});
+const check = name => { checks.push(name); console.log(`PASS ${name}`); };
+const geometry = () => page.evaluate(() => window.__store.getState().nodes.map(({ id, width, height, position, data }) => ({ id, width, height, position, keep: data.keepOverviewHeight })));
+const edges = () => page.evaluate(() => window.__store.getState().edges.map(({ selected: _selected, ...edge }) => edge));
+const selectedEdges = () => page.evaluate(() => window.__store.getState().edges.filter(edge => edge.selected).map(edge => edge.id).sort());
+const fixture = async (zoom = 0.6) => {
+  await page.evaluate(() => {
+    const nodes = ['a', 'b', 'c', 'outside'].map((id, index) => ({ id, type: 'thought', selected: index < 3,
+      position: { x: index === 3 ? 1300 : 100, y: index === 3 ? 500 : 130 + index * 420 }, width: 440 + index * 20, height: 260 + index * 20,
+      data: { question: `研究节点 ${id}`, displayName: `研究节点 ${id}`, response: 'A stable answer for selection tests.', responses: ['A stable answer for selection tests.'], responseIndex: 0,
+        isCollapsed: false, isEditing: false, isEditingResponse: false, isLoading: false, isRoot: index === 0, isBranch: false,
+        highlights: [], attachments: [], excludedAttachmentIds: [], includedAttachmentIds: [], tokenCount: 10, roleMode: 'inherit' } }));
+    const edges = [{ id: 'ab', source: 'a', target: 'b', data: { label: 'first', route: 'curve' } }, { id: 'bc', source: 'b', target: 'c', data: { label: 'second', isCrossLink: true, route: 'orthogonal' } }, { id: 'co', source: 'c', target: 'outside', data: {} }].map(edge => ({ ...edge, type: 'smoothstep', sourceHandle: 'continue', targetHandle: 'top' }));
+    window.__canvasEditing.getState().setSelectionTarget('nodes');
+    window.__canvasEditing.getState().setEdgeId(null);
+    window.__store.setState({ nodes, edges, selectedNodeIds: ['a', 'b', 'c'], selectedNodeId: null, history: [{ nodes, edges }], historyIndex: 0 });
+    window.__ui.setState({ panelOpen: false, tutorialOpen: false, releaseNotesOpen: false, autoRefreshPaused: true, drafts: {} });
+  });
+  await page.waitForTimeout(600);
+  await page.evaluate(zoom => window.__rf.setViewport({ x: 80, y: 50, zoom }, { duration: 0 }), zoom);
+  await page.locator('[data-selection-resize="width"]').waitFor();
+  await page.waitForTimeout(250);
+};
+const drag = async (axis, dx, dy, cancel = false) => {
+  await page.locator(`[data-selection-resize="${axis}"]`).hover();
+  const box = await page.locator(`[data-selection-resize="${axis}"]`).boundingBox();
+  assert.ok(box);
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2 + dx, box.y + box.height / 2 + dy, { steps: 12 });
+  if (cancel) await page.keyboard.press('Escape');
+  await page.mouse.up();
+  await page.waitForTimeout(150);
+};
+const near = (a, b) => assert.ok(Math.abs(a - b) < 1, `${a} != ${b}`);
+const undo = () => page.evaluate(() => window.__store.getState().undo());
+try {
+  await page.goto(process.env.APP_URL ?? 'http://127.0.0.1:5196', { waitUntil: 'networkidle' });
+  await page.waitForFunction(() => window.__store?.persist.hasHydrated() && window.__rf && window.__ui);
+  await fixture();
+  const initial = await geometry(), originalEdges = await edges();
+  assert.equal(initial.length, 4);
+  await drag('width', 60, 0);
+  let sized = await geometry();
+  for (let i = 0; i < 3; i++) { near(sized[i].width, initial[i].width + 100); assert.equal(sized[i].height, initial[i].height); assert.deepEqual(sized[i].position, initial[i].position); }
+  assert.deepEqual(sized[3], initial[3]); assert.deepEqual(await edges(), originalEdges);
+  await undo(); assert.deepEqual(await geometry(), initial);
+  await page.evaluate(() => window.__store.getState().redo()); assert.deepEqual(await geometry(), sized);
+  check('horizontal drag resizes every selected node at canvas zoom, preserves positions and wiring, and undoes/redoes once');
+  await drag('height', 0, 60);
+  const tall = await geometry();
+  for (let i = 0; i < 3; i++) { near(tall[i].height, sized[i].height + 100); assert.equal(tall[i].width, sized[i].width); assert.deepEqual(tall[i].position, sized[i].position); }
+  await page.screenshot({ path: `${output}/nodes-light.png` });
+  await drag('both', 30, 30, true); assert.deepEqual(await geometry(), tall);
+  check('vertical resize is visible in overview; Escape cancels the complete drag without changing selection');
+  await page.locator('[data-selection-resize="width"]').focus();
+  await page.keyboard.press('Shift+ArrowRight');
+  sized = await geometry(); for (let i = 0; i < 3; i++) near(sized[i].width, tall[i].width + 10);
+  await undo(); assert.deepEqual(await geometry(), tall);
+  check('keyboard resize has a single undo step');
+
+  await page.locator('[data-selection-target="edges"]').click();
+  assert.deepEqual(await selectedEdges(), ['ab', 'bc']);
+  assert.deepEqual(await page.evaluate(() => window.__store.getState().selectedNodeIds), []);
+  await page.locator('[data-batch-edge-inspector]').waitFor();
+  await page.locator('[data-batch-edge-route]').selectOption('curve');
+  await page.locator('[data-batch-edge-label]').fill('共同标注');
+  assert.deepEqual(await edges(), originalEdges);
+  await page.locator('[data-batch-edge-apply]').click();
+  const appliedEdges = await edges();
+  assert.ok(appliedEdges.slice(0, 2).every(edge => edge.data.route === 'curve' && edge.data.label === '共同标注'));
+  assert.equal(appliedEdges[1].data.isCrossLink, true); assert.deepEqual(appliedEdges[2], originalEdges[2]);
+  await undo(); assert.deepEqual(await edges(), originalEdges);
+  await page.evaluate(() => window.__store.getState().redo()); assert.deepEqual(await edges(), appliedEdges);
+  check('selection switches to internal lines; batch fields apply atomically and preserve untouched semantics and lines');
+  await page.evaluate(() => window.__store.setState(state => ({ edges: state.edges.map(edge => ({ ...edge, selected: ['ab', 'bc'].includes(edge.id) })) })));
+
+  await page.locator('[data-batch-edge-label]').fill('');
+  await page.locator('[data-batch-edge-inspector]').getByRole('button', { name: '关闭', exact: true }).click();
+  await page.evaluate(() => window.__store.setState(state => ({ edges: state.edges.map(edge => ({ ...edge, selected: ['ab', 'bc'].includes(edge.id) })) })));
+  assert.equal(await page.locator('[data-batch-edge-label]').inputValue(), '');
+  assert.deepEqual(await edges(), appliedEdges);
+  await page.locator('[data-batch-edge-apply]').click();
+  assert.ok((await edges()).slice(0, 2).every(edge => !edge.data.label));
+  await page.locator('[data-batch-edge-label]').fill('discard');
+  await page.keyboard.press('Escape');
+  assert.equal(await page.locator('[data-batch-edge-label]').inputValue(), '');
+  assert.deepEqual(await selectedEdges(), ['ab', 'bc']);
+  check('empty label drafts survive close/reopen, apply clears labels, Escape cancels only the draft');
+  await page.evaluate(async () => (await import('/src/lib/appearance.ts')).useAppearance.getState().setLighting('dark'));
+  await page.screenshot({ path: `${output}/edges-dark.png` });
+
+  await fixture(0.4);
+  await page.locator('[data-selection-target="edges"]').click();
+  await page.mouse.click(1050, 700);
+  const point = await page.locator('.react-flow__edge[data-id="ab"] .react-flow__edge-path').evaluate(path => {
+    const point = path.getPointAtLength(path.getTotalLength() / 2).matrixTransform(path.getScreenCTM());
+    return { x: point.x, y: point.y };
+  });
+  await page.mouse.move(point.x - 24, point.y - 24); await page.mouse.down();
+  await page.mouse.move(point.x + 24, point.y + 24, { steps: 10 }); await page.mouse.up();
+  await page.waitForTimeout(150);
+  assert.deepEqual(await selectedEdges(), ['ab']);
+  assert.deepEqual(await page.evaluate(() => window.__store.getState().selectedNodeIds), []);
+  check('a marquee across the visible middle of a curve selects only the line, without its endpoints');
+  const other = await page.locator('.react-flow__edge[data-id="bc"] .react-flow__edge-path').evaluate(path => {
+    const p = path.getPointAtLength(path.getTotalLength() / 2).matrixTransform(path.getScreenCTM()); return { x: p.x, y: p.y };
+  });
+  await page.keyboard.down('Control'); await page.mouse.click(other.x, other.y); await page.keyboard.up('Control');
+  assert.deepEqual(await selectedEdges(), ['ab', 'bc']);
+  await page.keyboard.down('Control'); await page.mouse.click(other.x, other.y); await page.keyboard.up('Control');
+  assert.deepEqual(await selectedEdges(), ['ab']);
+  check('Ctrl-click adds and removes lines without replacing the whole selection');
+  await page.mouse.click(1050, 700); await page.keyboard.press('Control+a');
+  assert.deepEqual(await selectedEdges(), ['ab', 'bc', 'co']);
+  check('select all follows the line selection mode');
+
+  const invalid = await page.evaluate(async () => {
+    const { applyBatchEdgeSettings } = await import('/src/lib/edge-edit.ts');
+    const state = window.__store.getState();
+    const edges = [{ id: 'one', source: 'a', target: 'b', data: { isCrossLink: true } }, { id: 'two', source: 'b', target: 'a', data: { isCrossLink: true } }];
+    const before = JSON.stringify(edges);
+    const result = applyBatchEdgeSettings(state.nodes, edges, ['one', 'two'], { relation: 'continue' });
+    return { result, unchanged: JSON.stringify(edges) === before };
+  });
+  assert.deepEqual(invalid, { result: { ok: false, error: 'cycle' }, unchanged: true });
+  check('a cycle formed by simultaneous conversions rejects the complete batch');
+
+  const clampCheck = await page.evaluate(async () => {
+    const { resizeSelectionBy } = await import('/src/lib/node-geometry.ts');
+    const nodes = window.__store.getState().nodes.map((node, index) => ({ ...node, width: 600, height: 300,
+      data: { ...node.data, lockAspectRatio: index === 0, stepKind: index === 1 ? 'note' : undefined } }));
+    const live = nodes.map(node => ({ ...node, data: { ...node.data, response: 'live streamed answer' } }));
+    const next = resizeSelectionBy(live, nodes.slice(0, 2), 600, undefined);
+    const min = resizeSelectionBy(live, nodes.slice(0, 2), -2000, undefined);
+    return { sizes: next.map(node => [node.width, node.height]), minimum: min.slice(0, 2).map(node => [node.width, node.height]),
+      positions: next.every((node, i) => node.position === live[i].position), content: next.every(node => node.data.response === 'live streamed answer') };
+  });
+  assert.deepEqual(clampCheck, { sizes: [[1200, 600], [860, 300], [600, 300], [600, 300]], minimum: [[480, 240], [340, 300]], positions: true, content: true });
+  check('mixed ratios, minimum/maximum sizes, unselected nodes and live streamed content are preserved');
+
+  await page.locator('[data-selection-target="nodes"]').click();
+  assert.deepEqual(await page.evaluate(() => [...window.__store.getState().selectedNodeIds].sort()), ['a', 'b', 'c', 'outside']);
+  assert.deepEqual(await selectedEdges(), []);
+  await page.locator('[data-selection-target="edges"]').click();
+  check('switching back selects line endpoints for node editing and clears the opposite object type');
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.locator('[data-toolbar-more]').click();
+  await page.getByRole('button', { name: 'English', exact: true }).click();
+  await page.keyboard.press('Escape');
+  await page.getByRole('complementary', { name: 'Edit selected lines', exact: true }).waitFor();
+  for (const selector of ['[data-selection-target-control]', '[data-batch-edge-inspector]']) {
+    const box = await page.locator(selector).boundingBox(); assert.ok(box && box.x >= 0 && box.x + box.width <= 390 && box.y >= 0 && box.y + box.height <= 844);
+  }
+  await page.screenshot({ path: `${output}/mobile-english.png` });
+  check('English controls and the batch panel fit a narrow viewport');
+  const beforeDelete = await edges();
+  await page.locator('[data-batch-edge-inspector]').getByRole('button', { name: 'Delete', exact: true }).click();
+  await page.keyboard.press('Enter');
+  assert.deepEqual(await edges(), beforeDelete);
+  await page.locator('[data-batch-edge-inspector]').getByRole('button', { name: 'Delete', exact: true }).click();
+  await page.getByRole('alertdialog').getByRole('button', { name: 'Delete', exact: true }).click();
+  assert.deepEqual(await edges(), []);
+  assert.equal((await geometry()).length, 4);
+  await undo(); assert.deepEqual(await edges(), beforeDelete);
+  check('bulk deletion defaults to cancel, deletes only lines on confirmation, and undoes once');
+  assert.deepEqual(errors, []); assert.deepEqual(writes, []);
+  await writeFile(`${output}/results.json`, JSON.stringify({ checks, errors, writes }, null, 2));
+  console.log(`All ${checks.length} selection editing checks passed.`);
+} catch (error) {
+  await page.screenshot({ path: `${output}/failure.png` }).catch(() => {});
+  await writeFile(`${output}/results.json`, JSON.stringify({ checks, errors, writes, error: String(error) }, null, 2));
+  throw error;
+} finally { await browser.close(); }

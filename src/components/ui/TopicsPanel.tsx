@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Loader2, Pencil, Plus, Sparkles, Square, Tags, Trash2 } from 'lucide-react';
 import { whyBridge, hasWhy } from '../../lib/why-bridge';
 import { judgeCall } from '../../lib/judge';
 import { proposeTopics, startLabeling, LABEL_CHUNK } from '../../lib/topics';
 import { useUiStore } from '../../lib/ui-store';
+import { useInlineEditDismiss } from '../../lib/use-inline-edit-dismiss';
 import { HitCards } from './RecallResults';
 import { useT, fmt } from '../../i18n';
 
@@ -15,13 +16,30 @@ import { useT, fmt } from '../../i18n';
 
 type Draft = { id?: string; name: string; description: string };
 const msg = (e: unknown) => (e instanceof Error ? e.message : String(e));
+const DRAFT_KEY = 'memory-topics-edit';
+const cachedDraft = (): Draft[] | null => {
+  const raw = useUiStore.getState().drafts[DRAFT_KEY];
+  if (raw === undefined) return null;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return Array.isArray(parsed) && parsed.every((item) => item && typeof item === 'object' && typeof item.name === 'string' && typeof item.description === 'string' && (item.id === undefined || typeof item.id === 'string')) ? parsed : null;
+  } catch { return null; }
+};
 
 export default function TopicsPanel({ onOpened, onChanged }: { onOpened?: () => void; onChanged?: () => void }) {
   const t = useT();
   const judgeCfg = useUiStore((s) => s.judge);
   const canLabel = !!judgeCall(judgeCfg);
   const [info, setInfo] = useState<WhyTopics | null>(null);
-  const [draft, setDraft] = useState<Draft[] | null>(null);
+  const [draft, setDraftState] = useState<Draft[] | null>(null);
+  const [saving, setSaving] = useState(false);
+  const editorRef = useRef<HTMLDivElement>(null);
+  const setDraft = (next: Draft[]) => {
+    setDraftState(next);
+    useUiStore.getState().setDraft(DRAFT_KEY, JSON.stringify(next), true);
+  };
+  const cancelEdit = () => { useUiStore.getState().setDraft(DRAFT_KEY, ''); setDraftState(null); };
+  const { onBlur } = useInlineEditDismiss({ active: draft !== null, ref: editorRef, onOutside: () => setDraftState(null), onCancel: cancelEdit });
   const [proposing, setProposing] = useState(false);
   const [proposed, setProposed] = useState<Draft[] | null>(null);
   const [browse, setBrowse] = useState<{ id: string; hits: WhyFindHit[]; total: number } | { id: string; loading: true } | null>(null);
@@ -40,10 +58,19 @@ export default function TopicsPanel({ onOpened, onChanged }: { onOpened?: () => 
   if (!hasWhy()) return null;
 
   const topics = info?.topics ?? [];
-  const save = async (list: Draft[]) => {
+  const save = async (list: Draft[], fromEditor = false) => {
+    if (saving) return;
     const b = whyBridge()!;
     setError(null);
-    try { await b.setTopics(list.filter((d) => d.name.trim())); setDraft(null); await refresh(); onChanged?.(); } catch (e) { setError(msg(e)); }
+    setSaving(true);
+    try {
+      await b.setTopics(list.filter((d) => d.name.trim()));
+      if (fromEditor && useUiStore.getState().drafts[DRAFT_KEY] === JSON.stringify(list)) {
+        useUiStore.getState().setDraft(DRAFT_KEY, '');
+        setDraftState(null);
+      }
+      await refresh(); onChanged?.();
+    } catch (e) { setError(msg(e)); } finally { setSaving(false); }
   };
   const propose = async () => {
     setProposing(true); setError(null);
@@ -74,10 +101,10 @@ export default function TopicsPanel({ onOpened, onChanged }: { onOpened?: () => 
         <span className="flex-1" />
         {!draft && (
           <>
-            <button onClick={() => void propose()} disabled={proposing} className="text-xs px-2.5 py-1 rounded-lg text-accent hover:bg-accent/10 disabled:opacity-50 flex items-center gap-1" data-topics-propose>
+            <button onClick={() => void propose()} disabled={proposing} className="text-xs px-2.5 py-1 rounded-control text-accent hover:bg-accent/10 disabled:opacity-50 flex items-center gap-1" data-topics-propose>
               {proposing ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} strokeWidth={1.75} />} {proposing ? t('topics.proposing') : t('topics.propose')}
             </button>
-            <button onClick={() => setDraft(topics.length ? topics.map((x) => ({ id: x.id, name: x.name, description: x.description })) : [{ name: '', description: '' }])} className="text-xs px-2.5 py-1 rounded-lg text-ink-muted hover:bg-wash flex items-center gap-1" data-topics-edit>
+            <button onClick={() => setDraft(cachedDraft() ?? (topics.length ? topics.map((x) => ({ id: x.id, name: x.name, description: x.description })) : [{ name: '', description: '' }]))} className="text-xs px-2.5 py-1 rounded-control text-ink-muted hover:bg-wash flex items-center gap-1" data-topics-edit>
               <Pencil size={12} strokeWidth={1.75} /> {t('topics.edit')}
             </button>
           </>
@@ -86,19 +113,19 @@ export default function TopicsPanel({ onOpened, onChanged }: { onOpened?: () => 
       <p className="text-2xs text-ink-faint mt-0.5 mb-3 leading-relaxed max-w-[720px]">{t('topics.hint')}</p>
 
       {draft ? (
-        <div className="space-y-1.5 max-w-[720px]" data-topics-editor>
+        <div ref={editorRef} onBlur={onBlur} className="space-y-1.5 max-w-[720px]" data-topics-editor>
           {draft.map((d, i) => (
             <div key={i} className="flex items-center gap-2">
-              <input value={d.name} onChange={(e) => setDraft(draft.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)))} placeholder={t('topics.name')} className="w-[180px] bg-wash border border-line rounded-md px-2 py-1 text-xs text-ink" data-topic-name />
-              <input value={d.description} onChange={(e) => setDraft(draft.map((x, j) => (j === i ? { ...x, description: e.target.value } : x)))} placeholder={t('topics.description')} className="flex-1 bg-wash border border-line rounded-md px-2 py-1 text-xs text-ink" data-topic-description />
+              <input autoFocus={i === 0} value={d.name} onChange={(e) => setDraft(draft.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)))} placeholder={t('topics.name')} className="w-[180px] bg-wash border border-line rounded-control px-2 py-1 text-xs text-ink" data-topic-name />
+              <input value={d.description} onChange={(e) => setDraft(draft.map((x, j) => (j === i ? { ...x, description: e.target.value } : x)))} placeholder={t('topics.description')} className="flex-1 bg-wash border border-line rounded-control px-2 py-1 text-xs text-ink" data-topic-description />
               <button onClick={() => setDraft(draft.filter((_, j) => j !== i))} className="text-ink-faint hover:text-red-500 p-1" title={t('topics.remove')}><Trash2 size={12} strokeWidth={1.75} /></button>
             </div>
           ))}
           <div className="flex items-center gap-2 pt-1">
-            <button onClick={() => setDraft([...draft, { name: '', description: '' }])} className="text-xs px-2 py-1 rounded-md text-ink-muted hover:bg-wash flex items-center gap-1" data-topics-add><Plus size={12} /> {t('topics.add')}</button>
+            <button onClick={() => setDraft([...draft, { name: '', description: '' }])} className="text-xs px-2 py-1 rounded-control text-ink-muted hover:bg-wash flex items-center gap-1" data-topics-add><Plus size={12} /> {t('topics.add')}</button>
             <span className="flex-1" />
-            <button onClick={() => setDraft(null)} className="text-xs px-3 py-1 rounded-lg text-ink-muted hover:bg-wash">{t('topics.cancel')}</button>
-            <button onClick={() => void save(draft)} className="text-xs px-3 py-1 rounded-lg bg-accent text-white hover:bg-accent/90" data-topics-save>{t('topics.save')}</button>
+            <button onClick={cancelEdit} className="text-xs px-3 py-1 rounded-control text-ink-muted hover:bg-wash">{t('topics.cancel')}</button>
+            <button onClick={() => void save(draft, true)} disabled={saving} className="text-xs px-3 py-1 rounded-control bg-action text-white hover:bg-action-strong disabled:opacity-40" data-topics-save>{t('topics.save')}</button>
           </div>
         </div>
       ) : topics.length === 0 ? (
@@ -106,7 +133,7 @@ export default function TopicsPanel({ onOpened, onChanged }: { onOpened?: () => 
       ) : (
         <div className="flex flex-wrap gap-1.5" data-topics-list>
           {topics.map((x) => (
-            <button key={x.id} onClick={() => void open(x.id)} title={x.description} className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${browse?.id === x.id ? 'bg-accent/10 border-accent/40 text-accent' : 'border-line text-ink hover:bg-wash'}`} data-topic-chip={x.id}>
+            <button key={x.id} onClick={() => void open(x.id)} title={x.description} className={`text-xs px-2.5 py-1 rounded-tag border transition-colors ${browse?.id === x.id ? 'bg-accent/10 border-accent/40 text-accent' : 'border-line text-ink hover:bg-wash'}`} data-topic-chip={x.id}>
               {x.name} <span className="text-ink-faint font-mono">{fmt(t('topics.count'), { n: x.count })}</span>
             </button>
           ))}
@@ -118,7 +145,7 @@ export default function TopicsPanel({ onOpened, onChanged }: { onOpened?: () => 
           <div className="text-2xs text-ink-muted mb-1">{proposed.length ? t('topics.proposed') : t('topics.proposedNone')}</div>
           <div className="flex flex-wrap gap-1.5 items-center">
             {proposed.map((p) => (
-              <button key={p.name} onClick={() => void addProposed([p])} title={p.description} className="text-xs px-2.5 py-1 rounded-full border border-dashed border-accent/50 text-accent hover:bg-accent/10" data-topic-proposed>+ {p.name}</button>
+              <button key={p.name} onClick={() => void addProposed([p])} title={p.description} className="text-xs px-2.5 py-1 rounded-tag border border-dashed border-accent/50 text-accent hover:bg-accent/10" data-topic-proposed>+ {p.name}</button>
             ))}
             {proposed.length > 1 && <button onClick={() => void addProposed(proposed)} className="text-2xs text-accent hover:underline ml-1" data-topics-add-all>{t('topics.addAll')}</button>}
           </div>
@@ -131,12 +158,12 @@ export default function TopicsPanel({ onOpened, onChanged }: { onOpened?: () => 
           {st?.running ? (
             <>
               <span className="flex items-center gap-1 text-accent"><Loader2 size={11} className="animate-spin" /> {fmt(t('topics.running'), { a: st.done, b: st.total })}</span>
-              <button onClick={() => void stop()} className="text-xs px-2 py-0.5 rounded-md border border-line hover:bg-wash flex items-center gap-1" data-topics-stop><Square size={10} /> {t('topics.stop')}</button>
+              <button onClick={() => void stop()} className="text-xs px-2 py-0.5 rounded-control border border-line hover:bg-wash flex items-center gap-1" data-topics-stop><Square size={10} /> {t('topics.stop')}</button>
             </>
           ) : allLabeled ? (
             <span>{t('topics.labelDone')}</span>
           ) : (
-            <button onClick={() => void label()} disabled={!canLabel} title={canLabel ? undefined : t('topics.needJudge')} className="text-xs px-2.5 py-1 rounded-lg bg-accent/10 text-accent hover:bg-accent/20 disabled:opacity-50" data-topics-label>
+            <button onClick={() => void label()} disabled={!canLabel} title={canLabel ? undefined : t('topics.needJudge')} className="text-xs px-2.5 py-1 rounded-control bg-accent/10 text-accent hover:bg-accent/20 disabled:opacity-50" data-topics-label>
               {info.labeled ? fmt(t('topics.labelMore'), { n: LABEL_CHUNK }) : t('topics.label')}
             </button>
           )}

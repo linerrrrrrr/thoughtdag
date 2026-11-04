@@ -280,9 +280,9 @@ export function contextChainMarkdown(nodeId: string): string {
 // Entry ②: a multi-selection, in reading order (top-to-bottom, then left-to-right)
 export function selectionMarkdown(selectedIds: string[]): string {
   const { nodes } = useStore.getState();
-  const ordered = selectedIds
-    .map((id) => nodes.find((n) => n.id === id))
-    .filter((n): n is ThoughtNode => !!n)
+  const selected = new Set(selectedIds);
+  const ordered = nodes
+    .filter(node => selected.has(node.id) && node.data.stepKind !== 'frame')
     .sort((a, b) => a.position.y - b.position.y || a.position.x - b.position.x);
   return nodesToMarkdown(ordered, t('export.selectedNodes'));
 }

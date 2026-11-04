@@ -56,7 +56,7 @@ export default function RoleLine({
           <span className="italic shrink-0">{t('role.noRoleSet')}</span>
         )}
         {!own && effective && (
-          <span className="text-2xs bg-line/50 px-1.5 py-px rounded-full shrink-0">{t('role.inherited')}</span>
+          <span className="text-2xs bg-line/50 px-1.5 py-px rounded-tag shrink-0">{t('role.inherited')}</span>
         )}
         <span className="shrink-0">·</span>
         <span className="shrink-0 text-ink-muted">{data.tokenCount} tok</span>

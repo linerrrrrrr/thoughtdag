@@ -54,7 +54,7 @@ export function useMentions(selfNodeId?: string) {
     setTimeout(() => el?.focus(), 0);
   }, []);
 
-  return { mentions, query, track, close, remove, clear, pick, bindAnchor, setKeyHandler, invokeKey, selfNodeId };
+  return { mentions, query, track, close, remove, clear, pick, anchorRef, bindAnchor, setKeyHandler, invokeKey, selfNodeId };
 }
 
 export type MentionState = ReturnType<typeof useMentions>;

@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 // Global fast tooltips: the browser's native title delay (~1s) is fixed and
@@ -20,15 +20,24 @@ interface Tip {
 
 export default function GlobalTooltip() {
   const [tip, setTip] = useState<Tip | null>(null);
+  const tipId = useId();
 
   useEffect(() => {
     let timer = 0;
     let current: HTMLElement | null = null;
+    let addedLabel: { element: HTMLElement; value: string } | null = null;
 
     const restore = () => {
       if (current?.dataset.tipStash !== undefined) {
-        current.setAttribute('title', current.dataset.tipStash);
+        if (!current.hasAttribute('title')) current.setAttribute('title', current.dataset.tipStash);
         delete current.dataset.tipStash;
+      }
+      if (addedLabel && addedLabel.element.getAttribute('aria-label') === addedLabel.value) addedLabel.element.removeAttribute('aria-label');
+      addedLabel = null;
+      if (current) {
+        const descriptions = (current.getAttribute('aria-describedby') ?? '').split(/\s+/).filter((id) => id && id !== tipId);
+        if (descriptions.length) current.setAttribute('aria-describedby', descriptions.join(' '));
+        else current.removeAttribute('aria-describedby');
       }
     };
     const clear = () => {
@@ -38,18 +47,32 @@ export default function GlobalTooltip() {
       setTip(null);
     };
 
-    const over = (e: MouseEvent) => {
-      const el = (e.target as Element | null)?.closest?.('[title], [data-tip-stash]') as HTMLElement | null;
+    const show = (target: EventTarget | null, keyboard = false) => {
+      const el = (target as Element | null)?.closest?.('[title], [data-tip-stash]') as HTMLElement | null;
       if (!el || el === current) return;
       clear();
       const text = el.getAttribute('title') ?? el.dataset.tipStash ?? '';
       if (!text.trim()) return;
       current = el;
-      el.dataset.tipStash = text;
-      el.removeAttribute('title');
+      // Keep the native title available as an accessible-name fallback for
+      // keyboard focus; only pointer hover needs native-tooltip suppression.
+      if (!keyboard) {
+        // Icon controls may use title as their only accessible name. Preserve
+        // that name while suppressing the browser tooltip, without replacing
+        // any explicit label or text supplied by the component.
+        if (el.matches('button, a[href], [role="button"], [role="menuitem"]')
+          && !el.hasAttribute('aria-label') && !el.hasAttribute('aria-labelledby')
+          && !el.innerText.trim() && !el.querySelector('img[alt]:not([alt=""]), svg title')) {
+          el.setAttribute('aria-label', text);
+          addedLabel = { element: el, value: text };
+        }
+        el.dataset.tipStash = text; el.removeAttribute('title');
+      }
       timer = window.setTimeout(() => {
         if (current !== el || !el.isConnected) return;
-        el.removeAttribute('title'); // a React re-render may have put it back
+        if (!keyboard) el.removeAttribute('title'); // a React re-render may have put it back
+        const descriptions = (el.getAttribute('aria-describedby') ?? '').split(/\s+/).filter(Boolean);
+        el.setAttribute('aria-describedby', [...new Set([...descriptions, tipId])].join(' '));
         const rect = el.getBoundingClientRect();
         const above = rect.bottom > window.innerHeight - 96;
         setTip({
@@ -59,15 +82,23 @@ export default function GlobalTooltip() {
           bottom: rect.bottom,
           above,
         });
-      }, SHOW_DELAY_MS);
+      }, keyboard ? 0 : SHOW_DELAY_MS);
     };
+    const over = (e: MouseEvent) => show(e.target);
+    const focus = (e: FocusEvent) => show(e.target, true);
 
     const out = (e: MouseEvent) => {
       if (!current) return;
       const to = e.relatedTarget;
       if (to instanceof Node && current.contains(to)) return;
+      if (document.activeElement && current.contains(document.activeElement)) return;
       if (e.target instanceof Node && (current === e.target || current.contains(e.target))) clear();
     };
+    const blur = (e: FocusEvent) => {
+      if (current && !(e.relatedTarget instanceof Node && current.contains(e.relatedTarget))) clear();
+    };
+    // The tooltip never consumes Escape; the active editor/layer still owns it.
+    const key = (e: KeyboardEvent) => { if (e.key === 'Escape') clear(); };
 
     // capture phase: the title is back BEFORE any click handler or
     // re-render runs, so post-click attribute queries never miss
@@ -75,6 +106,9 @@ export default function GlobalTooltip() {
 
     document.addEventListener('mouseover', over);
     document.addEventListener('mouseout', out);
+    document.addEventListener('focusin', focus);
+    document.addEventListener('focusout', blur);
+    document.addEventListener('keydown', key, true);
     document.addEventListener('mousedown', down, true);
     document.addEventListener('scroll', down, true);
     window.addEventListener('blur', down);
@@ -82,20 +116,23 @@ export default function GlobalTooltip() {
       clear();
       document.removeEventListener('mouseover', over);
       document.removeEventListener('mouseout', out);
+      document.removeEventListener('focusin', focus);
+      document.removeEventListener('focusout', blur);
+      document.removeEventListener('keydown', key, true);
       document.removeEventListener('mousedown', down, true);
       document.removeEventListener('scroll', down, true);
       window.removeEventListener('blur', down);
     };
-  }, []);
+  }, [tipId]);
 
   if (!tip) return null;
-  return <TipBox tip={tip} />;
+  return <TipBox tip={tip} id={tipId} />;
 }
 
 // Measured clamping: centering on the anchor alone lets long tips bleed
 // off-screen for edge buttons (left palette, right rail). Render, measure,
 // shove the box fully back inside — before paint, so nothing flashes.
-function TipBox({ tip }: { tip: Tip }) {
+function TipBox({ tip, id }: { tip: Tip; id: string }) {
   const ref = useRef<HTMLDivElement>(null);
   // measure, then write the clamped position straight onto the element:
   // still before paint, and without a second render
@@ -108,6 +145,8 @@ function TipBox({ tip }: { tip: Tip }) {
   return createPortal(
     <div
       ref={ref}
+      id={id}
+      role="tooltip"
       className="tdag-tooltip"
       style={{
         left: tip.x,

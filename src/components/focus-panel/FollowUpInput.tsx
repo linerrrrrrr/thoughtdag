@@ -12,6 +12,7 @@ import { countTokens } from '../../utils';
 import { useT, fmt } from '../../i18n';
 import MentionSurface from '../ui/NodeMention';
 import { useMentions } from '../../lib/mentions';
+import { useDismissableLayer } from '../../lib/use-dismissable-layer';
 
 const ROLE_STYLES: Record<string, string> = {
   system: 'bg-accent/10 text-accent',
@@ -45,6 +46,9 @@ export default function FollowUpInput({
   const [continueInheritAttachments, setContinueInheritAttachments] = useState(true);
   const mention = useMentions(nodeId);
   const [previewOpen, setPreviewOpen] = useState(false);
+  const previewRef = useRef<HTMLDivElement>(null);
+  const previewButtonRef = useRef<HTMLButtonElement>(null);
+  useDismissableLayer({ open: previewOpen, refs: [previewRef, previewButtonRef], onDismiss: () => setPreviewOpen(false), dismissOnFocusOutside: true });
   const [pendingAttachments, setPendingAttachments] = useState<Attachment[]>([]);
   const continueRef = useRef<HTMLTextAreaElement>(null);
   const autoGrow = (el: HTMLTextAreaElement) => {
@@ -88,16 +92,13 @@ export default function FollowUpInput({
     };
   }, [nodeId, nodes, edges, staleIds]);
 
-  // Auto-focus continue input when switching nodes or staging selected text
+  // Reading a node keeps focus at its entry point. Only staging a text branch
+  // starts composition; restoring a draft still restores the field's height.
   useEffect(() => {
-    const t = setTimeout(() => {
-      if (continueRef.current) {
-        continueRef.current.focus();
-        autoGrow(continueRef.current); // restored drafts need their height back
-      }
-    }, 100);
-    return () => clearTimeout(t);
-     
+    const field = continueRef.current;
+    if (!field) return;
+    autoGrow(field);
+    if (branchContext) field.focus({ preventScroll: true });
   }, [nodeId, branchContext]);
 
   const submit = () => {
@@ -117,10 +118,10 @@ export default function FollowUpInput({
   };
 
   return (
-    <div className="relative shrink-0 px-3 pb-3 pt-1">
+    <div className="relative shrink-0 px-surface-inset pb-surface-inset pt-related">
       {/* Context preview popover */}
       {previewOpen && (
-        <div className="absolute bottom-full left-3 right-3 mb-1.5 bg-card border border-line rounded-xl shadow-lg max-h-72 overflow-y-auto py-1.5 animate-fade-in z-30">
+        <div ref={previewRef} className="absolute bottom-full left-surface-inset right-surface-inset mb-related bg-card border border-line rounded-overlay shadow-lg max-h-72 overflow-y-auto py-1.5 animate-fade-in z-30">
           <div className="px-3 py-1.5 border-b border-line">
             <span className="text-2xs text-ink-faint font-medium">{t('followup.contextTitle')}</span>
             <span className={`text-2xs ml-2 ${preview.backgroundHeavy ? 'text-amber-600' : 'text-ink-faint'}`}>
@@ -135,7 +136,7 @@ export default function FollowUpInput({
           ) : (
             preview.items.map((m, i) => (
               <div key={i} className="flex items-start gap-2 px-3 py-1.5 text-xs border-b border-line/50 last:border-0">
-                <span className={`shrink-0 px-1.5 py-0.5 rounded font-mono text-2xs ${ROLE_STYLES[m.role] ?? 'bg-wash text-ink-muted'}`}>
+                <span className={`shrink-0 px-1.5 py-0.5 rounded-tag font-mono text-2xs ${ROLE_STYLES[m.role] ?? 'bg-wash text-ink-muted'}`}>
                   {m.role}
                 </span>
                 <span className="flex-1 text-ink-muted leading-snug break-words">{m.head}…</span>
@@ -146,10 +147,10 @@ export default function FollowUpInput({
         </div>
       )}
 
-      <div className="panel-card px-3.5 pt-2 pb-2.5">
+      <div>
       {/* Context summary line */}
       <button
-        onClick={() => setPreviewOpen((v) => !v)}
+        ref={previewButtonRef} aria-expanded={previewOpen} onClick={() => setPreviewOpen((v) => !v)}
         className="flex items-center gap-1 text-2xs text-ink-faint hover:text-ink-muted transition-colors mb-1.5"
         title={t('followup.previewTitle')}
       >
@@ -159,7 +160,7 @@ export default function FollowUpInput({
 
       {/* Selected text staged as branch context — submit explores from it */}
       {branchContext && (
-        <div className="text-xs pl-3 py-1.5 pr-2 mb-1.5 border-l-2 border-warm bg-warm/10 rounded-r text-ink-muted flex items-start gap-1.5">
+        <div className="text-xs pl-3 py-1.5 pr-2 mb-1.5 border border-warm/30 bg-warm/10 rounded-content text-ink-muted flex items-start gap-1.5">
           <span className="text-warm font-medium shrink-0"><GitBranch size={13} strokeWidth={1.75} className="inline" /> {t('node.exploringFrom')}</span>
           <span className="flex-1 min-w-0 truncate">&ldquo;{branchContext.slice(0, 90)}{branchContext.length > 90 ? '…' : ''}&rdquo;</span>
           <button onClick={onClearBranchContext} className="text-ink-faint hover:text-red-500 transition-colors shrink-0">
@@ -172,7 +173,7 @@ export default function FollowUpInput({
       {pendingAttachments.length > 0 && (
         <div className="flex flex-wrap gap-1.5 mb-1.5">
           {pendingAttachments.map((att) => (
-            <span key={att.id} className="inline-flex items-center gap-1 text-2xs bg-wash text-ink-muted px-2 py-1 rounded-full">
+            <span key={att.id} className="inline-flex items-center gap-1 text-2xs bg-wash text-ink-muted px-2 py-1 rounded-tag">
               <Paperclip size={11} strokeWidth={1.75} />
               <span className="max-w-[140px] truncate">{att.name}</span>
               {att.isExtracting && <span className="text-ink-faint">…</span>}
@@ -186,7 +187,7 @@ export default function FollowUpInput({
 
       <MentionSurface m={mention} text={continueInput} setText={setContinueInput} />
       <div
-        className="flex items-end gap-2 bg-wash rounded-xl px-4 py-2.5 transition-shadow focus-within:ring-1 focus-within:ring-accent/40"
+        className="flex items-end gap-2 bg-wash rounded-content px-4 py-2.5 transition-shadow focus-within:ring-1 focus-within:ring-accent/40"
         onDrop={(e) => { e.preventDefault(); e.stopPropagation(); void addFiles(e.dataTransfer.files); }}
         onDragOver={(e) => e.preventDefault()}
       >
@@ -220,21 +221,21 @@ export default function FollowUpInput({
         <button
           onClick={() => fileRef.current?.click()}
           title={t('followup.attach')}
-          className="text-ink-faint hover:text-accent transition-colors shrink-0 rounded-full w-8 h-8 flex items-center justify-center hover:bg-line"
+          className="text-ink-faint hover:text-accent transition-colors shrink-0 rounded-control w-8 h-8 flex items-center justify-center hover:bg-line"
         >
           <Paperclip size={16} strokeWidth={1.75} />
         </button>
         <button
           onClick={submit}
           disabled={!continueInput.trim()}
-          className="text-ink-faint hover:text-accent disabled:opacity-30 disabled:hover:text-ink-faint transition-colors shrink-0 rounded-full w-7 h-7 flex items-center justify-center hover:bg-line"
+          className="text-ink-faint hover:text-accent disabled:opacity-30 disabled:hover:text-ink-faint transition-colors shrink-0 rounded-control w-7 h-7 flex items-center justify-center hover:bg-line"
         >
           <Send size={18} strokeWidth={1.75} />
         </button>
       </div>
       <div className="flex gap-4 mt-1.5 px-1">
         <label className="flex items-center gap-2 text-xs text-ink-muted cursor-pointer select-none">
-          <input type="checkbox" checked={continueInheritAttachments} onChange={(e) => setContinueInheritAttachments(e.target.checked)} className="rounded border-line text-accent focus:ring-accent w-3 h-3" />
+          <input type="checkbox" checked={continueInheritAttachments} onChange={(e) => setContinueInheritAttachments(e.target.checked)} className="rounded-control border-line text-accent focus:ring-accent w-3 h-3" />
           {t('followup.inheritAttachments')}
         </label>
       </div>

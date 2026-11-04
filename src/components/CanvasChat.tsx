@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
+import { useDismissableLayer } from '../lib/use-dismissable-layer';
+import { useSessionDraft } from '../lib/use-session-draft';
 import { Loader2, MessageCircleQuestion, Send, X } from 'lucide-react';
 import { useStore } from '../store';
 import { useUiStore, toast } from '../lib/ui-store';
@@ -32,7 +34,9 @@ export default function CanvasChat({ open, onClose, onLocate }: { open: boolean;
   const selectedNodeId = useStore((s) => s.selectedNodeId);
   const selectedModel = useUiStore((s) => s.selectedModel);
   const [turns, setTurns] = useState<CanvasChatTurn[]>(() => loadTurns(projectId));
-  const [draft, setDraft] = useState('');
+  const [draft, setDraft] = useSessionDraft(`canvas-chat:${projectId}`);
+  const layerRef = useRef<HTMLDivElement>(null);
+  useDismissableLayer({ open, refs: [layerRef], onDismiss: onClose, dismissOnOutside: false });
   const [busy, setBusy] = useState(false);
   const [focusCleared, setFocusCleared] = useState(false);
   const list = useRef<HTMLDivElement>(null);
@@ -124,12 +128,12 @@ export default function CanvasChat({ open, onClose, onLocate }: { open: boolean;
   const suggest = (q: string) => { setDraft(q); window.setTimeout(() => { const ta = document.querySelector<HTMLTextAreaElement>('[data-chat-input]'); ta?.focus(); ta?.setSelectionRange(q.length, q.length); }, 0); };
   const SUGGESTIONS: { k: 'Overview' | 'Locate' | 'Grounds' | 'Compare' | 'Progress' }[] = [{ k: 'Overview' }, { k: 'Locate' }, { k: 'Grounds' }, { k: 'Compare' }, { k: 'Progress' }];
   return (
-    <div className="fixed bottom-4 right-4 z-[85] w-[440px] max-w-[calc(100vw-32px)] max-h-[72vh] flex flex-col rounded-2xl border border-line bg-card shadow-2xl" data-canvas-chat>
+    <div ref={layerRef} className="fixed bottom-4 right-4 z-[85] w-[440px] max-w-[calc(100vw-32px)] max-h-[72vh] flex flex-col rounded-panel border border-line bg-card shadow-lg" data-canvas-chat>
       <div className="flex items-center gap-2 px-4 py-2.5 border-b border-line shrink-0">
         <MessageCircleQuestion size={15} strokeWidth={1.75} className="text-accent" />
         <span className="text-sm font-semibold text-ink flex-1">{t('chat.title')}</span>
         <button type="button" onClick={() => { setTurns([]); saveTurns(projectId, []); }} disabled={!turns.length || busy} className="text-2xs text-ink-faint hover:text-ink disabled:opacity-40" data-chat-clear>{t('chat.clear')}</button>
-        <button type="button" onClick={onClose} className="text-ink-faint hover:text-ink w-7 h-7 rounded-full flex items-center justify-center hover:bg-wash" title={t('common.close')}><X size={15} strokeWidth={1.75} /></button>
+        <button type="button" onClick={onClose} className="text-ink-faint hover:text-ink w-7 h-7 rounded-control flex items-center justify-center hover:bg-wash" title={t('common.close')}><X size={15} strokeWidth={1.75} /></button>
       </div>
       <div ref={list} className="flex-1 overflow-y-auto px-4 py-3 space-y-3 text-sm" data-chat-turns>
         {!turns.length && (
@@ -138,21 +142,21 @@ export default function CanvasChat({ open, onClose, onLocate }: { open: boolean;
             <div className="flex items-center gap-1 flex-wrap text-2xs">
               <span className="text-ink-faint mr-0.5">{t('chat.sug')}</span>
               {SUGGESTIONS.map(({ k }) => (
-                <button key={k} type="button" onClick={() => suggest(t(`chat.sug${k}Q`))} title={t(`chat.sug${k}Q`)} className="px-2 py-0.5 rounded-full bg-wash text-ink-muted hover:text-accent hover:bg-accent/10 transition-colors" data-chat-suggest={k.toLowerCase()}>{t(`chat.sug${k}`)}</button>
+                <button key={k} type="button" onClick={() => suggest(t(`chat.sug${k}Q`))} title={t(`chat.sug${k}Q`)} className="px-2 py-0.5 rounded-tag bg-wash text-ink-muted hover:text-accent hover:bg-accent/10 transition-colors" data-chat-suggest={k.toLowerCase()}>{t(`chat.sug${k}`)}</button>
               ))}
             </div>
           </div>
         )}
         {turns.map((turn, i) => turn.role === 'user' ? (
           <div key={turn.id} className="flex flex-col items-end gap-1" data-chat-turn="user">
-            <div className="max-w-[88%] bg-accent/10 text-ink rounded-2xl rounded-br-md px-3 py-2 whitespace-pre-wrap break-words">{turn.text}</div>
+            <div className="max-w-[88%] bg-accent/10 text-ink rounded-content px-3 py-2 whitespace-pre-wrap break-words">{turn.text}</div>
             {turn.focus && byId.has(turn.focus) && <span className="text-2xs text-ink-faint">{t('chat.focus')} {chip(turn.focus, byId.get(turn.focus)!, `${turn.id}-f`)}</span>}
           </div>
         ) : (
           <div key={turn.id} className="flex flex-col items-start gap-1" data-chat-turn="assistant">
             {turn.error
-              ? <div className="max-w-[92%] text-xs text-red-500 bg-red-50 rounded-2xl rounded-bl-md px-3 py-2 break-words">{turn.error}</div>
-              : <div className="max-w-[92%] bg-wash text-ink rounded-2xl rounded-bl-md px-3 py-2 markdown-body text-sm leading-relaxed break-words" onClick={onAnswerClick} onMouseOver={onAnswerOver} onMouseOut={onAnswerOut} data-chat-answer>
+              ? <div className="max-w-[92%] text-xs text-red-500 bg-red-50 rounded-content px-3 py-2 break-words">{turn.error}</div>
+              : <div className="max-w-[92%] bg-wash text-ink rounded-content px-3 py-2 markdown-body text-sm leading-relaxed break-words" onClick={onAnswerClick} onMouseOver={onAnswerOver} onMouseOut={onAnswerOut} data-chat-answer>
                   <Markdown>{answerForCanvas(turn.text, mapOf(turn), nodes, lang, 'alias')}</Markdown>
                 </div>}
             {!turn.error && (
@@ -171,27 +175,27 @@ export default function CanvasChat({ open, onClose, onLocate }: { open: boolean;
         {turns.length > 0 && (
           <div className="flex items-center gap-1 flex-wrap text-2xs" data-chat-suggestions>
             {SUGGESTIONS.map(({ k }) => (
-              <button key={k} type="button" onClick={() => suggest(t(`chat.sug${k}Q`))} title={t(`chat.sug${k}Q`)} className="px-2 py-0.5 rounded-full bg-wash text-ink-muted hover:text-accent hover:bg-accent/10 transition-colors" data-chat-suggest={k.toLowerCase()}>{t(`chat.sug${k}`)}</button>
+              <button key={k} type="button" onClick={() => suggest(t(`chat.sug${k}Q`))} title={t(`chat.sug${k}Q`)} className="px-2 py-0.5 rounded-tag bg-wash text-ink-muted hover:text-accent hover:bg-accent/10 transition-colors" data-chat-suggest={k.toLowerCase()}>{t(`chat.sug${k}`)}</button>
             ))}
           </div>
         )}
         <div className="flex items-center gap-1.5 text-2xs text-ink-faint min-w-0" data-chat-focus>
           {focusNode
-            ? <><span className="shrink-0">{t('chat.focus')}</span><button type="button" onClick={() => onLocate(focusNode.id)} className="text-accent truncate min-w-0 hover:underline">{nodeLabel(focusNode.data, lang).split('：')[0]}</button><button type="button" onClick={() => setFocusCleared(true)} className="shrink-0 w-5 h-5 rounded-full hover:bg-wash flex items-center justify-center" title={t('chat.focusAll')}><X size={11} /></button></>
+            ? <><span className="shrink-0">{t('chat.focus')}</span><button type="button" onClick={() => onLocate(focusNode.id)} className="text-accent truncate min-w-0 hover:underline">{nodeLabel(focusNode.data, lang).split('：')[0]}</button><button type="button" onClick={() => setFocusCleared(true)} className="shrink-0 w-5 h-5 rounded-control hover:bg-wash flex items-center justify-center" title={t('chat.focusAll')}><X size={11} /></button></>
             : <span className="truncate min-w-0"><span className="text-ink-muted">{t('chat.focusAll')}</span> · {t('chat.focusAllHint')}</span>}
         </div>
         <div className="flex items-end gap-1.5">
           <textarea
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey && !isImeComposing(e)) { e.preventDefault(); void send(); } if (e.key === 'Escape') onClose(); }}
+            onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey && !isImeComposing(e)) { e.preventDefault(); void send(); } }}
             placeholder={t('chat.placeholder')}
             rows={1}
-            className="flex-1 bg-wash text-sm text-ink rounded-lg px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-accent/40 resize-none placeholder-ink-faint max-h-[120px]"
+            className="flex-1 bg-wash text-sm text-ink rounded-control px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-accent/40 resize-none placeholder-ink-faint max-h-[120px]"
             onInput={(e) => { const ta = e.currentTarget; ta.style.height = 'auto'; ta.style.height = `${Math.min(120, ta.scrollHeight)}px`; }}
             data-chat-input
           />
-          <button type="button" onClick={() => void send()} disabled={!draft.trim() || busy} className="w-8 h-8 rounded-lg bg-accent text-white flex items-center justify-center disabled:opacity-30 shrink-0" title={t('chat.send')} data-chat-send><Send size={14} strokeWidth={1.75} /></button>
+          <button type="button" onClick={() => void send()} disabled={!draft.trim() || busy} className="w-8 h-8 rounded-control bg-action text-white flex items-center justify-center disabled:opacity-30 shrink-0" title={t('chat.send')} data-chat-send><Send size={14} strokeWidth={1.75} /></button>
         </div>
       </div>
     </div>

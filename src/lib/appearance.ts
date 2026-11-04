@@ -2,7 +2,7 @@ import { create } from 'zustand';
 
 // Appearance: two independent axes, four quadrants.
 //   lighting — light / dark / system  → swaps the whole token set (data-theme)
-//   paper    — plain / grid           → canvas texture + component dialect (data-paper)
+//   paper    — plain / grid           → canvas texture only (data-paper)
 // Tokens live in index.css; this module only flips the two root attributes
 // and remembers the choice. The share viewer follows the VIEWER's settings.
 

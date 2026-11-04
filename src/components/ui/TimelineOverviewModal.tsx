@@ -1,3 +1,4 @@
+import { useDismissableLayer } from '../../lib/use-dismissable-layer';
 import { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { History, ImageDown, Sparkles, X } from 'lucide-react';
@@ -81,6 +82,9 @@ export default function TimelineOverviewModal({ onLocate }: { onLocate: (nodeId:
       .catch(() => setGedFailed(true))
       .finally(() => setGedLoading(false));
   };
+  const layerRef = useRef<HTMLDivElement>(null);
+  useDismissableLayer({ open, refs: [layerRef], onDismiss: () => setOpen(false), modal: true });
+
   if (!open) return null;
 
   const close = () => setOpen(false);
@@ -89,8 +93,8 @@ export default function TimelineOverviewModal({ onLocate }: { onLocate: (nodeId:
     iso ? new Date(iso).toLocaleTimeString(dateLocale, { hour: '2-digit', minute: '2-digit' }) : '—';
 
   return createPortal((
-    <div className="fixed inset-0 z-[60] bg-ink/30 backdrop-blur-sm flex items-center justify-center p-6" onClick={close}>
-      <div className="bg-card rounded-2xl shadow-2xl border border-line w-[640px] h-[80vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+    <div className="fixed inset-0 z-[60] bg-ink/30 flex items-center justify-center p-6">
+      <div ref={layerRef} role="dialog" aria-modal="true" aria-label={t('tlov.title')} tabIndex={-1} className="bg-card rounded-panel shadow-lg border border-line w-[640px] h-[80vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center gap-2 px-5 py-3 border-b border-line shrink-0">
           <History size={15} strokeWidth={1.75} className="text-accent" />
           <span className="text-sm font-semibold text-ink">{t('tlov.title')}</span>
@@ -105,12 +109,12 @@ export default function TimelineOverviewModal({ onLocate }: { onLocate: (nodeId:
             onClick={() => { close(); useUiStore.getState().setThoughtMapOpen(true); }}
             disabled={entries.length === 0}
             data-tmap-from-timeline
-            className="flex items-center gap-1.5 text-2xs text-ink-muted hover:text-accent hover:bg-accent/10 rounded-full px-2.5 py-1 transition-colors disabled:opacity-50"
+            className="flex items-center gap-1.5 text-2xs text-ink-muted hover:text-accent hover:bg-accent/10 rounded-tag px-2.5 py-1 transition-colors disabled:opacity-50"
           >
             <ImageDown size={13} strokeWidth={1.75} />
             {t('tmap.export')}
           </button>
-          <button onClick={close} className="text-ink-faint hover:text-ink w-7 h-7 rounded-lg hover:bg-wash flex items-center justify-center transition-colors">
+          <button onClick={close} className="text-ink-faint hover:text-ink w-7 h-7 rounded-control hover:bg-wash flex items-center justify-center transition-colors">
             <X size={15} strokeWidth={1.75} />
           </button>
         </div>
@@ -119,7 +123,7 @@ export default function TimelineOverviewModal({ onLocate }: { onLocate: (nodeId:
           {!shown && !gedLoading && (
             <button
               onClick={writeJourney}
-              className="flex items-center gap-1.5 text-2xs text-accent bg-accent/10 hover:bg-accent/20 rounded-full px-3 py-1.5 transition-colors"
+              className="flex items-center gap-1.5 text-2xs text-accent bg-accent/10 hover:bg-accent/20 rounded-control px-3 py-1.5 transition-colors"
             >
               <Sparkles size={12} strokeWidth={1.75} />
               {t('tlov.gedankenGenerate')}
@@ -132,7 +136,7 @@ export default function TimelineOverviewModal({ onLocate }: { onLocate: (nodeId:
             <p className="text-2xs text-red-500 py-1">{t('tlov.gedankenFailed')}</p>
           )}
           {shown && !gedLoading && (
-            <div className={`rounded-xl bg-wash px-4 py-3 ${stale ? 'opacity-60' : ''}`}>
+            <div className={`rounded-content bg-wash px-4 py-3 ${stale ? 'opacity-60' : ''}`}>
               <p className="text-sm text-ink leading-relaxed">{shown.text}</p>
               <div className="flex items-center gap-2 mt-1.5">
                 <span className="text-2xs text-ink-faint">
@@ -163,7 +167,7 @@ export default function TimelineOverviewModal({ onLocate }: { onLocate: (nodeId:
                 )}
                 <div className="group flex items-start gap-2.5 border-b border-line/50 last:border-0" style={rowStyle} data-entry={e.id} onMouseEnter={() => { hoverId.current = e.id; }} onMouseLeave={() => { if (hoverId.current === e.id) hoverId.current = null; }}>
                   <span
-                    className="w-2 h-2 rounded-full shrink-0"
+                    className="w-2 h-2 shape-circle shrink-0"
                     style={{ background: e.color, opacity: e.archived ? 0.35 : 1 }}
                   />
                   <span className="text-2xs font-mono text-ink-faint shrink-0 w-11">{fmtClock(e.createdAt)}</span>
@@ -182,7 +186,7 @@ export default function TimelineOverviewModal({ onLocate }: { onLocate: (nodeId:
                     )}
                   </div>
                   <button
-                    className="shrink-0 text-2xs font-mono text-accent bg-accent/10 hover:bg-accent/20 rounded-full px-1.5 py-0.5 transition-colors opacity-0 group-hover:opacity-100"
+                    className="shrink-0 text-2xs font-mono text-accent bg-accent/10 hover:bg-accent/20 rounded-tag px-1.5 py-0.5 transition-colors opacity-0 group-hover:opacity-100"
                     onClick={() => { close(); onLocate(e.id); }}
                     title={t('hlov.locateTitle')}
                   >

@@ -20,14 +20,14 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const tmp = mkdtempSync(join(tmpdir(), 'tdag-layout-'));
 const bundle = join(tmp, 'layout.mjs');
-execFileSync(join(ROOT, 'node_modules/.bin/esbuild'), [
+execFileSync(process.execPath, [join(ROOT, 'node_modules/esbuild/bin/esbuild'),
   join(ROOT, 'src/lib/layout.ts'), '--bundle', '--format=esm', '--platform=node',
   `--outfile=${bundle}`, '--define:import.meta.env.VITE_API_BASE=""',
   '--define:import.meta.env.DEV=false',
 ], { stdio: ['ignore', 'ignore', 'pipe'] });
 const { autoLayout, placeNewNodes, nodeHeight } = await import(pathToFileURL(bundle).href);
 const framesBundle = join(tmp, 'frames.mjs');
-execFileSync(join(ROOT, 'node_modules/.bin/esbuild'), [
+execFileSync(process.execPath, [join(ROOT, 'node_modules/esbuild/bin/esbuild'),
   join(ROOT, 'src/lib/frames.ts'), '--bundle', '--format=esm', '--platform=node', `--outfile=${framesBundle}`,
 ], { stdio: ['ignore', 'ignore', 'pipe'] });
 const { frameMembers } = await import(pathToFileURL(framesBundle).href);
@@ -61,6 +61,7 @@ const placed = (node, x, y, width = 520, height = 120) => ({
 const ed = (s, t, data) => ({ id: `${s}->${t}`, source: s, target: t, ...(data ? { data } : {}) });
 const xOf = (laid, id) => laid.find((n) => n.id === id).position.x;
 const nodeOf = (laid, id) => laid.find((n) => n.id === id);
+const widthOf = (node) => node.width ?? node.measured?.width ?? NODE_W;
 
 // Every arrow-order and overlap rule, checked per edge.
 function violations(laid, edges) {
@@ -79,7 +80,7 @@ function violations(laid, edges) {
   const solid = laid.filter((n) => !CONTENT.has(n.data?.stepKind));
   for (let i = 0; i < solid.length; i++) for (let j = i + 1; j < solid.length; j++) {
     const a = solid[i], b = solid[j];
-    if (a.position.x < b.position.x + NODE_W && b.position.x < a.position.x + NODE_W &&
+    if (a.position.x < b.position.x + widthOf(b) && b.position.x < a.position.x + widthOf(a) &&
         a.position.y < b.position.y + nodeHeight(b) && b.position.y < a.position.y + nodeHeight(a))
       out.push(`overlap ${a.id}/${b.id}`);
   }
@@ -87,6 +88,27 @@ function violations(laid, edges) {
 }
 
 console.log('layout invariants\n');
+
+test('custom heights survive compact measurements and replace content estimates', () => {
+  const tall = { ...th('tall', { isCollapsed: false }), height: 1100, measured: { width: 520, height: 128 } };
+  const short = { ...th('short', { isCollapsed: false, response: 'answer '.repeat(1000) }), height: 320 };
+  assert(nodeHeight(tall) === 1100, `custom height replaced by thumbnail: ${nodeHeight(tall)}`);
+  assert(nodeHeight(short) === 320, `scrolling card stretched to content: ${nodeHeight(short)}`);
+});
+
+test('resized cards retain continuation alignment and clear neighboring columns', () => {
+  const nodes = [
+    { ...th('root', { isCollapsed: false }), width: 1200, height: 850, measured: { width: 520, height: 128 } },
+    { ...th('continue', { isCollapsed: false }), width: 360, height: 320 },
+    { ...th('branch', { isCollapsed: false }), width: 1600, height: 500 },
+    { ...th('branch-follow', { isCollapsed: false }), width: 640, height: 360 },
+  ];
+  const edges = [ed('root', 'continue'), ed('root', 'branch', { isBranchFromSelection: true }), ed('branch', 'branch-follow')];
+  const laid = autoLayout(nodes, edges);
+  assert(xOf(laid, 'root') === xOf(laid, 'continue'), 'continuation lost vertical alignment');
+  assert(xOf(laid, 'branch') === xOf(laid, 'branch-follow'), 'branch continuation lost vertical alignment');
+  assert(violations(laid, edges).length === 0, violations(laid, edges).join('; '));
+});
 
 test('a merge sits under the parent it was continued from: the first edge in, not the median', () => {
   const nodes = ['root', 'p1', 'p2', 'p3', 'merge'].map((i) => th(i));
@@ -254,6 +276,24 @@ test('a parent folded by the ask is measured folded: the follow-up sits right un
   const laid = placeNewNodes([parent, fresh('c')], [ed('p', 'c')], ['c']);
   const y = nodeOf(laid, 'c').position.y;
   assert(y < 700, `follow-up at y ${y}, below the parent's stale unfolded height`);
+});
+
+test('a follow-up clears its resized parent after a compact measurement', () => {
+  const parent = { ...placed(th('parent', { isCollapsed: false }), 150, 200, 520, 128), width: 1000, height: 1100 };
+  const edges = [ed('parent', 'child')];
+  const laid = placeNewNodes([parent, fresh('child')], edges, ['child']);
+  assert(xOf(laid, 'child') === parent.position.x, 'follow-up lost vertical alignment');
+  assert(nodeOf(laid, 'child').position.y >= 1300, 'follow-up overlaps its resized parent');
+  assert(unmoved([parent], laid).length === 0, 'resized parent moved');
+});
+
+test('new wide branches fit beside resized cards without moving existing nodes', () => {
+  const parent = { ...placed(th('parent', { isCollapsed: false }), 100, 100, 520, 128), width: 1300, height: 600 };
+  const branches = ['a', 'b'].map((id) => ({ ...fresh(id), width: 1600, height: 360 }));
+  const edges = branches.map((n) => ed('parent', n.id, { isBranchFromSelection: true }));
+  const laid = placeNewNodes([parent, ...branches], edges, branches.map((n) => n.id));
+  assert(violations(laid, edges).length === 0, violations(laid, edges).join('; '));
+  assert(unmoved([parent], laid).length === 0, 'resized parent moved');
 });
 
 test('a second child stands one column right of the first, never on it', () => {

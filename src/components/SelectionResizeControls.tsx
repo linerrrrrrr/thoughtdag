@@ -1,0 +1,158 @@
+import { useRef, useState, type MouseEvent, type PointerEvent } from 'react';
+import { createPortal } from 'react-dom';
+import { useViewport, useStore as useFlowStore } from '@xyflow/react';
+import { MoveDiagonal2 } from 'lucide-react';
+import { useStore } from '../store';
+import { nodesRect, resolveCarriedNodeIds } from '../lib/frames';
+import { expandGroupSelection } from '../lib/node-groups';
+import { resizeSelectionBy } from '../lib/node-geometry';
+import { condenseGuard } from '../lib/condense-guard';
+import { useDismissableLayer } from '../lib/use-dismissable-layer';
+import { useT } from '../i18n';
+import type { ThoughtNode } from '../types';
+import './SelectionResizeControls.css';
+
+type Direction = 'move' | 'width' | 'height' | 'both';
+type Gesture = { x: number; y: number; zoom: number; pointerId: number; direction: Direction; originals: ThoughtNode[]; changed: boolean };
+
+export default function SelectionResizeControls({ onNodeContextMenu }: { onNodeContextMenu: (event: MouseEvent, node: { id: string }) => void }) {
+  const nodes = useStore(state => state.nodes);
+  const ids = useStore(state => state.selectedNodeIds);
+  const { x, y, zoom } = useViewport();
+  const snapToGrid = useFlowStore(state => state.snapToGrid);
+  const snapGrid = useFlowStore(state => state.snapGrid);
+  const renderer = useFlowStore(state => state.domNode?.querySelector<HTMLElement>('.react-flow__renderer'));
+  const ref = useRef<HTMLDivElement>(null);
+  const gesture = useRef<Gesture | null>(null);
+  const contextOrigin = useRef<{ x: number; y: number } | null>(null);
+  const [active, setActive] = useState<Direction | null>(null);
+  const t = useT();
+  const selected = nodes.filter(node => ids.includes(node.id) && !node.hidden);
+  const bounds = nodesRect(selected);
+  const finish = (cancel = false) => {
+    const drag = gesture.current;
+    gesture.current = null;
+    setActive(null);
+    if (!drag?.changed) return;
+    if (cancel) {
+      const previous = new Map(drag.originals.map(node => [node.id, node]));
+      useStore.setState(state => ({ nodes: state.nodes.map(node => {
+        const original = previous.get(node.id);
+        if (!original) return node;
+        return drag.direction === 'move' ? { ...node, position: original.position }
+          : { ...node, width: original.width, height: original.height,
+            data: { ...node.data, keepOverviewHeight: original.data.keepOverviewHeight } };
+      }) }));
+    } else useStore.getState().pushHistory();
+  };
+  useDismissableLayer({
+    open: selected.length > 1, refs: [ref], priority: -100, restoreFocus: false, independentOutside: true,
+    onDismiss: () => useStore.getState().setSelectedNodeIds([]),
+    // The selection's own editing controls form one interaction boundary.
+    // Additive gestures must retain the old selection until React Flow reads it.
+    ignoreOutside: event => !!gesture.current || event.ctrlKey || event.metaKey || event.shiftKey
+      || event.target instanceof Element && !!event.target.closest('[data-selection-toolbar], [data-selection-menu], [data-selection-target-control]'),
+  });
+  useDismissableLayer({ open: active !== null, refs: [ref], priority: 10, dismissOnOutside: false, restoreFocus: false, onDismiss: () => finish(true) });
+  if (selected.length < 2 || !bounds || !renderer) return null;
+  const start = (event: PointerEvent<HTMLButtonElement>, direction: Direction) => {
+    if (direction === 'move' && event.button === 2) contextOrigin.current = { x, y };
+    if (event.button !== 0 || gesture.current || condenseGuard()) return;
+    event.preventDefault(); event.stopPropagation();
+    const state = useStore.getState();
+    if (direction === 'move' && (event.ctrlKey || event.metaKey || event.shiftKey)) {
+      const hit = document.elementsFromPoint(event.clientX, event.clientY).find(element => element.matches('.react-flow__node'));
+      const id = hit?.getAttribute('data-id');
+      if (id) {
+        const group = new Set(expandGroupSelection(state.nodes, [id]));
+        state.setSelectedNodeIds(state.selectedNodeIds.includes(id)
+          ? state.selectedNodeIds.filter(selectedId => !group.has(selectedId)) : [...state.selectedNodeIds, ...group]);
+      }
+      return;
+    }
+    const moving = new Set(direction === 'move' ? resolveCarriedNodeIds(state.nodes, state.selectedNodeIds) : state.selectedNodeIds);
+    const originals = state.nodes.filter(node => moving.has(node.id));
+    event.currentTarget.focus({ preventScroll: true });
+    event.currentTarget.setPointerCapture(event.pointerId);
+    gesture.current = { x: event.clientX, y: event.clientY, zoom, pointerId: event.pointerId, direction, originals, changed: false };
+    setActive(direction);
+  };
+  const move = (event: PointerEvent<HTMLButtonElement>) => {
+    const drag = gesture.current;
+    if (!drag || event.pointerId !== drag.pointerId) return;
+    const dx = drag.direction === 'height' ? undefined : (event.clientX - drag.x) / drag.zoom;
+    const dy = drag.direction === 'width' ? undefined : (event.clientY - drag.y) / drag.zoom;
+    if (!drag.changed && Math.hypot(event.clientX - drag.x, event.clientY - drag.y) < 3) return;
+    if (!drag.changed) useStore.getState().pushHistory();
+    drag.changed = true;
+    if (drag.direction === 'move') {
+      const anchor = drag.originals[0].position;
+      const offsetX = snapToGrid ? Math.round((anchor.x + dx!) / snapGrid[0]) * snapGrid[0] - anchor.x : dx!;
+      const offsetY = snapToGrid ? Math.round((anchor.y + dy!) / snapGrid[1]) * snapGrid[1] - anchor.y : dy!;
+      const positions = new Map(drag.originals.map(node => [node.id, { x: node.position.x + offsetX, y: node.position.y + offsetY }]));
+      useStore.setState(state => ({ nodes: state.nodes.map(node => {
+        const position = positions.get(node.id);
+        return position ? { ...node, position } : node;
+      }) }));
+    } else useStore.setState(state => ({ nodes: resizeSelectionBy(state.nodes, drag.originals, dx, dy) }));
+  };
+  const release = (event: PointerEvent<HTMLButtonElement>, cancel = false) => {
+    if (event.pointerId !== gesture.current?.pointerId) return;
+    event.stopPropagation();
+    if (!cancel) move(event);
+    finish(cancel);
+  };
+  // Stay in screen coordinates, inside the native wheel/pan event boundary.
+  return createPortal(<div ref={ref} data-selection-resizer data-selection-gesture={active || undefined} className="selection-resizer nodrag"
+    style={{ left: x + bounds.x * zoom, top: y + bounds.y * zoom, width: bounds.width * zoom, height: bounds.height * zoom }}>
+    <button type="button" data-selection-move className={`selection-move-surface nodrag${active === 'move' ? ' is-moving' : ''}`}
+      aria-label={t('selection.move')} onPointerDown={event => start(event, 'move')} onPointerMove={move}
+      onPointerUp={event => release(event)} onPointerCancel={event => release(event, true)} onLostPointerCapture={event => release(event, true)}
+      onClick={event => event.stopPropagation()} onDoubleClick={event => event.stopPropagation()}
+      onContextMenu={event => {
+        const origin = contextOrigin.current;
+        contextOrigin.current = null;
+        if (origin && (Math.abs(x - origin.x) > 1 || Math.abs(y - origin.y) > 1)) {
+          event.preventDefault();
+          return;
+        }
+        const hit = document.elementsFromPoint(event.clientX, event.clientY).find(element => element.matches('.react-flow__node'));
+        const id = hit?.getAttribute('data-id');
+        if (id) onNodeContextMenu(event, { id });
+      }}
+      onKeyDown={event => {
+        if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return;
+        const horizontal = event.key === 'ArrowLeft' ? -1 : event.key === 'ArrowRight' ? 1 : 0;
+        const vertical = event.key === 'ArrowUp' ? -1 : event.key === 'ArrowDown' ? 1 : 0;
+        if (!horizontal && !vertical) return;
+        event.preventDefault(); event.stopPropagation();
+        if (condenseGuard()) return;
+        const state = useStore.getState();
+        const moving = new Set(resolveCarriedNodeIds(state.nodes, state.selectedNodeIds));
+        const step = event.shiftKey ? 10 : 1;
+        state.pushHistory();
+        state.setNodes(state.nodes.map(node => moving.has(node.id) ? { ...node, position: { x: node.position.x + horizontal * step, y: node.position.y + vertical * step } } : node));
+        state.pushHistory();
+      }} />
+    {(['width', 'height', 'both'] as const).map(direction => <button key={direction} type="button"
+      data-selection-resize={direction} className={`selection-resize-handle selection-resize-${direction} nodrag nopan`}
+      title={t(direction === 'width' ? 'selection.resizeWidth' : direction === 'height' ? 'selection.resizeHeight' : 'selection.resizeBoth')}
+      aria-label={t(direction === 'width' ? 'selection.resizeWidth' : direction === 'height' ? 'selection.resizeHeight' : 'selection.resizeBoth')}
+      onPointerDown={event => start(event, direction)} onPointerMove={move}
+      onPointerUp={event => release(event)} onPointerCancel={event => release(event, true)} onLostPointerCapture={event => release(event, true)}
+      onClick={event => event.stopPropagation()}
+      onKeyDown={event => {
+        if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return;
+        const horizontal = event.key === 'ArrowLeft' ? -1 : event.key === 'ArrowRight' ? 1 : 0;
+        const vertical = event.key === 'ArrowUp' ? -1 : event.key === 'ArrowDown' ? 1 : 0;
+        if ((!horizontal || direction === 'height') && (!vertical || direction === 'width')) return;
+        event.preventDefault(); event.stopPropagation();
+        if (condenseGuard()) return;
+        const step = event.shiftKey ? 10 : 1;
+        const state = useStore.getState();
+        state.pushHistory();
+        state.setNodes(resizeSelectionBy(state.nodes, selected, horizontal && direction !== 'height' ? horizontal * step : undefined, vertical && direction !== 'width' ? vertical * step : undefined));
+        state.pushHistory();
+      }}>{direction === 'both' ? <MoveDiagonal2 size={14} /> : <span aria-hidden="true" />}</button>)}
+  </div>, renderer);
+}

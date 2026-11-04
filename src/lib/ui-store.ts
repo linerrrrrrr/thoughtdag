@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import type { NodeDetailLevel } from '../types';
 
 // Transient UI state (toasts, confirm dialog) — deliberately separate from
 // the main store: no persistence, no undo history, and the imperative API
@@ -31,8 +32,9 @@ export type AgentEffort = string;
 const MCP_KEY = 'thoughtdag.mcpTools';
 const AUTO_PAUSE_KEY = 'thoughtdag.autoRefreshPaused';
 const HIDE_ANNOTATIONS_KEY = 'thoughtdag.hideAnnotations';
-/** 'on' = the wheel (and a trackpad's two-finger scroll) pans the canvas; off, the default, it zooms as it did through 0.5.2 */
+/** Pan by default; preserve an explicitly saved opt-out. */
 const WHEEL_PANS_KEY = 'thoughtdag.wheelPans';
+const CANVAS_DETAIL_KEY = 'thoughtdag.canvasDetail';
 
 export interface LadderJob { total: number; done: number; failed: number; skipped: number; model: string; running: boolean; cancelled: boolean; finishedAt?: number; /** the last transport error, shown when something did not succeed */ lastError?: string }
 
@@ -67,11 +69,13 @@ interface UiState {
   autoRefreshPaused: boolean;
   /** View mode: hide frames + unlinked content nodes (annotation layer off). */
   annotationsHidden: boolean;
-  /** Canvas wheel: false (default) zooms, true pans (trackpad style; zoom by pinch or ⌘/Ctrl + wheel). */
+  /** Canvas wheel: true (default) pans; modified wheel always zooms at the viewport center. */
   wheelPans: boolean;
-  /** Panel mode: opened by double-clicking a node, closed via its X. While
-   *  on, the panel follows the selection; single clicks only select. */
+  canvasDetail: 'auto' | NodeDetailLevel;
+  setCanvasDetail: (detail: 'auto' | NodeDetailLevel) => void;
+  /** Reading target is independent of the canvas selection. */
   panelOpen: boolean;
+  panelNodeId: string | null;
   /** Half-typed inputs keyed by surface (e.g. follow:<nodeId>) — survive
       node/panel switches within the session, cleared on submit. */
   drafts: Record<string, string>;
@@ -103,7 +107,7 @@ interface UiState {
   setAutoRefreshPaused: (paused: boolean) => void;
   setAnnotationsHidden: (hidden: boolean) => void;
   setWheelPans: (pans: boolean) => void;
-  setDraft: (key: string, text: string) => void;
+  setDraft: (key: string, text: string, keepEmpty?: boolean) => void;
   setPanelWidth: (w: number) => void;
   /** User-editable role option library (persisted). */
   roleLib: import('./role-templates').RoleLib;
@@ -160,9 +164,6 @@ interface UiState {
       active search). Nodes NOT in the set dim out — the searchlight. */
   searchHitIds: Set<string> | null;
   setSearchHitIds: (ids: Set<string> | null) => void;
-  /** Node whose answer is open in the large reading overlay. */
-  responseViewerNodeId: string | null;
-  setResponseViewerNodeId: (id: string | null) => void;
   /** Auto-backup folder name (null = off) — display only, handle lives in idb. */
   autoBackupDir: string | null;
   setAutoBackupDir: (name: string | null) => void;
@@ -214,7 +215,7 @@ interface UiState {
   setReaderNodeId: (id: string | null, jump?: { page?: number; threadId?: string }) => void;
   setReaderMode: (mode: 'dock' | 'full') => void;
   setReaderWidth: (w: number) => void;
-  setPanelOpen: (open: boolean) => void;
+  setPanelOpen: (open: boolean, nodeId?: string) => void;
   setSelectedModel: (model: string | null) => void;
   setAgentEffort: (level: AgentEffort) => void;
 }
@@ -250,8 +251,17 @@ export const useUiStore = create<UiState>((set, get) => ({
   mcpEnabled: localStorage.getItem(MCP_KEY) === 'on',
   autoRefreshPaused: localStorage.getItem(AUTO_PAUSE_KEY) === 'yes',
   annotationsHidden: localStorage.getItem(HIDE_ANNOTATIONS_KEY) === 'yes',
-  wheelPans: localStorage.getItem(WHEEL_PANS_KEY) === 'on',
+  wheelPans: localStorage.getItem(WHEEL_PANS_KEY) !== 'off',
+  canvasDetail: (() => {
+    const saved = localStorage.getItem(CANVAS_DETAIL_KEY);
+    return saved === 'compact' || saved === 'summary' || saved === 'full' ? saved : 'auto';
+  })(),
+  setCanvasDetail: (canvasDetail) => {
+    try { localStorage.setItem(CANVAS_DETAIL_KEY, canvasDetail); } catch { /* Keep the choice for this session. */ }
+    set({ canvasDetail });
+  },
   panelOpen: false,
+  panelNodeId: null,
   panelWidth: (() => { const raw = localStorage.getItem('thoughtdag.panelWidth'); const n = raw ? parseInt(raw, 10) : NaN; return Number.isFinite(n) ? n : 520; })(),
   selectedModel: localStorage.getItem(MODEL_KEY) || null,
   agentEffort: localStorage.getItem(EFFORT_KEY) || '',
@@ -281,7 +291,7 @@ export const useUiStore = create<UiState>((set, get) => ({
     localStorage.setItem(MCP_KEY, enabled ? 'on' : 'off');
     set({ mcpEnabled: enabled });
   },
-  setPanelOpen: (open) => set({ panelOpen: open }),
+  setPanelOpen: (open, nodeId) => set((state) => ({ panelOpen: open, panelNodeId: open ? nodeId ?? state.panelNodeId : null })),
   setPanelWidth: (w) => set({ panelWidth: w }),
   roleLib: (() => {
     try {
@@ -358,8 +368,6 @@ export const useUiStore = create<UiState>((set, get) => ({
   searchHitIds: null,
   setSearchHitIds: (ids) => set({ searchHitIds: ids }),
   pingModelPicker: () => set((s) => ({ modelPickerPing: s.modelPickerPing + 1 })),
-  responseViewerNodeId: null,
-  setResponseViewerNodeId: (id) => set({ responseViewerNodeId: id }),
   autoBackupDir: null,
   setAutoBackupDir: (name) => set({ autoBackupDir: name }),
   lastAutoBackupAt: null,
@@ -396,8 +404,8 @@ export const useUiStore = create<UiState>((set, get) => ({
   setReaderMode: (mode) => { localStorage.setItem('thoughtdag.readerMode', mode); set({ readerMode: mode }); },
   setReaderWidth: (w) => set({ readerWidth: w }),
   drafts: {},
-  setDraft: (key, text) => set((s) => {
-    if (!text) {
+  setDraft: (key, text, keepEmpty = false) => set((s) => {
+    if (!text && !keepEmpty) {
       if (!(key in s.drafts)) return s;
       const next = { ...s.drafts };
       delete next[key];

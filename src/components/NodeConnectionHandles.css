@@ -1,0 +1,32 @@
+.react-flow__handle.tdag-auto-handle {
+  transition: opacity 120ms ease;
+}
+.react-flow__handle.tdag-auto-handle.tdag-port-candidate {
+  opacity: 0;
+  pointer-events: none;
+}
+.react-flow__handle.tdag-input-port {
+  pointer-events: none;
+}
+.react-flow__node:hover .react-flow__handle.tdag-output-port:not(.tdag-port-connecting):not(.tdag-port-disabled),
+.react-flow__node:focus-within .react-flow__handle.tdag-output-port:not(.tdag-port-connecting):not(.tdag-port-disabled) {
+  opacity: 1;
+  pointer-events: all;
+}
+.react-flow__handle.tdag-input-port.tdag-port-receiving {
+  opacity: 1;
+  pointer-events: all;
+  z-index: 4;
+}
+.react-flow__handle.tdag-output-port.tdag-port-connecting {
+  pointer-events: none;
+}
+.react-flow__handle.tdag-legacy-port {
+  width: 1px;
+  height: 1px;
+  min-width: 0;
+  min-height: 0;
+  border: 0;
+  opacity: 0;
+  pointer-events: none;
+}

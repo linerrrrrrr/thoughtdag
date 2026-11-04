@@ -1,4 +1,7 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
+import { useDismissableLayer } from '../../lib/use-dismissable-layer';
+import { useCanvasPanelPosition } from '../../lib/use-canvas-panel-position';
+import { useCanvasToolCard } from '../../lib/use-canvas-tool-card';
 import { FolderOpen, Check, ChevronDown } from 'lucide-react';
 import { useT } from '../../i18n';
 import { useUiStore } from '../../lib/ui-store';
@@ -7,13 +10,15 @@ import { useStore } from '../../store';
 import { isAgentModel, resolveAgentCwd, mirroredCwd, type CwdChoice } from '../../lib/agents/agent-runtime';
 import { isHarnessAgentModel } from '../../lib/atlas/dsh-bridge';
 import { IN_HARNESS } from '../../lib/embedded';
+import { parseAgentCwd } from '../../lib/agents/cwd-path';
+import { isImeComposing } from '../../utils';
 
 // Where the agent works, on the toolbar, whenever an agent model is the
 // pick: the chosen folder, the mirrored project, or the canvas's own
 // workspace. One click shows the choices; the folder dialog adds a new one.
 // Nothing is mandatory — the default stays the workspace.
 
-const tail = (p: string) => p.split('/').filter(Boolean).slice(-1)[0] ?? p;
+const tail = (p: string) => p.split(/[\\/]/).filter(Boolean).slice(-1)[0] ?? p;
 
 export default function AgentCwdChip() {
   const t = useT();
@@ -23,8 +28,12 @@ export default function AgentCwdChip() {
   const nodeCount = useStore((s) => s.nodes.length);
   const [choice, setChoice] = useState<CwdChoice | null>(null);
   const [mirrored, setMirrored] = useState<string | null>(null);
-  const [open, setOpen] = useState(false);
+  const [requestedOpen, setOpen] = useState(false);
+  const open = useCanvasToolCard('directory', requestedOpen, () => setOpen(false));
+  const panelPosition = useCanvasPanelPosition(open);
   const [typed, setTyped] = useState('');
+  const [invalidPath, setInvalidPath] = useState(false);
+  const pathErrorId = useId();
   const [, rerender] = useState(0);
   const rootRef = useRef<HTMLDivElement>(null);
   // the runtimes the canvas launches itself, and inside the harness its own
@@ -40,14 +49,7 @@ export default function AgentCwdChip() {
     return () => { alive = false; };
   }, [visible, harness, activeId, projects, nodeCount]);
 
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: MouseEvent) => { if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false); };
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
-    document.addEventListener('mousedown', onDown);
-    document.addEventListener('keydown', onKey);
-    return () => { document.removeEventListener('mousedown', onDown); document.removeEventListener('keydown', onKey); };
-  }, [open]);
+  useDismissableLayer({ dismissOnFocusOutside: true, open, refs: [rootRef], onDismiss: () => setOpen(false) });
 
   if (!visible || !choice) return null;
   const meta = projects.find((p) => p.id === activeId);
@@ -66,24 +68,26 @@ export default function AgentCwdChip() {
     else if (window.desktopAgents?.capabilities?.nativePicker === false) rerender((n) => n + 1);
   };
   const submitTyped = async () => {
-    const v = typed.trim();
-    if (v.startsWith('/')) await choose(v);
+    const cwd = parseAgentCwd(typed);
+    setInvalidPath(cwd === null);
+    if (cwd !== null) await choose(cwd);
   };
 
   return (
     <div ref={rootRef} className="relative">
       <button
         onClick={(e) => { e.stopPropagation(); setOpen((v) => !v); }}
-        className="bg-card/90 backdrop-blur border border-line rounded-lg h-8 px-2.5 flex items-center gap-1.5 shadow-sm hover:bg-wash transition-colors text-xs text-ink max-w-[220px]"
+        className="bg-card border border-line rounded-control h-8 px-2.5 flex items-center gap-1.5 hover:bg-wash transition-colors text-xs text-ink max-w-[220px]"
         title={`${t('agent.cwd')} · ${choice.cwd}`}
         data-agent-cwd={choice.kind}
+        aria-expanded={open}
       >
         <FolderOpen size={14} strokeWidth={1.75} className="text-ink-faint shrink-0" />
         <span className="truncate">{choice.kind === 'workspace' ? t('agent.cwdWorkspace') : tail(choice.cwd)}</span>
         <ChevronDown size={12} strokeWidth={1.75} className="text-ink-faint shrink-0" />
       </button>
       {open && (
-        <div className="absolute right-0 top-full mt-1.5 w-[320px] bg-card border border-line rounded-xl shadow-lg py-1.5 z-50 animate-fade-in" onClick={(e) => e.stopPropagation()}>
+        <div className="canvas-tool-panel canvas-tool-menu py-1.5" style={panelPosition} onClick={(e) => e.stopPropagation()} data-agent-cwd-menu>
           <p className="text-2xs text-ink-faint uppercase tracking-wider font-medium px-3 pt-1 pb-1">{t('agent.cwd')}</p>
           <button onClick={() => void choose(undefined)} className="w-full text-left px-3 py-2 text-xs hover:bg-wash flex items-center gap-2">
             <span className="flex-1 min-w-0">
@@ -110,16 +114,22 @@ export default function AgentCwdChip() {
               <FolderOpen size={14} strokeWidth={1.75} className="text-ink-faint shrink-0" /> {t('agent.cwdPick')}
             </button>
           ) : (
-            <div className="px-3 py-2 flex items-center gap-2">
-              <input
-                value={typed}
-                onChange={(e) => setTyped(e.target.value)}
-                onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Enter') void submitTyped(); }}
-                placeholder={t('agent.cwdType')}
-                className="flex-1 min-w-0 text-xs font-mono bg-wash border border-line rounded-md px-2 py-1 focus:outline-none focus:border-accent/60"
-                data-agent-cwd-input
-              />
-              <button onClick={() => void submitTyped()} className="text-xs text-accent hover:underline shrink-0">{t('agent.cwdUse')}</button>
+            <div className="px-3 py-2">
+              <div className="flex items-center gap-2">
+                <input
+                  value={typed}
+                  onChange={(e) => { setTyped(e.target.value); setInvalidPath(false); }}
+                  onKeyDown={(e) => { if (e.key === 'Enter' && !isImeComposing(e)) { e.preventDefault(); e.stopPropagation(); void submitTyped(); } }}
+                  placeholder={t('agent.cwdType')}
+                  aria-label={t('agent.cwdType')}
+                  aria-invalid={invalidPath || undefined}
+                  aria-describedby={invalidPath ? pathErrorId : undefined}
+                  className="flex-1 min-w-0 text-xs font-mono bg-wash border border-line rounded-control px-2 py-1 focus:outline-none focus:border-accent/60"
+                  data-agent-cwd-input
+                />
+                <button onClick={() => void submitTyped()} className="text-xs text-accent hover:underline shrink-0">{t('agent.cwdUse')}</button>
+              </div>
+              {invalidPath && <p id={pathErrorId} role="alert" className="mt-1.5 text-2xs text-red-600 break-words">{t('agent.cwdInvalid')}</p>}
             </div>
           )}
         </div>

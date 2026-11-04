@@ -1,4 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
+import { useDismissableLayer } from '../lib/use-dismissable-layer';
+import { useCanvasPanelPosition } from '../lib/use-canvas-panel-position';
+import { useCanvasToolCard } from '../lib/use-canvas-tool-card';
 import { Crosshair, Stethoscope, Trash2 } from 'lucide-react';
 import { useStore } from '../store';
 import { runDiagnostics, type Finding } from '../lib/diagnostics';
@@ -30,21 +33,18 @@ export default function DiagnosticsPanel({ onLocate, openPing = 0, showTrigger =
 }) {
   const deleteEdges = useStore((s) => s.deleteEdges);
   const t = useT();
-  const [open, setOpen] = useState(false);
+  const [requestedOpen, setOpen] = useState(false);
+  const open = useCanvasToolCard('diagnostics', requestedOpen, () => setOpen(false));
+  const panelPosition = useCanvasPanelPosition(open);
   const [findings, setFindings] = useState<Finding[]>([]);
   const ref = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  useEffect(() => { if (open) panelRef.current?.focus({ preventScroll: true }); }, [open]);
 
   // external open signal (adjust-during-render, same pattern as ModelPicker)
   const [pingSeen, setPingSeen] = useState(openPing);
 
-  useEffect(() => {
-    if (!open) return;
-    const handler = (e: MouseEvent) => {
-      if (!ref.current?.contains(e.target as Node)) setOpen(false);
-    };
-    window.addEventListener('mousedown', handler);
-    return () => window.removeEventListener('mousedown', handler);
-  }, [open]);
+  useDismissableLayer({ dismissOnFocusOutside: true, open, refs: [ref], onDismiss: () => setOpen(false) });
 
   const run = () => {
     const { nodes, edges } = useStore.getState();
@@ -67,7 +67,7 @@ export default function DiagnosticsPanel({ onLocate, openPing = 0, showTrigger =
 
   const row = (f: Finding, i: number) => (
     <div key={`${f.kind}-${i}`} className="px-3 py-2 border-b border-line/50 last:border-0 flex items-start gap-2">
-      <span className={`w-1.5 h-1.5 rounded-full mt-1.5 shrink-0 ${f.tier === 1 ? 'bg-red-400' : 'bg-amber-400'}`} />
+      <span className={`w-1.5 h-1.5 shape-circle mt-1.5 shrink-0 ${f.tier === 1 ? 'bg-red-400' : 'bg-amber-400'}`} />
       <span className="text-xs text-ink-muted leading-relaxed flex-1 min-w-0">
         {fmt(t(KIND_KEY[f.kind] as Parameters<typeof t>[0]), f.params)}
       </span>
@@ -76,7 +76,7 @@ export default function DiagnosticsPanel({ onLocate, openPing = 0, showTrigger =
           <button
             onClick={() => onLocate(f.nodeIds[0])}
             title={t('diag.locate')}
-            className="w-6 h-6 rounded-md text-ink-faint hover:text-accent hover:bg-wash flex items-center justify-center transition-colors"
+            className="w-6 h-6 rounded-control text-ink-faint hover:text-accent hover:bg-wash flex items-center justify-center transition-colors"
           >
             <Crosshair size={13} strokeWidth={1.75} />
           </button>
@@ -85,7 +85,7 @@ export default function DiagnosticsPanel({ onLocate, openPing = 0, showTrigger =
           <button
             onClick={() => fix(f)}
             title={t('diag.fix')}
-            className="w-6 h-6 rounded-md text-ink-faint hover:text-red-500 hover:bg-red-50 flex items-center justify-center transition-colors"
+            className="w-6 h-6 rounded-control text-ink-faint hover:text-red-500 hover:bg-red-50 flex items-center justify-center transition-colors"
           >
             <Trash2 size={13} strokeWidth={1.75} />
           </button>
@@ -99,7 +99,7 @@ export default function DiagnosticsPanel({ onLocate, openPing = 0, showTrigger =
       {showTrigger && (
         <button
           onClick={() => (open ? setOpen(false) : run())}
-          className={`bg-card/90 backdrop-blur border rounded-lg w-8 h-8 flex items-center justify-center shadow-sm transition-colors ${
+          className={`bg-card border rounded-control w-8 h-8 flex items-center justify-center transition-colors ${
             open ? 'border-accent/40 text-accent' : 'border-line text-ink-faint hover:bg-wash'
           }`}
           title={t('toolbar.diagnose')}
@@ -108,7 +108,7 @@ export default function DiagnosticsPanel({ onLocate, openPing = 0, showTrigger =
         </button>
       )}
       {open && (
-        <div className="absolute right-0 top-full mt-1.5 bg-card border border-line rounded-xl shadow-lg py-1 w-[340px] max-h-[420px] overflow-y-auto z-30 animate-fade-in">
+        <div ref={panelRef} tabIndex={-1} className="canvas-tool-panel canvas-tool-menu py-1" style={panelPosition} data-diagnostics-panel>
           <div className="px-3 py-1.5 text-2xs font-semibold text-ink-muted border-b border-line">
             {t('diag.title')}
             <span className="text-ink-faint font-normal ml-2">

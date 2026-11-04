@@ -43,8 +43,8 @@ export default function SearchToggles({ size = 16, nodeId }: { size?: number; no
 
   const cls = (on: boolean) =>
     noSearchLane
-      ? 'transition-colors shrink-0 rounded-full w-8 h-8 flex items-center justify-center text-ink-faint opacity-30 cursor-not-allowed'
-      : `transition-colors shrink-0 rounded-full w-8 h-8 flex items-center justify-center ${
+      ? 'transition-colors shrink-0 rounded-control w-8 h-8 flex items-center justify-center text-ink-faint opacity-30 cursor-not-allowed'
+      : `transition-colors shrink-0 rounded-control w-8 h-8 flex items-center justify-center ${
           on
             ? 'text-accent bg-accent/15 ring-1 ring-accent/40 hover:bg-accent/25'
             : 'text-ink-muted opacity-50 hover:opacity-90 hover:bg-line'
@@ -57,6 +57,7 @@ export default function SearchToggles({ size = 16, nodeId }: { size?: number; no
           type="button"
           onClick={() => { if (!noSearchLane) setWeb(!web); }}
           disabled={noSearchLane}
+          aria-pressed={web}
           title={noSearchLane ? t('toolbar.searchUnavailableLane') : web ? t('toolbar.webSearch') : t('toolbar.webSearchOff')}
           className={cls(web)}
           data-web-toggle
@@ -68,6 +69,7 @@ export default function SearchToggles({ size = 16, nodeId }: { size?: number; no
         type="button"
         onClick={() => { if (!noSearchLane) setScholar(!scholar); }}
         disabled={noSearchLane}
+        aria-pressed={scholar}
         title={noSearchLane ? t('toolbar.searchUnavailableLane') : scholar ? t('toolbar.scholarSearch') : t('toolbar.scholarSearchOff')}
         className={cls(scholar)}
         data-scholar-toggle

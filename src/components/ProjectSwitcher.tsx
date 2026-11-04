@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Archive, Check, ChevronDown, Dna, FolderOpen, Loader2, Map as MapIcon, Minimize2, Pencil, Plus, RefreshCw, Trash2, Upload } from 'lucide-react';
 import SessionAtlas from './SessionAtlas';
 import HarnessViewSwitch from './ui/HarnessViewSwitch';
@@ -11,6 +11,9 @@ import type { ImportableConversation } from '../lib/import-chat';
 import { confirmDialog, toast } from '../lib/ui-store';
 import { isImeComposing } from '../utils';
 import { useT, t as ti, fmt } from '../i18n';
+import { useDismissableLayer } from '../lib/use-dismissable-layer';
+import { useInlineEditDismiss } from '../lib/use-inline-edit-dismiss';
+import { useCanvasToolCard } from '../lib/use-canvas-tool-card';
 
 function relativeTime(ts: number): string {
   const diff = Date.now() - ts;
@@ -24,13 +27,14 @@ function relativeTime(ts: number): string {
   return new Date(ts).toLocaleDateString(useI18n.getState().lang === 'zh' ? 'zh-CN' : 'en-US');
 }
 
-export default function ProjectSwitcher({ onSwitched }: { onSwitched: () => void }) {
+export default function ProjectSwitcher({ onSwitched, children }: { onSwitched: () => void; children?: ReactNode }) {
   const t = useT();
   const projects = useProjects((s) => s.projects);
   const activeId = useProjects((s) => s.activeId);
   const switching = useProjects((s) => s.switching);
   const activeIsParadigm = projects.find((p) => p.id === activeId)?.kind === 'paradigm';
-  const [open, setOpen] = useState(false);
+  const [requestedOpen, setOpen] = useState(false);
+  const open = useCanvasToolCard('projects', requestedOpen, () => setOpen(false));
   // Windows and Linux shells: keep running in the tray when the window
   // closes (#77); the tray menu speaks the page's language
   const lang = useI18n((s) => s.lang);
@@ -49,6 +53,7 @@ export default function ProjectSwitcher({ onSwitched }: { onSwitched: () => void
   const [renameValue, setRenameValue] = useState('');
   const importFileRef = useRef<HTMLInputElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
+  const renameRef = useRef<HTMLInputElement>(null);
 
   const active = projects.find((p) => p.id === activeId);
   // the dropdown is a time machine, not a library: recent few only,
@@ -70,15 +75,16 @@ export default function ProjectSwitcher({ onSwitched }: { onSwitched: () => void
     if (ok) void deleteProject(p.id).then(onSwitched);
   };
 
-  // Close on outside click
-  useEffect(() => {
-    if (!open) return;
-    const handler = (e: MouseEvent) => {
-      if (!rootRef.current?.contains(e.target as Node)) setOpen(false);
-    };
-    window.addEventListener('mousedown', handler);
-    return () => window.removeEventListener('mousedown', handler);
-  }, [open]);
+  useDismissableLayer({ open, refs: [rootRef], onDismiss: () => setOpen(false), dismissOnFocusOutside: true });
+  const commitRename = () => {
+    const name = renameValue.trim();
+    if (renamingId && name) void renameProject(renamingId, name);
+    setRenamingId(null);
+  };
+  const renameEdit = useInlineEditDismiss({
+    active: open && renamingId !== null, ref: renameRef,
+    onOutside: commitRename, onCancel: () => setRenamingId(null),
+  });
 
   const doSwitch = async (id: string) => {
     setOpen(false);
@@ -94,12 +100,12 @@ export default function ProjectSwitcher({ onSwitched }: { onSwitched: () => void
   return (
     // z-20: the open dropdown must cover the content palette below (both
     // live on the left edge; the palette is z-10)
-    <div ref={rootRef} className="absolute top-4 left-4 z-20">
-      <div className="flex items-center gap-1.5">
+    <div ref={rootRef} className="relative z-20 min-w-0 max-w-full" data-project-switcher>
+      <div className="canvas-toolbar">
         <button
           onClick={() => setOpen(!open)}
           disabled={switching}
-          className="bg-card/90 backdrop-blur border border-line rounded-xl px-3.5 py-2 shadow-sm hover:bg-wash transition-colors flex items-center gap-2 text-sm text-ink max-w-[240px] disabled:opacity-60"
+          className="canvas-project-button bg-card border border-line rounded-control h-8 px-3 hover:bg-wash transition-colors flex items-center gap-2 text-xs leading-none text-ink disabled:opacity-60"
         >
           {switching
             ? <Loader2 size={16} strokeWidth={1.75} className="animate-spin shrink-0 text-accent" />
@@ -126,17 +132,18 @@ export default function ProjectSwitcher({ onSwitched }: { onSwitched: () => void
                 ? ti('switcher.mirrorBadgeGone')
                 : fmt(ti('switcher.mirrorBadge'), { runner: active.sourceSession!.runner })}
               onClick={() => { setAtlasFocus(active.sourceSession!.sessionId); setAtlasOpen(true); }}
-              className={`bg-card/90 backdrop-blur border border-line rounded-xl px-2 py-2 shadow-sm hover:bg-wash transition-colors text-2xs font-mono flex items-center gap-1 ${unreachable ? 'text-ink-faint/50 line-through decoration-1' : 'text-ink-faint hover:text-accent'}`}
+              className={`bg-card border border-line rounded-control h-8 px-2 hover:bg-wash transition-colors text-2xs leading-none font-mono flex items-center gap-1 ${unreachable ? 'text-ink-faint/50 line-through decoration-1' : 'text-ink-faint hover:text-accent'}`}
               data-twin-badge={unreachable ? 'unreachable' : 'live'}
             >
               ⇄ {active.sourceSession!.runner}
             </button>
           );
         })()}
+        {children}
       </div>
 
       {open && (
-        <div className="mt-1.5 bg-card border border-line rounded-xl shadow-lg py-1.5 w-[320px] animate-fade-in">
+        <div className="absolute left-0 top-full mt-related bg-card border border-line rounded-overlay shadow-lg py-1.5 w-[320px] max-w-[calc(100vw-32px)] animate-fade-in">
           <div className="max-h-[320px] overflow-y-auto">
             {sorted.map((p) => (
               <div
@@ -146,19 +153,19 @@ export default function ProjectSwitcher({ onSwitched }: { onSwitched: () => void
               >
                 {renamingId === p.id ? (
                   <input
+                    ref={renameRef}
                     autoFocus
                     value={renameValue}
                     onChange={(e) => setRenameValue(e.target.value)}
                     onClick={(e) => e.stopPropagation()}
                     onKeyDown={(e) => {
-                      if (e.key === 'Enter' && !isImeComposing(e) && renameValue.trim()) {
-                        void renameProject(p.id, renameValue.trim());
-                        setRenamingId(null);
+                      if (e.key === 'Enter' && !isImeComposing(e)) {
+                        e.preventDefault(); e.stopPropagation(); commitRename();
                       }
-                      if (e.key === 'Escape') setRenamingId(null);
                     }}
-                    onBlur={() => setRenamingId(null)}
-                    className="flex-1 text-sm text-ink border border-accent/40 rounded-lg px-2 py-1 bg-surface focus:outline-none"
+                    onBlur={renameEdit.onBlur}
+                    className="flex-1 text-sm text-ink border border-accent/40 rounded-control px-2 py-1 bg-surface focus:outline-none"
+                    data-project-name-editor
                   />
                 ) : (
                   <>
@@ -170,7 +177,7 @@ export default function ProjectSwitcher({ onSwitched }: { onSwitched: () => void
                       <div className="text-2xs text-ink-faint flex items-center gap-1.5">
                         <span>{relativeTime(p.updatedAt)}</span>
                         {!!p.sourceSession?.sessionId && (
-                          <span className="font-mono border border-line rounded px-1 py-px" data-mirror-mark>
+                          <span className="font-mono border border-line rounded-tag px-1 py-px" data-mirror-mark>
                             {p.sourceSession.runner}
                           </span>
                         )}
@@ -178,21 +185,22 @@ export default function ProjectSwitcher({ onSwitched }: { onSwitched: () => void
                     </div>
                     <button
                       title={t('switcher.rename')}
-                      className="opacity-0 group-hover:opacity-100 text-ink-faint hover:text-ink p-1 rounded transition-all shrink-0"
+                      aria-label={t('switcher.rename')}
+                      className="opacity-0 group-hover:opacity-100 text-ink-faint hover:text-ink p-1 rounded-control transition-all shrink-0"
                       onClick={(e) => { e.stopPropagation(); setRenamingId(p.id); setRenameValue(p.name); }}
                     >
                       <Pencil size={14} strokeWidth={1.75} />
                     </button>
                     <button
                       title={t('common.delete')}
-                      className="opacity-0 group-hover:opacity-100 text-ink-faint hover:text-red-500 p-1 rounded transition-all shrink-0"
+                      className="opacity-0 group-hover:opacity-100 text-ink-faint hover:text-red-500 p-1 rounded-control transition-all shrink-0"
                       onClick={(e) => { e.stopPropagation(); void confirmDelete(p); }}
                     >
                       <Trash2 size={14} strokeWidth={1.75} />
                     </button>
                     <button
                       title={t('switcher.archive')}
-                      className="opacity-0 group-hover:opacity-100 text-ink-faint hover:text-amber-600 p-1 rounded transition-all shrink-0"
+                      className="opacity-0 group-hover:opacity-100 text-ink-faint hover:text-amber-600 p-1 rounded-control transition-all shrink-0"
                       onClick={(e) => { e.stopPropagation(); void setProjectArchived(p.id, true).then(onSwitched); }}
                       data-archive-canvas
                     >

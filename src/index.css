@@ -1,14 +1,69 @@
 @import "tailwindcss";
 
+/* Multi-selection has one screen-space drag surface and resize boundary;
+   the library's outline must not create a competing pointer target. */
+.react-flow__nodesselection-rect {
+  pointer-events: none;
+}
+
+/* Frames are background regions. Keep their interior transparent to pointer
+   hit testing; their title, border, and resize handles opt back in. */
+.react-flow__node:has([data-frame-node]) {
+  pointer-events: none !important;
+}
+
+/* Runtime activity stays readable on the canvas and in both reading views. */
+.agent-activity { margin-block: 8px; color: var(--color-ink-muted); font-size: 13px; line-height: 1.6; }
+.activity-heading { display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px 0; font-weight: 600; text-align: left; }
+.activity-heading:hover, .activity-item-heading:hover:not(:disabled) { color: var(--color-ink); }
+.activity-scroll { max-height: 560px; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; overflow-anchor: none; }
+.activity-scroll-compact { max-height: 340px; }
+.activity-list { list-style: none; margin: 0; padding: 0; }
+.activity-row { display: flex; gap: 10px; position: relative; padding: 9px 0 13px; }
+.activity-row:not(:last-child)::before { content: ''; position: absolute; left: 7px; top: 29px; bottom: -6px; width: 1px; background: var(--color-line); }
+.activity-marker { flex-shrink: 0; width: 15px; padding-top: 3px; color: var(--color-ink-faint); }
+.activity-item-heading { display: flex; align-items: start; gap: 8px; width: 100%; text-align: left; }
+.activity-item-title { flex: 1; min-width: 0; overflow-wrap: anywhere; color: var(--color-ink); font-weight: 500; }
+.activity-status { display: flex; align-items: center; gap: 4px; flex-shrink: 0; font-size: 12px; }
+.activity-commentary, .activity-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.activity-commentary { color: var(--color-ink-muted); }
+.activity-answer { color: var(--color-ink); font-size: 14px; }
+.activity-preview { color: var(--color-ink-muted); margin: 4px 0 0; overflow-wrap: anywhere; line-height: 1.6; }
+.activity-command-preview { display: block; max-height: 42px; overflow: hidden; overflow-wrap: anywhere; white-space: pre-wrap; font-size: 12px; margin-top: 4px; }
+.activity-body { margin-top: 8px; min-width: 0; }
+.activity-command-text, .activity-output, .activity-details pre { margin: 0; padding: 10px 12px; font-size: 12px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; tab-size: 2; }
+.activity-command-text { background: var(--color-wash); color: var(--color-ink); }
+.activity-output { background: var(--color-surface); color: var(--color-ink); max-height: 240px; overflow-y: auto; overscroll-behavior: contain; }
+.activity-meta { display: flex; flex-wrap: wrap; gap: 6px 12px; margin-block: 5px; font-size: 12px; color: var(--color-ink-faint); overflow-wrap: anywhere; }
+.activity-meta code { min-width: 0; overflow-wrap: anywhere; }
+.activity-details { margin-top: 8px; color: var(--color-ink-faint); }
+.activity-details summary { cursor: pointer; width: fit-content; }
+.activity-details pre { max-height: 300px; overflow: auto; background: var(--color-surface); color: var(--color-ink-muted); margin-top: 5px; }
+.activity-between { display: flex; gap: 7px; align-items: center; padding: 8px 0; color: var(--color-ink-faint); }
+.activity-follow { display: flex; align-items: center; justify-content: center; gap: 5px; width: 100%; padding: 6px; background: var(--color-wash); color: var(--color-accent-strong); }
+.activity-truncated { margin-top: 5px; color: var(--color-ink-faint); font-size: 12px; }
+.activity-plan { list-style: none; margin: 8px 0; padding: 0; }
+.activity-plan li { display: flex; align-items: baseline; gap: 7px; padding: 4px 0; }
+.activity-plan li > span:nth-child(2) { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.activity-plan svg { flex-shrink: 0; align-self: center; }
+.activity-plan-pending { width: 11px; height: 11px; border: 1px solid var(--color-line-strong); flex-shrink: 0; }
+.activity-files summary { cursor: pointer; overflow-wrap: anywhere; margin-block: 6px; }
+.activity-diff { max-height: 260px; overflow: auto; padding: 8px; font-size: 12px; white-space: pre-wrap; overflow-wrap: anywhere; background: var(--color-surface); }
+.activity-diff-add { color: var(--color-green-700); }
+.activity-diff-remove { color: var(--color-red-700); }
+.agent-activity button:focus-visible, .agent-activity summary:focus-visible, .agent-activity pre:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+.activity-spinner { animation: spin 1.2s linear infinite; }
+@media (prefers-reduced-motion: reduce) { .activity-spinner { animation: none; } }
+
 /* ─── Design tokens ─────────────────────────────────────────────
    Single source of truth for the color system. The JS mirror lives in
    src/lib/constants.ts (COLORS) — keep the two in sync.
-   Dark mode is intentionally not implemented yet; when it is, add a
-   `@media (prefers-color-scheme: dark)` block redefining these vars. */
+   Geometry follows purpose: compact controls, calm document cards and
+   softer overlays. Every appearance shares the same shape hierarchy. */
 @theme {
   /* Typography — self-hosted Inter (UI/body) + JetBrains Mono (data/code),
      loaded via @fontsource in main.tsx; CJK falls back to PingFang. */
-  --font-sans: 'Inter Variable', -apple-system, 'PingFang SC', 'Hiragino Sans GB', 'Segoe UI', sans-serif;
+  --font-sans: 'Inter Variable', 'Noto Sans SC', -apple-system, 'PingFang SC', 'Microsoft YaHei', 'Hiragino Sans GB', 'Segoe UI', sans-serif;
   --font-mono: 'JetBrains Mono Variable', 'SF Mono', 'PingFang SC', monospace;
 
   /* Type scale — bumped one notch from Tailwind defaults for research-
@@ -20,16 +75,57 @@
   --text-sm: 1rem;
   --text-sm--line-height: 1.6;
 
-  --color-surface: #FAF9F7;      /* app / canvas background        */
+  /* Shared spacing roles for the canvas, its controls, and reading surfaces. */
+  --spacing-canvas-inset: 16px;
+  --spacing-surface-inset: 16px;
+  --spacing-toolbar-inset: 8px;
+  --spacing-control-gap: 4px;
+  --spacing-section-gap: 12px;
+  --spacing-related: 8px;
+  --spacing-control-size: 32px;
+
+  --radius-port: 2px;
+  --radius-tag: 4px;
+  --radius-control: 6px;
+  --radius-content: 8px;
+  --radius-node: 8px;
+  --radius-overlay: 12px;
+  --radius-panel: 14px;
+  /* Compatibility scale for embedded components; authored UI uses semantic names. */
+  --radius-xs: 2px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+  --radius-2xl: 14px;
+  --radius-3xl: 14px;
+  --radius-4xl: 14px;
+
+  /* Only overlays need elevation. Canvas objects use their outline. */
+  --shadow-sm: 0 1px 3px rgb(24 35 52 / 0.06);
+  --shadow-md: 0 3px 10px rgb(24 35 52 / 0.08);
+  --shadow-lg: 0 8px 24px rgb(24 35 52 / 0.12);
+  --shadow-xl: 0 8px 24px rgb(24 35 52 / 0.12);
+  --shadow-2xl: 0 8px 24px rgb(24 35 52 / 0.12);
+
+  --color-surface: #F4F5F7;      /* app / canvas background        */
   --color-card: #FFFFFF;         /* node cards, panels             */
-  --color-wash: #F5F3F0;         /* secondary fills, hovers        */
-  --color-line: #E8E5E0;         /* borders                        */
-  --color-line-strong: #D4CFC7;  /* emphasized borders             */
-  --color-ink: #1A1A1A;          /* primary text                   */
-  --color-ink-muted: #6B6560;    /* secondary text                 */
-  --color-ink-faint: #968C77;    /* placeholders, hints — calibrated ≥3:1 on card */
+  --color-wash: #EBEEF3;         /* secondary fills, hovers        */
+  --color-line: #CDD3DD;         /* borders                        */
+  --color-line-strong: #939FAF;  /* emphasized borders             */
+  --color-ink: #202632;          /* primary text                   */
+  --color-ink-muted: #515E70;    /* secondary text                 */
+  --color-ink-faint: #5D6B82;    /* readable hints on card and wash */
   --color-accent: #6B5CE7;       /* primary actions, continue edges */
   --color-accent-strong: #5A4BD6;/* accent hover                   */
+  --color-action: #6251D8;       /* filled buttons, white foreground */
+  --color-action-strong: #5141BF;
+  --color-material-note: #FFFCF5;
+  --color-material-note-line: #DBCEAE;
+  --color-material-note-ink: #866424;
+  --color-material-file-line: #B7C8DC;
+  --color-material-file-ink: #456986;
+  --color-material-file-wash: #EBF1F7;
   --color-warm: #E08A3C;         /* explore branches               */
   --color-trace: #F59E0B;        /* ancestor-path edge highlight   */
   --color-watch: #DC2626;        /* evaluator watch edges          */
@@ -38,39 +134,42 @@
 :root {
   color-scheme: light;
   /* canvas texture (React Flow Background strokes) */
-  --canvas-dot: #E8E5E0;
+  --canvas-dot: #D4DAE3;
   --canvas-grid-fine: rgba(84, 100, 128, 0.10);
   --canvas-grid-major: rgba(84, 100, 128, 0.22);
 }
 
-/* ── appearance: light × dark is a full token remap; paper × grid is a
-   canvas texture plus a component dialect. Set by lib/appearance.ts. ── */
+/* Appearance changes light and canvas texture, never component geometry. */
 
 /* the drafting board runs a touch cooler than reading paper (light only) */
 :root[data-paper='grid']:not([data-theme='dark']) {
-  --color-surface: #F7F6F2;
+  --color-surface: #F1F3F6;
 }
 
 :root[data-theme='dark'] {
   color-scheme: dark;
-  /* elevation is deliberate: cards sit a full step above the canvas
-     (1.22×, was 1.10× — they read as objects, not stains) */
-  --color-surface: #211E18;
-  --color-card: #322D25;
-  --color-wash: #3B352B;
-  --color-line: #4C4536;
-  --color-line-strong: #5E5645;
-  --color-ink: #EDE7DA;
-  --color-ink-muted: #B5AB97;
-  --color-ink-faint: #948A73;
+  --color-surface: #171B22;
+  --color-card: #222833;
+  --color-wash: #2B3240;
+  --color-line: #465164;
+  --color-line-strong: #728098;
+  --color-ink: #E9EDF4;
+  --color-ink-muted: #BAC3D2;
+  --color-ink-faint: #A1AFC1;
+  --color-material-note: #2C2922;
+  --color-material-note-line: #655A40;
+  --color-material-note-ink: #D5BB83;
+  --color-material-file-line: #485E76;
+  --color-material-file-ink: #A9C7E3;
+  --color-material-file-wash: #2A3748;
   --color-accent: #A79FF4;
   --color-accent-strong: #B9B2F7;
   --color-warm: #E3A45E;
   --color-trace: #D9A83E;
   --color-watch: #E0796F;
-  --canvas-dot: #423B2E;
-  --canvas-grid-fine: rgba(237, 231, 218, 0.05);
-  --canvas-grid-major: rgba(237, 231, 218, 0.11);
+  --canvas-dot: #384254;
+  --canvas-grid-fine: rgb(186 195 210 / 0.06);
+  --canvas-grid-major: rgb(186 195 210 / 0.14);
   /* the tailwind semantic slices the UI actually uses, recomposed for dark
      (utilities compile to var(--color-*), so this remaps them globally) */
   --color-red-50: #3A2723;
@@ -154,17 +253,6 @@
 .tmap-art .tmap-brand .tmap-bt { font-family: var(--tm-mono); font-size: 10px; letter-spacing: .06em; color: var(--tm-faint); line-height: 1.55; }
 .tmap-art .tmap-brand .tmap-bt b { color: var(--tm-mut); font-weight: 600; letter-spacing: .09em; font-size: 12px; }
 
-/* draft dialect: on the drafting board cards sit like components —
-   smaller radius, flat shadow. The layout laws are untouched. */
-:root[data-paper='grid'] .thought-node,
-:root[data-paper='grid'] .content-card {
-  border-radius: 7px;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
-}
-:root[data-paper='grid'] .thought-node::before {
-  border-radius: 0;
-}
-
 html, body, #root {
   width: 100%;
   height: 100%;
@@ -180,6 +268,105 @@ code, pre {
 }
 
 /* ReactFlow overrides */
+.canvas-header {
+  position: absolute;
+  top: var(--spacing-canvas-inset);
+  left: var(--spacing-canvas-inset);
+  right: var(--spacing-canvas-inset);
+  z-index: 30;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--spacing-related) var(--spacing-surface-inset);
+  pointer-events: none;
+  transition: right 0.2s ease;
+}
+.canvas-header > * { pointer-events: auto; }
+.canvas-header-actions {
+  display: flex;
+  align-items: flex-start;
+  flex-direction: row-reverse;
+  justify-content: flex-start;
+  flex-wrap: wrap;
+  gap: var(--spacing-related);
+  margin-left: auto;
+  min-width: 0;
+  max-width: 100%;
+  pointer-events: none;
+}
+.canvas-header-actions > * { pointer-events: auto; }
+.canvas-search {
+  position: relative;
+  z-index: 20;
+  order: 1;
+  flex: 1 1 280px;
+  width: 320px;
+  min-width: min(240px, 100%);
+  max-width: 100%;
+  height: calc(var(--spacing-control-size) + var(--spacing-toolbar-inset) * 2 + 2px);
+}
+.canvas-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--spacing-control-gap);
+  padding: var(--spacing-toolbar-inset);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-overlay);
+  background: var(--color-card);
+  max-width: 100%;
+}
+.canvas-toolbar > * { flex-shrink: 0; }
+.canvas-toolbar > .canvas-project-button { flex-shrink: 1; min-width: 0; max-width: 240px; }
+/* Shared dock for canvas tools; only the active card occupies this slot. */
+.canvas-tool-panel {
+  position: fixed;
+  z-index: 20;
+  width: 320px;
+  min-height: 0;
+  color: var(--color-ink);
+  background: var(--color-card);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-panel);
+  overflow: hidden;
+}
+.canvas-tool-menu {
+  z-index: 30;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  box-shadow: var(--shadow-lg);
+}
+/* Narrow workspaces stack the independent inspector and reader below the tools. */
+@media (max-width: 959px) {
+  .canvas-header { right: var(--spacing-canvas-inset) !important; }
+  [data-focus-panel] { top: var(--canvas-tools-top); }
+  body:has([data-focus-panel]) .canvas-tool-panel {
+    max-height: max(0px, calc((100dvh - var(--canvas-tools-top) - 32px) / 2)) !important;
+  }
+  [data-focus-panel][data-with-format] { top: calc((100dvh + var(--canvas-tools-top)) / 2); }
+}
+.canvas-palette {
+  position: absolute;
+  left: var(--spacing-canvas-inset);
+  top: 38%;
+  transform: translateY(-50%);
+  z-index: 10;
+  flex-direction: column;
+  flex-wrap: nowrap;
+}
+.canvas-palette > button {
+  width: var(--spacing-control-size);
+  height: var(--spacing-control-size);
+}
+.canvas-map-dock { bottom: var(--spacing-canvas-inset); }
+.canvas-timeline {
+  left: var(--spacing-canvas-inset);
+  top: calc(38% + var(--spacing-control-size) * 2 + var(--spacing-surface-inset) * 2);
+  max-height: max(0px, calc(62% - 270px));
+}
+.canvas-timeline > button { flex-shrink: 0; }
+
 .react-flow__background {
   background: var(--color-surface) !important;
 }
@@ -187,15 +374,26 @@ code, pre {
 .react-flow__controls {
   background: var(--color-card) !important;
   border: 1px solid var(--color-line) !important;
-  border-radius: 12px !important;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.08) !important;
+  border-radius: var(--radius-overlay) !important;
+  box-shadow: none !important;
+  margin: 0 !important;
+  left: var(--spacing-canvas-inset) !important;
+  bottom: var(--spacing-canvas-inset) !important;
+  padding: var(--spacing-toolbar-inset);
+  gap: var(--spacing-control-gap);
 }
 
 .react-flow__controls-button {
   background: var(--color-card) !important;
   border-color: var(--color-line) !important;
   fill: var(--color-ink-muted) !important;
+  width: var(--spacing-control-size) !important;
+  height: var(--spacing-control-size) !important;
+  padding: var(--spacing-toolbar-inset) !important;
+  border: 0 !important;
+  border-radius: var(--radius-control) !important;
 }
+.react-flow__controls-button svg { width: 16px; height: 16px; max-width: 16px; max-height: 16px; }
 
 .react-flow__controls-button:hover {
   background: var(--color-wash) !important;
@@ -205,21 +403,27 @@ code, pre {
 .react-flow__minimap {
   background: var(--color-card) !important;
   border: 1px solid var(--color-line) !important;
-  border-radius: 12px !important;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.08) !important;
+  border-radius: var(--radius-overlay) !important;
+  box-shadow: var(--shadow-sm) !important;
+  overflow: hidden;
+  isolation: isolate;
+  margin: 0 !important;
+  right: var(--spacing-canvas-inset) !important;
+  bottom: var(--spacing-canvas-inset) !important;
   /* hover = intent to read: the svg scales up losslessly from its corner */
-  transition: transform 0.18s ease, box-shadow 0.18s ease;
+  transition: transform 0.18s ease, border-color 0.18s ease;
   transform-origin: bottom right;
 }
 .react-flow__minimap:hover {
   transform: scale(1.85);
-  box-shadow: 0 8px 28px rgba(0,0,0,0.16) !important;
+  border-color: var(--color-line-strong) !important;
 }
+.react-flow__minimap-svg { display: block; background: var(--color-card); }
 
 /* Scrollbar */
 ::-webkit-scrollbar { width: 5px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--color-line-strong); border-radius: 3px; }
+::-webkit-scrollbar-thumb { background: var(--color-line-strong); border-radius: var(--radius-tag); }
 ::-webkit-scrollbar-thumb:hover { background: var(--color-ink-faint); }
 
 /* Allow text selection inside nodes */
@@ -235,30 +439,43 @@ code, pre {
 }
 
 /* Selection highlight */
-::selection { background: rgba(107, 92, 231, 0.2); }
+::selection { background: color-mix(in srgb, var(--color-accent) 22%, transparent); }
+input, textarea, [contenteditable='true'] { caret-color: var(--color-accent); }
+.shape-circle { border-radius: 50%; }
 
 /* Consistent keyboard-focus ring on buttons and disclosure controls.
    Text inputs are embedded borderless fields — their containers carry the
    focus styling and the caret itself marks focus, so no ring (it would
    hug the text with no padding). */
 button:focus-visible,
-summary:focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--color-accent) 45%, transparent);
+summary:focus-visible,
+a:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid var(--color-accent);
   outline-offset: 2px;
 }
 
 input:focus-visible,
 textarea:focus-visible {
-  outline: none;
+  outline: 2px solid var(--color-accent);
+  outline-offset: -2px;
+}
+
+/* Borderless composer fields borrow the full padded container's focus cue. */
+input[class*='outline-none']:focus-visible,
+textarea[class*='outline-none']:focus-visible { outline: none; }
+:is(div, form):has(> :is(input, textarea)[class*='outline-none'][class*='bg-transparent']:focus-visible) {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
 }
 
 /* Animations */
 @keyframes fadeIn {
-  from { opacity: 0; transform: translateY(8px); }
-  to { opacity: 1; transform: translateY(0); }
+  from { opacity: 0.65; }
+  to { opacity: 1; }
 }
 
-.animate-fade-in { animation: fadeIn 0.3s ease-out; }
+.animate-fade-in { animation: fadeIn 0.16s ease-out; }
 
 /* Landing logo: nodes and edges light up in sequence */
 @keyframes dag-pop {
@@ -274,56 +491,147 @@ textarea:focus-visible {
 
 .loading-border { animation: pulse-border 1.5s ease-in-out infinite; }
 
-@keyframes pulse-selected {
-  0%, 100% { box-shadow: 0 0 0 3px rgba(107, 92, 231, 0.25); }
-  50% { box-shadow: 0 0 0 5px rgba(107, 92, 231, 0.12); }
-}
-.selected-glow { animation: pulse-selected 2s ease-in-out infinite; }
-
-/* Node styling — type is expressed by a left accent bar:
-   root = accent, explore branch = warm, continuation = none. */
+/* One continuous outline: the start rail is the card's own left border,
+   so the rail and the outer corners are drawn as one shape.
+   No transforms on hover: ports and edges share the same coordinates. */
 .thought-node {
   background: var(--color-card);
   border: 1px solid var(--color-line);
-  box-shadow: 0 1px 3px rgba(0,0,0,0.07), 0 1px 2px rgba(0,0,0,0.05);
-  transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
-  /* NO overflow:hidden here — it would clip the connection handles'
-     protruding half and their hit halos (the type bar below rounds its
-     own corners instead). Wide content clips inside .markdown-body pre. */
+  border-radius: var(--radius-node);
+  box-shadow: none;
+  transition: border-color 0.16s ease;
+  /* Keep ports and their enlarged hit areas outside the card visible. */
   position: relative;
-}
-
-.thought-node::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 3px;
-  border-radius: 12px 0 0 12px; /* hug the card's rounded-xl corners */
-  background: transparent;
 }
 
 .thought-node:hover {
   border-color: var(--color-line-strong);
-  box-shadow: 0 4px 14px rgba(0,0,0,0.09), 0 2px 4px rgba(0,0,0,0.05);
-  transform: translateY(-1px);
 }
 
-.root-node::before {
-  background: var(--color-accent);
+/* The first question is one input surface with its own aligned action row. */
+.thought-node[data-awaiting-ask] > [data-thought-body] { display: flex; flex-direction: column; }
+.thought-node[data-awaiting-ask] > [data-thought-body] > [data-node-name] { flex-shrink: 0; }
+.node-question-composer {
+  display: flex;
+  flex-direction: column;
+  flex: 1 0 auto;
+  gap: var(--spacing-related);
+  padding: var(--spacing-section-gap);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-content);
+  background: var(--color-wash);
+  transition: border-color 0.16s ease;
+}
+.node-question-composer:focus-within { border-color: var(--color-accent); }
+.node-ask-textarea {
+  display: block;
+  flex: 1;
+  width: 100%;
+  min-height: 3.2em;
+  padding: 0;
+  border: 0;
+  outline: none;
+  resize: none;
+  background: transparent;
+  color: var(--color-ink);
+  font-size: var(--text-sm);
+  line-height: 1.6;
+}
+.node-ask-textarea::placeholder { color: var(--color-ink-faint); }
+.node-question-composer .node-ask-textarea:focus-visible { outline: none; box-shadow: none; }
+.node-ask-actions { display: flex; align-items: flex-end; justify-content: space-between; gap: var(--spacing-related); }
+.node-question-composer [aria-pressed]:not(:disabled) { opacity: 1; box-shadow: none; }
+.node-question-composer [aria-pressed='false'] { color: var(--color-ink-muted); }
+.node-ask-send {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: var(--spacing-control-size);
+  height: var(--spacing-control-size);
+  border: 0;
+  border-radius: var(--radius-control);
+  color: white;
+  background: var(--color-action);
+  transition: background-color 0.16s ease, color 0.16s ease;
+}
+.node-ask-send:hover:not(:disabled) { background: var(--color-action-strong); }
+.node-ask-send:disabled { background: var(--color-line); color: var(--color-ink-faint); cursor: not-allowed; }
+.node-ask-send:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+
+/* Preserve custom dimensions in the graph while compact cards use their
+   natural height. Ports follow the visible card in every zoom tier. */
+.react-flow__node:has(> [data-thought-natural-height]) {
+  height: auto !important;
 }
 
-.orange-node::before {
-  background: var(--color-warm);
+.thought-node .thought-resize-side,
+.thought-node .thought-resize-bottom,
+.thought-node .thought-resize-corner {
+  background: var(--color-card);
+  border: 1px solid color-mix(in srgb, var(--color-accent) 65%, var(--color-line));
+  border-radius: var(--radius-tag);
+  color: var(--color-accent);
+  z-index: 12;
 }
+.thought-node .thought-resize-side { width: 6px; height: 22px; }
+.thought-node .thought-resize-bottom { width: 22px; height: 6px; left: 75%; }
+.thought-node .thought-resize-corner {
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+/* Visible grips follow the card's zoom; invisible hit areas stay easy to grab. */
+.thought-node .thought-resize-side::after,
+.thought-node .thought-resize-bottom::after,
+.thought-node .thought-resize-corner::after {
+  content: '';
+  position: absolute;
+  inset: calc(-7px / clamp(0.35, var(--tdag-zoom, 1), 1));
+}
+.thought-node .thought-resize-side:hover,
+.thought-node .thought-resize-bottom:hover,
+.thought-node .thought-resize-corner:hover { background: var(--color-wash); }
+
+.content-card { border-radius: var(--radius-node); box-shadow: none; }
+.content-card:hover { border-color: var(--color-line-strong); }
+.content-card.material-note { background: var(--color-material-note); border-color: var(--color-material-note-line); }
+.content-card.material-file { background: var(--color-card); border-color: var(--color-material-file-line); }
+.content-card.material-link { background: var(--color-card); border-color: var(--color-line); }
+.material-header { border-color: var(--color-line); }
+.material-note .material-header { border-color: var(--color-material-note-line); }
+.material-note .material-label { color: var(--color-material-note-ink); }
+.material-file .material-label { color: var(--color-material-file-ink); }
+.material-note .markdown-body > :first-child { margin-top: 0; }
+.material-note .markdown-body { line-height: 1.85; }
+.material-note .markdown-body h1, .material-note .markdown-body h2 { font-size: 1.125rem; line-height: 1.5; }
+.material-files { display: flex; flex-direction: column; gap: 10px; }
+.material-file-row { display: flex; align-items: center; gap: 14px; padding: 12px 0; }
+.material-file-row + .material-file-row { border-top: 1px solid var(--color-line); }
+.file-identity { flex: 0 0 58px; min-height: 64px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px; border: 1px solid var(--color-material-file-line); border-radius: var(--radius-control); color: var(--color-material-file-ink); background: var(--color-material-file-wash); }
+.file-identity span { font-family: var(--font-mono); font-size: 10px; line-height: 1.2; }
+.file-identity[data-file-kind='table'] { color: var(--color-green-700); background: color-mix(in srgb, var(--color-green-600) 7%, var(--color-card)); border-color: color-mix(in srgb, var(--color-green-600) 30%, var(--color-line)); }
+.file-identity[data-file-kind='notebook'], .file-identity[data-file-kind='code'] { color: var(--color-accent-strong); background: color-mix(in srgb, var(--color-accent) 7%, var(--color-card)); border-color: color-mix(in srgb, var(--color-accent) 30%, var(--color-line)); }
+.material-file-name { font-size: 15px; font-weight: 500; line-height: 1.5; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.material-file-meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 5px; color: var(--color-ink-faint); font-size: 12px; }
+.material-upload { margin-top: 4px; }
+.node-start-label { font-size: 12px; font-weight: 500; color: var(--color-accent-strong); }
+.node-selected, .thought-node.node-selected, .content-card.node-selected {
+  border-color: var(--color-accent);
+  outline: 1px solid var(--color-accent);
+  outline-offset: 0;
+}
+.thought-node.node-drop-target, .content-card.node-drop-target {
+  outline: 2px dashed var(--color-accent);
+  outline-offset: 4px;
+}
+
+.root-node { border-color: color-mix(in srgb, var(--color-accent) 30%, var(--color-line)); }
 
 .orange-node {
   border-color: color-mix(in srgb, var(--color-warm) 30%, var(--color-line));
-}
-
-.evaluator-node::before {
-  background: var(--color-watch);
 }
 
 .evaluator-node {
@@ -331,34 +639,43 @@ textarea:focus-visible {
 }
 
 /* Instantiated paradigm human turn: the person acts here */
-.human-node::before {
-  background: var(--color-warm);
-}
-
 .human-node {
   border-color: color-mix(in srgb, var(--color-warm) 45%, var(--color-line));
 }
 
-/* Connection handles: small dot, generous finger. The visible dot stays
-   subtle; an invisible halo makes the grab/drop target ~3x larger, and the
+/* Compact softly squared ports with generous hit areas. The invisible target
+   stays ~3x larger than the visible port, and the
    -lg variant compensates when the canvas is zoomed out (wiring across
    chains mostly happens from the overview). */
+.react-flow__handle.tdag-handle {
+  width: 12px;
+  height: 12px;
+  border-radius: var(--radius-port);
+  z-index: 2;
+}
+.react-flow__handle.tdag-handle-lg { width: 16px; height: 16px; }
 .react-flow__handle.tdag-handle::after {
   content: '';
   position: absolute;
   inset: -10px;
-  border-radius: 9999px;
+  border-radius: 0;
 }
 .react-flow__handle.tdag-handle-lg::after {
   inset: -18px;
 }
 
-/* Focus panel: sections are white cards floating on the wash ground —
-   depth does the grouping, not divider lines. */
+/* A continuous reading surface: separators group sections without nesting cards. */
 .panel-card {
-  background: var(--color-card);
-  border-radius: 14px;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 2px 8px rgba(0, 0, 0, 0.04);
+  background: transparent;
+  border-radius: 0;
+  box-shadow: none;
+  border-bottom: 1px solid var(--color-line);
+}
+.panel-card:last-child { border-bottom: 0; }
+.focus-panel-content > [data-agent-session-line],
+.focus-panel-content > [data-handoff-line] {
+  margin-inline: var(--spacing-surface-inset);
+  margin-bottom: var(--spacing-related);
 }
 
 /* Markdown body styles */
@@ -366,17 +683,15 @@ textarea:focus-visible {
   line-height: 1.7;
 }
 
-/* Condense hover link: while a segment row is hovered in the panel, its
-   nodes wear a loud halo — visible on full cards AND folded plaques. */
+/* Locate a related segment with a precise outline, not a diffuse halo. */
 .thought-node.condense-lit {
-  box-shadow:
-    0 0 0 5px color-mix(in srgb, var(--color-accent) 60%, transparent),
-    0 0 32px color-mix(in srgb, var(--color-accent) 45%, transparent);
+  outline: 3px solid var(--color-accent);
+  outline-offset: 4px;
 }
 
 /* User highlights: a fill, so they read apart from the explore marks' underline below. */
 .markdown-body mark.highlight-mark {
-  @apply bg-amber-100 text-amber-800 px-0.5 rounded;
+  @apply bg-amber-100 text-amber-800 px-0.5 rounded-none;
 }
 
 /* Explore marks: the passages child branches were born from. A warm dotted
@@ -424,7 +739,7 @@ textarea:focus-visible {
    a number the canvas does not have is red, so an invented one shows. */
 .cite-chip {
   display: inline-flex; align-items: center; vertical-align: baseline;
-  margin: 0 1px; padding: 0 5px; border-radius: 5px; line-height: 1.5;
+  margin: 0 1px; padding: 0 5px; border-radius: var(--radius-tag); line-height: 1.5;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.78em; font-weight: 600;
   color: var(--color-accent); background: color-mix(in srgb, var(--color-accent) 12%, transparent);
   border: 1px solid color-mix(in srgb, var(--color-accent) 35%, transparent); cursor: pointer;
@@ -433,7 +748,7 @@ textarea:focus-visible {
 .cite-chip.unknown { color: #C73E2E; background: rgba(199, 62, 46, 0.08); border-color: rgba(199, 62, 46, 0.4); cursor: help; }
 /* inside the dialog the answer's explore marks ARE the chips (one markup for the dialog and the dropped node) */
 [data-canvas-chat] .markdown-body mark.explore-mark {
-  display: inline-flex; align-items: center; vertical-align: baseline; margin: 0 1px; padding: 0 5px; border-radius: 5px; line-height: 1.5;
+  display: inline-flex; align-items: center; vertical-align: baseline; margin: 0 1px; padding: 0 5px; border-radius: var(--radius-tag); line-height: 1.5;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.78em; font-weight: 600; text-decoration: none;
   color: var(--color-accent); background: color-mix(in srgb, var(--color-accent) 12%, transparent);
   border: 1px solid color-mix(in srgb, var(--color-accent) 35%, transparent); cursor: pointer;
@@ -494,7 +809,7 @@ textarea:focus-visible {
   background: var(--color-wash);
   color: var(--color-ink);
   padding: 0.15em 0.4em;
-  border-radius: 4px;
+  border-radius: var(--radius-tag);
   font-size: 0.85em;
   border: 1px solid var(--color-line);
 }
@@ -502,7 +817,7 @@ textarea:focus-visible {
 .markdown-body pre {
   background: var(--color-wash) !important;
   border: 1px solid var(--color-line);
-  border-radius: 8px;
+  border-radius: var(--radius-content);
   padding: 0.75em 1em;
   margin: 0.75em 0;
   overflow-x: auto;
@@ -517,7 +832,7 @@ textarea:focus-visible {
 }
 
 .markdown-body blockquote {
-  border-left: 3px solid var(--color-accent);
+  border-left: 1px solid var(--color-line-strong);
   padding-left: 1em;
   color: var(--color-ink-muted);
   margin: 0.75em 0;
@@ -597,14 +912,13 @@ body.tdag-connecting, body.tdag-connecting * {
 
 /* ── Map mode: the card becomes a label plaque ─────────────────────
    Same bounding box (edges and layout depend on it), different visual
-   language: pill radius, stronger type-colored edge, no document bar. */
+   density: a stronger type-colored edge, no document bar. */
 .thought-node.map-node {
-  border-radius: 26px;
-  border-width: 3px;
+  border-radius: var(--radius-node);
+  border-width: 1px;
 }
-.thought-node.map-node::before {
-  display: none;
-}
+.thought-node.root-node { border-left: 3px solid var(--color-accent); }
+.thought-node.map-node.root-node { border-left-width: calc(2px / clamp(0.32, var(--tdag-zoom, 1), 1)); }
 /* a plaque whose ladder text runs past the node's layout footprint ends in a fade */
 [data-plaque-line][data-clipped] {
   -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 40px), transparent);
@@ -626,10 +940,10 @@ body.tdag-connecting, body.tdag-connecting * {
   font-size: 11px;
   line-height: 1.55;
   padding: 6px 10px;
-  border-radius: 10px;
+  border-radius: var(--radius-control);
   pointer-events: none;
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.10);
-  animation: fade-in 0.12s ease;
+  box-shadow: var(--shadow-md);
+  animation: fadeIn 0.12s ease;
   white-space: pre-line;
 }
 
@@ -676,18 +990,19 @@ body.tdag-connecting, body.tdag-connecting * {
 [data-searching] .react-flow__node.search-hit { opacity: 1; }
 [data-searching] .react-flow__edges { opacity: 0.18; transition: opacity 0.2s ease; }
 
-/* "Continue last thread" hover beacon: a loud steady halo (same language as
-   condense-lit) plus a wide ripple. The shadow follows the element's own
-   shape: full card, folded plaque (26px pill), or the glyph seal. */
+/* A locate action briefly accents the existing rectangular boundary. */
 @keyframes tdag-beacon {
-  0% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--color-accent) 55%, transparent), 0 0 34px color-mix(in srgb, var(--color-accent) 45%, transparent); }
-  70% { box-shadow: 0 0 0 46px color-mix(in srgb, var(--color-accent) 0%, transparent), 0 0 34px color-mix(in srgb, var(--color-accent) 45%, transparent); }
-  100% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--color-accent) 55%, transparent), 0 0 34px color-mix(in srgb, var(--color-accent) 45%, transparent); }
+  0%, 100% { outline-color: var(--color-accent); }
+  50% { outline-color: color-mix(in srgb, var(--color-accent) 45%, transparent); }
 }
-.thought-node.beacon-node { animation: tdag-beacon 1.3s ease-out infinite; }
+.thought-node.beacon-node,
+.beacon-node [data-glyph-node] > span {
+  outline: 3px solid var(--color-accent);
+  outline-offset: 5px;
+  animation: tdag-beacon 1.3s ease-out infinite;
+}
 /* glyph tier: the visible body is the seal span inside the counter-scaled
    wrapper, not the wrapper or the 520px box — shadow hugs the icon itself */
-.beacon-node [data-glyph-node] > span { animation: tdag-beacon 1.3s ease-out infinite; }
 
 /* ── Context Focus ─────────────────────────────────────────────────────
    Single selection lights the node's REAL context (same partition the
@@ -718,5 +1033,11 @@ body.tdag-connecting, body.tdag-connecting * {
 }
 @keyframes tdag-flow { to { stroke-dashoffset: calc(-31px / clamp(0.15, var(--tdag-zoom, 1), 1)); } }
 @media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
   .tdag-flow-ov { animation: none; display: none; }
 }

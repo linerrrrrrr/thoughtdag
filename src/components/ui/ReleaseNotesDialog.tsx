@@ -1,4 +1,5 @@
-import { useEffect } from 'react';
+import { useDismissableLayer } from '../../lib/use-dismissable-layer';
+import { useRef } from 'react';
 import { useI18n, useT } from '../../i18n';
 import { useUiStore } from '../../lib/ui-store';
 import { WHATS_NEW } from '../../whats-new';
@@ -18,21 +19,16 @@ export default function ReleaseNotesDialog() {
   const lang = useI18n((s) => s.lang);
   const t = useT();
 
-  useEffect(() => {
-    if (!open) return;
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') { e.stopPropagation(); setOpen(false); }
-    };
-    window.addEventListener('keydown', onKeyDown, true);
-    return () => window.removeEventListener('keydown', onKeyDown, true);
-  }, [open, setOpen]);
+  const layerRef = useRef<HTMLDivElement>(null);
+  useDismissableLayer({ open: open, refs: [layerRef], onDismiss: () => setOpen(false), modal: true });
 
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-[100] bg-black/25 flex items-center justify-center animate-fade-in p-6" onClick={() => setOpen(false)}>
+    <div className="fixed inset-0 z-[100] bg-black/25 flex items-center justify-center animate-fade-in p-6">
       <div
-        className="bg-card border border-line rounded-2xl shadow-xl w-[680px] max-w-full max-h-[85vh] overflow-y-auto"
+        ref={layerRef} aria-modal="true" tabIndex={-1}
+        className="bg-card border border-line rounded-panel shadow-lg w-[680px] max-w-full max-h-[85vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-labelledby="release-notes-title"
@@ -51,7 +47,7 @@ export default function ReleaseNotesDialog() {
                   <span className="text-sm font-semibold text-ink tabular-nums">v{entry.version}</span>
                   <span className="text-xs text-ink-faint tabular-nums">{entry.date}</span>
                   {current && (
-                    <span className="text-2xs font-medium uppercase tracking-wide text-accent bg-accent/10 rounded-full px-2 py-0.5">{t('releaseNotes.current')}</span>
+                    <span className="text-2xs font-medium uppercase tracking-wide text-accent bg-accent/10 rounded-tag px-2 py-0.5">{t('releaseNotes.current')}</span>
                   )}
                 </div>
                 <p className="text-sm text-ink-muted leading-relaxed mt-1.5 [overflow-wrap:anywhere]">{entry.lead[lang]}</p>
@@ -69,7 +65,7 @@ export default function ReleaseNotesDialog() {
           </div>
           <button
             onClick={() => setOpen(false)}
-            className="text-xs text-ink px-4 py-2 rounded-lg border border-line hover:bg-wash transition-colors"
+            className="text-xs text-ink px-4 py-2 rounded-control border border-line hover:bg-wash transition-colors"
           >
             {t('common.close')}
           </button>

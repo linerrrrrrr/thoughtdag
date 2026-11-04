@@ -1,4 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
+import { useDismissableLayer } from '../../lib/use-dismissable-layer';
+import { useCanvasPanelPosition } from '../../lib/use-canvas-panel-position';
+import { useCanvasToolCard } from '../../lib/use-canvas-tool-card';
 import { Check, ChevronDown, ShieldCheck, ShieldEllipsis, ShieldOff, X } from 'lucide-react';
 import { useT, type MessageKey as TKey } from '../../i18n';
 import { useUiStore } from '../../lib/ui-store';
@@ -32,7 +35,9 @@ export default function AgentPermissionChip() {
   const selectedModel = useUiStore((s) => s.selectedModel);
   const activeId = useProjects((s) => s.activeId);
   const guard = useProjects((s) => s.projects.find((p) => p.id === s.activeId)?.agentGuard);
-  const [open, setOpen] = useState(false);
+  const [requestedOpen, setOpen] = useState(false);
+  const open = useCanvasToolCard('permissions', requestedOpen, () => setOpen(false));
+  const panelPosition = useCanvasPanelPosition(open);
   // inside the harness: whether its Auto review is installed (null = not asked yet)
   const [hostAuto, setHostAuto] = useState<boolean | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -40,14 +45,7 @@ export default function AgentPermissionChip() {
   const visible = !!window.desktopAgents && (isAgentModel(selectedModel) || harness);
   const lane: Lane = harness ? 'harness' : (runtimeOf(selectedModel) ?? 'pi');
 
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: MouseEvent) => { if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false); };
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
-    document.addEventListener('mousedown', onDown);
-    document.addEventListener('keydown', onKey);
-    return () => { document.removeEventListener('mousedown', onDown); document.removeEventListener('keydown', onKey); };
-  }, [open]);
+  useDismissableLayer({ dismissOnFocusOutside: true, open, refs: [rootRef], onDismiss: () => setOpen(false) });
 
   useEffect(() => {
     if (!open || lane !== 'harness') return;
@@ -85,16 +83,17 @@ export default function AgentPermissionChip() {
     <div ref={rootRef} className="relative">
       <button
         onClick={(e) => { e.stopPropagation(); setOpen((v) => !v); }}
-        className={`bg-card/90 backdrop-blur border rounded-lg h-8 px-2.5 flex items-center gap-1.5 shadow-sm hover:bg-wash transition-colors text-xs ${shown === 'allow' ? 'border-amber-400/70 text-amber-700 dark:text-amber-300' : 'border-line text-ink'}`}
+        className={`bg-card border rounded-control h-8 px-2.5 flex items-center gap-1.5 hover:bg-wash transition-colors text-xs ${shown === 'allow' ? 'border-amber-400/70 text-amber-700 dark:text-amber-300' : 'border-line text-ink'}`}
         title={`${t('agent.perm')} · ${t(LABEL[shown])}`}
         data-agent-permission-chip={shown}
+        aria-expanded={open}
       >
         <Icon size={14} strokeWidth={1.75} className={`shrink-0 ${shown === 'allow' ? '' : 'text-ink-faint'}`} />
         <span className="whitespace-nowrap">{t(LABEL[shown])}</span>
         <ChevronDown size={12} strokeWidth={1.75} className="text-ink-faint shrink-0" />
       </button>
       {open && (
-        <div className="absolute right-0 top-full mt-1.5 w-[320px] bg-card border border-line rounded-xl shadow-lg py-1.5 z-50 animate-fade-in" onClick={(e) => e.stopPropagation()} data-agent-permission-menu>
+        <div className="canvas-tool-panel canvas-tool-menu py-1.5" style={panelPosition} onClick={(e) => e.stopPropagation()} data-agent-permission-menu>
           <p className="text-2xs text-ink-faint uppercase tracking-wider font-medium px-3 pt-1 pb-1">{t('agent.perm')} · {t('agent.permScope')}</p>
           {row('ask', ASK_HINT[lane])}
           {row('auto', lane === 'harness' && hostAuto === false ? 'agent.permAutoHarnessOff' : AUTO_HINT[lane], autoOff)}

@@ -1,4 +1,7 @@
-import { useMemo, useState } from 'react';
+import { useDismissableLayer } from '../../lib/use-dismissable-layer';
+import { useSessionDraft } from '../../lib/use-session-draft';
+import { useProjects } from '../../store/projects';
+import { useRef, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Download, Highlighter, Trash2, X } from 'lucide-react';
 import { useStore } from '../../store';
@@ -31,8 +34,11 @@ export default function HighlightsOverviewModal({ onLocate }: { onLocate: (nodeI
   const weaveHighlights = useStore((s) => s.weaveHighlights);
   const t = useT();
   const [sort, setSort] = useState<'time' | 'node'>('time');
-  const [picked, setPicked] = useState<Set<string>>(new Set());
-  const [intent, setIntent] = useState('');
+  const projectId = useProjects(s => s.activeId) ?? 'default';
+  const [pickedText, setPickedText] = useSessionDraft(`highlights-picked:${projectId}`, '[]');
+  const picked = useMemo(() => new Set<string>(JSON.parse(pickedText)), [pickedText]);
+  const setPicked = (ids: Set<string>) => setPickedText(JSON.stringify([...ids]));
+  const [intent, setIntent] = useSessionDraft(`highlights-intent:${projectId}`);
 
   const entries = useMemo<Entry[]>(() => {
     // closed: skip the walk, which reruns on every nodes change (a session
@@ -51,6 +57,9 @@ export default function HighlightsOverviewModal({ onLocate }: { onLocate: (nodeI
     return sorted.map((e, i) => ({ ...e, showGroup: sort === 'node' && (i === 0 || sorted[i - 1].nodeTitle !== e.nodeTitle) }));
   }, [open, nodes, sort]);
 
+  const layerRef = useRef<HTMLDivElement>(null);
+  useDismissableLayer({ open, refs: [layerRef], onDismiss: () => setOpen(false), modal: true });
+
   if (!open) return null;
 
   const togglePick = (id: string) => {
@@ -59,13 +68,14 @@ export default function HighlightsOverviewModal({ onLocate }: { onLocate: (nodeI
     setPicked(next);
   };
 
-  const close = () => { setOpen(false); setPicked(new Set()); setIntent(''); };
+  const close = () => setOpen(false);
 
   const weavePicked = () => {
     const ids = [...picked].filter((id) => entries.some((e) => e.hlId === id));
     if (ids.length === 0) return;
     const nodeIds = [...new Set(entries.filter((e) => ids.includes(e.hlId)).map((e) => e.nodeId))];
     close();
+    setPicked(new Set()); setIntent('');
     void weaveHighlights(nodeIds, intent.trim() || undefined, ids);
   };
 
@@ -74,19 +84,19 @@ export default function HighlightsOverviewModal({ onLocate }: { onLocate: (nodeI
     downloadMarkdown(`# ${t('hlov.title')}\n\n${lines.join('\n')}\n`);
   };
 
-  const chip = 'shrink-0 text-2xs font-mono text-accent bg-accent/10 hover:bg-accent/20 rounded-full px-1.5 py-0.5 transition-colors';
+  const chip = 'shrink-0 text-2xs font-mono text-accent bg-accent/10 hover:bg-accent/20 rounded-tag px-1.5 py-0.5 transition-colors';
   const sortBtn = (v: 'time' | 'node', label: string) => (
     <button
       onClick={() => setSort(v)}
-      className={`text-2xs px-2.5 py-1 rounded-full transition-colors ${sort === v ? 'bg-accent/10 text-accent' : 'text-ink-faint hover:bg-wash'}`}
+      className={`text-2xs px-2.5 py-1 rounded-tag transition-colors ${sort === v ? 'bg-accent/10 text-accent' : 'text-ink-faint hover:bg-wash'}`}
     >
       {label}
     </button>
   );
 
   return createPortal((
-    <div className="fixed inset-0 z-[60] bg-ink/30 backdrop-blur-sm flex items-center justify-center p-6" onClick={close}>
-      <div className="bg-card rounded-2xl shadow-2xl border border-line w-[640px] max-h-[80vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+    <div className="fixed inset-0 z-[60] bg-ink/30 flex items-center justify-center p-6">
+      <div ref={layerRef} role="dialog" aria-modal="true" aria-label={t('hlov.title')} tabIndex={-1} className="bg-card rounded-panel shadow-lg border border-line w-[640px] max-h-[80vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center gap-2 px-5 py-3 border-b border-line shrink-0">
           <Highlighter size={15} strokeWidth={1.75} className="text-amber-500" />
           <span className="text-sm font-semibold text-ink">{t('hlov.title')}</span>
@@ -94,7 +104,7 @@ export default function HighlightsOverviewModal({ onLocate }: { onLocate: (nodeI
           <div className="flex-1" />
           {sortBtn('time', t('hlov.byTime'))}
           {sortBtn('node', t('hlov.byNode'))}
-          <button onClick={close} className="text-ink-faint hover:text-ink w-7 h-7 rounded-lg hover:bg-wash flex items-center justify-center transition-colors ml-1">
+          <button onClick={close} className="text-ink-faint hover:text-ink w-7 h-7 rounded-control hover:bg-wash flex items-center justify-center transition-colors ml-1">
             <X size={15} strokeWidth={1.75} />
           </button>
         </div>
@@ -115,7 +125,7 @@ export default function HighlightsOverviewModal({ onLocate }: { onLocate: (nodeI
                     className="mt-1 accent-amber-500 shrink-0"
                   />
                   <span className="flex-1 text-sm text-ink leading-relaxed min-w-0">
-                    <mark className="bg-amber-100 text-amber-800 px-0.5 rounded">{e.text}</mark>
+                    <mark className="bg-amber-100 text-amber-800 px-0.5 rounded-tag">{e.text}</mark>
                   </span>
                   {sort === 'time' && (
                     <button className={chip} onClick={() => { close(); onLocate(e.nodeId); }} title={t('hlov.locateTitle')}>
@@ -131,7 +141,7 @@ export default function HighlightsOverviewModal({ onLocate }: { onLocate: (nodeI
                   <button
                     onClick={() => removeHighlight(e.nodeId, e.hlId)}
                     title={t('common.delete')}
-                    className="text-ink-faint hover:text-red-500 w-5 h-5 rounded-full flex items-center justify-center transition-colors shrink-0 opacity-0 group-hover:opacity-100"
+                    className="text-ink-faint hover:text-red-500 w-5 h-5 rounded-control flex items-center justify-center transition-colors shrink-0 opacity-0 group-hover:opacity-100"
                   >
                     <Trash2 size={12} strokeWidth={1.75} />
                   </button>
@@ -150,9 +160,9 @@ export default function HighlightsOverviewModal({ onLocate }: { onLocate: (nodeI
                 onChange={(e) => setIntent(e.target.value)}
                 onKeyDown={(e) => { if (e.key === 'Enter' && !isImeComposing(e)) weavePicked(); }}
                 placeholder={t('toolbar.intentPlaceholder')}
-                className="flex-1 text-xs border border-amber-500/30 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-amber-500 bg-amber-500/5"
+                className="flex-1 text-xs border border-amber-500/30 rounded-control px-3 py-2 focus:outline-none focus:ring-1 focus:ring-amber-500 bg-amber-500/5"
               />
-              <button onClick={weavePicked} className="text-xs bg-amber-500 hover:bg-amber-400 text-white px-3 py-2 rounded-lg transition-colors shrink-0">
+              <button onClick={weavePicked} className="text-xs bg-amber-500 hover:bg-amber-400 text-white px-3 py-2 rounded-control transition-colors shrink-0">
                 {fmt(t('hlov.weavePicked'), { n: picked.size })}
               </button>
             </div>

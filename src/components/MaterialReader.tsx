@@ -1,4 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useDismissableLayer } from '../lib/use-dismissable-layer';
+import { useInlineEditDismiss } from '../lib/use-inline-edit-dismiss';
+import { useSessionDraft } from '../lib/use-session-draft';
+import { useProjects } from '../store/projects';
 import { ChevronDown, ChevronRight, Crosshair, FileText, Highlighter, Link2, Loader2, Maximize2, PanelLeft, Pencil, RefreshCw, ScanText, Send, Sparkles, StickyNote, X, ZoomIn, ZoomOut } from 'lucide-react';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 import type { Attachment, ThoughtNode } from '../types';
@@ -93,6 +97,9 @@ export default function MaterialReader({ onLocate }: { onLocate: (id: string) =>
 
 function ReaderOverlay({ node, onLocate, dock }: { node: ThoughtNode; onLocate: (id: string) => void; dock: ReaderDock }) {
   const t = useT();
+  const projectId = useProjects(s => s.activeId) ?? 'default';
+  const draftPrefix = `reader:${projectId}:${node.id}`;
+  const layerRef = useRef<HTMLDivElement>(null);
   const data = node.data;
   // Three faces, one body (lib/reader-dock decides which): the full-screen
   // overlay; the column docked on the canvas's left, where the canvas and
@@ -125,14 +132,8 @@ function ReaderOverlay({ node, onLocate, dock }: { node: ThoughtNode; onLocate: 
   };
   // the material switcher: every readable node on the canvas, this one marked
   const [pickerOpen, setPickerOpen] = useState(false);
-  useEffect(() => {
-    if (!pickerOpen) return;
-    const onDown = (e: MouseEvent) => {
-      if (!(e.target as HTMLElement | null)?.closest?.('[data-reader-material-picker]')) setPickerOpen(false);
-    };
-    document.addEventListener('mousedown', onDown);
-    return () => document.removeEventListener('mousedown', onDown);
-  }, [pickerOpen]);
+  const pickerRef = useRef<HTMLDivElement>(null);
+  useDismissableLayer({ dismissOnFocusOutside: true, open: pickerOpen, refs: [pickerRef], onDismiss: () => setPickerOpen(false) });
   // Plain thought nodes carrying a PDF read as files too — the reading
   // loop belongs to the material, not to the node kind.
   const kind = data.stepKind === 'file' || (!data.stepKind && (data.attachments ?? []).some((a) => a.type === 'application/pdf'))
@@ -278,7 +279,9 @@ function ReaderOverlay({ node, onLocate, dock }: { node: ThoughtNode; onLocate: 
   // ── selection → ask bar ──
   const bodyRef = useRef<HTMLDivElement>(null);
   const [ask, setAsk] = useState<{ text: string; page: number | null; x: number; y: number; targetNodeId?: string; rects?: [number, number, number, number][] } | null>(null);
-  const [draft, setDraft] = useState('');
+  const [draft, setDraft] = useSessionDraft(`${draftPrefix}:selection`);
+  const askRef = useRef<HTMLDivElement>(null);
+  useDismissableLayer({ open: !!ask, refs: [askRef], onDismiss: () => setAsk(null) });
 
   const handleMouseUp = () => {
     if (isViewerMode) return;
@@ -374,7 +377,7 @@ function ReaderOverlay({ node, onLocate, dock }: { node: ThoughtNode; onLocate: 
   const flyToCanvas = (from: { left: number; top: number; width: number; height: number }) => {
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
     const ghost = document.createElement('div');
-    ghost.style.cssText = `position:fixed;left:${from.left}px;top:${from.top}px;width:${Math.max(60, from.width)}px;height:${Math.max(28, from.height)}px;border:2px solid var(--color-warm);background:color-mix(in srgb, var(--color-warm) 12%, white);border-radius:10px;z-index:200;pointer-events:none;`;
+    ghost.style.cssText = `position:fixed;left:${from.left}px;top:${from.top}px;width:${Math.max(60, from.width)}px;height:${Math.max(28, from.height)}px;border:2px solid var(--color-warm);background:color-mix(in srgb, var(--color-warm) 12%, white);border-radius:var(--radius-control);z-index:200;pointer-events:none;`;
     document.body.appendChild(ghost);
     const dx = window.innerWidth * 0.82 - from.left, dy = window.innerHeight * 0.85 - from.top;
     ghost.animate(
@@ -529,7 +532,7 @@ function ReaderOverlay({ node, onLocate, dock }: { node: ThoughtNode; onLocate: 
 
   // whole-material question: no passage, the full text flows along the wire.
   // Selection is the hero gesture; this keeps "the whole thing" one step away.
-  const [wholeDraft, setWholeDraft] = useState('');
+  const [wholeDraft, setWholeDraft] = useSessionDraft(`${draftPrefix}:whole`);
   const submitWhole = () => {
     const q = wholeDraft.trim();
     if (!q) return;
@@ -559,9 +562,19 @@ function ReaderOverlay({ node, onLocate, dock }: { node: ThoughtNode; onLocate: 
   // ── edit the extracted copy (MinerU paste point) ──
   const [editing, setEditing] = useState(false);
   const editRef = useRef<HTMLTextAreaElement>(null);
+  const editBoundary = useRef<HTMLDivElement>(null);
+  const editKey = `${draftPrefix}:extracted:${pdfAtt?.id ?? ''}`;
+  const [editDraft, setEditDraft] = useSessionDraft(editKey, pdfAtt?.extractedText ?? '');
+  const cancelEdit = () => { useUiStore.getState().setDraft(editKey, ''); setEditing(false); };
+  const editDismiss = useInlineEditDismiss({
+    active: editing, ref: editBoundary, onOutside: () => setEditing(false), onCancel: cancelEdit,
+    ignoreOutside: event => event.target instanceof Element && !!event.target.closest('[data-reader-edit-toggle]'),
+    ignoreFocusOutside: target => target instanceof Element && !!target.closest('[data-reader-edit-toggle]'),
+  });
   const commitEdit = () => {
     setEditing(false);
-    const v = editRef.current?.value ?? '';
+    const v = editDraft;
+    useUiStore.getState().setDraft(editKey, '');
     if (!pdfAtt || v === (pdfAtt.extractedText ?? '')) return;
     useStore.getState().pushHistory();
     useStore.getState().setAttachmentData(node.id, pdfAtt.id, { extractedText: v, extractedBy: 'manual' });
@@ -636,7 +649,7 @@ function ReaderOverlay({ node, onLocate, dock }: { node: ThoughtNode; onLocate: 
     if (threadId && thread.length === 0) setThreadId(null);
   }, [threadId, thread.length]);
 
-  const [followDraft, setFollowDraft] = useState('');
+  const [followDraft, setFollowDraft] = useSessionDraft(`${draftPrefix}:follow:${threadId ?? ''}`);
   const submitFollow = () => {
     const q = followDraft.trim();
     const last = thread[thread.length - 1];
@@ -734,23 +747,12 @@ function ReaderOverlay({ node, onLocate, dock }: { node: ThoughtNode; onLocate: 
     window.setTimeout(attempt, 100);
   }, [node.id, doc]);
 
-  // Esc: progressive dismissal — ask bar, then the thread view, then the
-  // overlay. Docked, the column itself stays: past the thread view, Esc is
-  // the canvas's (step out of the selection).
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return;
-      if (editing) { e.stopPropagation(); commitEdit(); return; }
-      if (ask) { e.stopPropagation(); setAsk(null); return; }
-      if (threadId) { e.stopPropagation(); setThreadId(null); return; }
-      if (docked) return;
-      e.stopPropagation();
-      close();
-    };
-    window.addEventListener('keydown', handler, true);
-    return () => window.removeEventListener('keydown', handler, true);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editing, ask, threadId, docked]);
+  // Docked reading is a workspace: canvas clicks keep it open. Child
+  // editors and selection popups own their own Escape before this layer.
+  useDismissableLayer({
+    open: !docked || !!threadId, refs: [layerRef], dismissOnOutside: false, modal: !docked,
+    onDismiss: () => { if (threadId) setThreadId(null); else close(); },
+  });
 
   const title = pdfAtt?.name
     ?? (kind === 'link' ? (data.linkTitle || data.linkUrl || '') : '')
@@ -768,7 +770,7 @@ function ReaderOverlay({ node, onLocate, dock }: { node: ThoughtNode; onLocate: 
   const askTop = ask ? Math.min(ask.y + 10, window.innerHeight - 150) : 0;
 
   const shownTitle = title || noteTitle || fileFallbackTitle;
-  const iconButton = 'w-7 h-7 rounded-lg text-ink-faint hover:bg-wash hover:text-ink flex items-center justify-center transition-colors shrink-0';
+  const iconButton = 'w-7 h-7 rounded-control text-ink-faint hover:bg-wash hover:text-ink flex items-center justify-center transition-colors shrink-0';
 
   // the three faces share this body: header, reading column (+ rail), footer
   const inner = (
@@ -777,7 +779,7 @@ function ReaderOverlay({ node, onLocate, dock }: { node: ThoughtNode; onLocate: 
         <div className="flex items-center gap-3 px-5 py-3 border-b border-line bg-card shrink-0">
           {headerIcon}
           {materials.length > 1 ? (
-            <div className="relative min-w-0" data-reader-material-picker>
+            <div ref={pickerRef} className="relative min-w-0" data-reader-material-picker>
               <button
                 onClick={() => setPickerOpen((v) => !v)}
                 title={t('reader.switchMaterial')}
@@ -787,7 +789,7 @@ function ReaderOverlay({ node, onLocate, dock }: { node: ThoughtNode; onLocate: 
                 <ChevronDown size={13} strokeWidth={1.75} className="shrink-0 text-ink-faint" />
               </button>
               {pickerOpen && (
-                <div className="absolute left-0 top-full mt-1 z-50 bg-card border border-line rounded-xl shadow-xl py-1 min-w-[240px] max-w-[420px] max-h-[50vh] overflow-y-auto">
+                <div className="absolute left-0 top-full mt-1 z-50 bg-card border border-line rounded-overlay shadow-lg py-1 min-w-[240px] max-w-[420px] max-h-[50vh] overflow-y-auto">
                   {materials.map((m) => (
                     <button
                       key={m.id}
@@ -806,7 +808,7 @@ function ReaderOverlay({ node, onLocate, dock }: { node: ThoughtNode; onLocate: 
           {numPages != null && <span className="text-2xs text-ink-faint font-mono shrink-0">{numPages}p</span>}
           <div className="flex-1" />
           {((pdfAtt && !pdfError) || imageAtts.length > 0 || htmlAtt || nbAtt || linkHtml) && (
-            <div className="flex items-center rounded-lg border border-line overflow-hidden shrink-0 text-xs">
+            <div className="flex items-center rounded-control border border-line overflow-hidden shrink-0 text-xs">
               <button
                 onClick={() => setView('original')}
                 className={`px-3 py-1.5 transition-colors ${view === 'original' ? 'bg-accent/10 text-accent font-medium' : 'text-ink-muted hover:bg-wash'}`}
@@ -834,7 +836,7 @@ function ReaderOverlay({ node, onLocate, dock }: { node: ThoughtNode; onLocate: 
               onClick={() => setClipMode((v) => !v)}
               title={t('reader.clipTitle')}
               data-reader-clip-toggle
-              className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border transition-colors shrink-0 ${clipMode ? 'border-warm bg-warm/10 text-warm font-medium' : 'border-line text-ink-muted hover:bg-wash'}`}
+              className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-control border transition-colors shrink-0 ${clipMode ? 'border-warm bg-warm/10 text-warm font-medium' : 'border-line text-ink-muted hover:bg-wash'}`}
             >
               <Crosshair size={13} strokeWidth={1.75} />
               {clipMode ? t('reader.clipActive') : t('reader.clip')}
@@ -846,7 +848,7 @@ function ReaderOverlay({ node, onLocate, dock }: { node: ThoughtNode; onLocate: 
               disabled={!hasVisionModel || imageAtts.some((a) => a.isExtracting)}
               title={hasVisionModel ? t('reader.imageRecognizeTitle') : t('content.noVisionModel')}
               data-image-recognize
-              className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-line text-ink-muted hover:bg-wash transition-colors shrink-0 disabled:opacity-40"
+              className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-control border border-line text-ink-muted hover:bg-wash transition-colors shrink-0 disabled:opacity-40"
             >
               {imageAtts.some((a) => a.isExtracting)
                 ? <Loader2 size={13} strokeWidth={1.75} className="animate-spin" />
@@ -858,7 +860,7 @@ function ReaderOverlay({ node, onLocate, dock }: { node: ThoughtNode; onLocate: 
             <button
               onClick={() => void startDigest()}
               title={t('reader.digestTitle')}
-              className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-line text-ink-muted hover:bg-wash transition-colors shrink-0"
+              className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-control border border-line text-ink-muted hover:bg-wash transition-colors shrink-0"
             >
               <Sparkles size={13} strokeWidth={1.75} />
               {t('reader.digest')}
@@ -879,7 +881,7 @@ function ReaderOverlay({ node, onLocate, dock }: { node: ThoughtNode; onLocate: 
                 onBlur={() => setRecog((r) => (r === 'confirm' ? 'idle' : r))}
                 disabled={!pdfAtt.pageImages?.length || !hasVisionModel}
                 title={!hasVisionModel ? t('content.noVisionModel') : pdfAtt.pageImages?.length ? t('reader.recognizeTitle') : t('reader.noImages')}
-                className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border transition-colors shrink-0 disabled:opacity-40 disabled:cursor-not-allowed ${
+                className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-control border transition-colors shrink-0 disabled:opacity-40 disabled:cursor-not-allowed ${
                   recog === 'confirm' ? 'border-amber-400 bg-amber-50 text-amber-700' : 'border-line text-ink-muted hover:bg-wash'
                 }`}
               >
@@ -891,8 +893,9 @@ function ReaderOverlay({ node, onLocate, dock }: { node: ThoughtNode; onLocate: 
           {pdfAtt && view === 'text' && recog !== 'running' && (
             <button
               onClick={() => (editing ? commitEdit() : setEditing(true))}
+              data-reader-edit-toggle
               title={t('reader.editText')}
-              className={`w-7 h-7 rounded-lg flex items-center justify-center transition-colors shrink-0 ${editing ? 'bg-accent/10 text-accent' : 'text-ink-faint hover:bg-wash hover:text-ink'}`}
+              className={`w-7 h-7 rounded-control flex items-center justify-center transition-colors shrink-0 ${editing ? 'bg-accent/10 text-accent' : 'text-ink-faint hover:bg-wash hover:text-ink'}`}
             >
               <Pencil size={13} strokeWidth={1.75} />
             </button>
@@ -947,15 +950,15 @@ function ReaderOverlay({ node, onLocate, dock }: { node: ThoughtNode; onLocate: 
           {view === 'original' && !pdfAtt && !htmlAtt && imageAtts.length > 0 && (
             <div className="relative">
               {/* h-0 keeps the bar out of the layout flow; items-start stops
-                  flex from stretching the pill into that zero height */}
+                  flex from stretching the toolbar into that zero height */}
               <div className="sticky top-3 z-10 flex items-start justify-end pr-4 h-0">
-                <div className="flex items-center gap-1 bg-card/95 backdrop-blur border border-line rounded-xl shadow-md px-1.5 py-1" data-image-zoom>
+                <div className="flex items-center gap-1 bg-card border border-line rounded-overlay px-1.5 py-1" data-image-zoom>
                   <button onClick={() => setImgZoom((z) => Math.max(0.5, +(z - 0.25).toFixed(2)))} title={t('reader.imageZoomOut')} data-zoom-out
-                    className="w-7 h-7 rounded-lg hover:bg-wash flex items-center justify-center text-ink-muted hover:text-ink transition-colors"><ZoomOut size={14} strokeWidth={1.75} /></button>
+                    className="w-7 h-7 rounded-control hover:bg-wash flex items-center justify-center text-ink-muted hover:text-ink transition-colors"><ZoomOut size={14} strokeWidth={1.75} /></button>
                   <button onClick={() => setImgZoom(1)} title={t('reader.imageZoomFit')} data-zoom-fit
-                    className="px-2 h-7 rounded-lg hover:bg-wash font-mono text-xs text-ink-muted hover:text-ink transition-colors min-w-[52px]">{Math.round(imgZoom * 100)}%</button>
+                    className="px-2 h-7 rounded-control hover:bg-wash font-mono text-xs text-ink-muted hover:text-ink transition-colors min-w-[52px]">{Math.round(imgZoom * 100)}%</button>
                   <button onClick={() => setImgZoom((z) => Math.min(3, +(z + 0.25).toFixed(2)))} title={t('reader.imageZoomIn')} data-zoom-in
-                    className="w-7 h-7 rounded-lg hover:bg-wash flex items-center justify-center text-ink-muted hover:text-ink transition-colors"><ZoomIn size={14} strokeWidth={1.75} /></button>
+                    className="w-7 h-7 rounded-control hover:bg-wash flex items-center justify-center text-ink-muted hover:text-ink transition-colors"><ZoomIn size={14} strokeWidth={1.75} /></button>
                 </div>
               </div>
               <div
@@ -1009,18 +1012,24 @@ function ReaderOverlay({ node, onLocate, dock }: { node: ThoughtNode; onLocate: 
           {view === 'text' && (
             <div className="max-w-[820px] mx-auto px-8 py-6">
               {pdfAtt && hasTextLayer === false && (
-                <div className="mb-4 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 leading-relaxed">
+                <div className="mb-4 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-content px-3 py-2 leading-relaxed">
                   {t('reader.scannedHint')}
                 </div>
               )}
               {editing && pdfAtt ? (
+                <div ref={editBoundary} onBlur={editDismiss.onBlur} data-reader-text-editor>
                 <textarea
                   ref={editRef}
-                  defaultValue={pdfAtt.extractedText ?? ''}
-                  onBlur={commitEdit}
+                  value={editDraft}
+                  onChange={event => setEditDraft(event.target.value)}
                   autoFocus
-                  className="w-full h-[70vh] text-xs font-mono text-ink bg-card border border-line rounded-xl px-4 py-3 focus:outline-none focus:ring-1 focus:ring-accent/40 leading-relaxed resize-none"
+                  className="w-full h-[70vh] text-xs font-mono text-ink bg-card border border-line rounded-control px-4 py-3 focus:outline-none focus:ring-1 focus:ring-accent/40 leading-relaxed resize-none"
                 />
+                <div className="flex justify-end gap-2 pt-2">
+                  <button type="button" onClick={cancelEdit} className="px-3 py-1.5 text-xs text-ink-muted hover:bg-wash rounded-control">{t('common.cancel')}</button>
+                  <button type="button" onClick={commitEdit} className="px-3 py-1.5 text-xs text-white bg-action rounded-control">{t('common.save')}</button>
+                </div>
+                </div>
               ) : textBody.trim() === '' ? (
                 htmlAtt?.isExtracting ? (
                   <div className="flex items-center justify-center gap-2 py-16 text-sm text-ink-muted">
@@ -1068,14 +1077,14 @@ function ReaderOverlay({ node, onLocate, dock }: { node: ThoughtNode; onLocate: 
               <button
                 onClick={() => { if (!docked) close(); onLocate(thread[0].id); }}
                 title={t('reader.locate')}
-                className="w-6 h-6 rounded-md text-ink-faint hover:text-accent hover:bg-wash flex items-center justify-center transition-colors shrink-0"
+                className="w-6 h-6 rounded-control text-ink-faint hover:text-accent hover:bg-wash flex items-center justify-center transition-colors shrink-0"
               >
                 <Crosshair size={13} strokeWidth={1.75} />
               </button>
               <button
                 onClick={() => setThreadId(null)}
                 title={t('reader.threadClose')}
-                className="w-6 h-6 rounded-md text-ink-faint hover:text-ink hover:bg-wash flex items-center justify-center transition-colors shrink-0"
+                className="w-6 h-6 rounded-control text-ink-faint hover:text-ink hover:bg-wash flex items-center justify-center transition-colors shrink-0"
               >
                 <X size={14} strokeWidth={1.75} />
               </button>
@@ -1107,7 +1116,7 @@ function ReaderOverlay({ node, onLocate, dock }: { node: ThoughtNode; onLocate: 
                 onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey && !isImeComposing(e)) { e.preventDefault(); submitFollow(); } }}
                 placeholder={t('common.followUp')}
                 rows={1}
-                className="flex-1 bg-wash text-sm text-ink rounded-lg px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-accent/40 resize-none placeholder-ink-faint"
+                className="flex-1 bg-wash text-sm text-ink rounded-control px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-accent/40 resize-none placeholder-ink-faint"
                 style={{ minHeight: 32, maxHeight: 120 }}
                 onInput={(e) => {
                   const ta = e.currentTarget;
@@ -1118,7 +1127,7 @@ function ReaderOverlay({ node, onLocate, dock }: { node: ThoughtNode; onLocate: 
               <button
                 onClick={submitFollow}
                 disabled={!followDraft.trim()}
-                className="w-8 h-8 rounded-lg bg-accent text-white flex items-center justify-center disabled:opacity-30 transition-opacity shrink-0"
+                className="w-8 h-8 rounded-control bg-action text-white flex items-center justify-center disabled:opacity-30 transition-opacity shrink-0"
               >
                 <Send size={14} strokeWidth={1.75} />
               </button>
@@ -1134,7 +1143,7 @@ function ReaderOverlay({ node, onLocate, dock }: { node: ThoughtNode; onLocate: 
             onChange={(e) => setWholeDraft(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter' && !isImeComposing(e)) { e.preventDefault(); submitWhole(); } }}
             placeholder={t('reader.askWhole')}
-            className="flex-1 min-w-[200px] bg-wash text-sm text-ink rounded-lg px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-accent/40 placeholder-ink-faint"
+            className="flex-1 min-w-[200px] bg-wash text-sm text-ink rounded-control px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-accent/40 placeholder-ink-faint"
             data-reader-wholeask
           />
           {/* the reader's one set of per-ask switches: every ask from here
@@ -1143,7 +1152,7 @@ function ReaderOverlay({ node, onLocate, dock }: { node: ThoughtNode; onLocate: 
           <button
             onClick={submitWhole}
             disabled={!wholeDraft.trim()}
-            className="w-8 h-8 rounded-lg bg-accent text-white flex items-center justify-center disabled:opacity-30 transition-opacity shrink-0"
+            className="w-8 h-8 rounded-control bg-action text-white flex items-center justify-center disabled:opacity-30 transition-opacity shrink-0"
           >
             <Send size={14} strokeWidth={1.75} />
           </button>
@@ -1153,7 +1162,7 @@ function ReaderOverlay({ node, onLocate, dock }: { node: ThoughtNode; onLocate: 
               {grownChildren.map((c) => (
                 <span
                   key={c.id}
-                  className={`text-2xs rounded-full pl-2.5 pr-1 py-0.5 shrink-0 max-w-[220px] transition-colors flex items-center gap-1 ${
+                  className={`text-2xs rounded-tag pl-2.5 pr-1 py-0.5 shrink-0 max-w-[220px] transition-colors flex items-center gap-1 ${
                     threadId === c.id ? 'bg-accent/10 text-accent' : 'bg-wash text-ink-muted hover:bg-line'
                   }`}
                 >
@@ -1170,7 +1179,7 @@ function ReaderOverlay({ node, onLocate, dock }: { node: ThoughtNode; onLocate: 
                   <button
                     onClick={() => { if (!docked) close(); onLocate(c.id); }}
                     title={t('reader.locate')}
-                    className="w-4.5 h-4.5 rounded-full flex items-center justify-center text-ink-faint hover:text-accent shrink-0"
+                    className="w-4.5 h-4.5 rounded-control flex items-center justify-center text-ink-faint hover:text-accent shrink-0"
                   >
                     <Crosshair size={11} strokeWidth={1.75} />
                   </button>
@@ -1185,7 +1194,8 @@ function ReaderOverlay({ node, onLocate, dock }: { node: ThoughtNode; onLocate: 
   // floating ask bar under the selection: fixed, the same in every face
   const askBar = ask && (
         <div
-          className="fixed z-[95] bg-card border border-line rounded-xl shadow-xl p-2.5 w-[360px] animate-fade-in"
+          ref={askRef}
+          className="fixed z-[95] bg-card border border-line rounded-overlay shadow-lg p-2.5 w-[360px] animate-fade-in"
           style={{ left: askLeft - 180, top: askTop }}
           data-reader-askbar
         >
@@ -1199,12 +1209,11 @@ function ReaderOverlay({ node, onLocate, dock }: { node: ThoughtNode; onLocate: 
               onChange={(e) => setDraft(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey && !isImeComposing(e)) { e.preventDefault(); submitAsk(); }
-                if (e.key === 'Escape') setAsk(null);
               }}
               placeholder={t('reader.askPlaceholder')}
               rows={1}
               autoFocus
-              className="flex-1 bg-wash text-sm text-ink rounded-lg px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-accent/40 resize-none placeholder-ink-faint"
+              className="flex-1 bg-wash text-sm text-ink rounded-control px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-accent/40 resize-none placeholder-ink-faint"
               style={{ minHeight: 32, maxHeight: 120 }}
               onInput={(e) => {
                 const ta = e.currentTarget;
@@ -1216,7 +1225,7 @@ function ReaderOverlay({ node, onLocate, dock }: { node: ThoughtNode; onLocate: 
               <button
                 onClick={highlightSelection}
                 title={t('common.highlight')}
-                className="w-8 h-8 rounded-lg bg-wash text-ink-muted hover:text-accent hover:bg-accent/10 flex items-center justify-center transition-colors shrink-0"
+                className="w-8 h-8 rounded-control bg-wash text-ink-muted hover:text-accent hover:bg-accent/10 flex items-center justify-center transition-colors shrink-0"
               >
                 <Highlighter size={14} strokeWidth={1.75} />
               </button>
@@ -1231,7 +1240,7 @@ function ReaderOverlay({ node, onLocate, dock }: { node: ThoughtNode; onLocate: 
                 }}
                 title={t('reader.highlightText')}
                 data-reader-highlight
-                className="w-8 h-8 rounded-lg bg-wash text-ink-muted hover:text-amber-600 hover:bg-amber-500/10 flex items-center justify-center transition-colors shrink-0"
+                className="w-8 h-8 rounded-control bg-wash text-ink-muted hover:text-amber-600 hover:bg-amber-500/10 flex items-center justify-center transition-colors shrink-0"
               >
                 <Highlighter size={14} strokeWidth={1.75} />
               </button>
@@ -1241,7 +1250,7 @@ function ReaderOverlay({ node, onLocate, dock }: { node: ThoughtNode; onLocate: 
                 onClick={saveSelectionAsNote}
                 title={t('reader.saveAsNote')}
                 data-reader-clip-note
-                className="w-8 h-8 rounded-lg bg-wash text-ink-muted hover:text-warm hover:bg-warm/10 flex items-center justify-center transition-colors shrink-0"
+                className="w-8 h-8 rounded-control bg-wash text-ink-muted hover:text-warm hover:bg-warm/10 flex items-center justify-center transition-colors shrink-0"
               >
                 <StickyNote size={14} strokeWidth={1.75} />
               </button>
@@ -1249,7 +1258,7 @@ function ReaderOverlay({ node, onLocate, dock }: { node: ThoughtNode; onLocate: 
             <button
               onClick={submitAsk}
               disabled={!draft.trim()}
-              className="w-8 h-8 rounded-lg bg-accent text-white flex items-center justify-center disabled:opacity-30 transition-opacity shrink-0"
+              className="w-8 h-8 rounded-control bg-action text-white flex items-center justify-center disabled:opacity-30 transition-opacity shrink-0"
             >
               <Send size={14} strokeWidth={1.75} />
             </button>
@@ -1263,7 +1272,7 @@ function ReaderOverlay({ node, onLocate, dock }: { node: ThoughtNode; onLocate: 
   if (docked && collapsed) {
     return (
       <div className="absolute left-0 top-0 bottom-0 z-[30] bg-card border-r border-line flex flex-col items-center py-3 gap-3" style={{ width: READER_STRIP_WIDTH }} data-material-reader data-reader-strip>
-        <button onClick={() => useStore.getState().setSelectedNodeId(null)} title={t('reader.stripExpand')} data-reader-strip-expand className="w-7 h-7 rounded-lg text-ink-muted hover:bg-wash hover:text-ink flex items-center justify-center transition-colors">
+        <button onClick={() => useStore.getState().setSelectedNodeId(null)} title={t('reader.stripExpand')} data-reader-strip-expand className="w-7 h-7 rounded-control text-ink-muted hover:bg-wash hover:text-ink flex items-center justify-center transition-colors">
           <ChevronRight size={15} strokeWidth={1.75} />
         </button>
         {headerIcon}
@@ -1283,7 +1292,7 @@ function ReaderOverlay({ node, onLocate, dock }: { node: ThoughtNode; onLocate: 
   // its right; the canvas steps aside by its width (App reads lib/reader-dock)
   if (docked) {
     return (
-      <div className={`absolute left-0 top-0 bottom-0 z-[30] bg-surface border-r border-line flex flex-col ${resizing ? 'select-none' : ''}`} style={{ width: dock.width }} data-material-reader data-reader-docked>
+      <div ref={layerRef} className={`absolute left-0 top-0 bottom-0 z-[30] bg-surface border-r border-line flex flex-col ${resizing ? 'select-none' : ''}`} style={{ width: dock.width }} data-material-reader data-reader-docked>
         {inner}
         <div
           onPointerDown={onResizePointerDown}
@@ -1294,7 +1303,7 @@ function ReaderOverlay({ node, onLocate, dock }: { node: ThoughtNode; onLocate: 
           title={t('panel.resizeTitle')}
           data-reader-resize
         >
-          <div className={`w-[3px] h-9 rounded-full transition-colors ${resizing ? 'bg-accent' : 'bg-line-strong'}`} />
+          <div className={`w-[3px] h-9 rounded-control transition-colors ${resizing ? 'bg-accent' : 'bg-line-strong'}`} />
         </div>
         {askBar}
       </div>
@@ -1303,8 +1312,8 @@ function ReaderOverlay({ node, onLocate, dock }: { node: ThoughtNode; onLocate: 
 
   // the overlay: the reader as a focused sheet over the canvas
   return (
-    <div className="fixed inset-0 z-[80] bg-ink/25 backdrop-blur-[2px] flex items-center justify-center animate-fade-in" data-material-reader>
-      <div className={`bg-surface rounded-2xl shadow-2xl border border-line ${threadId ? "w-[min(1480px,96vw)]" : "w-[min(1060px,94vw)]"} h-[93vh] flex flex-col overflow-hidden transition-all duration-200`}>
+    <div className="fixed inset-0 z-[80] bg-ink/25 flex items-center justify-center animate-fade-in" data-material-reader>
+      <div ref={layerRef} role="dialog" aria-modal="true" aria-label={shownTitle} tabIndex={-1} className={`bg-surface rounded-panel shadow-lg border border-line ${threadId ? "w-[min(1480px,96vw)]" : "w-[min(1060px,94vw)]"} h-[93vh] flex flex-col overflow-hidden transition-all duration-200`}>
         {inner}
       </div>
       {askBar}
@@ -1351,7 +1360,7 @@ function ImageFigure({ att, zoom, clipMode, onClipped }: {
           src={`data:${att.type};base64,${att.content}`}
           alt={att.name}
           draggable={false}
-          className="w-full rounded-xl border border-line bg-white shadow-sm select-none"
+          className="w-full rounded-content border border-line bg-white select-none"
         />
         {clipMode && (
           <div
@@ -1365,7 +1374,7 @@ function ImageFigure({ att, zoom, clipMode, onClipped }: {
           >
             {band && (
               <div
-                className="absolute border-2 border-warm bg-warm/10 rounded-sm pointer-events-none"
+                className="absolute border-2 border-warm bg-warm/10 rounded-none pointer-events-none"
                 style={{
                   left: `${Math.min(band.x0, band.x1) * 100}%`,
                   top: `${Math.min(band.y0, band.y1) * 100}%`,
@@ -1471,7 +1480,7 @@ function PdfPage({ doc, pdfjs, pageNo, width, anchors, activeThreadId, onAnchorC
   }, [visible, width, doc, pdfjs, pageNo]);
 
   return (
-    <div ref={holderRef} data-page={pageNo} className="relative bg-white shadow-md rounded-sm shrink-0" style={{ width, height }}>
+    <div ref={holderRef} data-page={pageNo} className="relative bg-white rounded-none shrink-0" style={{ width, height }}>
       <canvas ref={canvasRef} className="absolute inset-0" />
       <div ref={textRef} className="tdag-textlayer" />
       {/* interaction marks: a wash over the asked passage (never blocks
@@ -1481,15 +1490,15 @@ function PdfPage({ doc, pdfjs, pageNo, width, anchors, activeThreadId, onAnchorC
           {a.rects.map((r, i) => (
             <div
               key={i}
-              className={`absolute rounded-sm pointer-events-none ${activeThreadId === a.id ? 'bg-accent/25' : 'bg-accent/10'}`}
+              className={`absolute rounded-none pointer-events-none ${activeThreadId === a.id ? 'bg-accent/25' : 'bg-accent/10'}`}
               style={{ left: `${r[0] * 100}%`, top: `${r[1] * 100}%`, width: `${r[2] * 100}%`, height: `${r[3] * 100}%`, zIndex: 3 }}
             />
           ))}
           <button
             onClick={() => onAnchorClick?.(a.id)}
             title={a.question}
-            className={`absolute w-6 h-6 rounded-full shadow-md border flex items-center justify-center text-xs transition-transform hover:scale-110 ${
-              activeThreadId === a.id ? 'bg-accent text-white border-accent' : 'bg-card text-accent border-accent/40'
+            className={`absolute w-6 h-6 rounded-control border flex items-center justify-center text-xs transition-transform hover:scale-110 ${
+              activeThreadId === a.id ? 'bg-action text-white border-accent' : 'bg-card text-accent border-accent/40'
             }`}
             // in the margin beside the passage's first line, where it covers
             // no text (at the end of the line it sat on the words after it, #81)
@@ -1513,7 +1522,7 @@ function PdfPage({ doc, pdfjs, pageNo, width, anchors, activeThreadId, onAnchorC
         >
           {band && (
             <div
-              className="absolute border-2 border-warm bg-warm/10 rounded-sm pointer-events-none"
+              className="absolute border-2 border-warm bg-warm/10 rounded-none pointer-events-none"
               style={{
                 left: `${Math.min(band.x0, band.x1) * 100}%`,
                 top: `${Math.min(band.y0, band.y1) * 100}%`,
@@ -1541,7 +1550,7 @@ function DigestBody({ text, onJump }: { text: string; onJump: (page: number) => 
             <button
               key={i}
               onClick={() => onJump(Number(m[1]))}
-              className="inline-flex items-center text-2xs text-accent bg-accent/10 hover:bg-accent/20 rounded-full px-1.5 py-0.5 mx-0.5 align-middle transition-colors"
+              className="inline-flex items-center text-2xs text-accent bg-accent/10 hover:bg-accent/20 rounded-tag px-1.5 py-0.5 mx-0.5 align-middle transition-colors"
             >
               p.{m[1]}
             </button>

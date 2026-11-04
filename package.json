@@ -28,6 +28,9 @@
     "test:zstd-head": "node scripts/test-zstd-head.mjs",
     "test:subagents": "node scripts/test-subagents.mjs",
     "test:turn-context": "node scripts/test-turn-context.mjs",
+    "test:codex-stream": "node scripts/test-codex-stream.mjs",
+    "test:agent-activity": "node scripts/test-agent-activity.mjs",
+    "test:agent-activity-ui": "node scripts/test-agent-activity-ui.mjs",
     "test:harness-workspace": "node scripts/test-harness-workspace.mjs",
     "desktop:why": "esbuild cli/src/lib.ts --bundle --platform=node --format=esm --target=node20 --define:import.meta.env={} --outfile=desktop/why.mjs --log-level=warning"
   },

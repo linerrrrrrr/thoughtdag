@@ -21,7 +21,7 @@ export default function HandoffLine({ nodeId, data }: { nodeId: string; data: Th
     : fmt(t('handoff.some'), { k: c.toolStepsForwarded, n: c.toolSteps });
 
   return (
-    <div className="rounded-xl border border-line bg-card px-3 py-2 text-xs space-y-1" data-handoff-line>
+    <div className="rounded-content border border-line bg-card px-3 py-2 text-xs space-y-1" data-handoff-line>
       <div className="flex items-center gap-2 min-w-0">
         <Wrench size={13} strokeWidth={1.75} className="text-warm shrink-0" />
         <span className="text-ink-muted truncate flex-1 min-w-0">
@@ -31,7 +31,7 @@ export default function HandoffLine({ nodeId, data }: { nodeId: string; data: Th
           onClick={() => setToolRecordForwarded(nodeId, c.toolForwarded !== 'all')}
           disabled={isViewerMode}
           title={t('handoff.toggleTitle')}
-          className={`text-2xs px-2 py-0.5 rounded-lg shrink-0 transition-colors disabled:cursor-default ${on ? 'bg-warm/15 text-warm hover:bg-warm/25' : 'bg-line text-ink-muted hover:bg-warm/10 hover:text-warm'}`}
+          className={`text-2xs px-2 py-0.5 rounded-tag shrink-0 transition-colors disabled:cursor-default ${on ? 'bg-warm/15 text-warm hover:bg-warm/25' : 'bg-line text-ink-muted hover:bg-warm/10 hover:text-warm'}`}
           data-handoff-toggle={c.toolForwarded}
         >
           {label}

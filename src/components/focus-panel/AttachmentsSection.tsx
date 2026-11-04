@@ -81,7 +81,7 @@ export default function AttachmentsSection({
             onDragLeave={() => setIsDragging(false)}
             onPaste={handlePaste}
             onClick={() => fileInputRef.current?.click()}
-            className={`border-2 border-dashed rounded-xl px-4 py-3 text-center cursor-pointer transition-all ${
+            className={`border-2 border-dashed rounded-content px-4 py-3 text-center cursor-pointer transition-all ${
               isDragging
                 ? 'border-accent bg-accent/5'
                 : 'border-line hover:border-accent/40 hover:bg-surface'
@@ -111,11 +111,11 @@ export default function AttachmentsSection({
             <div className="space-y-1.5">
               <span className="text-2xs text-ink-faint font-medium">{t('attach.thisNode')}</span>
               {attachments.map((att) => (
-                <div key={att.id} className="flex items-center gap-2 bg-wash rounded-lg px-3 py-2 group">
+                <div key={att.id} className="flex items-center gap-2 bg-wash rounded-content px-3 py-2 group">
                   {att.thumbnailUrl ? (
-                    <img src={att.thumbnailUrl} className="w-8 h-8 rounded object-cover shrink-0" alt={att.name} />
+                    <img src={att.thumbnailUrl} className="w-8 h-8 rounded-content object-cover shrink-0" alt={att.name} />
                   ) : (
-                    <span className="w-8 h-8 rounded bg-line flex items-center justify-center text-xs text-ink-muted shrink-0"><FileText size={16} strokeWidth={1.75} /></span>
+                    <span className="w-8 h-8 rounded-tag bg-line flex items-center justify-center text-xs text-ink-muted shrink-0"><FileText size={16} strokeWidth={1.75} /></span>
                   )}
                   <div className="min-w-0 flex-1">
                     <p className="text-xs text-ink truncate">{att.name}</p>
@@ -131,7 +131,7 @@ export default function AttachmentsSection({
                         <span className="text-2xs text-amber-600">{fmt(t('attach.pagesWarning'), { n: att.numPages, tok: (att.numPages * 1500).toLocaleString() })}</span>
                         <button
                           onClick={() => setAttachmentRenderMode(nodeId, att.id, att.renderMode === 'full' ? 'text-only' : 'full')}
-                          className={`text-2xs px-2 py-0.5 rounded-lg transition-colors ${
+                          className={`text-2xs px-2 py-0.5 rounded-tag transition-colors ${
                             att.renderMode === 'full'
                               ? 'bg-accent/10 text-accent'
                               : 'bg-line text-ink-muted'
@@ -147,7 +147,7 @@ export default function AttachmentsSection({
                         <span className="text-2xs text-ink-faint">{fmt(t('attach.figures'), { n: att.figures.length })}</span>
                         <button
                           onClick={() => setAttachmentRenderMode(nodeId, att.id, att.renderMode === 'full' ? 'text-only' : 'full')}
-                          className={`text-2xs px-2 py-0.5 rounded-lg transition-colors ${
+                          className={`text-2xs px-2 py-0.5 rounded-tag transition-colors ${
                             att.renderMode === 'full'
                               ? 'bg-accent/10 text-accent'
                               : 'bg-line text-ink-muted'
@@ -188,11 +188,11 @@ export default function AttachmentsSection({
                 const isOverridden = includeSet.has(att.id); // re-included despite ancestor exclusion
                 const isEffectivelyExcluded = isExcludedSelf || (excludedByAncestor && !isOverridden);
                 return (
-                  <div key={att.id} className={`flex items-center gap-2 rounded-lg px-3 py-2 transition-all ${isEffectivelyExcluded ? 'bg-red-50/50 opacity-50' : 'bg-wash'}`}>
+                  <div key={att.id} className={`flex items-center gap-2 rounded-content px-3 py-2 transition-all ${isEffectivelyExcluded ? 'bg-red-50/50 opacity-50' : 'bg-wash'}`}>
                     {att.thumbnailUrl ? (
-                      <img src={att.thumbnailUrl} className="w-8 h-8 rounded object-cover shrink-0" alt={att.name} />
+                      <img src={att.thumbnailUrl} className="w-8 h-8 rounded-content object-cover shrink-0" alt={att.name} />
                     ) : (
-                      <span className="w-8 h-8 rounded bg-line flex items-center justify-center text-xs text-ink-muted shrink-0"><FileText size={16} strokeWidth={1.75} /></span>
+                      <span className="w-8 h-8 rounded-tag bg-line flex items-center justify-center text-xs text-ink-muted shrink-0"><FileText size={16} strokeWidth={1.75} /></span>
                     )}
                     <div className="min-w-0 flex-1">
                       <p className={`text-xs truncate ${isEffectivelyExcluded ? 'text-ink-faint line-through' : 'text-ink'}`}>{att.name}</p>
@@ -213,7 +213,7 @@ export default function AttachmentsSection({
                     )}
                     <button
                       onClick={() => toggleExcludeAttachment(nodeId, att.id, excludedByAncestor)}
-                      className={`text-xs px-2 py-1 rounded-lg transition-colors shrink-0 ${
+                      className={`text-xs px-2 py-1 rounded-control transition-colors shrink-0 ${
                         isEffectivelyExcluded
                           ? 'bg-red-100 text-red-500 hover:bg-red-200'
                           : isOverridden

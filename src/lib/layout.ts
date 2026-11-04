@@ -32,7 +32,14 @@ export function estimateNodeHeight(node: ThoughtNode): number {
 // laying out with it would overlap once the user zooms back in. Slightly
 // generous spacing beats overlapping cards.
 export function nodeHeight(node: ThoughtNode): number {
+  // A manually resized card scrolls inside its chosen height. Thumbnail
+  // measurements and the content estimate must not replace that footprint.
+  if (!node.data.isCollapsed && node.height != null) return node.height;
   return Math.max(node.measured?.height ?? 0, estimateNodeHeight(node));
+}
+
+function nodeWidth(node: ThoughtNode): number {
+  return node.width ?? node.measured?.width ?? LAYOUT_COL_WIDTH;
 }
 
 /**
@@ -89,7 +96,9 @@ export function autoLayout(allNodes: ThoughtNode[], allEdges: ThoughtEdge[]): Th
   const nodes = allNodes.filter((n) => !contentIds.has(n.id));
   const edges = allEdges.filter((e) => !contentIds.has(e.source) && !contentIds.has(e.target));
 
-  const NODE_WIDTH = LAYOUT_COL_WIDTH;
+  // All nodes in a continuation keep one x coordinate. Widen the column
+  // pitch to fit resized cards instead of offsetting individual turns.
+  const NODE_WIDTH = nodes.reduce((width, node) => Math.max(width, nodeWidth(node)), LAYOUT_COL_WIDTH);
   const H_GAP = LAYOUT_H_GAP;
   const V_GAP = LAYOUT_V_GAP;
   const V_PAD = 24; // extra vertical padding for collision
@@ -140,7 +149,7 @@ export function autoLayout(allNodes: ThoughtNode[], allEdges: ThoughtEdge[]): Th
     const k = perMaterialCount.get(lowest.id) ?? 0;
     perMaterialCount.set(lowest.id, k + 1);
     materialAnchors.set(root.id, {
-      x: lowest.position.x - 60 + k * (LAYOUT_COL_WIDTH + LAYOUT_H_GAP),
+      x: lowest.position.x - 60 + k * (NODE_WIDTH + LAYOUT_H_GAP),
       y: lowest.position.y + nodeHeight(lowest) + LAYOUT_V_GAP,
     });
   }
@@ -532,7 +541,7 @@ export function autoLayout(allNodes: ThoughtNode[], allEdges: ThoughtEdge[]): Th
   // opens a folded column) → stacked above the column top.
   const solidRects = nodes.map((n) => {
     const p = positioned.get(n.id)!;
-    return { x: p.x, y: p.y, w: NODE_WIDTH, h: nodeHeightMap.get(n.id) || 220 };
+    return { x: p.x, y: p.y, w: nodeWidth(n), h: nodeHeightMap.get(n.id) || 220 };
   });
   const NOTE_W = 460;
   const NOTE_H = 130;
@@ -590,12 +599,16 @@ export function autoLayout(allNodes: ThoughtNode[], allEdges: ThoughtEdge[]): Th
 export function placeNewNodes(allNodes: ThoughtNode[], allEdges: ThoughtEdge[], newIds: string[]): ThoughtNode[] {
   const pending = new Set(newIds);
   const placed = new Map<string, { x: number; y: number }>();
+  const preferences = new Map<string, { layoutDirection: 'vertical' | 'horizontal'; edgeRouteDefault?: 'auto' | 'curve' | 'orthogonal' }>();
   const byId = new Map(allNodes.map((n) => [n.id, n]));
   const isContent = (n: ThoughtNode) => ['note', 'file', 'link', 'frame'].includes(n.data.stepKind ?? '');
   const pos = (n: ThoughtNode) => placed.get(n.id) ?? n.position;
   // A parent this very action folded still carries its expanded measurement.
   const footprint = (n: ThoughtNode) => (n.data.isCollapsed ? estimateNodeHeight(n) : nodeHeight(n));
-  const STEP = LAYOUT_COL_WIDTH + LAYOUT_H_GAP;
+  const STEP = allNodes.reduce((width, node) => node.data.stepKind === 'frame'
+    ? width : Math.max(width, nodeWidth(node)), LAYOUT_COL_WIDTH) + LAYOUT_H_GAP;
+  const ROW_STEP = allNodes.reduce((height, node) => node.data.stepKind === 'frame'
+    ? height : Math.max(height, footprint(node) + (!node.data.response && node.height == null ? 400 : 0)), 0) + LAYOUT_H_GAP;
   const PAD = 24;
   const isExplore = (e: ThoughtEdge) => !!e.data?.isBranchFromSelection;
 
@@ -618,8 +631,26 @@ export function placeNewNodes(allNodes: ThoughtNode[], allEdges: ThoughtEdge[], 
     const ins = parentEdges(id).filter((e) => byId.has(e.source));
     const thoughtIns = ins.filter((e) => !isContent(byId.get(e.source)!));
     const materials = ins.map((e) => byId.get(e.source)!).filter(isContent);
+    const ownerId = claimantOf(id);
+    const origin = ownerId ? byId.get(ownerId) : materials[0];
+    const inherited = origin ? preferences.get(origin.id) ?? origin.data : node.data;
+    const direction = inherited.layoutDirection ?? node.data.layoutDirection ?? 'vertical';
+    preferences.set(id, { layoutDirection: direction, edgeRouteDefault: inherited.edgeRouteDefault ?? node.data.edgeRouteDefault });
+    let preserveChainAxis = false;
     let at: { x: number; y: number };
-    if (thoughtIns.length) {
+    if (thoughtIns.length && direction === 'horizontal') {
+      const owner = byId.get(ownerId!)!;
+      const op = pos(owner);
+      const ownerEdge = thoughtIns.find((e) => e.source === owner.id)!;
+      const hasContinuation = allEdges.some((e) => e.source === owner.id && e.target !== id && !isExplore(e)
+        && !e.data?.isCrossLink && !pending.has(e.target) && claimantOf(e.target) === owner.id);
+      const right = Math.max(...thoughtIns.map((e) => {
+        const parent = byId.get(e.source)!;
+        return pos(parent).x + nodeWidth(parent) + LAYOUT_V_GAP;
+      }));
+      preserveChainAxis = !isExplore(ownerEdge) && !hasContinuation;
+      at = { x: right, y: preserveChainAxis ? op.y : op.y + ROW_STEP };
+    } else if (thoughtIns.length) {
       const owner = byId.get(claimantOf(id)!)!;
       const op = pos(owner);
       const below = op.y + footprint(owner) + LAYOUT_V_GAP;
@@ -632,6 +663,7 @@ export function placeNewNodes(allNodes: ThoughtNode[], allEdges: ThoughtEdge[], 
         if (hasContinuation) {
           at = { x: op.x + STEP, y: below };
         } else {
+          preserveChainAxis = true;
           // a merge clears every parent it continues from and never rises
           // above one that explored it out
           let y = below;
@@ -642,12 +674,15 @@ export function placeNewNodes(allNodes: ThoughtNode[], allEdges: ThoughtEdge[], 
           at = { x: op.x, y };
         }
       }
+    } else if (materials.length && direction === 'horizontal') {
+      const rightmost = materials.reduce((a, b) => pos(a).x + nodeWidth(a) > pos(b).x + nodeWidth(b) ? a : b);
+      at = { x: pos(rightmost).x + nodeWidth(rightmost) + LAYOUT_V_GAP, y: pos(rightmost).y - 60 };
     } else if (materials.length) {
       const lowest = materials.reduce((a, b) => (pos(a).y + footprint(a) > pos(b).y + footprint(b) ? a : b));
       at = { x: pos(lowest).x - 60, y: pos(lowest).y + footprint(lowest) + LAYOUT_V_GAP };
     } else if (others.length) {
       at = {
-        x: Math.max(...others.map((n) => pos(n).x + (n.measured?.width ?? n.width ?? LAYOUT_COL_WIDTH))) + LAYOUT_H_GAP,
+        x: Math.max(...others.map((n) => pos(n).x + nodeWidth(n))) + LAYOUT_H_GAP,
         y: Math.min(...others.map((n) => pos(n).y)),
       };
     } else {
@@ -655,18 +690,33 @@ export function placeNewNodes(allNodes: ThoughtNode[], allEdges: ThoughtEdge[], 
     }
 
     // An answer still to come grows the card by up to its 400px cap.
-    const h = footprint(node) + (node.data.response ? 0 : 400);
+    const h = footprint(node) + (node.data.response || node.height != null ? 0 : 400);
+    const w = nodeWidth(node);
     const clash = (x: number, y: number) => others.some((o) => {
       const p = pos(o);
-      const w = o.measured?.width ?? o.width ?? LAYOUT_COL_WIDTH;
-      return x < p.x + w + PAD && x + LAYOUT_COL_WIDTH + PAD > p.x && y < p.y + footprint(o) + PAD && y + h + PAD > p.y;
+      return x < p.x + nodeWidth(o) + PAD && x + w + PAD > p.x && y < p.y + footprint(o) + PAD && y + h + PAD > p.y;
     });
-    for (let guard = 0; guard < 200 && clash(at.x, at.y); guard++) at = { x: at.x + STEP, y: at.y };
+    for (let guard = 0; guard < 200 && clash(at.x, at.y); guard++) {
+      if (preserveChainAxis) {
+        // A continuation keeps its row/column even when the next slot is
+        // occupied. Only the fresh node advances past the blocking cards.
+        const blockers = others.filter((o) => {
+          const p = pos(o);
+          return at.x < p.x + nodeWidth(o) + PAD && at.x + w + PAD > p.x
+            && at.y < p.y + footprint(o) + PAD && at.y + h + PAD > p.y;
+        });
+        at = direction === 'horizontal'
+          ? { x: Math.max(...blockers.map((o) => pos(o).x + nodeWidth(o) + LAYOUT_V_GAP)), y: at.y }
+          : { x: at.x, y: Math.max(...blockers.map((o) => pos(o).y + footprint(o) + LAYOUT_V_GAP)) };
+      } else {
+        at = direction === 'horizontal' ? { x: at.x, y: at.y + ROW_STEP } : { x: at.x + STEP, y: at.y };
+      }
+    }
     placed.set(id, at);
   }
 
   return allNodes.map((n) => {
     const p = placed.get(n.id);
-    return p ? { ...n, position: p } : n;
+    return p ? { ...n, position: p, data: { ...n.data, ...preferences.get(n.id) } } : n;
   });
 }

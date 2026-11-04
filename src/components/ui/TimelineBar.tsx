@@ -75,14 +75,14 @@ export function TimelineBar() {
     // own centerline (x≈41px). pointer-events pass through except the rows
     // and the button themselves.
     <div
-      className="absolute left-[2px] top-[calc(38%+116px)] w-[100px] z-10 tdag-timeline pointer-events-none flex flex-col items-stretch"
+      className="canvas-timeline absolute w-[100px] z-10 tdag-timeline pointer-events-none flex flex-col items-stretch"
       data-timeline-bar
       role="navigation"
       aria-label={t('timeline.label')}
     >
       {hovered && hover && (
         <div
-          className="fixed left-[108px] max-w-[320px] bg-card border border-line rounded-lg shadow-md px-3 py-2 text-xs pointer-events-none z-20"
+          className="fixed left-[124px] max-w-[320px] bg-card border border-line rounded-overlay shadow-lg px-3 py-2 text-xs pointer-events-none z-20"
           style={{ top: hover.y - 14 }}
         >
           <div className="font-medium text-ink truncate">
@@ -102,7 +102,7 @@ export function TimelineBar() {
         onClick={() => setOverviewOpen(true)}
         title={t('timeline.openOverview')}
         data-timeline-overview-btn
-        className="pointer-events-auto self-start ml-[25px] w-7 h-7 rounded-lg flex items-center justify-center text-ink-faint/70 hover:text-accent hover:bg-accent/10 transition-colors"
+        className="pointer-events-auto self-start ml-[9px] w-control-size h-control-size rounded-control flex items-center justify-center text-ink-faint/70 hover:text-accent hover:bg-accent/10 transition-colors"
       >
         <History size={14} strokeWidth={1.75} />
       </button>
@@ -137,11 +137,11 @@ export function TimelineBar() {
                   setSelectedNodeId(e.id);
                   rf.setCenter(e.x + 260 + panelShift(e.id) / 2, e.y + 110, { zoom: 1, duration: 350 });
                 }}
-                className="relative flex items-center w-full h-[14px] shrink-0 pl-[29px] cursor-pointer"
+                className="relative flex items-center w-full h-[14px] shrink-0 pl-[17px] cursor-pointer"
                 aria-label={e.label}
               >
                 <span
-                  className={`rounded-full ${e.recentlyEdited ? 'tdag-timeline-pulse' : ''}`}
+                  className={`rounded-tag ${e.recentlyEdited ? 'tdag-timeline-pulse' : ''}`}
                   style={{
                     width: tickWidth(i, hover?.idx ?? null, e.badged),
                     height: 4,

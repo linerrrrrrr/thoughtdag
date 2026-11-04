@@ -69,7 +69,7 @@ function CodePre(props: React.HTMLAttributes<HTMLPreElement>) {
           setTimeout(() => setCopied(false), 1600);
         }}
         title={t('common.copyCode')}
-        className="absolute top-1.5 right-1.5 w-6 h-6 rounded-md bg-card/90 border border-line text-ink-faint hover:text-accent flex items-center justify-center opacity-0 group-hover/pre:opacity-100 transition-opacity nodrag nopan"
+        className="absolute top-1.5 right-1.5 w-6 h-6 rounded-control bg-card border border-line text-ink-faint hover:text-accent flex items-center justify-center opacity-0 group-hover/pre:opacity-100 transition-opacity nodrag nopan"
       >
         {copied ? <Check size={12} strokeWidth={2} className="text-green-600" /> : <Copy size={12} strokeWidth={1.75} />}
       </button>
@@ -124,7 +124,7 @@ function MermaidBlock({ code, source }: { code: string; source: ReactNode }) {
     <button
       onClick={(e) => { e.stopPropagation(); setShowSource((v) => !v); }}
       title={showSource ? t('md.diagramView') : t('md.diagramSource')}
-      className={`absolute top-1.5 ${showSource ? 'right-9' : 'right-1.5'} w-6 h-6 rounded-md bg-card/90 border border-line text-ink-faint hover:text-accent flex items-center justify-center opacity-0 group-hover/diagram:opacity-100 transition-opacity nodrag nopan`}
+      className={`absolute top-1.5 ${showSource ? 'right-9' : 'right-1.5'} w-6 h-6 rounded-control bg-card border border-line text-ink-faint hover:text-accent flex items-center justify-center opacity-0 group-hover/diagram:opacity-100 transition-opacity nodrag nopan`}
       data-diagram-toggle
     >
       {showSource ? <Workflow size={12} strokeWidth={1.75} /> : <Code2 size={12} strokeWidth={1.75} />}
@@ -143,7 +143,7 @@ function MermaidBlock({ code, source }: { code: string; source: ReactNode }) {
 function DiagramPlaceholder() {
   const t = useT();
   return (
-    <div className="h-12 my-2 flex items-center justify-center gap-1.5 rounded-lg border border-dashed border-line text-xs text-ink-faint select-none" data-diagram-placeholder>
+    <div className="h-12 my-2 flex items-center justify-center gap-1.5 rounded-content border border-dashed border-line text-xs text-ink-faint select-none" data-diagram-placeholder>
       <Workflow size={13} strokeWidth={1.75} /> {t('md.diagramPlaceholder')}
     </div>
   );
@@ -208,7 +208,7 @@ function LocalImage({ path, alt }: { path: string; alt?: string }) {
   }
   return (
     <span
-      className={`inline-flex items-center gap-1 text-xs border border-line rounded-md px-1.5 py-0.5 font-mono nopan cursor-pointer ${failed ? 'text-ink-faint' : 'text-ink-muted'}`}
+      className={`inline-flex items-center gap-1 text-xs border border-line rounded-tag px-1.5 py-0.5 font-mono nopan cursor-pointer ${failed ? 'text-ink-faint' : 'text-ink-muted'}`}
       title={path}
       data-local-image={path}
       onClick={(e) => { e.stopPropagation(); void openLocalPath(path); }}

@@ -73,12 +73,12 @@ export function HitCards({ hits, onOpened, extra, cards }: { hits: WhyFindHit[];
         const u = unfolded[k];
         const card = cards?.[k];
         return (
-          <div key={k} className="border border-line rounded-xl px-3 py-2 bg-card hover:bg-wash/60 transition-colors" data-recall-hit={h.kind}>
+          <div key={k} className="border border-line rounded-content px-3 py-2 bg-card hover:bg-wash/60 transition-colors" data-recall-hit={h.kind}>
             <div className="flex items-start gap-2">
               <button onClick={() => void open(h)} className="flex-1 min-w-0 text-left" title={h.kind === 'memory' ? h.file : h.open} data-recall-open>
                 <div className="text-xs text-ink leading-relaxed break-words">{card ?? <><span className="text-ink-faint">{h.where}: </span>{h.snippet}</>}</div>
                 <div className="text-2xs text-ink-faint font-mono flex items-center gap-1.5 flex-wrap mt-0.5">
-                  <span className="border border-line rounded px-1 py-px">{h.runner}</span>
+                  <span className="border border-line rounded-tag px-1 py-px">{h.runner}</span>
                   <span>#{h.turn}</span>
                   {h.at && <span>{when(h.at)}</span>}
                   {extra?.(h)}
@@ -88,7 +88,7 @@ export function HitCards({ hits, onOpened, extra, cards }: { hits: WhyFindHit[];
               <button
                 onClick={() => void cite(h)}
                 disabled={citing === k}
-                className="shrink-0 flex items-center gap-1 text-2xs text-accent hover:bg-accent/10 px-2 py-1 rounded-lg transition-colors disabled:opacity-50"
+                className="shrink-0 flex items-center gap-1 text-2xs text-accent hover:bg-accent/10 px-2 py-1 rounded-tag transition-colors disabled:opacity-50"
                 title={t('recall.cite')}
                 data-recall-cite
               >
@@ -158,12 +158,12 @@ export default function RecallResults({ phrase, onOpened, dossiers, onOpenDossie
       {dossierHits.length > 0 && (
         <div className="space-y-1 mb-3 max-w-[720px]" data-recall-dossiers>
           {dossierHits.map((d) => (
-            <div key={d.topicId} className="border border-accent/40 bg-accent/10 rounded-xl px-3 py-2 flex items-start gap-2" data-recall-dossier={d.topicId}>
+            <div key={d.topicId} className="border border-accent/40 bg-accent/10 rounded-content px-3 py-2 flex items-start gap-2" data-recall-dossier={d.topicId}>
               <div className="flex-1 min-w-0">
                 <div className="text-xs text-ink"><span className="font-medium">{fmt(t('dossier.title'), { name: d.name })}</span>{d.lead ? ` · ${d.lead}` : ''}</div>
                 <div className="text-2xs text-ink-faint mt-0.5">{fmt(t('mp.fromTurns'), { n: d.covered })} · {t('dossier.updated')} {d.updatedAt.slice(0, 10)}</div>
               </div>
-              {onOpenDossier && <button onClick={() => onOpenDossier(d.topicId)} className="shrink-0 text-2xs text-accent hover:bg-accent/10 px-2 py-1 rounded-lg">{t('recall.dossierOpen')}</button>}
+              {onOpenDossier && <button onClick={() => onOpenDossier(d.topicId)} className="shrink-0 text-2xs text-accent hover:bg-accent/10 px-2 py-1 rounded-tag">{t('recall.dossierOpen')}</button>}
             </div>
           ))}
         </div>
@@ -181,16 +181,16 @@ export default function RecallResults({ phrase, onOpened, dossiers, onOpenDossie
           const open = !!expanded[g.session];
           const lead = cards[keyOf(g.hits[0])];
           return (
-            <div key={g.session} className="border border-line rounded-xl bg-card overflow-hidden" data-recall-group={g.kind}>
+            <div key={g.session} className="border border-line rounded-content bg-card overflow-hidden" data-recall-group={g.kind}>
               <div className="grid grid-cols-[auto_minmax(0,1fr)_auto_auto] gap-2.5 items-center px-3 py-2 cursor-pointer hover:bg-wash/60" onClick={() => setExpanded((e) => ({ ...e, [g.session]: !open }))} data-recall-group-head>
-                <span className="text-2xs font-mono text-ink-faint border border-line rounded px-1 py-px">{g.kind === 'memory' ? 'memory' : g.runner}</span>
+                <span className="text-2xs font-mono text-ink-faint border border-line rounded-tag px-1 py-px">{g.kind === 'memory' ? 'memory' : g.runner}</span>
                 <div className="min-w-0">
                   <div className="text-xs font-medium text-ink truncate">{g.title}</div>
                   <div className="text-2xs text-ink-muted truncate">{lead ?? g.hits[0].snippet}</div>
                 </div>
                 <span className="text-2xs font-mono text-ink-faint whitespace-nowrap">{g.hits.length} · {when(g.at)}</span>
                 {g.kind === 'turn' ? (
-                  <button onClick={async (e) => { e.stopPropagation(); if (await openHit(g.hits[0])) onOpened?.(); }} className="text-2xs text-accent hover:bg-accent/10 px-2 py-1 rounded-lg" data-recall-group-open>{t('recall.openSession')}</button>
+                  <button onClick={async (e) => { e.stopPropagation(); if (await openHit(g.hits[0])) onOpened?.(); }} className="text-2xs text-accent hover:bg-accent/10 px-2 py-1 rounded-tag" data-recall-group-open>{t('recall.openSession')}</button>
                 ) : <span className="w-8" />}
               </div>
               {open && (

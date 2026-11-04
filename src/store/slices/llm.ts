@@ -5,7 +5,7 @@ import { placeNewNodes } from '../../lib/layout';
 import { getDescendantIds, selectionSinks, walkUpAncestors } from '../../lib/graph';
 import { COLORS } from '../../lib/constants';
 import type { ContextMessage, ImageAttachment } from '../../lib/api';
-import { buildContext, resolveExplicitRole, applyRoleOverride, type MessageSource } from '../context-builder';
+import { buildContext, buildIncomingContext, resolveExplicitRole, applyRoleOverride, type MessageSource } from '../context-builder';
 import { activeAbortControllers, autoRunCounts, runNodeGeneration, triggerParadigmCascade } from '../streaming';
 import { useUiStore, toast, recallSnapshot } from '../../lib/ui-store';
 // the stale set a request carries is the one the preview shows: the fingerprint's minus the judge's dismissals (#51)
@@ -123,11 +123,11 @@ export const createLlmSlice: StateCreator<StoreState, [], [], LlmSlice> = (set, 
     const newNodes = placeNewNodes([...updatedNodes, newNode], newEdges, [id]);
     set({ nodes: newNodes, edges: newEdges, selectedNodeId: id });
 
-    // Build full context from ancestors + explicit role for the new node
+    // Compile the new node's incoming edges, including references attached
+    // by @-mentions. Compiling only the parent would omit those new wires.
     const selfNode = get().nodes.find((n) => n.id === id);
-    const ctx = parentId
-      ? buildContext(parentId, get().nodes, get().edges, branchContext, selfNode?.data.excludedAttachmentIds, selfNode?.data.includedAttachmentIds, shownStaleIds(get()))
-      : { messages: [] as ContextMessage[], images: [] as ImageAttachment[], sources: [] as MessageSource[] };
+    const ctx = buildIncomingContext(id, get().nodes, get().edges, branchContext,
+      selfNode?.data.excludedAttachmentIds, selfNode?.data.includedAttachmentIds, shownStaleIds(get()));
     const contextMessages = ctx.messages;
     const contextImages = ctx.images;
     const parentNode = parentId ? get().nodes.find((n) => n.id === parentId) : null;
@@ -292,7 +292,7 @@ export const createLlmSlice: StateCreator<StoreState, [], [], LlmSlice> = (set, 
     // flow through their descendants, so only the selection's sinks get a
     // wire (no residual edges, no scrambled conversation order).
     const parents = selectionSinks(
-      nodeIds.filter((nid) => nodes.some((n) => n.id === nid)),
+      nodeIds.filter((nid) => nodes.some((n) => n.id === nid && n.data.stepKind !== 'frame')),
       edges,
     );
     if (parents.length === 0 || !question.trim()) return;
@@ -486,7 +486,7 @@ export const createLlmSlice: StateCreator<StoreState, [], [], LlmSlice> = (set, 
     const { nodes, edges } = get();
     const selected = nodeIds
       .map((id) => nodes.find((n) => n.id === id))
-      .filter(Boolean) as ThoughtNode[];
+      .filter((node): node is ThoughtNode => !!node && node.data.stepKind !== 'frame');
     if (selected.length === 0) return;
     const sinkIds = selectionSinks(selected.map((n) => n.id), edges);
 
@@ -579,7 +579,7 @@ ${intent.trim()}` : ''}` },
         // ancestry instead of becoming an orphan root
         if (deleteAfter) {
           const allRemove = new Set<string>();
-          for (const nid of nodeIds) {
+          for (const { id: nid } of selected) {
             allRemove.add(nid);
             for (const d of getDescendantIds(nid, get().edges)) {
               allRemove.add(d);
@@ -624,7 +624,7 @@ ${intent.trim()}` : ''}` },
     const { nodes, edges } = get();
     const selected = nodeIds
       .map((id) => nodes.find((n) => n.id === id))
-      .filter(Boolean) as ThoughtNode[];
+      .filter((node): node is ThoughtNode => !!node && node.data.stepKind !== 'frame');
     // Stable numbering: canvas order (nodes array), then mark order per node
     const wanted = highlightIds ? new Set(highlightIds) : null;
     const entries: { n: number; text: string; from: string }[] = [];

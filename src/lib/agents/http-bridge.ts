@@ -22,12 +22,45 @@ export async function installAgentsHttpBridge(apiBase: string): Promise<boolean>
   };
   const listeners: ((p: { runId: string; event: Record<string, unknown> & { type: string } }) => void)[] = [];
   let feed: EventSource | null = null;
-  const ensureFeed = () => {
-    if (feed) return;
-    feed = new EventSource(api + '/agents/events');
-    feed.onmessage = (ev) => {
-      try { const p = JSON.parse(ev.data); for (const cb of listeners) cb(p); } catch { /* a heartbeat */ }
+  let feedReady: Promise<void> | null = null;
+  const activeRuns = new Set<string>();
+  const earlyFinished = new Set<string>();
+  const connectionError = 'The agent event stream disconnected. Please retry.';
+  const ensureFeed = (): Promise<void> => {
+    if (feed?.readyState === 1) return Promise.resolve();
+    if (feedReady) return feedReady;
+    const source = new EventSource(api + '/agents/events');
+    feed = source;
+    source.onmessage = (ev) => {
+      let payload;
+      try { payload = JSON.parse(ev.data); } catch { return; }
+      if (payload?.event?.type === 'run_end' || payload?.event?.type === 'run_error') {
+        if (!activeRuns.delete(payload.runId)) {
+          if (earlyFinished.size >= 32) earlyFinished.delete(earlyFinished.values().next().value!);
+          earlyFinished.add(payload.runId);
+        }
+      }
+      for (const cb of listeners) cb(payload);
     };
+    feedReady = new Promise<void>((resolve, reject) => {
+      const fail = () => {
+        clearTimeout(timer);
+        source.close();
+        if (feed === source) { feed = null; feedReady = null; }
+        // This feed has no replay cursor. A disconnect cannot claim a complete
+        // transcript: stop affected runs and preserve their partial activity.
+        for (const runId of activeRuns) {
+          for (const cb of listeners) cb({ runId, event: { type: 'run_error', message: connectionError } });
+          void post('/agents/abort', { runId }).catch(() => undefined);
+        }
+        activeRuns.clear();
+        reject(new Error(connectionError));
+      };
+      const timer = setTimeout(fail, 10000);
+      source.onopen = () => { clearTimeout(timer); feedReady = null; resolve(); };
+      source.onerror = () => { if (source.readyState !== 1) fail(); };
+    });
+    return feedReady;
   };
   // A browser tab cannot learn an absolute path from the system's own file
   // dialog. Inside the harness the shim can: the harness has a directory
@@ -57,7 +90,17 @@ export async function installAgentsHttpBridge(apiBase: string): Promise<boolean>
       const r = await fetch(api + '/agents/models' + (runtime ? `?runtime=${encodeURIComponent(runtime)}` : ''), { credentials: 'same-origin' });
       return r.json();
     },
-    run: async (request) => { ensureFeed(); const r = await post<{ runId: string }>('/agents/run', request); return r.runId; },
+    run: async (request) => {
+      await ensureFeed();
+      const source = feed;
+      const r = await post<{ runId: string }>('/agents/run', request);
+      if (feed !== source || feed?.readyState !== 1) {
+        void post('/agents/abort', { runId: r.runId }).catch(() => undefined);
+        throw new Error(connectionError);
+      }
+      if (!earlyFinished.delete(r.runId)) activeRuns.add(r.runId);
+      return r.runId;
+    },
     abort: async (runId) => (await post<{ ok: boolean }>('/agents/abort', { runId })).ok,
     answer: async (runId, requestId, response) => (await post<{ ok: boolean }>('/agents/answer', { runId, requestId, response })).ok,
     workspace: async (canvasId) => (await post<{ dir: string }>('/agents/workspace', { canvasId })).dir,
@@ -70,7 +113,7 @@ export async function installAgentsHttpBridge(apiBase: string): Promise<boolean>
     // the writing. A host that does not serve /backup fails the probe-free
     // first call, and the backup falls back to the browser handle path.
     backupJson: async (dir, name, json) => post<{ file: string }>('/backup', { dir, name, json }),
-    onEvent: (cb) => { listeners.push(cb); ensureFeed(); },
+    onEvent: (cb) => { listeners.push(cb); void ensureFeed().catch(() => undefined); },
   };
   return true;
 }

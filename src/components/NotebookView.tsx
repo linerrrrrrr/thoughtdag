@@ -12,15 +12,15 @@ import { useT } from '../i18n';
 // SVG figures draw through <img> (scripts inside never run there). The text
 // view shows what the model reads instead (lib/notebook.ts).
 
-const outputBox = 'text-xs font-mono whitespace-pre-wrap break-words max-h-[28rem] overflow-auto rounded-lg border px-3 py-2';
+const outputBox = 'text-xs font-mono whitespace-pre-wrap break-words max-h-[28rem] overflow-auto rounded-content border px-3 py-2';
 
 function Output({ o }: { o: NotebookOutput }) {
   const t = useT();
   if (o.kind === 'text') return <pre className={`${outputBox} text-ink bg-card border-line`}>{o.text.replace(/\n+$/, '')}</pre>;
   if (o.kind === 'error') return <pre className={`${outputBox} text-red-700 bg-red-50/60 border-red-200`}>{o.text}</pre>;
   // figures keep a white ground: plots are drawn for paper, often transparent
-  if (o.kind === 'image') return <img src={`data:${o.mimeType};base64,${o.data}`} alt={o.label} className="max-w-full rounded-lg border border-line/60 bg-white" />;
-  if (o.kind === 'vector') return <img src={`data:image/svg+xml;charset=utf-8,${encodeURIComponent(o.svg)}`} alt={o.label} className="max-w-full rounded-lg border border-line/60 bg-white" />;
+  if (o.kind === 'image') return <img src={`data:${o.mimeType};base64,${o.data}`} alt={o.label} className="max-w-full rounded-content border border-line/60 bg-white" />;
+  if (o.kind === 'vector') return <img src={`data:image/svg+xml;charset=utf-8,${encodeURIComponent(o.svg)}`} alt={o.label} className="max-w-full rounded-content border border-line/60 bg-white" />;
   return <p className="text-2xs text-ink-faint italic">{t('reader.notebookInteractive')}</p>;
 }
 

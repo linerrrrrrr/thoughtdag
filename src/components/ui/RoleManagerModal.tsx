@@ -1,10 +1,12 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Plus, Trash2, X } from 'lucide-react';
 import { effectiveRoles, type EffectiveRole } from '../../lib/role-templates';
 import { useUiStore } from '../../lib/ui-store';
-import { generateId } from '../../utils';
+import { generateId, isImeComposing } from '../../utils';
 import { useI18n, useT } from '../../i18n';
+import { useInlineEditDismiss } from '../../lib/use-inline-edit-dismiss';
+import { useDismissableLayer } from '../../lib/use-dismissable-layer';
 
 // The role LIBRARY editor: add, edit and remove the reusable options shown
 // as chips everywhere. Editing a built-in converts it into a custom copy
@@ -19,30 +21,43 @@ function Row({ role, onCommit, onRemove }: {
   const t = useT();
   const [name, setName] = useState(role.name);
   const [prompt, setPrompt] = useState(role.prompt);
-  const commit = () => onCommit(role, name.trim(), prompt.trim());
+  const [editing, setEditing] = useState(false);
+  const editRef = useRef<HTMLDivElement>(null);
+  const commit = () => { setEditing(false); onCommit(role, name.trim(), prompt.trim()); };
+  const cancel = () => { setName(role.name); setPrompt(role.prompt); setEditing(false); };
+  const edit = useInlineEditDismiss({ active: editing, ref: editRef, onOutside: commit, onCancel: cancel });
   return (
-    <div className="border border-line rounded-xl px-3 py-2.5 space-y-1.5 bg-surface">
+    <div
+      ref={editRef}
+      onBlur={edit.onBlur}
+      onFocus={event => {
+        if (!editing && (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement)) {
+          setName(role.name); setPrompt(role.prompt); setEditing(true);
+        }
+      }}
+      className="border border-line rounded-content px-3 py-2.5 space-y-1.5 bg-surface"
+      data-role-template={role.id}
+    >
       <div className="flex items-center gap-2">
         <input
           value={name}
-          onChange={(e) => setName(e.target.value)}
-          onBlur={commit}
+          onChange={(e) => { setName(e.target.value); setEditing(true); }}
+          onKeyDown={event => { if (event.key === 'Enter' && !isImeComposing(event)) { event.preventDefault(); event.stopPropagation(); commit(); } }}
           placeholder={t('roles.namePlaceholder')}
           className="flex-1 text-sm font-medium text-ink bg-transparent focus:outline-none placeholder-ink-faint"
         />
-        {role.builtin && <span className="text-2xs text-ink-faint bg-wash px-1.5 py-0.5 rounded-full shrink-0">{t('roles.builtin')}</span>}
+        {role.builtin && <span className="text-2xs text-ink-faint bg-wash px-1.5 py-0.5 rounded-tag shrink-0">{t('roles.builtin')}</span>}
         <button
-          onClick={() => onRemove(role)}
+          onClick={() => { setEditing(false); onRemove(role); }}
           title={t('common.delete')}
-          className="text-ink-faint hover:text-red-500 w-6 h-6 rounded-full flex items-center justify-center transition-colors shrink-0"
+          className="text-ink-faint hover:text-red-500 w-6 h-6 rounded-control flex items-center justify-center transition-colors shrink-0"
         >
           <Trash2 size={13} strokeWidth={1.75} />
         </button>
       </div>
       <textarea
         value={prompt}
-        onChange={(e) => setPrompt(e.target.value)}
-        onBlur={commit}
+        onChange={(e) => { setPrompt(e.target.value); setEditing(true); }}
         placeholder={t('roles.promptPlaceholder')}
         rows={2}
         className="w-full text-xs text-ink-muted bg-transparent focus:outline-none resize-y leading-relaxed placeholder-ink-faint"
@@ -58,6 +73,8 @@ export default function RoleManagerModal() {
   const setLib = useUiStore((s) => s.setRoleLib);
   const lang = useI18n((s) => s.lang);
   const t = useT();
+  const layerRef = useRef<HTMLDivElement>(null);
+  useDismissableLayer({ open, refs: [layerRef], onDismiss: () => setOpen(false), modal: true });
   if (!open) return null;
 
   const roles = effectiveRoles(lang, lib);
@@ -78,12 +95,12 @@ export default function RoleManagerModal() {
   const add = () => setLib({ ...lib, custom: [...lib.custom, { id: generateId(), name: '', prompt: '' }] });
 
   return createPortal((
-    <div className="fixed inset-0 z-[60] bg-ink/30 backdrop-blur-sm flex items-center justify-center p-6" onClick={() => setOpen(false)}>
-      <div className="bg-card rounded-2xl shadow-2xl border border-line w-[560px] max-h-[80vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+    <div className="fixed inset-0 z-[60] bg-ink/30 flex items-center justify-center p-6">
+      <div ref={layerRef} role="dialog" aria-modal="true" aria-label={t('roles.managerTitle')} tabIndex={-1} className="bg-card rounded-panel shadow-lg border border-line w-[560px] max-h-[80vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center gap-2 px-5 py-3 border-b border-line shrink-0">
           <span className="text-sm font-semibold text-ink">{t('roles.managerTitle')}</span>
           <span className="text-2xs text-ink-faint flex-1">{t('roles.hint')}</span>
-          <button onClick={() => setOpen(false)} className="text-ink-faint hover:text-ink w-7 h-7 rounded-lg hover:bg-wash flex items-center justify-center transition-colors shrink-0">
+          <button onClick={() => setOpen(false)} className="text-ink-faint hover:text-ink w-7 h-7 rounded-control hover:bg-wash flex items-center justify-center transition-colors shrink-0">
             <X size={15} strokeWidth={1.75} />
           </button>
         </div>
@@ -94,7 +111,7 @@ export default function RoleManagerModal() {
         <div className="flex items-center gap-2 px-5 py-3 border-t border-line shrink-0">
           <button
             onClick={add}
-            className="flex items-center gap-1.5 text-xs text-accent hover:bg-accent/10 px-3 py-1.5 rounded-lg transition-colors"
+            className="flex items-center gap-1.5 text-xs text-accent hover:bg-accent/10 px-3 py-1.5 rounded-control transition-colors"
           >
             <Plus size={14} strokeWidth={1.75} /> {t('roles.add')}
           </button>

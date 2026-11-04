@@ -1,212 +1,306 @@
 import { useState, useRef, useEffect } from 'react';
-import { AlignVerticalJustifyStart, Archive, ClipboardList, Copy, FileDown, GitBranch, Highlighter, Layers, Trash2 } from 'lucide-react';
+import { useCanvasPanelPosition } from '../lib/use-canvas-panel-position';
+import { Archive, Check, ChevronDown, ChevronUp, ClipboardList, Copy, FileDown, GitBranch, Highlighter, Layers, Trash2, X } from 'lucide-react';
 import { useStore } from '../store';
-import { confirmDialog } from '../lib/ui-store';
+import type { ThoughtNode } from '../types';
+import { confirmDialog, useUiStore } from '../lib/ui-store';
+import { useInlineEditDismiss } from '../lib/use-inline-edit-dismiss';
+import { effectiveNodeGeometry, nodeGeometryMinimum, nodeGeometryMaximum } from '../lib/node-geometry';
 import { updateSummaries } from '../lib/ladder-reselect';
 import { selectionMarkdown, downloadMarkdown } from '../lib/export';
 import { isImeComposing } from '../utils';
 import { useT, t as ti, fmt } from '../i18n';
+import SelectionArrangeMenu, { type ViewportRectGetter } from './SelectionArrangeMenu';
+import FrameSettings, { FrameObjectActions } from './FrameSettings';
+import NodeDetailsButton from './NodeDetailsButton';
+import { getNodeDisplayName } from '../lib/node-display-name';
+import { isContentKind } from '../lib/content';
 
-// The two families of batch actions share one input row:
-//   explore   → REQUIRED question (a new direction needs words)
-//   merge / merge-delete / weave → OPTIONAL intent (empty = standard run);
-// the row opens under whichever button was pressed, Enter runs, Esc closes.
 type PendingAction = 'explore' | 'merge' | 'mergeDelete' | 'weave' | null;
+type GeometryField = 'width' | 'height' | 'x' | 'y';
+type GeometryDraft = Partial<Record<GeometryField, string>>;
+const fieldLabels = { width: 'format.width', height: 'format.height', x: 'format.x', y: 'format.y' } as const;
+const numericText = (value: number) => String(Math.round(value * 100) / 100);
+const buttonClass = 'min-h-8 px-2.5 rounded-control text-xs text-ink-muted hover:bg-wash transition-colors flex items-center gap-2 text-left focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-40 disabled:cursor-not-allowed';
 
-export default function SelectionToolbar() {
-  const { selectedNodeIds, nodes, batchDelete, batchMergeSummarize, weaveHighlights, exploreFrom, alignSelection, setArchived, duplicateSelection } = useStore();
+/** One reversible edit boundary: Tab moves between fields without committing. */
+function GeometryEditor({ selectedNodes, allowPosition }: { selectedNodes: ThoughtNode[]; allowPosition: boolean }) {
+  const t = useT();
+  const editor = useRef<HTMLDivElement>(null);
+  const lock = useRef<HTMLInputElement>(null);
+  const [draft, setDraft] = useState<GeometryDraft>({});
+  const [editing, setEditing] = useState(false);
+  const [error, setError] = useState('');
+  const lockedCount = selectedNodes.filter(node => node.data.lockAspectRatio).length;
+  const mixedLock = lockedCount > 0 && lockedCount < selectedNodes.length;
+  const anyLocked = lockedCount > 0;
+  const allLocked = lockedCount === selectedNodes.length;
+  const dirty = Object.keys(draft).length > 0;
+  const canEditPosition = allowPosition && selectedNodes.length === 1;
+  const geometries = selectedNodes.map(effectiveNodeGeometry);
+  useEffect(() => { if (lock.current) lock.current.indeterminate = mixedLock; }, [mixedLock]);
+
+  const minimum = (field: 'width' | 'height') => Math.ceil(Math.max(...selectedNodes.map((node, index) => {
+    const min = nodeGeometryMinimum(node);
+    const size = geometries[index];
+    if (!node.data.lockAspectRatio) return min[field];
+    return field === 'width' ? Math.max(min.width, min.height * size.width / size.height) : Math.max(min.height, min.width * size.height / size.width);
+  })) * 100) / 100;
+  const maximum = (field: 'width' | 'height') => Math.min(...selectedNodes.map((node, index) => {
+    const max = nodeGeometryMaximum(node);
+    const size = geometries[index];
+    if (!node.data.lockAspectRatio) return max[field];
+    return field === 'width' ? Math.min(max.width, max.height * size.width / size.height) : Math.min(max.height, max.width * size.height / size.width);
+  }));
+  const cancel = () => { setDraft({}); setEditing(false); setError(''); };
+  const parsedDraft = (): Partial<Record<GeometryField, number>> | null => {
+    const patch: Partial<Record<GeometryField, number>> = {};
+    for (const field of Object.keys(draft) as GeometryField[]) {
+      const value = Number(draft[field]);
+      if (!draft[field]?.trim() || !Number.isFinite(value)) {
+        setError(t('format.invalidNumber'));
+        return null;
+      }
+      if (field === 'width' || field === 'height') {
+        if (value < minimum(field)) {
+          setError(fmt(t('format.minimum'), { field: t(fieldLabels[field]), n: minimum(field) }));
+          return null;
+        }
+        if (value > maximum(field)) {
+          setError(fmt(t('format.maximum'), { field: t(fieldLabels[field]), n: numericText(maximum(field)) }));
+          return null;
+        }
+      }
+      patch[field] = value;
+    }
+    return patch;
+  };
+  const commit = (outside = false) => {
+    const patch = parsedDraft();
+    if (patch) {
+      if (dirty) useStore.getState().setSelectionGeometry(selectedNodes.map(node => node.id), patch);
+      cancel();
+    } else if (outside) {
+      // Invalid local drafts never silently alter saved geometry.
+      setDraft({}); setEditing(false);
+    }
+  };
+  const dismiss = useInlineEditDismiss({ active: editing, ref: editor, onOutside: () => commit(true), onCancel: cancel });
+  const valueFor = (field: GeometryField): string => {
+    if (draft[field] !== undefined) return draft[field];
+    const values = selectedNodes.map((node, index) => {
+      const size = geometries[index];
+      if (field === 'x' || field === 'y') return node.position[field];
+      const other = field === 'width' ? 'height' : 'width';
+      const otherDraft = draft[other];
+      if (node.data.lockAspectRatio && otherDraft?.trim() && Number.isFinite(Number(otherDraft))) {
+        return Number(otherDraft) * size[field] / size[other];
+      }
+      return size[field];
+    });
+    return values.every(value => Math.abs(value - values[0]) < 0.01) ? numericText(values[0]) : '';
+  };
+  const field = (name: GeometryField) => <label className="block min-w-0 space-y-1.5">
+    <span className="text-xs text-ink-muted">{t(fieldLabels[name])}</span>
+    <span className={`flex items-center h-9 rounded-control border bg-card focus-within:border-accent focus-within:ring-1 focus-within:ring-accent ${error && draft[name] !== undefined ? 'border-watch' : 'border-line'}`}>
+      <input type="text" inputMode="decimal" aria-label={t(fieldLabels[name])} data-node-format-field={name}
+        value={valueFor(name)} placeholder={t('format.mixed')} autoComplete="off"
+        aria-invalid={error && draft[name] !== undefined ? true : undefined}
+        onFocus={() => setEditing(true)}
+        onChange={event => {
+          const text = event.target.value;
+          setEditing(true); setError('');
+          setDraft(previous => {
+            const next = { ...previous, [name]: text };
+            // With a locked ratio, the most recently edited axis drives size.
+            if (anyLocked && name === 'width') delete next.height;
+            if (anyLocked && name === 'height') delete next.width;
+            return next;
+          });
+        }}
+        onKeyDown={event => {
+          if (event.key === 'Enter' && !isImeComposing(event)) { event.preventDefault(); event.stopPropagation(); commit(); }
+        }}
+        className="w-full min-w-0 h-full bg-transparent px-2.5 text-sm tabular-nums text-ink placeholder:text-ink-faint outline-none rounded-control" />
+      <span className="pr-2 text-xs text-ink-faint select-none" aria-hidden="true">px</span>
+    </span>
+  </label>;
+
+  return <div ref={editor} onBlur={dismiss.onBlur} data-node-format-geometry>
+    <section className="px-4 py-3 space-y-3" aria-label={t('format.size')}>
+      <h3 className="text-xs font-medium text-ink">{t('format.size')}</h3>
+      <div className="grid grid-cols-2 gap-3">{field('width')}{field('height')}</div>
+      <label className="flex items-center gap-2 text-xs text-ink-muted cursor-pointer w-fit min-h-6">
+        <input ref={lock} type="checkbox" checked={allLocked} aria-checked={mixedLock ? 'mixed' : allLocked} data-node-format-lock
+          onChange={event => {
+            const patch = parsedDraft();
+            if (!patch) return;
+            const ids = selectedNodes.map(node => node.id);
+            if (dirty) useStore.getState().setSelectionGeometry(ids, patch);
+            // Lock the newly committed shape without changing its dimensions.
+            useStore.getState().setSelectionGeometry(ids, { lockAspectRatio: event.target.checked });
+            cancel();
+          }} className="h-3.5 w-3.5 accent-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent" />
+        {t('format.lockAspectRatio')}
+      </label>
+    </section>
+    {(canEditPosition || error || dirty) && <section className="px-4 py-3 border-t border-line space-y-3" aria-label={canEditPosition ? t('format.position') : undefined}>
+      {canEditPosition && <>
+        <h3 className="text-xs font-medium text-ink">{t('format.position')}</h3>
+        <div className="grid grid-cols-2 gap-3">{field('x')}{field('y')}</div>
+      </>}
+      {error && <p className="text-xs text-watch leading-relaxed" role="alert">{error}</p>}
+      {dirty && <div className="flex items-center justify-between gap-2">
+        <span className="text-xs text-ink-faint">{t('format.editHint')}</span>
+        <div className="flex gap-1">
+          <button type="button" onClick={cancel} data-node-format-cancel className={buttonClass} title={t('common.cancel')} aria-label={t('common.cancel')}><X size={14} /></button>
+          <button type="button" onClick={() => commit()} data-node-format-apply className={`${buttonClass} text-accent`}><Check size={14} />{t('format.apply')}</button>
+        </div>
+      </div>}
+    </section>}
+  </div>;
+}
+
+export default function SelectionToolbar({ getViewportRect, withDetails = false }: { getViewportRect: ViewportRectGetter; withDetails?: boolean }) {
+  const { selectedNodeIds, nodes, batchDelete, batchMergeSummarize, weaveHighlights, exploreFrom, setArchived, duplicateSelection } = useStore();
   const t = useT();
   const [pending, setPending] = useState<PendingAction>(null);
   const [input, setInput] = useState('');
+  const [collapsed, setCollapsed] = useState(false);
+  const [formatScope, setFormatScope] = useState<'nodes' | 'frames'>('nodes');
+  const panelPosition = useCanvasPanelPosition();
+  const panel = useRef<HTMLElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    if (pending) setTimeout(() => inputRef.current?.focus(), 100);
-  }, [pending]);
-
-  // Reset the input row when selection changes
-  const [prevSelectionCount, setPrevSelectionCount] = useState(selectedNodeIds.length);
-  if (prevSelectionCount !== selectedNodeIds.length) {
-    setPrevSelectionCount(selectedNodeIds.length);
-    setPending(null);
-    setInput('');
+  const contentEditor = useRef<HTMLDivElement>(null);
+  const selectionKey = [...selectedNodeIds].sort().join('\n');
+  const draftKey = (action: Exclude<PendingAction, null>) => `selection-action:${JSON.stringify([...selectedNodeIds].sort())}:${action}`;
+  const cancelInput = () => {
+    if (pending) useUiStore.getState().setDraft(draftKey(pending), '');
+    setPending(null); setInput('');
+  };
+  const dismiss = useInlineEditDismiss({ active: pending !== null, ref: contentEditor, onOutside: () => setPending(null), onCancel: cancelInput });
+  useEffect(() => { if (pending) inputRef.current?.focus(); }, [pending]);
+  const [prevSelectionKey, setPrevSelectionKey] = useState(selectionKey);
+  if (prevSelectionKey !== selectionKey) {
+    setPrevSelectionKey(selectionKey);
+    setPending(null); setInput(''); setCollapsed(false); setFormatScope('nodes');
   }
 
-  if (selectedNodeIds.length < 2) return null;
-
-  const selectedNodes = selectedNodeIds
-    .map((id) => nodes.find((n) => n.id === id))
-    .filter(Boolean);
-
-  const totalTokens = selectedNodes.reduce((sum, n) => sum + (n?.data.tokenCount || 0), 0);
-
-  // Collect all highlights from selected nodes
-  const allHighlights = selectedNodes.flatMap((n) => n?.data.highlights || []);
-
+  const selected = new Set(selectedNodeIds);
+  const selectedNodes = nodes.filter(node => selected.has(node.id));
+  if (!selectedNodes.length) return null;
+  const contentNodes = selectedNodes.filter(node => node.data.stepKind !== 'frame');
+  const frames = selectedNodes.filter(node => node.data.stepKind === 'frame');
+  const contentIds = contentNodes.map(node => node.id);
+  const groupCount = new Set(contentNodes.map(node => node.data.canvasGroupId).filter(Boolean)).size;
+  const hasFrames = contentNodes.length !== selectedNodes.length;
+  const framesOnly = hasFrames && contentNodes.length === 0;
+  const mixedTypes = hasFrames && contentNodes.length > 0;
+  const editingFrames = framesOnly || (mixedTypes && formatScope === 'frames');
+  const formatNodes = editingFrames ? frames : contentNodes;
+  const panelTitle = t(framesOnly ? 'frame.settingsTitle' : 'format.title');
+  const totalTokens = contentNodes.reduce((sum, node) => sum + (node.data.tokenCount || 0), 0);
+  const allHighlights = contentNodes.flatMap(node => node.data.highlights || []);
   const run = () => {
+    if (!contentIds.length) return;
     const text = input.trim();
-    if (pending === 'explore') {
-      if (!text) return;
-      void exploreFrom(selectedNodeIds, text);
-    } else if (pending === 'merge') {
-      batchMergeSummarize(selectedNodeIds, false, text || undefined);
-    } else if (pending === 'mergeDelete') {
-      batchMergeSummarize(selectedNodeIds, true, text || undefined);
-    } else if (pending === 'weave') {
-      void weaveHighlights(selectedNodeIds, text || undefined);
-    }
-    setPending(null);
-    setInput('');
+    if (pending === 'explore') { if (!text) return; void exploreFrom(contentIds, text); }
+    else if (pending === 'merge') batchMergeSummarize(contentIds, false, text || undefined);
+    else if (pending === 'mergeDelete') batchMergeSummarize(contentIds, true, text || undefined);
+    else if (pending === 'weave') void weaveHighlights(contentIds, text || undefined);
+    if (pending) useUiStore.getState().setDraft(draftKey(pending), '');
+    setPending(null); setInput('');
   };
-
-  const toggle = (a: Exclude<PendingAction, null>) => {
-    setPending(pending === a ? null : a);
-    setInput('');
+  const toggle = (action: Exclude<PendingAction, null>) => {
+    setPending(pending === action ? null : action);
+    setInput(useUiStore.getState().drafts[draftKey(action)] ?? '');
   };
+  const actionClass = (action: Exclude<PendingAction, null>) => `${buttonClass} ${pending === action ? 'bg-accent/10 text-accent' : ''}`;
 
-  const actionBtn = (a: Exclude<PendingAction, null>, active: string, idle: string) =>
-    `text-xs px-3 py-1.5 rounded-lg transition-colors ${pending === a ? active : idle}`;
-
-  return (
-    <div className="absolute top-16 left-1/2 -translate-x-1/2 z-20 animate-fade-in">
-      <div className="bg-card/95 backdrop-blur border border-line rounded-xl px-4 py-3 shadow-lg space-y-2">
-        {/* Header */}
-        <div className="flex items-center gap-3">
-          <span className="text-sm text-ink-muted font-medium">
-            {fmt(t('toolbar.nodesSelected'), { n: selectedNodeIds.length })}
-            <span className="text-xs text-ink-faint ml-1.5">
-              ({fmt(t('toolbar.tokens'), { n: totalTokens })}{allHighlights.length > 0 ? fmt(t('toolbar.highlightCount'), { n: allHighlights.length }) : ''})
-            </span>
-          </span>
-        </div>
-
-        {/* Action buttons */}
-        <div className="flex items-center gap-2 flex-wrap">
-          <button
-            onClick={() => toggle('merge')}
-            className={actionBtn('merge', 'bg-blue-600 text-white', 'bg-blue-50 hover:bg-blue-100 text-blue-600')}
-            title={t('toolbar.mergeSummaryTitle')}
-          >
-            <ClipboardList size={14} strokeWidth={1.75} className="inline" /> {t('toolbar.mergeSummary')}
-          </button>
-
-          <button
-            onClick={() => toggle('mergeDelete')}
-            className={actionBtn('mergeDelete', 'bg-accent text-white', 'bg-accent/10 hover:bg-accent/20 text-accent')}
-            title={t('toolbar.mergeDeleteTitle')}
-          >
-            <ClipboardList size={14} strokeWidth={1.75} className="inline" /> {t('toolbar.mergeDelete')}
-          </button>
-
-          {allHighlights.length > 0 && (
-            <button
-              onClick={() => toggle('weave')}
-              className={actionBtn('weave', 'bg-amber-500 text-white', 'bg-amber-500/10 hover:bg-amber-500/20 text-amber-600')}
-              title={t('toolbar.weaveTitle')}
-            >
-              <Highlighter size={14} strokeWidth={1.75} className="inline" /> {t('toolbar.weave')}
-            </button>
-          )}
-
-          <button
-            onClick={() => toggle('explore')}
-            className={actionBtn('explore', 'bg-accent text-white', 'bg-accent/10 hover:bg-accent/20 text-accent')}
-            title={t('toolbar.exploreTitle')}
-          >
-            <GitBranch size={14} strokeWidth={1.75} className="inline" /> {t('common.explore')}
-          </button>
-
-          {/* Low-frequency actions: icon-only so the row stays one line in
-              both languages (full label lives in the tooltip). */}
-          <button
-            onClick={() => { setArchived(selectedNodeIds, true); }}
-            className="bg-wash hover:bg-line text-ink-muted w-8 h-7 rounded-lg transition-colors flex items-center justify-center"
-            title={`${t('archive.label')} — ${t('archive.batchTitle')}`}
-          >
-            <Archive size={14} strokeWidth={1.75} />
-          </button>
-
-          <button
-            onClick={() => { void updateSummaries(selectedNodeIds); }}
-            className="bg-wash hover:bg-line text-ink-muted w-8 h-7 rounded-lg transition-colors flex items-center justify-center"
-            title={`${t('toolbar.reselectLadders')} — ${t('toolbar.reselectLaddersTitle')}`}
-            data-batch-reselect
-          >
-            <Layers size={14} strokeWidth={1.75} />
-          </button>
-
-          <button
-            onClick={() => duplicateSelection(selectedNodeIds)}
-            className="bg-wash hover:bg-line text-ink-muted w-8 h-7 rounded-lg transition-colors flex items-center justify-center"
-            title={`${t('toolbar.duplicate')} — ${t('toolbar.duplicateTitle')}`}
-          >
-            <Copy size={14} strokeWidth={1.75} />
-          </button>
-
-          <button
-            onClick={() => {
-              void confirmDialog({
-                title: t('confirm.alignTitle'),
-                message: fmt(t('confirm.alignMsg'), { n: selectedNodeIds.length }),
-                confirmLabel: t('common.confirmAlign'),
-              }).then((ok) => { if (ok) alignSelection(selectedNodeIds); });
-            }}
-            className="bg-wash hover:bg-line text-ink-muted w-8 h-7 rounded-lg transition-colors flex items-center justify-center"
-            title={`${t('toolbar.align')} — ${t('confirm.alignTitle')}`}
-          >
-            <AlignVerticalJustifyStart size={14} strokeWidth={1.75} />
-          </button>
-
-          <button
-            onClick={() => downloadMarkdown(selectionMarkdown(selectedNodeIds))}
-            className="bg-wash hover:bg-line text-ink-muted w-8 h-7 rounded-lg transition-colors flex items-center justify-center"
-            title={`${t('common.exportMd')} — ${t('toolbar.exportTitle')}`}
-          >
-            <FileDown size={14} strokeWidth={1.75} />
-          </button>
-
-          <div className="w-px h-5 bg-line" />
-
-          <button
-            onClick={() => {
-              void confirmDialog({
-                title: ti('confirm.deleteNodesTitle'),
-                message: fmt(ti('confirm.deleteNodes'), { n: selectedNodeIds.length }),
-                confirmLabel: ti('common.delete'),
-                danger: true,
-              }).then((ok) => { if (ok) batchDelete(selectedNodeIds); });
-            }}
-            className="text-xs bg-red-50 hover:bg-red-100 text-red-600 px-3 py-1.5 rounded-lg transition-colors"
-          >
-            <Trash2 size={14} strokeWidth={1.75} className="inline" /> {t('toolbar.deleteAll')}
-          </button>
-        </div>
-
-        {/* Shared input row: question (explore) or optional intent (converge) */}
-        {pending && (
-          <div className="flex gap-1.5 pt-1">
-            <input
-              ref={inputRef}
-              type="text"
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !isImeComposing(e) && (pending !== 'explore' || input.trim())) run();
-                if (e.key === 'Escape') { setPending(null); setInput(''); }
-              }}
-              placeholder={pending === 'explore' ? t('toolbar.explorePlaceholder') : t('toolbar.intentPlaceholder')}
-              className="flex-1 text-xs border border-accent/30 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-accent bg-accent/5 min-w-[300px]"
-            />
-            <button
-              onClick={run}
-              disabled={pending === 'explore' && !input.trim()}
-              className="text-xs bg-accent text-white px-3 py-2 rounded-lg hover:bg-accent-strong transition-colors shrink-0 disabled:opacity-30"
-            >
-              {t('common.go')}
-            </button>
-          </div>
-        )}
+  return <aside ref={panel} className="canvas-tool-panel flex flex-col" style={panelPosition}
+    aria-label={panelTitle} data-selection-toolbar data-node-format-panel data-with-details={withDetails || undefined}>
+    <header className={`px-4 py-3 flex shrink-0 items-start gap-3 ${collapsed ? '' : 'border-b border-line'}`}>
+      <div className="min-w-0 flex-1">
+        <h2 className="text-sm font-medium leading-5">{panelTitle}</h2>
+        <p className="text-xs text-ink-muted mt-1 leading-4">
+          {mixedTypes ? fmt(t('frame.mixedSelection'), { frames: frames.length, nodes: contentNodes.length })
+            : fmt(t(framesOnly ? 'frame.framesSelected' : 'toolbar.nodesSelected'), { n: selectedNodes.length })}
+          {groupCount > 0 && <span className="ml-1">{fmt(t('toolbar.groupCount'), { n: groupCount })}</span>}
+        </p>
+        {selectedNodes.length === 1 && <p className="text-xs text-ink-muted mt-1 truncate" data-format-node-name title={getNodeDisplayName(selectedNodes[0].data, t('ctx.unnamedNode'))}>
+          {getNodeDisplayName(selectedNodes[0].data, t('ctx.unnamedNode'))}
+        </p>}
+        {selectedNodes.length === 1 && !framesOnly && !isContentKind(selectedNodes[0].data.stepKind) && <NodeDetailsButton nodeId={selectedNodes[0].id} label className="mt-2 -ml-2" />}
       </div>
-    </div>
-  );
+      <button type="button" onClick={() => setCollapsed(!collapsed)} aria-expanded={!collapsed}
+        data-node-format-close={!collapsed ? '' : undefined} data-node-format-reopen={collapsed ? '' : undefined}
+        aria-label={t(framesOnly ? collapsed ? 'frame.expandSettings' : 'frame.collapseSettings' : collapsed ? 'format.expand' : 'format.collapse')}
+        title={t(framesOnly ? collapsed ? 'frame.expandSettings' : 'frame.collapseSettings' : collapsed ? 'format.expand' : 'format.collapse')}
+        className="h-7 w-7 -mr-1 flex items-center justify-center rounded-control text-ink-muted hover:bg-wash focus-visible:outline-2 focus-visible:outline-accent">
+        {collapsed ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
+      </button>
+    </header>
+    {!collapsed && <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain" data-node-format-scroll>
+      {mixedTypes && <div className="px-4 py-3 border-b border-line space-y-2">
+        <div className="flex gap-1 rounded-control bg-wash p-1" role="group" aria-label={t('frame.formatScope')}>
+          {(['nodes', 'frames'] as const).map(scope => <button type="button" key={scope} data-format-scope={scope}
+            aria-pressed={formatScope === scope} onClick={() => setFormatScope(scope)}
+            className={`flex-1 min-h-8 px-2 rounded-control text-xs focus-visible:outline-2 focus-visible:outline-accent ${formatScope === scope ? 'bg-card text-ink' : 'text-ink-muted hover:text-ink'}`}>
+            {fmt(t(scope === 'nodes' ? 'frame.nodeScope' : 'frame.frameScope'), { n: scope === 'nodes' ? contentNodes.length : frames.length })}
+          </button>)}
+        </div>
+        <p className="text-xs text-ink-faint leading-relaxed">{t('frame.formatScopeHint')}</p>
+      </div>}
+      {editingFrames ? <FrameSettings key={`${selectionKey}:frames`} frames={frames}>
+        <GeometryEditor key={`${selectionKey}:frames`} selectedNodes={formatNodes} allowPosition={selectedNodes.length === 1} />
+      </FrameSettings> : <GeometryEditor key={`${selectionKey}:nodes`} selectedNodes={formatNodes} allowPosition={selectedNodes.length === 1} />}
+      <section className="px-4 py-3 border-t border-line space-y-2.5" aria-label={t('arrange.spatialTools')}>
+        <h3 className="text-xs font-medium">{t(mixedTypes ? 'frame.arrangeSelection' : 'format.arrange')}</h3>
+        <div className="[&>div]:w-full [&>div]:ml-0 [&>div>button]:flex-1 [&>div>button]:justify-center [&>div>button]:border [&>div>button]:border-line [&>div>button]:bg-card [&>div>button:hover]:bg-wash">
+          <SelectionArrangeMenu ids={selectedNodeIds} getViewportRect={getViewportRect} />
+        </div>
+      </section>
+      {editingFrames && <FrameObjectActions frames={frames} allowDelete={framesOnly} />}
+      {!framesOnly && <div ref={contentEditor} onBlur={dismiss.onBlur} className="border-t border-line">
+        <div className="flex items-center gap-2 px-4 py-3 text-xs text-ink-muted" data-node-format-content>
+          <h3 className="font-medium text-ink">{t('format.contentActions')}</h3>
+          <span className="ml-auto tabular-nums">{fmt(t('toolbar.tokens'), { n: totalTokens })}</span>
+        </div>
+        <div className="px-2 pb-3 space-y-2">
+          <div className="grid grid-cols-2 gap-1">
+            <button type="button" onClick={() => toggle('merge')} disabled={contentIds.length < 2} className={actionClass('merge')} title={t('toolbar.mergeSummaryTitle')}><ClipboardList size={14} className="shrink-0" />{t('toolbar.mergeSummary')}</button>
+            <button type="button" onClick={() => toggle('mergeDelete')} disabled={contentIds.length < 2} className={actionClass('mergeDelete')} title={t('toolbar.mergeDeleteTitle')}><ClipboardList size={14} className="shrink-0" />{t('toolbar.mergeDelete')}</button>
+            <button type="button" onClick={() => toggle('explore')} disabled={!contentIds.length} className={actionClass('explore')} title={t('toolbar.exploreTitle')}><GitBranch size={14} className="shrink-0" />{t('common.explore')}</button>
+            {allHighlights.length > 0 && <button type="button" onClick={() => toggle('weave')} className={actionClass('weave')} title={t('toolbar.weaveTitle')}><Highlighter size={14} className="shrink-0" />{t('toolbar.weave')}</button>}
+            <button type="button" onClick={() => setArchived(contentIds, true)} disabled={!contentIds.length} className={buttonClass} title={t('archive.batchTitle')}><Archive size={14} className="shrink-0" />{t('archive.label')}</button>
+            <button type="button" onClick={() => { void updateSummaries(contentIds); }} disabled={!contentIds.length} className={buttonClass} title={t('toolbar.reselectLaddersTitle')} data-batch-reselect><Layers size={14} className="shrink-0" />{t('toolbar.reselectLadders')}</button>
+          </div>
+          {hasFrames && <p className="px-2 text-xs text-ink-muted leading-relaxed">{t('toolbar.framesExcluded')}</p>}
+          {pending && <div className="px-2 space-y-2">
+            <input ref={inputRef} type="text" value={input}
+              onChange={event => { setInput(event.target.value); useUiStore.getState().setDraft(draftKey(pending), event.target.value, true); }}
+              onKeyDown={event => { if (event.key === 'Enter' && !isImeComposing(event) && (pending !== 'explore' || input.trim())) { event.preventDefault(); run(); } }}
+              aria-label={pending === 'explore' ? t('toolbar.explorePlaceholder') : t('toolbar.intentPlaceholder')}
+              placeholder={pending === 'explore' ? t('toolbar.explorePlaceholder') : t('toolbar.intentPlaceholder')}
+              className="w-full text-xs border border-line rounded-control px-2.5 py-2 focus:outline-none focus:ring-1 focus:ring-accent bg-card min-w-0" />
+            <div className="flex justify-end gap-2">
+              <button type="button" onClick={cancelInput} className={buttonClass}>{t('common.cancel')}</button>
+              <button type="button" onClick={run} disabled={!contentIds.length || (pending === 'explore' && !input.trim())}
+                className="text-xs bg-action text-white px-3 min-h-8 rounded-control hover:bg-action-strong transition-colors disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent">{t('common.go')}</button>
+            </div>
+          </div>}
+        </div>
+      </div>}
+      {!framesOnly && <footer className="border-t border-line px-2 py-2 flex flex-wrap gap-1">
+        <button type="button" onClick={() => duplicateSelection(selectedNodeIds)} className={buttonClass} title={t('toolbar.duplicateTitle')}><Copy size={14} />{t(mixedTypes ? 'frame.copySelection' : 'toolbar.duplicate')}</button>
+        <button type="button" onClick={() => downloadMarkdown(selectionMarkdown(contentIds))} className={buttonClass} title={t('toolbar.exportTitle')}><FileDown size={14} />{t(mixedTypes ? 'frame.exportSelectedNodes' : 'format.export')}</button>
+        <button type="button" onClick={() => {
+          void confirmDialog({ title: mixedTypes ? ti('frame.deleteSelection') : ti('confirm.deleteNodesTitle'), message: mixedTypes
+            ? fmt(ti('frame.deleteMixedConfirm'), { frames: frames.length, nodes: contentNodes.length })
+            : fmt(ti('confirm.deleteNodes'), { n: selectedNodeIds.length }), confirmLabel: ti('common.delete'), danger: true })
+            .then(ok => { if (ok) batchDelete(selectedNodeIds); });
+        }} className={`${buttonClass} ml-auto text-watch`}><Trash2 size={14} />{t(mixedTypes ? 'frame.deleteSelection' : 'common.delete')}</button>
+      </footer>}
+    </div>}
+  </aside>;
 }

@@ -1,21 +1,24 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { Handle, NodeResizeControl, Position, useReactFlow, useUpdateNodeInternals, type NodeProps } from '@xyflow/react';
+import { useEffect, useRef, useState } from 'react';
+import { NodeResizeControl, useReactFlow, useUpdateNodeInternals, type NodeProps } from '@xyflow/react';
 import { BookOpen, ExternalLink, FileText, Link2, Link2Off, Loader2, MoveDiagonal2, Paperclip, RefreshCw, StickyNote, Trash2, X } from 'lucide-react';
-import type { ThoughtNode as ThoughtNodeType } from '../types';
+import type { Attachment, ThoughtNode as ThoughtNodeType } from '../types';
 import { useStore } from '../store';
-import { useZoomTier } from '../lib/use-map-mode';
+import { useNodeDetail } from '../lib/node-detail';
 import { useUiStore } from '../lib/ui-store';
 import { triggerParadigmCascade } from '../store/streaming';
 import { extractImage, fetchLinkIntoNode, ingestFiles } from '../lib/content';
 import { FILE_INPUT_ACCEPT } from '../lib/attachments';
 import { Markdown } from './Markdown';
-import ZoomText from './ZoomText';
-import { useLocalLadder } from '../lib/local-ladder-cache';
-import { usePlaqueClip } from '../lib/use-plaque-clip';
+import NodeOverview from './NodeOverview';
+import NodeConnectionHandles from './NodeConnectionHandles';
+import FileIdentity from './FileIdentity';
+import { fileIdentity, fileSizeLabel } from '../lib/file-identity';
+import { getNodeDisplayName, getNodeNameSource } from '../lib/node-display-name';
 import { countTokens } from '../utils';
 import { useT, fmt } from '../i18n';
 import { isViewerMode } from '../lib/viewer';
 import { recallSourceLine } from '../lib/recall';
+import { useInlineEditDismiss } from '../lib/use-inline-edit-dismiss';
 
 // Content nodes: canvas material, not turns. A note (markdown), a file
 // (attachments) or a link (stamped web snapshot) that never generates — it
@@ -29,6 +32,48 @@ const NOTE_BODY_MAX = 400;
 /** Resizing is a step of its own: settle before, record after. */
 const recordStep = () => useStore.getState().pushHistory();
 
+function ExtractionEditor({ nodeId, attachment, onClose }: { nodeId: string; attachment: Attachment; onClose: () => void }) {
+  const t = useT();
+  const draftKey = `extraction:${nodeId}:${attachment.id}`;
+  const [draft, setDraft] = useState(() => useUiStore.getState().drafts[draftKey] ?? attachment.extractedText ?? '');
+  const editRef = useRef<HTMLDivElement>(null);
+  const discard = () => { useUiStore.getState().setDraft(draftKey, ''); onClose(); };
+  const isExtractToggle = (target: EventTarget | null) => target instanceof Element && target.closest('[data-extract-toggle]')?.getAttribute('data-extract-toggle') === attachment.id;
+  const edit = useInlineEditDismiss({
+    active: true, ref: editRef, onOutside: onClose, onCancel: discard,
+    ignoreOutside: event => isExtractToggle(event.target),
+    ignoreFocusOutside: isExtractToggle,
+  });
+  const save = () => {
+    if (draft !== (attachment.extractedText ?? '')) {
+      useStore.getState().pushHistory();
+      useStore.getState().setAttachmentData(nodeId, attachment.id, { extractedText: draft, extractedBy: 'manual' });
+      useStore.getState().pushHistory();
+    }
+    discard();
+  };
+  return (
+    <div ref={editRef} onBlur={edit.onBlur} className="mt-2 space-y-2" onClick={event => event.stopPropagation()} data-extraction-editor>
+      <textarea
+        value={draft}
+        onChange={event => { setDraft(event.target.value); useUiStore.getState().setDraft(draftKey, event.target.value, true); }}
+        rows={7}
+        autoFocus
+        className="w-full text-xs text-ink bg-surface border border-line rounded-control px-3 py-2 focus:outline-none focus:ring-1 focus:ring-accent/40 resize-y leading-relaxed nopan nowheel"
+      />
+      <div className="flex items-center gap-2 flex-wrap">
+        <button onClick={() => { discard(); void extractImage(nodeId, attachment.id); }} className="text-xs text-ink-muted hover:text-ink px-2 py-1.5 rounded-control flex items-center gap-1">
+          <RefreshCw size={12} strokeWidth={1.75} /> {t('content.reExtractAgain')}
+        </button>
+        <div className="flex-1" />
+        <button onClick={discard} className="text-xs text-ink-muted hover:bg-wash px-3 py-1.5 rounded-control">{t('common.cancel')}</button>
+        <button onClick={save} className="text-xs bg-accent text-white hover:bg-accent/90 px-3 py-1.5 rounded-control">{t('common.save')}</button>
+      </div>
+      <p className="text-2xs text-ink-faint">{t('content.draftExitHint')}</p>
+    </div>
+  );
+}
+
 export default function ContentNode({ id, data, selected }: NodeProps<ThoughtNodeType>) {
   const t = useT();
   const deleteNode = useStore((s) => s.deleteNode);
@@ -38,7 +83,7 @@ export default function ContentNode({ id, data, selected }: NodeProps<ThoughtNod
   // Blindspot #8: on-canvas ≠ in-context — unlinked material is decoration
   const isLinked = useStore((s) => s.edges.some((e) => e.source === id));
   // Wiring material happens mostly from the overview — grow the handle there
-  const zoomTier = useZoomTier();
+  const { tier: zoomTier, fixed: fixedDetail } = useNodeDetail(data.detailLevel);
   const zoomedOut = zoomTier !== 'work';
   const rf = useReactFlow();
   const nodePos = useStore((s) => { const n = s.nodes.find((x) => x.id === id); return n ? n.position : null; });
@@ -52,21 +97,24 @@ export default function ContentNode({ id, data, selected }: NodeProps<ThoughtNod
   });
   const glyphTier = zoomTier === 'glyph';
   const updateNodeInternals = useUpdateNodeInternals();
-  useEffect(() => { updateNodeInternals(id); }, [glyphTier, id, updateNodeInternals]);
+  useEffect(() => { updateNodeInternals(id); }, [zoomTier, id, updateNodeInternals]);
 
   const kind = data.stepKind === 'file' ? 'file' : data.stepKind === 'link' ? 'link' : 'note';
   // a height of the card's own (the corner handle) vs. the measured one React Flow passes in props
   const resized = useStore((s) => s.nodes.find((n) => n.id === id)?.height != null);
   const [editing, setEditing] = useState(!isViewerMode && kind === 'note' && !data.question);
-  const [draft, setDraft] = useState(data.question);
+  const draftKey = `note:${id}`;
+  const [draft, setDraft] = useState(() => useUiStore.getState().drafts[draftKey] ?? data.question);
+  const retainedDraft = useUiStore(s => s.drafts[draftKey]);
+  const editRef = useRef<HTMLDivElement>(null);
   const [openExtract, setOpenExtract] = useState<string | null>(null); // attId whose extraction panel is open
-  const setAttachmentData = useStore((s) => s.setAttachmentData);
   const fileRef = useRef<HTMLInputElement>(null);
+  const canContinueWorkflow = useStore(s => s.edges.some(edge => edge.source === id && !edge.data?.isCrossLink && s.nodes.some(node => node.id === edge.target && node.data.stepKind === 'prompt' && !node.data.response && !node.data.isLoading && !node.data.generationFailed)));
 
-  // Blindspot #2: undo history is a full-graph snapshot — commit the note
-  // ONCE on blur, never per keystroke.
+  // Material may advance a workflow, so only the explicit save can commit.
   const commit = () => {
     setEditing(false);
+    useUiStore.getState().setDraft(draftKey, '');
     const text = draft.trim() === '' ? '' : draft;
     if (text === data.question) return;
     useStore.getState().pushHistory();
@@ -77,8 +125,21 @@ export default function ContentNode({ id, data, selected }: NodeProps<ThoughtNod
     // Filling a material slot advances a waiting paradigm run (idempotent)
     triggerParadigmCascade(useStore.getState, id);
   };
+  const cancel = () => {
+    useUiStore.getState().setDraft(draftKey, '');
+    setDraft(data.question);
+    setEditing(false);
+  };
+  const edit = useInlineEditDismiss({ active: editing, ref: editRef, onOutside: () => setEditing(false), onCancel: cancel });
+  const startEditing = () => {
+    if (isViewerMode) return;
+    setDraft(useUiStore.getState().drafts[draftKey] ?? data.question);
+    setEditing(true);
+  };
 
   const attachments = data.attachments || [];
+  const fileTypes = [...new Set(attachments.map(att => fileIdentity(att.name).extension).filter(Boolean))];
+  const materialLabel = t(kind === 'note' ? 'content.textMaterial' : kind === 'file' ? 'content.fileMaterial' : 'glyph.link');
   const linkLoading = kind === 'link' && !data.question && !data.linkTitle?.startsWith('⚠');
 
   // Clip provenance: an edge-less clip finds its source through anchor.attId
@@ -108,81 +169,77 @@ export default function ContentNode({ id, data, selected }: NodeProps<ThoughtNod
       ? <Link2 size={14} strokeWidth={1.75} className="text-accent shrink-0" />
       : <Paperclip size={14} strokeWidth={1.75} className="text-ink-muted shrink-0" />;
 
-  // Map tier: a note reads like a turn — its heading as the eyebrow, its body on the zoom ladder,
-  // built locally like an older turn's. The card keeps its footprint; text past it fades.
-  // Files and links keep their card at every zoom, as a dropped .md always did: their text is
-  // someone else's and is read in the reader (a document's opening sentences made a poor plaque,
-  // and its height changed from one zoom step to the next).
-  const noteHead = kind === 'note' ? data.question.match(/^\s*#+\s*([^\n]+)\n?/) : null;
-  const contentTitle = (noteHead?.[1] ?? '').trim();
-  const contentBody = useMemo(() => {
-    if (kind !== 'note') return '';
-    return noteHead ? data.question.slice(noteHead[0].length) : data.question;
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the exact fields read
-  }, [kind, data.question]);
-  const ladder = useLocalLadder(zoomedOut && !glyphTier && !!contentBody, id, contentTitle || data.question, contentBody, null, null);
-  const plaqueLine = useRef<HTMLDivElement>(null);
-  usePlaqueClip(plaqueLine, zoomedOut && !glyphTier && !!ladder, 0, ladder);
+  const nodeName = getNodeDisplayName(data, t(kind === 'file' ? 'glyph.file' : kind === 'link' ? 'glyph.link' : 'glyph.note'));
+  const nodeNameSource = getNodeNameSource(data, nodeName);
+  const noteBody = kind === 'note' ? data.question.replace(/^\s*#+\s*[^\n]+\n?/, '') : '';
+  // Keep active input, empty slots and retry controls in their working form.
+  const showPlaque = zoomedOut && !openExtract && (kind === 'note'
+    ? !editing && !!data.question
+    : kind === 'file' ? attachments.length > 0 : !linkLoading && !data.linkTitle?.startsWith('⚠'));
 
-  if (glyphTier) {
+  if (glyphTier && !editing && !openExtract) {
     // Glyph tier: material collapses to its own icon — a note, a document,
     // a link. The footprint stays (edge anchors must not shift); only the
     // centered seal renders.
     return (
-      <div className={`drag-handle cursor-grab active:cursor-grabbing w-full h-full min-w-[340px] flex items-center justify-center ${selectedNodeId === id ? 'glyph-selected' : ''}`}
-        onClick={() => setSelectedNodeId(id)} data-glyph-node
+      <div data-node-detail-level="compact" data-node-detail-locked={data.detailLevel || undefined} className={`material-${kind} drag-handle cursor-grab active:cursor-grabbing w-full h-full min-w-[340px] flex items-center justify-center ${selected || selectedNodeId === id ? 'glyph-selected' : ''}`}
+        onClick={(event) => { if (!event.ctrlKey && !event.metaKey && !event.shiftKey) setSelectedNodeId(id); }} data-glyph-node data-selection-sized={data.keepOverviewHeight || undefined}
         onDoubleClick={(e) => {
           e.stopPropagation();
           // documents open where they are read; notes zoom to working scale
-          if (kind === 'file' || kind === 'link') useUiStore.getState().setReaderNodeId(id);
+          if (kind === 'file' || kind === 'link' || fixedDetail) useUiStore.getState().setReaderNodeId(id);
           else rf.setCenter((nodePos?.x ?? 0) + 200, (nodePos?.y ?? 0) + 120, { zoom: 1, duration: 300 });
         }}
         title={`${t(kind === 'file' ? 'glyph.file' : kind === 'link' ? 'glyph.link' : 'glyph.note')}\n${kind === 'file' ? (attachments[0]?.name ?? '') : kind === 'link' ? (data.linkTitle || data.linkUrl || '') : data.question.replace(/\s+/g, ' ').slice(0, 120)}`}>
-        <span className={`w-28 h-28 rounded-[2rem] flex items-center justify-center border-4 border-card shadow-lg text-white ${
-          kind === 'note' ? 'bg-amber-400' : kind === 'link' ? 'bg-cyan-600' : 'bg-slate-500'
-        }`}>
-          {kind === 'note' ? <StickyNote size={60} strokeWidth={2} /> : kind === 'link' ? <Link2 size={60} strokeWidth={2} /> : <FileText size={60} strokeWidth={2} />}
-        </span>
-        <Handle type="source" position={Position.Bottom} id="continue" className="!bg-ink-faint !border-2 !border-white tdag-handle !w-6 !h-6 tdag-handle-lg" style={{ left: '50%' }} />
-        {/* reader-grown branches leave through this handle — without it,
-            React Flow drops those edges entirely at glyph zoom */}
-        <Handle type="source" position={Position.Right} id="branch" isConnectable={false} className="!bg-transparent !w-0 !h-0 !border-0 !pointer-events-none" style={{ top: '50%', left: 'calc(50% + 56px)', right: 'auto' }} />
+        <NodeOverview name={nodeName} source={nodeNameSource} compact icon={headerIcon} variant={kind} fileTypes={kind === 'file' ? fileTypes : undefined} />
+        <NodeConnectionHandles id={id} isTargetAllowed={false} muted large />
       </div>
     );
   }
 
-  if (zoomedOut && ladder) {
+  if (showPlaque) {
     return (
       <div
-        className={`content-card w-full h-full min-w-[340px] flex flex-col rounded-[26px] shadow-sm border-[3px] overflow-hidden animate-fade-in ${
-          kind === 'note' ? 'bg-amber-50/90 border-amber-200' : 'bg-card border-line'
-        } ${selectedNodeId === id ? 'ring-2 ring-accent selected-glow' : ''}`}
-        onClick={() => setSelectedNodeId(id)}
+        className={`content-card material-${kind} w-full h-full min-w-[340px] flex flex-col rounded-node border animate-fade-in ${selected || selectedNodeId === id ? 'node-selected' : ''}`}
+        onClick={(event) => { if (!event.ctrlKey && !event.metaKey && !event.shiftKey) setSelectedNodeId(id); }}
         onDoubleClick={(e) => {
           e.stopPropagation();
-          if (kind === 'file' || kind === 'link') useUiStore.getState().setReaderNodeId(id);
+          if (kind === 'file' || kind === 'link' || fixedDetail) useUiStore.getState().setReaderNodeId(id);
           else rf.setCenter((nodePos?.x ?? 0) + 200, (nodePos?.y ?? 0) + 120, { zoom: 1, duration: 300 });
         }}
+        onDrop={async (e) => {
+          if (kind !== 'file' || isViewerMode) return;
+          e.preventDefault();
+          e.stopPropagation();
+          await ingestFiles(id, e.dataTransfer.files);
+        }}
+        onDragOver={(e) => { if (kind === 'file') { e.preventDefault(); e.stopPropagation(); } }}
         data-content-plaque={kind}
+        data-node-detail-level="summary" data-node-detail-locked={data.detailLevel || undefined}
       >
-        <div className="drag-handle cursor-grab active:cursor-grabbing px-6 py-5 flex flex-col flex-1 min-h-0">
-          <div className="text-lg text-ink-muted leading-snug line-clamp-2 shrink-0 flex items-center gap-2">
-            {headerIcon}<span className="min-w-0 truncate">{contentTitle || t(kind === 'file' ? 'glyph.file' : kind === 'link' ? 'glyph.link' : 'glyph.note')}</span>
-          </div>
-          <div ref={plaqueLine} className="mt-1.5 min-h-0 shrink overflow-hidden" data-plaque-line><ZoomText ladder={ladder} /></div>
+        <div className="drag-handle cursor-grab active:cursor-grabbing overflow-hidden">
+          <NodeOverview
+            name={nodeName}
+            source={nodeNameSource}
+            preview={kind === 'note' ? noteBody : kind === 'link' ? data.question : undefined}
+            previewAlways={!!fixedDetail}
+            icon={headerIcon}
+            variant={kind}
+            typeLabel={materialLabel}
+            fileTypes={kind === 'file' ? fileTypes : undefined}
+            meta={kind === 'link' ? linkDomain : kind === 'file' ? `${t('glyph.file')} · ${attachments.length}` : undefined}
+          />
         </div>
-        <Handle type="source" position={Position.Bottom} id="continue" className="!bg-ink-faint !border-2 !border-white tdag-handle !w-6 !h-6 tdag-handle-lg" />
-        <Handle type="source" position={Position.Right} id="branch" isConnectable={false} className="!bg-transparent !w-0 !h-0 !border-0 !pointer-events-none" style={{ top: '50%' }} />
+        <NodeConnectionHandles id={id} isTargetAllowed={false} muted large />
       </div>
     );
   }
 
   return (
     <div
-      className={`content-card w-full h-full min-w-[340px] flex flex-col rounded-xl shadow-sm border-2 animate-fade-in transition-colors duration-200 ${
-        kind === 'note' ? 'bg-amber-50/90 border-amber-200' : 'bg-card border-line'
-      } ${selectedNodeId === id ? 'ring-2 ring-accent selected-glow' : ''}`}
-      onClick={() => setSelectedNodeId(id)}
+      className={`content-card material-${kind} w-full h-full min-w-[340px] flex flex-col rounded-node border animate-fade-in transition-colors duration-200 ${selected || selectedNodeId === id ? 'node-selected' : ''}`}
+      data-node-detail-level="full" data-node-detail-locked={data.detailLevel || undefined}
+      onClick={(event) => { if (!event.ctrlKey && !event.metaKey && !event.shiftKey) setSelectedNodeId(id); }}
       onDoubleClick={() => {
         // notes keep dblclick=edit (on the body); files and links open the reader
         if (kind !== 'note') useUiStore.getState().setReaderNodeId(id);
@@ -198,9 +255,10 @@ export default function ContentNode({ id, data, selected }: NodeProps<ThoughtNod
       {/* Pure source: material feeds context, nothing flows INTO it — hence no target handle. */}
 
       {/* header: drag handle + identity + linked state + delete */}
-      <div className={`flex items-center justify-between px-4 py-2 border-b cursor-grab active:cursor-grabbing drag-handle shrink-0 ${kind === 'note' ? 'border-amber-200/70' : 'border-line/70'}`}>
+      <div className="material-header flex items-center justify-between px-surface-inset py-section-gap border-b cursor-grab active:cursor-grabbing drag-handle shrink-0">
         <div className="flex items-center gap-2 min-w-0">
           {headerIcon}
+          <span className="text-xs font-medium material-label">{materialLabel}</span>
           {kind === 'link'
             ? <span className="text-2xs text-ink-muted truncate">{linkDomain}</span>
             : <span className="text-2xs text-ink-faint font-mono">{kind === 'note' ? `${data.tokenCount} tok` : `${attachments.length}`}</span>}
@@ -209,13 +267,13 @@ export default function ContentNode({ id, data, selected }: NodeProps<ThoughtNod
               onClick={openClipSource}
               title={t('content.clipSourceTitle')}
               data-clip-source
-              className="text-2xs font-mono text-warm bg-warm/10 hover:bg-warm/20 px-1.5 py-0.5 rounded-full truncate max-w-[180px] transition-colors shrink"
+              className="text-2xs font-mono text-warm bg-warm/10 hover:bg-warm/20 px-1.5 py-0.5 rounded-tag truncate max-w-[180px] transition-colors shrink"
             >
               {clipSourceName} &middot; p.{clipAnchor!.page}
             </button>
           )}
           {!isLinked && (
-            <span className="text-2xs text-ink-faint bg-wash px-1.5 py-0.5 rounded-full flex items-center gap-1 shrink-0" title={t('content.unlinkedTitle')}>
+            <span className="text-2xs text-ink-faint bg-wash px-1.5 py-0.5 rounded-tag flex items-center gap-1 shrink-0" title={t('content.unlinkedTitle')}>
               <Link2Off size={11} strokeWidth={1.75} /> {t('content.unlinked')}
             </span>
           )}
@@ -224,7 +282,7 @@ export default function ContentNode({ id, data, selected }: NodeProps<ThoughtNod
           <button
             onClick={(e) => { e.stopPropagation(); useUiStore.getState().setReaderNodeId(id); }}
             title={t('reader.open')}
-            className="text-ink-faint hover:text-accent rounded-full w-6 h-6 flex items-center justify-center transition-colors"
+            className="text-ink-faint hover:text-accent rounded-control w-6 h-6 flex items-center justify-center transition-colors"
           >
             <BookOpen size={13} strokeWidth={1.75} />
           </button>
@@ -235,25 +293,27 @@ export default function ContentNode({ id, data, selected }: NodeProps<ThoughtNod
               rel="noreferrer"
               onClick={(e) => e.stopPropagation()}
               title={t('content.linkOpen')}
-              className="text-ink-faint hover:text-accent rounded-full w-6 h-6 flex items-center justify-center transition-colors"
+              className="text-ink-faint hover:text-accent rounded-control w-6 h-6 flex items-center justify-center transition-colors"
             >
               <ExternalLink size={13} strokeWidth={1.75} />
             </a>
           )}
           {!isViewerMode && <button
             onClick={(e) => { e.stopPropagation(); deleteNode(id); }}
-            className="text-ink-faint hover:text-red-500 rounded-full w-6 h-6 flex items-center justify-center transition-colors"
+            className="text-ink-faint hover:text-red-500 rounded-control w-6 h-6 flex items-center justify-center transition-colors"
           >
             <Trash2 size={13} strokeWidth={1.75} />
           </button>}
         </div>
       </div>
 
+      {data.displayName && <div className="px-surface-inset pt-surface-inset text-base font-medium text-ink" title={nodeNameSource} data-node-name>{nodeName}</div>}
+
       {/* Body: grows with content by default, a note up to the answer box's
           height (a long note would otherwise cover the cards below it once
           the canvas zooms in); when the card is resized the body becomes the
           scroll region (wheel scrolls text, not zoom) */}
-      <div className="px-4 py-3 nodrag flex-1 min-h-0 overflow-y-auto nowheel" style={kind === 'note' && !resized ? { maxHeight: NOTE_BODY_MAX } : undefined} data-content-body>
+      <div className="p-surface-inset nodrag flex-1 min-h-0 overflow-y-auto nowheel" style={kind === 'note' && !resized ? { maxHeight: NOTE_BODY_MAX } : undefined} data-content-body>
         {/* a quote from the why layer says where it came from, above its text */}
         {kind === 'note' && data.recallSource && (
           <div className="text-2xs text-ink-faint font-mono truncate mb-1.5" title={data.recallSource.file} data-recall-source>
@@ -262,25 +322,31 @@ export default function ContentNode({ id, data, selected }: NodeProps<ThoughtNod
         )}
         {kind === 'note' && (
           editing ? (
-            <textarea
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              onBlur={commit}
-              onKeyDown={(e) => { if (e.key === 'Escape') commit(); }}
-              placeholder={t('content.notePlaceholder')}
-              rows={5}
-              autoFocus
-              className="w-full h-full min-h-[7rem] bg-transparent text-sm text-ink resize-none focus:outline-none placeholder-ink-faint leading-relaxed nopan nowheel"
-            />
+            <div ref={editRef} onBlur={edit.onBlur} className="flex flex-col gap-2" data-note-editor>
+              <textarea
+                value={draft}
+                onChange={(e) => { setDraft(e.target.value); useUiStore.getState().setDraft(draftKey, e.target.value, true); }}
+                placeholder={t('content.notePlaceholder')}
+                rows={5}
+                autoFocus
+                className="w-full min-h-[7rem] bg-surface border border-line rounded-control px-3 py-2 text-sm text-ink resize-y focus:outline-none focus:ring-1 focus:ring-accent/40 placeholder-ink-faint leading-relaxed nopan nowheel"
+              />
+              <div className="flex justify-end gap-2">
+                <button onClick={cancel} className="text-xs text-ink-muted hover:bg-wash px-3 py-1.5 rounded-control">{t('common.cancel')}</button>
+                <button onClick={commit} className="text-xs bg-accent text-white hover:bg-accent/90 px-3 py-1.5 rounded-control">{t('common.save')}</button>
+              </div>
+              <p className="text-2xs text-ink-faint">{t(canContinueWorkflow ? 'content.materialSaveHint' : 'content.draftExitHint')}</p>
+            </div>
           ) : (
             <div
-              onDoubleClick={() => { if (isViewerMode) return; setDraft(data.question); setEditing(true); }}
+              onDoubleClick={startEditing}
               className="markdown-body text-sm text-ink leading-relaxed cursor-text nopan"
               title={t('content.noteEditTitle')}
             >
               {data.question
                 ? <Markdown>{data.question}</Markdown>
                 : <span className="text-ink-faint italic text-xs">{t('content.notePlaceholder')}</span>}
+              {retainedDraft !== undefined && <button onClick={startEditing} className="mt-2 block text-xs text-accent hover:underline" data-resume-note-draft>{t('content.resumeDraft')}</button>}
             </div>
           )
         )}
@@ -298,7 +364,7 @@ export default function ContentNode({ id, data, selected }: NodeProps<ThoughtNod
               {data.linkTitle?.startsWith('⚠') && data.linkUrl && (
                 <button
                   onClick={(e) => { e.stopPropagation(); void fetchLinkIntoNode(id, data.linkUrl!); }}
-                  className="text-xs bg-wash hover:bg-line text-ink-muted px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5"
+                  className="text-xs bg-wash hover:bg-line text-ink-muted px-3 py-1.5 rounded-control transition-colors flex items-center gap-1.5"
                 >
                   <RefreshCw size={13} strokeWidth={1.75} /> {t('common.retry')}
                 </button>
@@ -318,7 +384,7 @@ export default function ContentNode({ id, data, selected }: NodeProps<ThoughtNod
         )}
 
         {kind === 'file' && (
-          <div className="space-y-1.5">
+          <div className="material-files">
             {attachments.map((att) => (
               att.type.startsWith('image/') ? (
                 // Pasted images live on the canvas as the image itself —
@@ -328,61 +394,42 @@ export default function ContentNode({ id, data, selected }: NodeProps<ThoughtNod
                     src={`data:${att.type};base64,${att.content}`}
                     alt={att.name}
                     title={att.extractedText ? att.extractedText.slice(0, 400) : undefined}
-                    className="w-full rounded-lg border border-line/60"
+                    className="w-full rounded-content border border-line/60"
                   />
                   {att.isExtracting ? (
-                    <span className="absolute bottom-1.5 left-1.5 text-2xs bg-ink/60 text-white px-2 py-0.5 rounded-full flex items-center gap-1">
+                    <span className="absolute bottom-1.5 left-1.5 text-2xs bg-ink/60 text-white px-2 py-0.5 rounded-tag flex items-center gap-1">
                       <Loader2 size={11} strokeWidth={1.75} className="animate-spin" /> {t('content.extracting')}
                     </span>
-                  ) : att.extractedText ? (
+                  ) : att.extractedText !== undefined ? (
                     <button
                       onClick={(e) => { e.stopPropagation(); setOpenExtract(openExtract === att.id ? null : att.id); }}
+                      data-extract-toggle={att.id}
                       title={t('content.editExtractTitle')}
-                      className="absolute bottom-1.5 left-1.5 text-2xs bg-ink/60 hover:bg-ink/80 text-white px-2 py-0.5 rounded-full transition-colors"
+                      className="absolute bottom-1.5 left-1.5 text-2xs bg-ink/60 hover:bg-ink/80 text-white px-2 py-0.5 rounded-tag transition-colors"
                     >
-                      {t('content.extracted')}{att.extractedBy ? ` · ${att.extractedBy}` : ''} ▾
+                      {useUiStore.getState().drafts[`extraction:${id}:${att.id}`] !== undefined
+                        ? t('content.resumeDraft')
+                        : <>{t('content.extracted')}{att.extractedBy ? ` · ${att.extractedBy}` : ''}</>} ▾
                     </button>
                   ) : (
                     <button
                       onClick={(e) => { e.stopPropagation(); void extractImage(id, att.id); }}
                       title={t('content.reExtractTitle')}
-                      className="absolute bottom-1.5 left-1.5 text-2xs bg-ink/60 hover:bg-ink/80 text-white px-2 py-0.5 rounded-full opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1"
+                      className="absolute bottom-1.5 left-1.5 text-2xs bg-ink/60 hover:bg-ink/80 text-white px-2 py-0.5 rounded-tag opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1"
                     >
                       <RefreshCw size={11} strokeWidth={1.75} /> {t('content.reExtract')}
                     </button>
                   )}
                   <button
                     onClick={(e) => { e.stopPropagation(); removeAttachment(id, att.id); }}
-                    className="absolute top-1.5 right-1.5 bg-ink/60 text-white rounded-full w-6 h-6 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                    className="absolute top-1.5 right-1.5 bg-ink/60 text-white rounded-control w-6 h-6 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
                   >
                     <X size={13} strokeWidth={2} />
                   </button>
                   {/* Extraction panel: SEE what the model read, fix it, or redo it —
                       this text is what downstream context receives as the image's index */}
                   {openExtract === att.id && (
-                    <div className="mt-1.5 space-y-1.5" onClick={(e) => e.stopPropagation()}>
-                      <textarea
-                        defaultValue={att.extractedText}
-                        onBlur={(e) => {
-                          if (e.target.value !== att.extractedText) {
-                            useStore.getState().pushHistory();
-                            setAttachmentData(id, att.id, { extractedText: e.target.value, extractedBy: 'manual' });
-                            useStore.getState().pushHistory();
-                          }
-                        }}
-                        rows={7}
-                        className="w-full text-xs text-ink bg-surface border border-line rounded-lg px-2.5 py-2 focus:outline-none focus:ring-1 focus:ring-accent/40 resize-y leading-relaxed nopan nowheel"
-                      />
-                      <div className="flex items-center justify-between">
-                        <span className="text-2xs text-ink-faint font-mono">{att.extractedBy}</span>
-                        <button
-                          onClick={() => { setOpenExtract(null); void extractImage(id, att.id); }}
-                          className="text-2xs bg-wash hover:bg-line text-ink-muted px-2.5 py-1 rounded-lg transition-colors flex items-center gap-1"
-                        >
-                          <RefreshCw size={11} strokeWidth={1.75} /> {t('content.reExtractAgain')}
-                        </button>
-                      </div>
-                    </div>
+                    <ExtractionEditor nodeId={id} attachment={att} onClose={() => setOpenExtract(null)} />
                   )}
                 </div>
               ) : att.type === 'application/pdf' && att.pageImages?.[0] ? (
@@ -392,29 +439,34 @@ export default function ContentNode({ id, data, selected }: NodeProps<ThoughtNod
                   <img
                     src={`data:image/png;base64,${att.pageImages[0]}`}
                     alt={att.name}
-                    className="w-full rounded-lg border border-line/60"
+                    className="w-full rounded-content border border-line/60"
                   />
-                  <span className="absolute bottom-1.5 left-1.5 max-w-[85%] text-2xs bg-ink/60 text-white px-2 py-0.5 rounded-full flex items-center gap-1">
+                  <span className="absolute bottom-1.5 left-1.5 max-w-[85%] text-2xs bg-ink/60 text-white px-2 py-0.5 rounded-tag flex items-center gap-1">
                     <FileText size={11} strokeWidth={1.75} className="shrink-0" />
                     <span className="truncate">{att.name}</span>
                     {att.numPages != null && <span className="shrink-0 opacity-80">· {att.numPages}p</span>}
                   </span>
                   <button
                     onClick={(e) => { e.stopPropagation(); removeAttachment(id, att.id); }}
-                    className="absolute top-1.5 right-1.5 bg-ink/60 text-white rounded-full w-6 h-6 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                    className="absolute top-1.5 right-1.5 bg-ink/60 text-white rounded-control w-6 h-6 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
                   >
                     <X size={13} strokeWidth={2} />
                   </button>
                 </div>
               ) : (
-                <div key={att.id} className="flex items-center gap-2 bg-wash rounded-lg px-2.5 py-2 group">
-                  <FileText size={16} strokeWidth={1.75} className="text-ink-muted shrink-0" />
-                  <span className="text-xs text-ink flex-1 truncate">{att.name}</span>
-                  {att.isExtracting && <span className="text-2xs text-accent shrink-0">{t('attach.extracting')}</span>}
-                  {att.numPages != null && <span className="text-2xs text-ink-faint shrink-0">{att.numPages}p</span>}
+                <div key={att.id} className="material-file-row group">
+                  <FileIdentity name={att.name} />
+                  <div className="min-w-0 flex-1">
+                    <button type="button" onClick={(e) => { e.stopPropagation(); useUiStore.getState().setReaderNodeId(id); }} className="material-file-name text-left hover:text-accent" title={att.name}>{att.name}</button>
+                    <div className="material-file-meta">
+                      {fileSizeLabel(att.size) && <span>{fileSizeLabel(att.size)}</span>}
+                      {att.isExtracting && <span className="text-accent">{t('attach.extracting')}</span>}
+                      {att.numPages != null && <span>{att.numPages}p</span>}
+                    </div>
+                  </div>
                   <button
                     onClick={(e) => { e.stopPropagation(); removeAttachment(id, att.id); }}
-                    className="text-ink-faint hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+                    className="text-ink-faint hover:text-red-500 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus:opacity-100 transition-opacity shrink-0 rounded-control p-1"
                   >
                     <X size={13} strokeWidth={1.75} />
                   </button>
@@ -423,7 +475,7 @@ export default function ContentNode({ id, data, selected }: NodeProps<ThoughtNod
             ))}
             <button
               onClick={() => fileRef.current?.click()}
-              className={`w-full border-2 border-dashed border-line hover:border-accent/40 hover:bg-accent/5 rounded-lg text-xs text-ink-faint hover:text-ink-muted transition-colors ${attachments.length === 0 ? 'py-6' : 'py-2'}`}
+              className={`material-upload w-full border border-dashed border-line hover:border-accent/40 hover:bg-accent/5 rounded-control text-xs text-ink-faint hover:text-ink-muted transition-colors ${attachments.length === 0 ? 'py-6' : 'py-2'}`}
             >
               {t('attach.upload')}
               {attachments.length === 0 && <span className="block text-2xs mt-1">{t('attach.types')}</span>}
@@ -456,9 +508,10 @@ export default function ContentNode({ id, data, selected }: NodeProps<ThoughtNod
       {selected && (
         <NodeResizeControl
           position="bottom-right"
-          minWidth={320}
+          minWidth={340}
           maxWidth={860}
           minHeight={120}
+          keepAspectRatio={!!data.lockAspectRatio}
           onResizeStart={recordStep}
           onResizeEnd={recordStep}
           style={{ background: 'transparent', border: 'none', width: 18, height: 18 }}
@@ -467,9 +520,7 @@ export default function ContentNode({ id, data, selected }: NodeProps<ThoughtNod
         </NodeResizeControl>
       )}
 
-      <Handle type="source" position={Position.Bottom} id="continue" className={`!bg-ink-faint !border-2 !border-white tdag-handle ${zoomedOut ? '!w-6 !h-6 tdag-handle-lg' : '!w-3.5 !h-3.5'}`} />
-      {/* Invisible side anchor so material references can exit sideways */}
-      <Handle type="source" position={Position.Right} id="branch" isConnectable={false} className="!bg-transparent !w-0 !h-0 !border-0 !pointer-events-none" style={{ top: '50%' }} />
+      <NodeConnectionHandles id={id} isTargetAllowed={false} muted large={zoomedOut} />
     </div>
   );
 }

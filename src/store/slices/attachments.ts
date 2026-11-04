@@ -1,6 +1,6 @@
 import type { StateCreator } from 'zustand';
 import type { Attachment } from '../../types';
-import { walkUpAncestors } from '../../lib/graph';
+import { partitionContext } from '../../lib/graph';
 import { attachmentFingerprint } from '../../lib/attachments';
 import { toolStepIds } from '../../lib/turn-insight';
 import type { StoreState, AttachmentSlice } from '../types';
@@ -106,7 +106,10 @@ export const createAttachmentSlice: StateCreator<StoreState, [], [], AttachmentS
     const { nodes, edges } = get();
     const result: { attachment: Attachment; sourceNodeId: string; sourceQuestion: string; excludedByAncestor: boolean }[] = [];
     const seenFingerprints = new Set<string>();
-    const { ordered } = walkUpAncestors(nodeId, nodes, edges);
+    // References do not inherit attachments; list the same material and
+    // conversation layers that the prompt compiler actually consumes.
+    const { materials, mainline } = partitionContext(nodeId, nodes, edges);
+    const ordered = [...materials, ...mainline];
 
     // Collect all ancestor exclusions (propagation)
     const ancestorExcludes = new Set<string>();
@@ -120,7 +123,7 @@ export const createAttachmentSlice: StateCreator<StoreState, [], [], AttachmentS
 
     // Collect attachments from ancestors (not self), with dedup
     for (const node of ordered) {
-      if (node.id === nodeId) continue;
+      if (node.id === nodeId || node.data.archived) continue;
       for (const att of (node.data.attachments || [])) {
         const fp = attachmentFingerprint(att);
         if (seenFingerprints.has(fp)) continue;

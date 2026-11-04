@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { ShieldAlert, MessageCircleQuestion, ChevronDown, ChevronRight } from 'lucide-react';
 import { useT } from '../../i18n';
+import { isImeComposing } from '../../utils';
 import { useStore } from '../../store';
 import { answerApproval, type QuestionAnswer } from '../../lib/api';
 import { allowLocation } from '../../lib/agents/agent-runtime';
@@ -50,12 +51,12 @@ export function ApprovalCard({ nodeId, request, compact }: { nodeId: string; req
 
   const stop = (e: React.SyntheticEvent) => e.stopPropagation();
   const btn = compact ? 'text-2xs px-2.5 py-1' : 'text-xs px-3 py-1.5';
-  const primary = `${btn} text-white rounded-lg bg-accent hover:bg-accent-strong transition-colors disabled:opacity-50 whitespace-nowrap`;
-  const secondary = `${btn} text-ink rounded-lg border border-line hover:bg-wash transition-colors disabled:opacity-50 whitespace-nowrap`;
+  const primary = `${btn} text-white rounded-control bg-action hover:bg-action-strong transition-colors disabled:opacity-50 whitespace-nowrap`;
+  const secondary = `${btn} text-ink rounded-control border border-line hover:bg-wash transition-colors disabled:opacity-50 whitespace-nowrap`;
 
   return (
     <div
-      className={`rounded-xl border border-amber-400/60 bg-amber-50/80 dark:bg-amber-500/10 ${compact ? 'px-3 py-2.5' : 'px-4 py-3'}`}
+      className={`rounded-content border border-amber-400/60 bg-amber-50/80 dark:bg-amber-500/10 ${compact ? 'px-3 py-2.5' : 'px-4 py-3'}`}
       onClick={stop}
       onMouseDown={stop}
       onPointerDown={stop}
@@ -68,7 +69,7 @@ export function ApprovalCard({ nodeId, request, compact }: { nodeId: string; req
         <span className="ml-auto font-mono font-normal text-2xs text-ink-faint truncate max-w-[40%]">{request.name}</span>
       </div>
       {!isForm && (request.query || (isApproval && request.toolName)) && (
-        <div className={`mt-1.5 ${isApproval ? 'font-mono' : ''} text-ink bg-card/70 rounded-md px-2 py-1.5 border border-line/60 whitespace-pre-wrap break-words ${compact ? 'text-2xs max-h-[72px] overflow-hidden' : 'text-xs'}`}>
+        <div className={`mt-1.5 ${isApproval ? 'font-mono' : ''} text-ink bg-card rounded-content px-2 py-1.5 border border-line/60 whitespace-pre-wrap break-words ${compact ? 'text-2xs max-h-[72px] overflow-hidden' : 'text-xs'}`}>
           {showArgs && request.arguments ? request.arguments : (request.query || request.toolName)}
         </div>
       )}
@@ -94,11 +95,11 @@ export function ApprovalCard({ nodeId, request, compact }: { nodeId: string; req
           <textarea
             value={text}
             onChange={(e) => setText(e.target.value)}
-            onKeyDown={(e) => { e.stopPropagation(); if (kind === 'input' && e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void send({ value: text }, 'answered'); } }}
+            onKeyDown={(e) => { e.stopPropagation(); if (kind === 'input' && e.key === 'Enter' && !e.shiftKey && !isImeComposing(e)) { e.preventDefault(); void send({ value: text }, 'answered'); } }}
             placeholder={request.placeholder ?? t('approval.inputPlaceholder')}
             rows={kind === 'editor' ? (compact ? 3 : 6) : (compact ? 1 : 2)}
             disabled={busy}
-            className="w-full text-xs text-ink bg-card border border-line rounded-md px-2 py-1.5 resize-y focus:outline-none focus:border-accent/60 disabled:opacity-50"
+            className="w-full text-xs text-ink bg-card border border-line rounded-control px-2 py-1.5 resize-y focus:outline-none focus:border-accent/60 disabled:opacity-50"
             data-question-input
           />
           <div className={`mt-1.5 flex flex-wrap items-center ${compact ? 'gap-1.5' : 'gap-2'}`}>
@@ -112,13 +113,13 @@ export function ApprovalCard({ nodeId, request, compact }: { nodeId: string; req
         <div className={`mt-2.5 flex flex-wrap items-center ${compact ? 'gap-1.5' : 'gap-2'}`}>
           <button onClick={() => void send({ confirmed: true }, 'allowed-once')} disabled={busy} className={primary} data-approval-allow>{t('approval.allowOnce')}</button>
           {request.rule && (
-            <button onClick={() => void send({ confirmed: true, scope: 'session' }, 'allowed-session')} disabled={busy} className={`${btn} text-accent rounded-lg border border-accent/40 hover:bg-accent/10 transition-colors disabled:opacity-50 whitespace-nowrap`} title={t(request.rule.startsWith('harness:') ? 'approval.allowSessionExactTitle' : 'approval.allowSessionTitle')} data-approval-allow-session>{t('approval.allowSession')}</button>
+            <button onClick={() => void send({ confirmed: true, scope: 'session' }, 'allowed-session')} disabled={busy} className={`${btn} text-accent rounded-control border border-accent/40 hover:bg-accent/10 transition-colors disabled:opacity-50 whitespace-nowrap`} title={t(request.rule.startsWith('harness:') ? 'approval.allowSessionExactTitle' : 'approval.allowSessionTitle')} data-approval-allow-session>{t('approval.allowSession')}</button>
           )}
           {request.suggest && request.channel && (
             <button
               onClick={() => void send({ confirmed: true }, 'allowed-once', request.suggest!)}
               disabled={busy}
-              className={`${btn} text-accent rounded-lg border border-accent/40 hover:bg-accent/10 transition-colors disabled:opacity-50 truncate ${compact ? 'max-w-[150px]' : 'max-w-[240px]'}`}
+              className={`${btn} text-accent rounded-control border border-accent/40 hover:bg-accent/10 transition-colors disabled:opacity-50 truncate ${compact ? 'max-w-[150px]' : 'max-w-[240px]'}`}
               title={`${t('approval.allowLocationTitle')} ${request.suggest}`}
               data-approval-allow-location
             >
@@ -171,7 +172,7 @@ function FormQuestions({ questions, compact, busy, onSubmit, onSkip }: { questio
               {q.question}{q.multiSelect && <span className="ml-1.5 font-normal text-ink-faint">· {t('approval.formMulti')}</span>}
             </p>
             {q.detail && (
-              <div className={`mt-1 overflow-auto whitespace-pre-wrap break-words bg-card/70 rounded-md px-2 py-1.5 border border-line/60 text-ink-muted ${compact ? 'text-2xs max-h-24' : 'text-xs max-h-64'}`} data-form-detail>{q.detail}</div>
+              <div className={`mt-1 overflow-auto whitespace-pre-wrap break-words bg-card rounded-content px-2 py-1.5 border border-line/60 text-ink-muted ${compact ? 'text-2xs max-h-24' : 'text-xs max-h-64'}`} data-form-detail>{q.detail}</div>
             )}
             {q.options.length > 0 && (
               <div className={`mt-1.5 flex flex-col ${compact ? 'gap-1' : 'gap-1.5'}`}>
@@ -186,11 +187,11 @@ function FormQuestions({ questions, compact, busy, onSubmit, onSkip }: { questio
                       onClick={() => toggle(q, o.label)}
                       disabled={busy}
                       title={compact ? o.description : undefined}
-                      className={`text-left rounded-lg border px-2.5 ${compact ? 'py-1' : 'py-1.5'} transition-colors disabled:opacity-50 ${on ? 'border-accent bg-accent/10' : 'border-line bg-card/70 hover:bg-wash'}`}
+                      className={`text-left rounded-control border px-2.5 ${compact ? 'py-1' : 'py-1.5'} transition-colors disabled:opacity-50 ${on ? 'border-accent bg-accent/10' : 'border-line bg-card hover:bg-wash'}`}
                       data-question-option={o.label}
                     >
                       <span className={`flex items-baseline gap-2 ${compact ? 'text-2xs' : 'text-xs'}`}>
-                        <span className={`shrink-0 inline-block w-3 h-3 border ${q.multiSelect ? 'rounded-[3px]' : 'rounded-full'} ${on ? 'bg-accent border-accent' : 'border-line-strong'}`} />
+                        <span className={`shrink-0 inline-block w-3 h-3 border ${q.multiSelect ? 'rounded-none' : 'shape-circle'} ${on ? 'bg-accent border-accent' : 'border-line-strong'}`} />
                         <span className="text-ink">{o.label}</span>
                       </span>
                       {o.description && !compact && <span className="block pl-5 text-2xs text-ink-faint leading-relaxed">{o.description}</span>}
@@ -204,10 +205,10 @@ function FormQuestions({ questions, compact, busy, onSubmit, onSkip }: { questio
                 type={q.secret ? 'password' : 'text'}
                 value={own[q.id] ?? ''}
                 onChange={(e) => setOwn((p) => ({ ...p, [q.id]: e.target.value }))}
-                onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Enter') { e.preventDefault(); submit(); } }}
+                onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Enter' && !isImeComposing(e)) { e.preventDefault(); submit(); } }}
                 placeholder={q.options.length ? t('approval.formOwn') : t('approval.inputPlaceholder')}
                 disabled={busy}
-                className={`mt-1.5 w-full text-ink bg-card border border-line rounded-md px-2 py-1 focus:outline-none focus:border-accent/60 disabled:opacity-50 ${compact ? 'text-2xs' : 'text-xs'}`}
+                className={`mt-1.5 w-full text-ink bg-card border border-line rounded-control px-2 py-1 focus:outline-none focus:border-accent/60 disabled:opacity-50 ${compact ? 'text-2xs' : 'text-xs'}`}
                 data-question-own={q.id}
               />
             )}
@@ -215,8 +216,8 @@ function FormQuestions({ questions, compact, busy, onSubmit, onSkip }: { questio
         );
       })}
       <div className={`flex flex-wrap items-center ${compact ? 'gap-1.5' : 'gap-2'}`}>
-        <button onClick={submit} disabled={busy || !ready} className={`${btn} text-white rounded-lg bg-accent hover:bg-accent-strong transition-colors disabled:opacity-50 whitespace-nowrap`} data-question-submit>{t('approval.answer')}</button>
-        <button onClick={onSkip} disabled={busy} className={`${btn} text-ink rounded-lg border border-line hover:bg-wash transition-colors disabled:opacity-50 whitespace-nowrap`} data-question-skip>{t('approval.skip')}</button>
+        <button onClick={submit} disabled={busy || !ready} className={`${btn} text-white rounded-control bg-action hover:bg-action-strong transition-colors disabled:opacity-50 whitespace-nowrap`} data-question-submit>{t('approval.answer')}</button>
+        <button onClick={onSkip} disabled={busy} className={`${btn} text-ink rounded-control border border-line hover:bg-wash transition-colors disabled:opacity-50 whitespace-nowrap`} data-question-skip>{t('approval.skip')}</button>
         {!ready && questions.length > 1 && <span className="text-2xs text-ink-faint">{t('approval.formAll')}</span>}
       </div>
     </div>
@@ -257,7 +258,7 @@ export function DecisionsDisclosure({ records }: { records: ApprovalRecord[] }) 
         {open ? <ChevronDown size={12} strokeWidth={1.75} /> : <ChevronRight size={12} strokeWidth={1.75} />}
         <span>🛡 {t('approval.decisions')} · {good}/{records.length}</span>
       </button>
-      {open && <div className="mt-1 px-3 py-1.5 bg-wash/70 rounded-xl"><ApprovalRecords records={records} /></div>}
+      {open && <div className="mt-1 px-3 py-1.5 bg-wash/70 rounded-content"><ApprovalRecords records={records} /></div>}
     </div>
   );
 }

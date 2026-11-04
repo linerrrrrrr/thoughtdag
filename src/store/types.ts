@@ -30,22 +30,24 @@ export interface NodeSlice {
   selectedNodeIds: string[];
   setNodes: (nodes: ThoughtNode[]) => void;
   setEdges: (edges: ThoughtEdge[]) => void;
-  setSelectedNodeId: (id: string | null) => void;
+  setSelectedNodeId: (id: string | null, options?: { focus?: boolean }) => void;
   setSelectedNodeIds: (ids: string[]) => void;
+  /** Apply an undoable size/ratio edit; coordinates are available only for one object. */
+  setSelectionGeometry: (nodeIds: string[], patch: import('../lib/node-geometry').NodeGeometryPatch) => void;
   deleteNode: (nodeId: string) => void;
   deleteEdges: (edgeIds: string[]) => void;
   editResponse: (nodeId: string, response: string) => void;
   toggleCollapse: (nodeId: string) => void;
-  setEditing: (nodeId: string, editing: boolean) => void;
-  setEditingResponse: (nodeId: string, editing: boolean) => void;
+  setEditing: (nodeId: string, editing: boolean, surface?: 'canvas' | 'panel') => void;
+  setEditingResponse: (nodeId: string, editing: boolean, surface?: 'canvas' | 'panel') => void;
   duplicateNode: (nodeId: string) => void;
   addCrossLink: (sourceId: string, targetId: string) => void;
-  /** Flip a dashed reference between quote (default) and full-chain depth. (Legacy: kept for stored canvases; new UI converts line kind instead.) */
-  setCrossLinkDepth: (edgeId: string, depth: 'quote' | 'full') => void;
-  /** Convert an edge between dashed summary reference and solid full-context
-   *  wiring. Solid = the target reads the source's WHOLE upstream (files
-   *  included); dashed = a light quote block. Cycle-guarded. */
+  /** Convert between continuation (effective upstream, materials included)
+   *  and single-node reference (source turn only). Cycle-guarded. */
   setEdgeStructural: (edgeId: string, structural: boolean) => void;
+  updateEdgeSettings: (edgeId: string, settings: import('../lib/edge-edit').EdgeEditSettings) => { ok: boolean; error?: string };
+  updateSelectedEdges: (edgeIds: string[], patch: Partial<import('../lib/edge-edit').EdgeEditSettings>) => { ok: boolean; error?: string };
+  applyCanvasLayout: (options: import('../lib/canvas-layout').CanvasLayoutOptions, selectedIds?: string[]) => { ok: boolean; error?: string };
   navigateVersion: (nodeId: string, direction: 'prev' | 'next') => void;
   deleteVersion: (nodeId: string, versionIndex: number) => void;
   batchDelete: (nodeIds: string[]) => void;
@@ -55,6 +57,22 @@ export interface NodeSlice {
   relayout: () => void;
   /** Stack the selected nodes into one vertical column, in conversation order (undoable). */
   alignSelection: (nodeIds: string[]) => void;
+  /** Align/distribute selection bounds, preserving group and context geometry. */
+  arrangeSelection: (nodeIds: string[], action: import('../lib/arrange-selection').ArrangeAction, reference: import('../lib/arrange-selection').ArrangeReference, viewport?: import('../lib/arrange-selection').ArrangeRect) => void;
+  /** Explicit, undoable canvas groups do not change context wiring. */
+  groupSelection: (nodeIds: string[]) => void;
+  ungroupSelection: (nodeIds: string[]) => void;
+  regroupSelection: (nodeIds: string[]) => void;
+  /** Enclose selected spatial objects without changing their positions or context. */
+  createFrameFromSelection: (nodeIds: string[]) => string | undefined;
+  /** Frame metadata edits never change node membership or context. */
+  setFrameProperties: (frameIds: string[], patch: import('../lib/frames').FramePropertiesPatch) => void;
+  /** Select contents, or explicitly include the requested and nested frames. */
+  selectFrameContents: (frameIds: string[], includeFrames?: boolean) => void;
+  /** Fit each frame to its current contents, without moving those contents. */
+  fitFramesToContents: (frameIds: string[]) => void;
+  /** Explicitly copy either frame objects or frames with their contents. */
+  duplicateFrames: (frameIds: string[], withContents: boolean) => void;
   /** Set/clear a per-node LLM override (undefined = follow the global picker). */
   setNodeModel: (nodeId: string, model: string | undefined) => void;
   /** Archive/unarchive nodes: dimmed on canvas, excluded from every context walk (undoable). */

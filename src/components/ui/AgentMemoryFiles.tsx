@@ -71,13 +71,13 @@ export default function AgentMemoryFiles() {
       {files !== null && files.length === 0 && !error && <p className="text-xs text-ink-faint italic py-2" data-agent-memories-none>{t('memory.agentFilesNone')}</p>}
       {[...groups.entries()].map(([runner, list]) => (
         <div key={runner} className="mb-3" data-agent-memories-runner={runner}>
-          <div className="text-2xs font-mono text-ink-faint px-1 pb-1 flex items-center gap-1.5"><span className="border border-line rounded px-1 py-px">{runner}</span><span>{list.length}</span></div>
+          <div className="text-2xs font-mono text-ink-faint px-1 pb-1 flex items-center gap-1.5"><span className="border border-line rounded-tag px-1 py-px">{runner}</span><span>{list.length}</span></div>
           <div className="space-y-1">
             {list.map((f) => {
               const isOpen = openFile === f.id;
               return (
-                <div key={f.id} className="border border-line rounded-xl bg-card" data-agent-memory-file={f.id}>
-                  <button onClick={() => setOpenFile(isOpen ? null : f.id)} className="w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-wash/60 rounded-xl transition-colors">
+                <div key={f.id} className="border border-line rounded-content bg-card" data-agent-memory-file={f.id}>
+                  <button onClick={() => setOpenFile(isOpen ? null : f.id)} className="w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-wash/60 rounded-control transition-colors">
                     {isOpen ? <ChevronDown size={12} className="text-ink-faint shrink-0" /> : <ChevronRight size={12} className="text-ink-faint shrink-0" />}
                     <span className="flex-1 min-w-0">
                       <span className="block text-xs text-ink truncate">{f.title}</span>
@@ -90,16 +90,16 @@ export default function AgentMemoryFiles() {
                       {f.headings.map((h, i) => {
                         const k = entryKey(f, i); const u = entries[k];
                         return (
-                          <div key={k} className="rounded-lg hover:bg-wash/60" data-agent-memory-entry={i}>
+                          <div key={k} className="rounded-content hover:bg-wash/60" data-agent-memory-entry={i}>
                             <div className="flex items-start gap-1.5 px-1.5 py-1">
                               <button onClick={() => void unfold(f, i)} className="flex-1 min-w-0 text-left text-xs text-ink flex items-start gap-1.5">
                                 {u ? <ChevronDown size={11} className="mt-0.5 shrink-0 text-ink-faint" /> : <ChevronRight size={11} className="mt-0.5 shrink-0 text-ink-faint" />}
                                 <span className="break-words">{h}</span>
                               </button>
-                              <button onClick={() => void cite(f, i)} disabled={busy === k} className="shrink-0 text-2xs text-accent hover:bg-accent/10 px-1.5 py-0.5 rounded-md flex items-center gap-1 disabled:opacity-50" title={t('recall.cite')} data-agent-memory-cite>
+                              <button onClick={() => void cite(f, i)} disabled={busy === k} className="shrink-0 text-2xs text-accent hover:bg-accent/10 px-1.5 py-0.5 rounded-tag flex items-center gap-1 disabled:opacity-50" title={t('recall.cite')} data-agent-memory-cite>
                                 <Quote size={10} strokeWidth={1.75} /> {t('recall.cite')}
                               </button>
-                              <button onClick={() => void importEntry(f, i)} disabled={busy === k} className="shrink-0 text-2xs text-ink-muted hover:text-ink hover:bg-wash px-1.5 py-0.5 rounded-md flex items-center gap-1 disabled:opacity-50" title={t('recall.import')} data-agent-memory-import>
+                              <button onClick={() => void importEntry(f, i)} disabled={busy === k} className="shrink-0 text-2xs text-ink-muted hover:text-ink hover:bg-wash px-1.5 py-0.5 rounded-tag flex items-center gap-1 disabled:opacity-50" title={t('recall.import')} data-agent-memory-import>
                                 <Download size={10} strokeWidth={1.75} /> {t('recall.import')}
                               </button>
                             </div>

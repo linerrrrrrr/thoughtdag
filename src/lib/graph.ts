@@ -45,15 +45,20 @@ export function walkUpAncestors(
 
 const CONTENT_KINDS = new Set(['note', 'file', 'link']);
 
-/** One dashed reference feeding a context: the node it quotes, the edge
-    that brought it, and (for depth 'full') the structural chain behind it. */
+/** Ordinary references carry one turn. Watch and exploration edges retain
+    their specialized legacy input behavior. Stored depth is not migrated. */
+export function isSingleNodeReference(edge: ThoughtEdge): boolean {
+  return !!edge.data?.isCrossLink && !edge.data.isWatch && !edge.data.isBranchFromSelection;
+}
+
+/** One dashed reference feeding a context. Ordinary references have an
+    empty chain; only specialized edges may carry a legacy ancestor scope. */
 export interface ContextReference {
   source: ThoughtNode;
   edge: ThoughtEdge;
   depth: 'quote' | 'full';
-  /** Structural ancestors of the source (roots first), source EXCLUDED.
-      Quote depth renders these as a one-line question trail; full depth
-      renders their whole Q/A transcript inside the block. */
+  /** Structural ancestors for specialized edges only, source excluded.
+      Ordinary references never walk or expose the source's ancestors. */
   chain: ThoughtNode[];
 }
 
@@ -73,7 +78,7 @@ export interface ContextPartition {
  *
  * Layers by HOW content enters (the One Rule, ordered):
  *   materials  — content nodes: background blocks with [Note]/[File] identity
- *   references — dashed edges: fenced [Reference] blocks (quote or full)
+ *   references — dashed edges: fenced [Reference] blocks of one turn
  *   mainline   — solid edges: the live conversation, strict chain order
  * A reference never forwards its own references (one level of indirection).
  */
@@ -107,6 +112,10 @@ export function partitionContext(
     if (CONTENT_KINDS.has(source.data.stepKind ?? '')) {
       // Hand-wired material is still material — full identity block, no trail
       materials.push(source);
+      continue;
+    }
+    if (isSingleNodeReference(edge)) {
+      references.push({ source, edge, depth: 'quote', chain: [] });
       continue;
     }
     const { ordered: refOrdered } = walkUpAncestors(edge.source, nodes, structural);

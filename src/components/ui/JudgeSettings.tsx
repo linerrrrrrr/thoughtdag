@@ -49,7 +49,7 @@ export default function JudgeSettings() {
         placeholder={extra.placeholder}
         spellCheck={false}
         autoComplete="off"
-        className="w-full text-xs font-mono bg-wash border border-line rounded-md px-2 py-1 focus:outline-none focus:border-accent/60"
+        className="w-full text-xs font-mono bg-wash border border-line rounded-control px-2 py-1 focus:outline-none focus:border-accent/60"
       />
       {extra.hint && <span className="block text-2xs text-ink-faint mt-0.5">{extra.hint}</span>}
     </label>
@@ -58,7 +58,7 @@ export default function JudgeSettings() {
   const usingStored = effective === 'openrouter' && !judgeCfg.openrouterKey && !!storedKey;
 
   return (
-    <div className="border border-line rounded-xl px-3 py-2.5 bg-surface" data-judge-settings data-judge-on={on ? 'on' : 'off'}>
+    <div className="border border-line rounded-content px-3 py-2.5 bg-surface" data-judge-settings data-judge-on={on ? 'on' : 'off'}>
       <div className="flex items-center gap-2">
         <Scale size={14} strokeWidth={1.75} className="text-accent" />
         <span className="text-sm font-medium text-ink flex-1">{t('judge.title')}</span>
@@ -76,7 +76,7 @@ export default function JudgeSettings() {
           {(choosing || !configured) && (
             <label className="block">
               <span className="block text-2xs text-ink-faint mb-0.5">{t('judge.providerLabel')}</span>
-              <select value={judgeCfg.provider === 'none' ? 'openrouter' : judgeCfg.provider} onChange={(e) => { setJudge({ provider: e.target.value as JudgeProviderId }); setTest(null); }} className="w-full bg-wash border border-line rounded-md px-2 py-1 text-xs" data-judge-provider>
+              <select value={judgeCfg.provider === 'none' ? 'openrouter' : judgeCfg.provider} onChange={(e) => { setJudge({ provider: e.target.value as JudgeProviderId }); setTest(null); }} className="w-full bg-wash border border-line rounded-control px-2 py-1 text-xs" data-judge-provider>
                 {PROVIDERS.map((p) => <option key={p} value={p}>{providerLabel(p)}</option>)}
               </select>
             </label>
@@ -97,7 +97,7 @@ export default function JudgeSettings() {
             </div>
           )}
           <div className="flex items-center gap-3 flex-wrap">
-            <button onClick={() => void runTest()} disabled={testing || !configured} className="text-xs px-3 py-1 rounded-lg bg-accent/10 text-accent hover:bg-accent/20 disabled:opacity-50 flex items-center gap-1.5" data-judge-test>
+            <button onClick={() => void runTest()} disabled={testing || !configured} className="text-xs px-3 py-1 rounded-control bg-accent/10 text-accent hover:bg-accent/20 disabled:opacity-50 flex items-center gap-1.5" data-judge-test>
               {testing && <Loader2 size={12} className="animate-spin" />} {t('judge.test')}
             </button>
             {testing && !test && <span className="text-2xs text-ink-faint">{t('judge.checking')}</span>}

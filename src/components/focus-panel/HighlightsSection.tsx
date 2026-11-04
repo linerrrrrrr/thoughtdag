@@ -4,6 +4,8 @@ import { useStore } from '../../store';
 import { isImeComposing } from '../../utils';
 import { useT } from '../../i18n';
 import { isViewerMode } from '../../lib/viewer';
+import { useUiStore } from '../../lib/ui-store';
+import { useInlineEditDismiss } from '../../lib/use-inline-edit-dismiss';
 import type { Highlight } from '../../types';
 
 // Highlights: the list, how they pass downstream (tag / filter-only — no
@@ -27,6 +29,13 @@ export default function HighlightsSection({
   const [highlightExploreContext, setHighlightExploreContext] = useState('');
   const [highlightExploreInput, setHighlightExploreInput] = useState('');
   const highlightExploreRef = useRef<HTMLInputElement>(null);
+  const editorRef = useRef<HTMLDivElement>(null);
+  const draftKey = `highlight-explore:${nodeId}`;
+  const cancelExplore = () => {
+    useUiStore.getState().setDraft(draftKey, '');
+    setHighlightExploreContext(''); setHighlightExploreInput('');
+  };
+  const dismiss = useInlineEditDismiss({ active: !!highlightExploreContext, ref: editorRef, onOutside: () => setHighlightExploreContext(''), onCancel: cancelExplore });
 
   // Auto-focus highlight explore input when context is set
   useEffect(() => {
@@ -38,6 +47,7 @@ export default function HighlightsSection({
   const submitExplore = () => {
     if (!highlightExploreInput.trim()) return;
     addQuestion(highlightExploreInput.trim(), { parentId: nodeId, branchContext: highlightExploreContext });
+    useUiStore.getState().setDraft(draftKey, '');
     setHighlightExploreInput('');
     setHighlightExploreContext('');
   };
@@ -59,7 +69,7 @@ export default function HighlightsSection({
             <>
               <div className="space-y-1.5 mb-3">
                 {highlights.map((h) => (
-                  <div key={h.id} className="flex items-start gap-2 bg-amber-50 rounded-lg px-3 py-2 group/hl">
+                  <div key={h.id} className="flex items-start gap-2 bg-amber-50 rounded-content px-3 py-2 group/hl">
                     <span className="text-xs text-amber-700 flex-1 leading-relaxed">
                       <Star size={14} strokeWidth={1.75} className="inline" /> {h.text.slice(0, 80)}{h.text.length > 80 ? '…' : ''}
                     </span>
@@ -83,9 +93,9 @@ export default function HighlightsSection({
                       key={mode}
                       onClick={() => setHighlightMode(nodeId, mode)}
                       title={mode === 'tag' ? t('highlight.hintTag') : t('highlight.hintFilter')}
-                      className={`text-xs px-2.5 py-1.5 rounded-lg transition-colors flex items-center gap-1 ${
+                      className={`text-xs px-2.5 py-1.5 rounded-control transition-colors flex items-center gap-1 ${
                         highlightMode === mode
-                          ? 'bg-accent text-white'
+                          ? 'bg-action text-white'
                           : 'bg-wash text-ink-muted hover:bg-line'
                       }`}
                     >
@@ -94,8 +104,8 @@ export default function HighlightsSection({
                   ))}
                 </div>
                 <button
-                  onClick={() => setHighlightExploreContext(highlights.map((h) => h.text).join('\n\n'))}
-                  className="text-xs bg-accent/10 hover:bg-accent/20 text-accent px-2.5 py-1.5 rounded-lg transition-colors flex items-center gap-1"
+                  onClick={() => { setHighlightExploreInput(useUiStore.getState().drafts[draftKey] ?? ''); setHighlightExploreContext(highlights.map((h) => h.text).join('\n\n')); }}
+                  className="text-xs bg-accent/10 hover:bg-accent/20 text-accent px-2.5 py-1.5 rounded-control transition-colors flex items-center gap-1"
                   title={t('highlight.exploreTitle')}
                 >
                   <GitBranch size={14} strokeWidth={1.75} />
@@ -104,27 +114,27 @@ export default function HighlightsSection({
               </div>
               {/* Highlight Explore input */}
               {highlightExploreContext && (
-                <div className="mt-3 flex gap-1.5">
+                <div ref={editorRef} onBlur={dismiss.onBlur} className="mt-3 flex gap-1.5" data-highlight-explore-editor>
                   <input
                     ref={highlightExploreRef}
                     type="text"
                     value={highlightExploreInput}
-                    onChange={(e) => setHighlightExploreInput(e.target.value)}
+                    onChange={(e) => { setHighlightExploreInput(e.target.value); useUiStore.getState().setDraft(draftKey, e.target.value, true); }}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter' && !isImeComposing(e)) submitExplore();
-                      if (e.key === 'Escape') { setHighlightExploreContext(''); setHighlightExploreInput(''); }
                     }}
                     placeholder={t('highlight.explorePlaceholder')}
-                    className="flex-1 text-xs border border-accent/30 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-accent bg-accent/5"
+                    className="flex-1 text-xs border border-accent/30 rounded-control px-3 py-2 focus:outline-none focus:ring-1 focus:ring-accent bg-accent/5"
                   />
                   <button
                     onClick={submitExplore}
-                    className="text-xs bg-accent text-white px-3 py-2 rounded-lg hover:bg-accent-strong transition-colors shrink-0"
+                    className="text-xs bg-action text-white px-3 py-2 rounded-control hover:bg-action-strong transition-colors shrink-0"
                   >
                     {t('common.go')}
                   </button>
                   <button
-                    onClick={() => { setHighlightExploreContext(''); setHighlightExploreInput(''); }}
+                    onClick={cancelExplore}
+                    title={t('common.cancel')}
                     className="text-xs text-ink-faint hover:text-ink-muted px-1.5 py-2 transition-colors shrink-0"
                   >
                     <X size={14} strokeWidth={1.75} />

@@ -1,3 +1,4 @@
+import { useDismissableLayer } from '../../lib/use-dismissable-layer';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Archive, Check, Copy, Loader2, Minimize2, X } from 'lucide-react';
@@ -64,12 +65,7 @@ export default function CondenseDialog({ onFocusSegment }: { onFocusSegment?: (n
   };
   // Esc closes the top layer, here too — a floating window that ignores
   // Esc reads as stuck
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') close(); };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [open]);
+  useDismissableLayer({ open, refs: [winRef], onDismiss: close, dismissOnOutside: false });
   if (!open) return null;
 
   const build = () => {
@@ -93,7 +89,7 @@ export default function CondenseDialog({ onFocusSegment }: { onFocusSegment?: (n
   return createPortal((
     <div
       ref={winRef}
-      className="fixed z-[70] bg-surface border border-line rounded-2xl shadow-2xl w-[400px] max-h-[72vh] flex flex-col p-4 animate-fade-in"
+      className="fixed z-[70] bg-surface border border-line rounded-panel shadow-lg w-[400px] max-h-[72vh] flex flex-col p-4 animate-fade-in"
       style={pos ? { left: pos.x, top: pos.y } : { left: 80, bottom: 16 }}
       data-condense-dialog
       onClick={(e) => e.stopPropagation()}
@@ -103,7 +99,7 @@ export default function CondenseDialog({ onFocusSegment }: { onFocusSegment?: (n
           <Minimize2 size={15} strokeWidth={1.75} className="text-accent" /> {t('condense.title')}
         </div>
         <button onClick={close} title={run.status === 'building' ? t('condense.runningBg') : undefined}
-          className="text-ink-faint hover:text-ink rounded-lg w-7 h-7 flex items-center justify-center hover:bg-wash transition-colors"><X size={15} /></button>
+          className="text-ink-faint hover:text-ink rounded-control w-7 h-7 flex items-center justify-center hover:bg-wash transition-colors"><X size={15} /></button>
       </div>
 
       {run.status === 'idle' && (
@@ -114,7 +110,7 @@ export default function CondenseDialog({ onFocusSegment }: { onFocusSegment?: (n
               onClick={() => setRefreshTick((v) => v + 1)}
               title={t('condense.rescanTitle')}
               data-condense-rescan
-              className="text-2xs text-ink-muted hover:text-accent px-2 py-1 rounded-lg hover:bg-wash transition-colors shrink-0"
+              className="text-2xs text-ink-muted hover:text-accent px-2 py-1 rounded-tag hover:bg-wash transition-colors shrink-0"
             >
               ⟳ {t('condense.rescan')}
             </button>
@@ -125,7 +121,7 @@ export default function CondenseDialog({ onFocusSegment }: { onFocusSegment?: (n
           <div className="flex items-center gap-2 mb-3">
             <label className="text-2xs text-ink-muted shrink-0">{t('condense.modelLabel')}</label>
             <select value={model} onChange={(e) => setModel(e.target.value)} data-condense-model
-              className="text-xs bg-wash text-ink rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-accent/40 max-w-[220px] truncate">
+              className="text-xs bg-wash text-ink rounded-control px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-accent/40 max-w-[220px] truncate">
               <option value="">{fmt(t('condense.modelAuto'), { model: autoModel ?? '—' })}</option>
               {models.map((m) => <option key={m.id} value={m.id}>{m.id}</option>)}
             </select>
@@ -141,7 +137,7 @@ export default function CondenseDialog({ onFocusSegment }: { onFocusSegment?: (n
                   <div
                     key={k}
                     data-condense-item
-                    className={`border rounded-xl p-3 transition-colors cursor-pointer ${on ? 'border-accent/60 bg-accent/5' : 'border-line opacity-60'}`}
+                    className={`border rounded-content p-3 transition-colors cursor-pointer ${on ? 'border-accent/60 bg-accent/5' : 'border-line opacity-60'}`}
                     onClick={() => {
                       useUiStore.getState().setCondenseHighlightIds(seg.nodeIds);
                       onFocusSegment?.(seg.nodeIds);
@@ -171,7 +167,7 @@ export default function CondenseDialog({ onFocusSegment }: { onFocusSegment?: (n
                 onClick={build}
                 disabled={picked.length === 0}
                 data-condense-build
-                className="text-xs bg-accent text-white px-3.5 py-2 rounded-lg disabled:opacity-40 transition-colors flex items-center gap-1.5 shrink-0"
+                className="text-xs bg-action text-white px-3.5 py-2 rounded-control disabled:opacity-40 transition-colors flex items-center gap-1.5 shrink-0"
               >
                 <Copy size={13} strokeWidth={1.75} />
                 {fmt(t('condense.buildCopy'), { n: String(picked.length), tok: String(pickedSaving) })}
@@ -189,12 +185,12 @@ export default function CondenseDialog({ onFocusSegment }: { onFocusSegment?: (n
           </div>
           <p className="text-2xs text-ink-faint mb-2">{t('condense.runningBg')}</p>
           {run.streaming && (
-            <div className="flex-1 min-h-0 overflow-y-auto text-2xs text-ink-muted bg-wash rounded-lg p-2.5 whitespace-pre-wrap leading-relaxed" data-condense-streaming>
+            <div className="flex-1 min-h-0 overflow-y-auto text-2xs text-ink-muted bg-wash rounded-content p-2.5 whitespace-pre-wrap leading-relaxed" data-condense-streaming>
               {run.streaming}
             </div>
           )}
           <button onClick={() => cancelCondenseRun()} data-condense-cancel
-            className="self-start mt-3 text-xs text-ink-muted hover:text-red-600 px-3 py-1.5 rounded-lg hover:bg-wash transition-colors">
+            className="self-start mt-3 text-xs text-ink-muted hover:text-red-600 px-3 py-1.5 rounded-control hover:bg-wash transition-colors">
             {t('common.cancel')}
           </button>
         </div>
@@ -204,7 +200,7 @@ export default function CondenseDialog({ onFocusSegment }: { onFocusSegment?: (n
         <div className="flex flex-col gap-2 py-3">
           <p className="text-2xs text-red-600">{run.error}</p>
           <button onClick={() => useUiStore.getState().setCondenseRun({ status: 'idle', error: undefined })}
-            className="self-start text-xs text-ink-muted hover:text-ink px-3 py-1.5 rounded-lg hover:bg-wash transition-colors">
+            className="self-start text-xs text-ink-muted hover:text-ink px-3 py-1.5 rounded-control hover:bg-wash transition-colors">
             {t('common.cancel')}
           </button>
         </div>
@@ -217,11 +213,11 @@ export default function CondenseDialog({ onFocusSegment }: { onFocusSegment?: (n
           </div>
           <p className="text-2xs text-ink-faint leading-relaxed">{t('condense.copyCompareHint')}</p>
           <div className="flex items-center gap-2">
-            <button onClick={focusCopy} className="text-xs bg-accent/10 text-accent hover:bg-accent/20 px-3 py-2 rounded-lg transition-colors">
+            <button onClick={focusCopy} className="text-xs bg-accent/10 text-accent hover:bg-accent/20 px-3 py-2 rounded-control transition-colors">
               {t('condense.viewCopy')}
             </button>
             <button onClick={archiveOriginal} data-condense-archive-original
-              className="text-xs border border-line text-ink-muted hover:text-ink hover:bg-wash px-3 py-2 rounded-lg transition-colors flex items-center gap-1.5">
+              className="text-xs border border-line text-ink-muted hover:text-ink hover:bg-wash px-3 py-2 rounded-control transition-colors flex items-center gap-1.5">
               <Archive size={13} strokeWidth={1.75} /> {t('condense.archiveOriginal')}
             </button>
           </div>

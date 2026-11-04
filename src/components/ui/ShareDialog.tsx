@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useDismissableLayer } from '../../lib/use-dismissable-layer';
+import { useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Check, Copy, Eye, FileJson, ImageDown, X } from 'lucide-react';
 import { useUiStore } from '../../lib/ui-store';
@@ -18,14 +19,8 @@ export default function ShareDialog() {
   const [readonlyMark, setReadonlyMark] = useState(true);
   const close = () => { setCopied(false); useUiStore.getState().setShareDialogUrl(null); };
 
-  useEffect(() => {
-    if (!url) return;
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') { e.stopPropagation(); close(); }
-    };
-    window.addEventListener('keydown', handler, true);
-    return () => window.removeEventListener('keydown', handler, true);
-  }, [url]);
+  const layerRef = useRef<HTMLDivElement>(null);
+  useDismissableLayer({ open: !!url, refs: [layerRef], onDismiss: close, modal: true });
 
   if (!url) return null;
 
@@ -36,13 +31,13 @@ export default function ShareDialog() {
   };
 
   return createPortal((
-    <div className="fixed inset-0 z-[80] bg-ink/25 backdrop-blur-[2px] flex items-center justify-center animate-fade-in" onClick={close} data-share-dialog>
-      <div className="bg-surface rounded-2xl shadow-2xl border border-line w-[min(480px,92vw)] p-5" onClick={(e) => e.stopPropagation()}>
+    <div className="fixed inset-0 z-[80] bg-ink/25 flex items-center justify-center animate-fade-in" data-share-dialog>
+      <div ref={layerRef} role="dialog" aria-modal="true" aria-label={t('viewer.shareDialogTitle')} tabIndex={-1} className="bg-surface rounded-panel shadow-lg border border-line w-[min(480px,92vw)] p-5" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-start justify-between mb-3">
           <div className="text-sm font-semibold text-ink flex items-center gap-2">
             <Eye size={15} strokeWidth={1.75} className="text-accent" /> {t('viewer.shareDialogTitle')}
           </div>
-          <button onClick={close} className="w-7 h-7 rounded-lg text-ink-faint hover:bg-wash hover:text-ink flex items-center justify-center transition-colors">
+          <button onClick={close} className="w-7 h-7 rounded-control text-ink-faint hover:bg-wash hover:text-ink flex items-center justify-center transition-colors">
             <X size={15} strokeWidth={1.75} />
           </button>
         </div>
@@ -55,12 +50,12 @@ export default function ShareDialog() {
             readOnly
             value={url}
             onFocus={(e) => e.target.select()}
-            className="flex-1 min-w-0 text-xs font-mono text-ink-muted bg-wash border border-line rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-accent/40 truncate"
+            className="flex-1 min-w-0 text-xs font-mono text-ink-muted bg-wash border border-line rounded-control px-3 py-2 focus:outline-none focus:ring-1 focus:ring-accent/40 truncate"
           />
           <button
             onClick={() => void copy()}
-            className={`shrink-0 text-xs px-3 py-2 rounded-lg flex items-center gap-1.5 transition-colors ${
-              copied ? 'bg-green-600 text-white' : 'bg-accent text-white hover:bg-accent-strong'
+            className={`shrink-0 text-xs px-3 py-2 rounded-control flex items-center gap-1.5 transition-colors ${
+              copied ? 'bg-green-600 text-white' : 'bg-action text-white hover:bg-action-strong'
             }`}
             data-share-copy
           >
@@ -69,7 +64,7 @@ export default function ShareDialog() {
           </button>
         </div>
         {url.length > 30000 && (
-          <p className="text-2xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 leading-relaxed mb-3" data-share-toolong>
+          <p className="text-2xs text-amber-700 bg-amber-50 border border-amber-200 rounded-content px-3 py-2 leading-relaxed mb-3" data-share-toolong>
             {t('share.linkTooLong')}
           </p>
         )}
@@ -77,7 +72,7 @@ export default function ShareDialog() {
           <button
             onClick={() => void exportActiveProjectJson({ sharedReadonly: readonlyMark })}
             data-share-fullfile
-            className="text-xs px-3 py-1.5 rounded-lg border border-line text-ink-muted hover:bg-wash hover:text-ink transition-colors flex items-center gap-1.5"
+            className="text-xs px-3 py-1.5 rounded-control border border-line text-ink-muted hover:bg-wash hover:text-ink transition-colors flex items-center gap-1.5"
           >
             <FileJson size={13} strokeWidth={1.75} />
             {t('share.fullFile')}
@@ -95,7 +90,7 @@ export default function ShareDialog() {
             <button
               onClick={() => { close(); useUiStore.getState().setThoughtMapOpen(true); }}
               data-share-thought-map
-              className="text-xs px-3 py-1.5 rounded-lg bg-accent/10 text-accent hover:bg-accent/20 transition-colors flex items-center gap-1.5 font-medium"
+              className="text-xs px-3 py-1.5 rounded-control bg-accent/10 text-accent hover:bg-accent/20 transition-colors flex items-center gap-1.5 font-medium"
             >
               <ImageDown size={13} strokeWidth={1.75} />
               {t('tmap.export')}

@@ -7,14 +7,14 @@ import { profileLines } from '../../lib/profile';
 import { countTokens } from '../../utils';
 import { referenceBlockContent } from '../../store/context-builder';
 import { isToolStep } from '../../lib/turn-insight';
-import type { ContextPartition } from '../../lib/graph';
+import { isSingleNodeReference, type ContextPartition } from '../../lib/graph';
 import { useT, fmt } from '../../i18n';
 import type { ThoughtNode } from '../../types';
 
 // The context TREE, grouped the same way the prompt is assembled
 // (materials → references → the conversation): what you read here is
-// literally the order the model reads. References show their depth
-// (quote / full) and price; every row jumps to its node.
+// literally the order the model reads. References show their purpose and
+// token price; every row jumps to its node.
 
 // The ambient memory layer, when enabled: the panel's promise is that what
 // you read here is what the model reads — memory rides context, so it shows.
@@ -29,7 +29,7 @@ function MemoryRow() {
   return (
     <button
       onClick={() => setMemoryManagerOpen(true)}
-      className="w-full text-left rounded-lg px-2 py-1.5 hover:bg-wash transition-colors group flex items-center gap-2 text-xs"
+      className="w-full text-left rounded-control px-2 py-1.5 hover:bg-wash transition-colors group flex items-center gap-2 text-xs"
       title={t('memory.rowTitle')}
     >
       <span className="text-ink-faint shrink-0">🧠</span>
@@ -73,7 +73,7 @@ export default function ContextChainSection({
   const [contextOpen, setContextOpen] = useState(false);
   const jump = (id: string) => { setSelectedNodeId(id); onFocusNode?.(id); };
   const staleDot = (id: string) => staleIds.includes(id) && (
-    <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" title={t('node.staleBadge')} />
+    <span className="w-1.5 h-1.5 shape-circle bg-amber-500 shrink-0" title={t('node.staleBadge')} />
   );
 
   const ancestors = partition.mainline.slice(0, -1); // exclude current node
@@ -90,7 +90,7 @@ export default function ContextChainSection({
     }
     return by;
   }, [partition, ancestors]);
-  const rowCls = 'w-full text-left rounded-lg px-2 py-1.5 hover:bg-wash transition-colors group flex items-center gap-2 text-xs';
+  const rowCls = 'w-full text-left rounded-control px-2 py-1.5 hover:bg-wash transition-colors group flex items-center gap-2 text-xs';
   const groupCls = 'text-2xs text-ink-faint font-medium mt-2 mb-0.5';
 
   return (
@@ -125,7 +125,7 @@ export default function ContextChainSection({
             </>
           )}
 
-          {/* References: dashed edges, depth + price on each row */}
+          {/* References: connection purpose and price on each row */}
           {partition.references.length > 0 && (
             <>
               <p className={groupCls}>{t('chain.references')}</p>
@@ -136,13 +136,15 @@ export default function ContextChainSection({
                     {ref.source.data.question.slice(0, 60)}{ref.source.data.question.length > 60 ? '…' : ''}
                   </span>
                   {staleDot(ref.source.id)}
-                  <span
+                  {isSingleNodeReference(ref.edge) ? <span
                     onClick={(e) => { e.stopPropagation(); setEdgeStructural(ref.edge.id, true); }}
                     title={t('edge.depthToggleTitle')}
-                    className={`text-2xs px-1.5 py-px rounded-full shrink-0 cursor-pointer transition-shadow hover:ring-1 hover:ring-accent/40 ${ref.depth === 'full' ? 'bg-accent/10 text-accent' : 'bg-wash text-ink-faint'}`}
+                    className="text-2xs px-1.5 py-px rounded-tag shrink-0 cursor-pointer bg-wash text-ink-faint transition-shadow hover:ring-1 hover:ring-accent/40"
                   >
-                    {t(ref.depth === 'full' ? 'chain.refDepthFull' : 'chain.refDepthQuote')} →—
-                  </span>
+                    {t('edgeEditor.reference')} →—
+                  </span> : <span className="text-2xs px-1.5 py-px rounded-tag shrink-0 bg-wash text-ink-faint">
+                    {t(ref.edge.data?.isWatch ? 'edgeEditor.watch' : 'edgeEditor.branch')}
+                  </span>}
                   <span className="text-2xs text-ink-faint font-mono shrink-0">
                     {countTokens(referenceBlockContent(ref))}
                   </span>
@@ -169,7 +171,7 @@ export default function ContextChainSection({
                 </span>
                 {staleDot(ancestor.id)}
                 {toolsIn.has(ancestor.id) && (
-                  <span className="text-2xs px-1.5 py-px rounded-full bg-warm/10 text-warm shrink-0" title={t('chain.toolsInTitle')} data-chain-tools-in>
+                  <span className="text-2xs px-1.5 py-px rounded-tag bg-warm/10 text-warm shrink-0" title={t('chain.toolsInTitle')} data-chain-tools-in>
                     {fmt(t('chain.toolsIn'), { tok: toolsIn.get(ancestor.id)!.toLocaleString() })}
                   </span>
                 )}

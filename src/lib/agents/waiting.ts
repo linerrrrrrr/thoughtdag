@@ -13,7 +13,7 @@ import type { ApprovalRequest } from '../../types';
 export function flyToWaiting(nodeId: string): void {
   if (!useStore.getState().nodes.some((n) => n.id === nodeId)) return;
   useStore.getState().setSelectedNodeId(nodeId);
-  useUiStore.getState().setPanelOpen(true);
+  useUiStore.getState().setPanelOpen(true, nodeId);
   useUiStore.getState().setArrivalFocusNodeId(nodeId);
 }
 

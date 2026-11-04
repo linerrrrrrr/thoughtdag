@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState, useCallback } from 'react';
+import { useEffect, useMemo, useState, useCallback, useRef } from 'react';
+import { useDismissableLayer } from '../lib/use-dismissable-layer';
 import RecallResults from './ui/RecallResults';
 import MemoryPage from './ui/MemoryPage';
 import { whyBridge } from '../lib/why-bridge';
@@ -39,6 +40,8 @@ function SourcesDialog({ roots, counts, onChanged, onClose }: {
   onClose: () => void;
 }) {
   const t = useT();
+  const layerRef = useRef<HTMLDivElement>(null);
+  useDismissableLayer({ open: true, refs: [layerRef], onDismiss: onClose, modal: true });
   const off = disabledRoots();
   const builtinLabel: Record<string, string> = { 'claude-projects': 'Claude Code', 'codex-sessions': 'Codex', 'dsh-sessions': 'DeepSeek Harness', 'pi-sessions': 'Pi' };
   // one-command handoff: install /thoughtdag ($thoughtdag) into the
@@ -65,7 +68,7 @@ function SourcesDialog({ roots, counts, onChanged, onClose }: {
       </span>
       {!root.builtin && (
         <button
-          className="text-ink-faint hover:text-red-500 p-1 rounded transition-colors shrink-0"
+          className="text-ink-faint hover:text-red-500 p-1 rounded-control transition-colors shrink-0"
           onClick={() => { void window.desktopSessions!.removeRoot(root.key).then(onChanged); }}
         >
           <Trash2 size={14} strokeWidth={1.75} />
@@ -74,8 +77,8 @@ function SourcesDialog({ roots, counts, onChanged, onClose }: {
     </div>
   );
   return (
-    <div className="absolute inset-0 z-10 bg-ink/20 flex items-center justify-center" onClick={onClose}>
-      <div className="bg-surface border border-line rounded-2xl shadow-xl w-[440px] max-h-[80%] overflow-y-auto" onClick={(e) => e.stopPropagation()} data-atlas-sources-dialog>
+    <div className="absolute inset-0 z-10 bg-ink/20 flex items-center justify-center">
+      <div ref={layerRef} role="dialog" aria-modal="true" aria-label={t('atlas.sourcesTitle')} tabIndex={-1} className="bg-surface border border-line rounded-panel shadow-lg w-[440px] max-h-[80%] overflow-y-auto" onClick={(e) => e.stopPropagation()} data-atlas-sources-dialog>
         <div className="px-4 pt-3.5 pb-2.5 border-b border-line">
           <div className="text-sm font-semibold text-ink">{t('atlas.sourcesTitle')}</div>
           <div className="text-2xs text-ink-muted mt-0.5">{t('atlas.sourcesHint')}</div>
@@ -89,7 +92,7 @@ function SourcesDialog({ roots, counts, onChanged, onClose }: {
                 <div className="flex-1 min-w-0">
                   <div className="text-sm text-ink flex items-center gap-2">
                     {runnerLabel[runner] ?? runner}
-                    <code className="text-2xs bg-wash border border-line rounded px-1.5 py-px font-mono">{c.invoke}</code>
+                    <code className="text-2xs bg-wash border border-line rounded-tag px-1.5 py-px font-mono">{c.invoke}</code>
                   </div>
                   <div className="text-2xs text-ink-faint truncate">
                     {t(c.state === 'installed' ? 'atlas.handoffOn' : c.state === 'outdated' ? 'atlas.handoffOutdated' : 'atlas.handoffOff')}
@@ -97,7 +100,7 @@ function SourcesDialog({ roots, counts, onChanged, onClose }: {
                 </div>
                 {c.state !== 'installed' && (
                   <button
-                    className="text-2xs bg-accent/10 text-accent hover:bg-accent/20 font-medium px-2.5 py-1 rounded-lg transition-colors shrink-0"
+                    className="text-2xs bg-accent/10 text-accent hover:bg-accent/20 font-medium px-2.5 py-1 rounded-tag transition-colors shrink-0"
                     data-handoff-install
                     onClick={() => void (async () => {
                       const { confirmDialog } = await import('../lib/ui-store');
@@ -118,7 +121,7 @@ function SourcesDialog({ roots, counts, onChanged, onClose }: {
                 )}
                 {(c.state === 'installed' || c.state === 'outdated') && (
                   <button
-                    className="text-ink-faint hover:text-red-500 p-1 rounded transition-colors shrink-0"
+                    className="text-ink-faint hover:text-red-500 p-1 rounded-control transition-colors shrink-0"
                     title={t('atlas.handoffRemove')}
                     data-handoff-remove
                     onClick={() => void window.desktopSessions!.commandsRemove!(runner).then(refreshCmds)}
@@ -134,13 +137,13 @@ function SourcesDialog({ roots, counts, onChanged, onClose }: {
         <div className="flex items-center gap-2 px-4 py-3">
           <button
             onClick={onChanged}
-            className="flex items-center gap-1.5 text-sm text-ink-muted hover:text-ink border border-line rounded-lg px-2.5 py-1.5 hover:bg-wash transition-colors"
+            className="flex items-center gap-1.5 text-sm text-ink-muted hover:text-ink border border-line rounded-control px-2.5 py-1.5 hover:bg-wash transition-colors"
           >
             <RefreshCw size={13} strokeWidth={1.75} /> {t('atlas.autoDetect')}
           </button>
           <button
             onClick={() => { void window.desktopSessions!.addRoot().then((r) => { if (r) onChanged(); }); }}
-            className="flex items-center gap-1.5 text-sm text-accent border border-line rounded-lg px-2.5 py-1.5 hover:bg-wash transition-colors"
+            className="flex items-center gap-1.5 text-sm text-accent border border-line rounded-control px-2.5 py-1.5 hover:bg-wash transition-colors"
             data-atlas-add-dir
           >
             <Plug size={13} strokeWidth={1.75} /> {t('atlas.addDir')}
@@ -154,6 +157,9 @@ function SourcesDialog({ roots, counts, onChanged, onClose }: {
 
 export default function SessionAtlas({ onClose, onSwitched, focusSessionId, initialTab }: { onClose: () => void; onSwitched: () => void; focusSessionId?: string; initialTab?: 'sessions' | 'memory' }) {
   const t = useT();
+  const layerRef = useRef<HTMLDivElement>(null);
+  const pickerRef = useRef<HTMLDivElement>(null);
+  useDismissableLayer({ open: true, refs: [layerRef], onDismiss: onClose, modal: true });
   // two pages of one surface: the conversations (this atlas) and memory —
   // ThoughtDAG's own library beside what the other agents wrote down. The
   // search box above both asks the why layer for the exact words.
@@ -179,6 +185,7 @@ export default function SessionAtlas({ onClose, onSwitched, focusSessionId, init
   // curation picks: sessions selected for a side-by-side merge
   const [picked, setPicked] = useState<Map<string, SessionCard>>(new Map());
   const [mergePick, setMergePick] = useState(false);
+  useDismissableLayer({ open: !!mountPick || mergePick, refs: [pickerRef], onDismiss: () => { setMountPick(null); setMergePick(false); }, modal: true });
   const pickKey = (card: SessionCard) => `${card.rootKey}|${card.rel}`;
   const togglePick = (card: SessionCard) => setPicked((prev) => {
     const next = new Map(prev);
@@ -374,8 +381,8 @@ export default function SessionAtlas({ onClose, onSwitched, focusSessionId, init
   // context, which would clamp this overlay UNDER the focus panel — the
   // atlas must veil the whole canvas, side panel included.
   return createPortal(
-    <div className="fixed inset-0 z-50 bg-ink/30 backdrop-blur-sm flex items-center justify-center p-6" data-session-atlas>
-      <div className="bg-surface border border-line rounded-2xl shadow-2xl w-full max-w-[980px] h-[min(680px,90vh)] flex flex-col overflow-hidden">
+    <div className="fixed inset-0 z-50 bg-ink/30 flex items-center justify-center p-6" data-session-atlas>
+      <div ref={layerRef} role="dialog" aria-modal="true" aria-label={t(tab === 'memory' ? 'memory.managerTitle' : 'atlas.title')} tabIndex={-1} className="bg-surface border border-line rounded-panel shadow-lg w-full max-w-[980px] h-[min(680px,90vh)] flex flex-col overflow-hidden">
         <div className="flex items-start gap-3 px-5 pt-4 pb-3 border-b border-line">
           <div className="flex-1 min-w-0">
             <div className="text-base font-semibold text-ink">{t(tab === 'memory' ? 'memory.managerTitle' : 'atlas.title')}</div>
@@ -399,7 +406,7 @@ export default function SessionAtlas({ onClose, onSwitched, focusSessionId, init
             )}
           </div>
           {isDesktop && targets && targets.terminals.length > 0 && (
-            <label className="flex items-center gap-1.5 text-sm text-ink-muted border border-line rounded-lg px-2.5 py-1.5 cursor-pointer" title={t('atlas.terminalChoice')}>
+            <label className="flex items-center gap-1.5 text-sm text-ink-muted border border-line rounded-control px-2.5 py-1.5 cursor-pointer" title={t('atlas.terminalChoice')}>
               <SquareTerminal size={14} strokeWidth={1.75} />
               <select
                 value={targets.prefs.terminal}
@@ -425,7 +432,7 @@ export default function SessionAtlas({ onClose, onSwitched, focusSessionId, init
           <button
             onClick={() => setSourcesOpen(true)}
             hidden={tab === 'memory'}
-            className="flex items-center gap-1.5 text-sm text-ink-muted hover:text-ink border border-line rounded-lg px-2.5 py-1.5 hover:bg-wash transition-colors"
+            className="flex items-center gap-1.5 text-sm text-ink-muted hover:text-ink border border-line rounded-control px-2.5 py-1.5 hover:bg-wash transition-colors"
             data-atlas-sources
           >
             <Plug size={14} strokeWidth={1.75} /> {t('atlas.sources')}
@@ -435,24 +442,24 @@ export default function SessionAtlas({ onClose, onSwitched, focusSessionId, init
           <button
             onClick={() => void refresh()}
             disabled={scanning}
-            className="flex items-center gap-1.5 text-sm text-ink-muted hover:text-ink border border-line rounded-lg px-2.5 py-1.5 hover:bg-wash transition-colors disabled:opacity-60"
+            className="flex items-center gap-1.5 text-sm text-ink-muted hover:text-ink border border-line rounded-control px-2.5 py-1.5 hover:bg-wash transition-colors disabled:opacity-60"
             data-atlas-refresh
           >
             {scanning ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} strokeWidth={1.75} />}
             {scanning ? t('atlas.scanning') : t('atlas.refresh')}
           </button>
           )}
-          <button onClick={onClose} className="text-ink-faint hover:text-ink p-1.5 rounded-lg hover:bg-wash transition-colors" data-atlas-close>
+          <button onClick={onClose} className="text-ink-faint hover:text-ink p-1.5 rounded-control hover:bg-wash transition-colors" data-atlas-close>
             <X size={18} strokeWidth={1.75} />
           </button>
         </div>
         <div className="flex items-center gap-3 px-5 py-2 border-b border-line shrink-0" data-atlas-tabs>
-          <div className="flex items-center bg-wash rounded-lg p-0.5 shrink-0">
+          <div className="flex items-center bg-wash rounded-content p-0.5 shrink-0">
             {(['sessions', 'memory'] as const).map((k) => (
               <button
                 key={k}
                 onClick={() => setTab(k)}
-                className={`text-xs px-3 py-1 rounded-md transition-colors ${tab === k ? 'bg-card text-ink shadow-sm font-medium' : 'text-ink-muted hover:text-ink'}`}
+                className={`text-xs px-3 py-1 rounded-control transition-colors ${tab === k ? 'bg-card text-ink font-medium' : 'text-ink-muted hover:text-ink'}`}
                 data-atlas-tab={k}
                 aria-pressed={tab === k}
               >
@@ -461,7 +468,7 @@ export default function SessionAtlas({ onClose, onSwitched, focusSessionId, init
             ))}
           </div>
           {canRecall && (
-            <div className="flex items-center gap-1.5 border border-line rounded-lg px-2.5 py-1 bg-card flex-1 max-w-[520px]">
+            <div className="flex items-center gap-1.5 border border-line rounded-content px-2.5 py-1 bg-card flex-1 max-w-[520px]">
               <Search size={13} strokeWidth={1.75} className="text-ink-faint shrink-0" />
               <input
                 value={query}
@@ -492,7 +499,7 @@ export default function SessionAtlas({ onClose, onSwitched, focusSessionId, init
                 data-atlas-recent={p.id}
               >
                 {p.sourceSession?.sessionId
-                  ? <span className="text-2xs font-mono border border-line rounded px-1 py-px shrink-0 text-ink-faint">{p.sourceSession.runner}</span>
+                  ? <span className="text-2xs font-mono border border-line rounded-tag px-1 py-px shrink-0 text-ink-faint">{p.sourceSession.runner}</span>
                   : <Inbox size={13} strokeWidth={1.75} className="shrink-0 text-ink-faint" />}
                 <span className="flex-1 truncate text-sm">{p.name}</span>
               </button>
@@ -546,18 +553,18 @@ export default function SessionAtlas({ onClose, onSwitched, focusSessionId, init
             {selected === 'canvases' ? (
               <div className="space-y-1.5">
                 {projects.filter((p) => !p.archived).sort((a, b) => b.updatedAt - a.updatedAt).map((p) => (
-                  <div key={p.id} className="group flex items-center flex-wrap gap-2 border border-line rounded-xl px-4 py-3 hover:bg-wash transition-colors cursor-pointer"
+                  <div key={p.id} className="group flex items-center flex-wrap gap-2 border border-line rounded-content px-4 py-3 hover:bg-wash transition-colors cursor-pointer"
                     onClick={() => { onClose(); void switchProject(p.id).then(onSwitched); }}>
                     <div className="flex-1 min-w-0">
                       <div className="text-sm text-ink font-medium truncate">{p.name}</div>
                       <div className="text-2xs text-ink-faint mt-0.5 flex items-center gap-1.5">
                         <span>{dateLabel(p.updatedAt)}</span>
-                        {!!p.sourceSession?.sessionId && <span className="font-mono border border-line rounded px-1 py-px">{p.sourceSession.runner}</span>}
+                        {!!p.sourceSession?.sessionId && <span className="font-mono border border-line rounded-tag px-1 py-px">{p.sourceSession.runner}</span>}
                       </div>
                     </div>
                     <button
                       title={t('switcher.archive')}
-                      className="opacity-0 group-hover:opacity-100 text-ink-faint hover:text-amber-600 p-1.5 rounded transition-all shrink-0"
+                      className="opacity-0 group-hover:opacity-100 text-ink-faint hover:text-amber-600 p-1.5 rounded-control transition-all shrink-0"
                       onClick={(e) => { e.stopPropagation(); void setProjectArchived(p.id, true); }}
                       data-atlas-archive
                     >
@@ -591,12 +598,12 @@ export default function SessionAtlas({ onClose, onSwitched, focusSessionId, init
                           key={p.id}
                           title={t('atlas.restoreOpen')}
                           onClick={() => { void setProjectArchived(p.id, false).then(() => { onClose(); void switchProject(p.id).then(onSwitched); }); }}
-                          className="w-full text-left border border-dashed border-line rounded-xl px-4 py-2.5 hover:bg-wash transition-colors opacity-70 hover:opacity-100"
+                          className="w-full text-left border border-dashed border-line rounded-content px-4 py-2.5 hover:bg-wash transition-colors opacity-70 hover:opacity-100"
                           data-atlas-archived-item
                         >
                           <div className="text-sm text-ink truncate flex items-center gap-1.5">
                             <span className="truncate">{p.name}</span>
-                            {!!p.sourceSession?.sessionId && <span className="text-2xs font-mono border border-line rounded px-1 py-px shrink-0 text-ink-faint">{p.sourceSession.runner}</span>}
+                            {!!p.sourceSession?.sessionId && <span className="text-2xs font-mono border border-line rounded-tag px-1 py-px shrink-0 text-ink-faint">{p.sourceSession.runner}</span>}
                           </div>
                           <div className="text-2xs text-ink-faint mt-0.5">{dateLabel(p.updatedAt)}</div>
                         </button>
@@ -612,7 +619,7 @@ export default function SessionAtlas({ onClose, onSwitched, focusSessionId, init
                 {(cards?.length ?? 0) > 0 && (
                 <div className="flex items-center gap-2 mb-3 flex-wrap">
                   {!canRecall && (
-                  <div className="flex items-center gap-1.5 border border-line rounded-lg px-2 py-1 bg-card">
+                  <div className="flex items-center gap-1.5 border border-line rounded-content px-2 py-1 bg-card">
                     <Search size={13} strokeWidth={1.75} className="text-ink-faint shrink-0" />
                     <input
                       value={query}
@@ -627,7 +634,7 @@ export default function SessionAtlas({ onClose, onSwitched, focusSessionId, init
                     <button
                       key={r}
                       onClick={() => setRunnerOff((s) => { const n = new Set(s); if (n.has(r)) n.delete(r); else n.add(r); return n; })}
-                      className={`text-2xs font-mono border rounded-lg px-2 py-1 transition-colors ${runnerOff.has(r) ? 'border-line text-ink-faint line-through' : 'border-accent/40 text-accent bg-accent/5'}`}
+                      className={`text-2xs font-mono border rounded-tag px-2 py-1 transition-colors ${runnerOff.has(r) ? 'border-line text-ink-faint line-through' : 'border-accent/40 text-accent bg-accent/5'}`}
                       data-atlas-runner-toggle={r}
                     >
                       {r}
@@ -636,7 +643,7 @@ export default function SessionAtlas({ onClose, onSwitched, focusSessionId, init
                   {changes.size > 0 && (
                     <button
                       onClick={() => setOnlyChanged((v) => !v)}
-                      className={`text-2xs border rounded-lg px-2 py-1 transition-colors ${onlyChanged ? 'border-accent text-white bg-accent' : 'border-line text-ink-muted hover:text-ink'}`}
+                      className={`text-2xs border rounded-tag px-2 py-1 transition-colors ${onlyChanged ? 'border-accent text-white bg-action' : 'border-line text-ink-muted hover:text-ink'}`}
                       data-atlas-only-changed
                     >
                       {t('atlas.onlyChanged')}
@@ -645,7 +652,7 @@ export default function SessionAtlas({ onClose, onSwitched, focusSessionId, init
                   {(cards ?? []).some((c) => c.subagent) && (
                     <button
                       onClick={() => setShowSubagents((v) => !v)}
-                      className={`text-2xs border rounded-lg px-2 py-1 transition-colors ${showSubagents ? 'border-accent text-accent bg-accent/5' : 'border-line text-ink-faint hover:text-ink'}`}
+                      className={`text-2xs border rounded-tag px-2 py-1 transition-colors ${showSubagents ? 'border-accent text-accent bg-accent/5' : 'border-line text-ink-faint hover:text-ink'}`}
                       data-atlas-show-sub
                     >
                       {t('atlas.showSub')}
@@ -653,7 +660,7 @@ export default function SessionAtlas({ onClose, onSwitched, focusSessionId, init
                   )}
                   <button
                     onClick={() => setSortKey((k) => (({ time: 'name', name: 'size', size: 'runner', runner: 'time' } as const)[k]))}
-                    className="ml-auto flex items-center gap-1.5 text-2xs text-ink-muted hover:text-ink border border-line rounded-lg px-2 py-1 hover:bg-wash transition-colors"
+                    className="ml-auto flex items-center gap-1.5 text-2xs text-ink-muted hover:text-ink border border-line rounded-tag px-2 py-1 hover:bg-wash transition-colors"
                     data-atlas-sort
                   >
                     <ArrowDownUp size={12} strokeWidth={1.75} />
@@ -672,7 +679,7 @@ export default function SessionAtlas({ onClose, onSwitched, focusSessionId, init
                   {shownCards.map((card) => (
                     <div
                       key={card.rel}
-                      className={`group border rounded-xl px-4 py-3 hover:bg-wash transition-colors cursor-pointer flex items-center gap-3 ${picked.has(pickKey(card)) ? 'border-accent/60 bg-accent/5' : 'border-line'}`}
+                      className={`group border rounded-content px-4 py-3 hover:bg-wash transition-colors cursor-pointer flex items-center gap-3 ${picked.has(pickKey(card)) ? 'border-accent/60 bg-accent/5' : 'border-line'}`}
                       onClick={() => void importCard(card)}
                       data-atlas-session={card.sessionId}
                     >
@@ -680,28 +687,28 @@ export default function SessionAtlas({ onClose, onSwitched, focusSessionId, init
                         <div className="text-sm text-ink truncate flex items-center gap-1.5">
                           <span className="truncate">{displayTitle(card)}</span>
                           {threadForks.has(card.sessionId) && (
-                            <span className="text-2xs text-ink-faint border border-line rounded px-1 py-px shrink-0 font-mono" title={`⑂ ${threadForks.get(card.sessionId)}`} data-atlas-fork>⑂</span>
+                            <span className="text-2xs text-ink-faint border border-line rounded-tag px-1 py-px shrink-0 font-mono" title={`⑂ ${threadForks.get(card.sessionId)}`} data-atlas-fork>⑂</span>
                           )}
                           {changes.get(changeKeyOf(card))?.kind === 'new' && (
-                            <span className="text-2xs text-white bg-accent rounded px-1 py-px shrink-0" data-atlas-badge="new">{t('atlas.badgeNew')}</span>
+                            <span className="text-2xs text-white bg-action rounded-tag px-1 py-px shrink-0" data-atlas-badge="new">{t('atlas.badgeNew')}</span>
                           )}
                           {changes.get(changeKeyOf(card))?.kind === 'updated' && (
-                            <span className="text-2xs text-accent border border-accent/40 rounded px-1 py-px shrink-0" data-atlas-badge="updated">
+                            <span className="text-2xs text-accent border border-accent/40 rounded-tag px-1 py-px shrink-0" data-atlas-badge="updated">
                               +{sizeLabel(changes.get(changeKeyOf(card))!.deltaSize)}
                             </span>
                           )}
                           {card.sessionId === activeSessionId ? (
-                            <span className="text-2xs text-white bg-ink rounded px-1 py-px shrink-0" data-atlas-badge="current">{t('atlas.currentOpen')}</span>
+                            <span className="text-2xs text-card bg-ink rounded-tag px-1 py-px shrink-0" data-atlas-badge="current">{t('atlas.currentOpen')}</span>
                           ) : (() => {
                             const home = canvasOf(card.sessionId);
                             return home ? (
-                              <span className="text-2xs text-ink-faint border border-line rounded px-1 py-px shrink-0" title={home.name} data-atlas-badge="canvas">{t('atlas.onCanvas')}</span>
+                              <span className="text-2xs text-ink-faint border border-line rounded-tag px-1 py-px shrink-0" title={home.name} data-atlas-badge="canvas">{t('atlas.onCanvas')}</span>
                             ) : null;
                           })()}
                         </div>
                         <div className="text-2xs text-ink-faint mt-0.5 flex items-center gap-2">
                           {/* runner identity is functional provenance, not promotion */}
-                          <span className="border border-line rounded px-1 py-px font-mono">{card.runner}</span>
+                          <span className="border border-line rounded-tag px-1 py-px font-mono">{card.runner}</span>
                           <span>{dateLabel(card.mtime)}</span>
                           <span>{sizeLabel(card.size)}</span>
                         </div>
@@ -715,7 +722,7 @@ export default function SessionAtlas({ onClose, onSwitched, focusSessionId, init
                             {!canvasOf(card.sessionId) && !!card.sessionId && (
                               <button
                                 title={t('atlas.pickForMerge')}
-                                className={`p-1.5 rounded transition-colors ${picked.has(pickKey(card)) ? 'text-accent' : 'text-ink-faint hover:text-accent'}`}
+                                className={`p-1.5 rounded-control transition-colors ${picked.has(pickKey(card)) ? 'text-accent' : 'text-ink-faint hover:text-accent'}`}
                                 onClick={(e) => { e.stopPropagation(); togglePick(card); }}
                                 data-atlas-pick={picked.has(pickKey(card)) ? 'on' : 'off'}
                               >
@@ -726,7 +733,7 @@ export default function SessionAtlas({ onClose, onSwitched, focusSessionId, init
                             {projects.some((p) => p.sourceSession?.sessionId === card.sessionId) && (
                               <button
                                 title={t('atlas.recast')}
-                                className="text-ink-faint hover:text-red-500 p-1.5 rounded transition-colors"
+                                className="text-ink-faint hover:text-red-500 p-1.5 rounded-control transition-colors"
                                 onClick={(e) => { e.stopPropagation(); void recast(card); }}
                                 data-atlas-recast
                               >
@@ -736,7 +743,7 @@ export default function SessionAtlas({ onClose, onSwitched, focusSessionId, init
                             {!canvasOf(card.sessionId) && (
                               <button
                                 title={t('atlas.mountTo')}
-                                className="text-ink-faint hover:text-accent p-1.5 rounded transition-colors"
+                                className="text-ink-faint hover:text-accent p-1.5 rounded-control transition-colors"
                                 onClick={(e) => { e.stopPropagation(); setMountPick(card); }}
                                 data-atlas-mount
                               >
@@ -746,7 +753,7 @@ export default function SessionAtlas({ onClose, onSwitched, focusSessionId, init
                             {appHosts.has(card.runner) && (
                               <button
                                 title={fmt(t('atlas.openApp'), { name: appHosts.get(card.runner)! })}
-                                className="text-ink-faint hover:text-accent p-1.5 rounded transition-colors"
+                                className="text-ink-faint hover:text-accent p-1.5 rounded-control transition-colors"
                                 onClick={(e) => { e.stopPropagation(); void openInCli(card, 'app'); }}
                                 data-atlas-open-app
                               >
@@ -755,7 +762,7 @@ export default function SessionAtlas({ onClose, onSwitched, focusSessionId, init
                             )}
                             <button
                               title={t('atlas.openTerminal')}
-                              className="text-ink-faint hover:text-accent p-1.5 rounded transition-colors"
+                              className="text-ink-faint hover:text-accent p-1.5 rounded-control transition-colors"
                               onClick={(e) => { e.stopPropagation(); void openInCli(card, 'terminal'); }}
                               data-atlas-open-cli
                             >
@@ -774,21 +781,21 @@ export default function SessionAtlas({ onClose, onSwitched, focusSessionId, init
         </div>
         )}
         {picked.size >= 2 && !mergePick && (
-          <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-10 bg-surface border border-line rounded-xl shadow-lg px-4 py-2.5 flex items-center gap-3" data-atlas-merge-bar>
+          <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-10 bg-surface border border-line rounded-overlay shadow-lg px-4 py-2.5 flex items-center gap-3" data-atlas-merge-bar>
             <span className="text-xs text-ink-muted whitespace-nowrap">{fmt(t('atlas.mergeSelected'), { n: picked.size })}</span>
             {busyRel === '__merge__'
               ? <Loader2 size={15} className="animate-spin text-accent" />
               : (
                 <>
                   <button
-                    className="text-xs bg-accent hover:bg-accent-strong text-white font-medium px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap"
+                    className="text-xs bg-action hover:bg-action-strong text-white font-medium px-3 py-1.5 rounded-control transition-colors whitespace-nowrap"
                     onClick={() => void mergeRun()}
                     data-atlas-merge-new
                   >
                     {t('atlas.mergeNew')}
                   </button>
                   <button
-                    className="text-xs text-ink-muted hover:text-ink hover:bg-wash font-medium px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap"
+                    className="text-xs text-ink-muted hover:text-ink hover:bg-wash font-medium px-3 py-1.5 rounded-control transition-colors whitespace-nowrap"
                     onClick={() => setMergePick(true)}
                     data-atlas-merge-into
                   >
@@ -802,8 +809,8 @@ export default function SessionAtlas({ onClose, onSwitched, focusSessionId, init
           </div>
         )}
         {(mountPick || mergePick) && (
-          <div className="absolute inset-0 z-10 bg-ink/20 flex items-center justify-center" onClick={() => { setMountPick(null); setMergePick(false); }}>
-            <div className="bg-surface border border-line rounded-2xl shadow-xl w-[400px] max-h-[70%] overflow-y-auto" onClick={(e) => e.stopPropagation()} data-atlas-mount-picker>
+          <div className="absolute inset-0 z-10 bg-ink/20 flex items-center justify-center">
+            <div ref={pickerRef} role="dialog" aria-modal="true" aria-label={t(mergePick ? 'atlas.mergeInto' : 'atlas.mountTo')} tabIndex={-1} className="bg-surface border border-line rounded-panel shadow-lg w-[400px] max-h-[70%] overflow-y-auto" onClick={(e) => e.stopPropagation()} data-atlas-mount-picker>
               <div className="px-4 pt-3.5 pb-2.5 border-b border-line">
                 <div className="text-sm font-semibold text-ink">{t(mergePick ? 'atlas.mergeInto' : 'atlas.mountTo')}</div>
                 <div className="text-2xs text-ink-muted mt-0.5">{t(mergePick ? 'atlas.mergeSelected' : 'atlas.mountHint').replace('{n}', String(picked.size))}</div>

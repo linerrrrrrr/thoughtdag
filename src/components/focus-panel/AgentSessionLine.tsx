@@ -26,8 +26,8 @@ export default function AgentSessionLine({ data }: { data: ThoughtData }) {
   const short = cwd.split('/').filter(Boolean).slice(-2).join('/');
 
   return (
-    <div className="rounded-xl border border-line bg-card px-3 py-2 flex items-center gap-2 text-xs min-w-0" data-agent-session-line>
-      <span className="text-2xs font-medium text-ink-muted bg-wash rounded-md px-1.5 py-0.5 shrink-0">{RUNTIME_LABEL[runner] ?? runner}</span>
+    <div className="rounded-content border border-line bg-card px-3 py-2 flex items-center gap-2 text-xs min-w-0" data-agent-session-line>
+      <span className="text-2xs font-medium text-ink-muted bg-wash rounded-tag px-1.5 py-0.5 shrink-0">{RUNTIME_LABEL[runner] ?? runner}</span>
       {data.agentSession?.effort && <span className="text-2xs font-mono text-ink-faint shrink-0" title={t('agent.effortTitle')} data-agent-session-effort>{data.agentSession.effort}</span>}
       <FolderOpen size={13} strokeWidth={1.75} className="text-ink-faint shrink-0" />
       <span className="font-mono text-ink-muted truncate flex-1 min-w-0" title={cwd} data-agent-session-cwd={cwd}>{short}</span>

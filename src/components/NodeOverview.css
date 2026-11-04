@@ -1,0 +1,63 @@
+/* Screen-space type roles: zoom changes detail, never turns prose into display type.
+   At extreme overview distances names shrink with the map to avoid collisions. */
+.node-overview {
+  --overview-scale: clamp(0.32, var(--tdag-zoom, 1), 1);
+  padding: calc(var(--spacing-surface-inset) / var(--overview-scale));
+  position: relative;
+  color: var(--color-ink);
+  min-width: 0;
+}
+.node-overview-identity { display: flex; align-items: center; flex-wrap: wrap; gap: calc(var(--spacing-control-gap) / var(--overview-scale)); margin-bottom: calc(var(--spacing-related) / var(--overview-scale)); color: var(--color-ink-muted); font-size: calc(10px / var(--overview-scale)); line-height: 1.3; }
+.node-overview--start .node-overview-identity { color: var(--color-accent-strong); }
+.node-overview--note .node-overview-identity { color: var(--color-material-note-ink); }
+.node-overview--file .node-overview-identity { color: var(--color-material-file-ink); }
+.node-file-type { padding: calc(2px / var(--overview-scale)) calc(4px / var(--overview-scale)); border-radius: calc(3px / var(--overview-scale)); background: var(--color-material-file-wash); color: var(--color-material-file-ink); font-family: var(--font-mono); white-space: nowrap; }
+.node-overview-heading { display: flex; align-items: flex-start; gap: calc(var(--spacing-related) / var(--overview-scale)); min-width: 0; }
+.node-overview-action { margin-left: auto; flex-shrink: 0; }
+.node-overview-action button { width: calc(28px / var(--overview-scale)); height: calc(28px / var(--overview-scale)); }
+.node-overview-action svg { width: calc(14px / var(--overview-scale)); height: calc(14px / var(--overview-scale)); }
+.node-overview-name {
+  min-width: 0;
+  font-size: calc(16px / var(--overview-scale));
+  font-weight: 500;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+.node-overview-icon { flex-shrink: 0; font-size: calc(14px / var(--overview-scale)); line-height: 1.6; color: var(--color-ink-muted); }
+.node-overview-icon svg { width: 1em; height: 1em; }
+.node-overview-preview {
+  margin: calc(var(--spacing-related) / var(--overview-scale)) 0 0;
+  font-size: calc(14px / var(--overview-scale));
+  font-weight: 400;
+  line-height: 1.55;
+  color: var(--color-ink-muted);
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+.node-overview-meta { margin-top: calc(var(--spacing-related) / var(--overview-scale)); font-size: calc(12px / var(--overview-scale)); line-height: 1.4; color: var(--color-ink-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.node-overview--compact {
+  --overview-scale: max(0.22, var(--tdag-zoom, 1));
+  width: 100%;
+  padding: calc(var(--spacing-related) / var(--overview-scale));
+  border: 1px solid var(--color-line-strong);
+  border-radius: calc(4px / var(--overview-scale));
+  background: var(--color-card);
+}
+.node-overview--compact .node-overview-icon { display: none; }
+.node-overview--compact .node-overview-identity { margin-bottom: calc(4px / var(--overview-scale)); font-size: calc(9px / var(--overview-scale)); }
+.node-overview--compact .node-file-type { padding: 0; background: transparent; }
+.node-overview--start.node-overview--compact { border-color: color-mix(in srgb, var(--color-accent) 40%, var(--color-line)); border-left: calc(2px / var(--overview-scale)) solid var(--color-accent); }
+.node-overview--note.node-overview--compact { background: var(--color-material-note); border-color: var(--color-material-note-line); }
+.node-overview--file.node-overview--compact { border-color: var(--color-material-file-line); }
+.node-overview--compact .node-overview-name { font-size: calc(12px / var(--overview-scale)); }
+.node-overview--compact .node-overview-icon { font-size: calc(12px / var(--overview-scale)); }
+.glyph-selected .node-overview--compact { outline: 2px solid var(--color-accent); }
+.beacon-node .node-overview--compact { outline: 2px solid var(--color-accent); outline-offset: 3px; }
+[data-node-stale] .node-overview--compact { border-color: var(--color-warm); }

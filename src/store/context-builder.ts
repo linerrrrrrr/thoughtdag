@@ -1,6 +1,6 @@
 import type { Attachment, ThoughtNode } from '../types';
 import type { ThoughtEdge } from '../types';
-import { partitionContext, type ContextReference } from '../lib/graph';
+import { isSingleNodeReference, partitionContext, type ContextReference } from '../lib/graph';
 import { attachmentFingerprint } from '../lib/attachments';
 import { isNotebook, notebookContext, notebookForAgent } from '../lib/notebook';
 import { countTokens } from '../utils';
@@ -11,10 +11,11 @@ import type { ContextMessage, ImageAttachment } from '../lib/api';
 // The order rule, in one sentence: materials → reference blocks → the live
 // conversation in chain order → the current question last. Solid edges are
 // the conversation (full turns); dashed edges become fenced [Reference]
-// blocks (quote by default, whole chain when the edge says 'full'); content
-// nodes are identity-prefixed material blocks. Amounts are controlled on
-// NODES (collapse+summary, highlight filter, archive) — edges only decide
-// identity. This ordering is deliberately independent of edge creation
+// blocks containing the source turn only; content nodes are
+// identity-prefixed material blocks. Specialized watch/exploration edges
+// retain their established input behavior. Highlight filters and archive
+// can reduce a node's contribution; collapse and display summaries cannot.
+// This ordering is deliberately independent of edge creation
 // history: the same graph always produces the same prompt.
 /** Where one context message came from — parallel to `messages`. The
  *  bundle compiler turns these into per-item provenance; nothing else
@@ -81,7 +82,12 @@ function transcriptLines(node: ThoughtNode): string[] {
     chip and the follow-up preview can price a reference without drift. */
 export function referenceBlockContent(ref: ContextReference): string {
   const lines: string[] = [`[Reference: ${nodeTitle(ref.source)}]`];
-  if (ref.depth === 'quote') {
+  if (isSingleNodeReference(ref.edge)) {
+    // Ignore old full-depth metadata at the consumption boundary without
+    // rewriting stored graphs. A single-node reference includes neither
+    // ancestor titles/answers nor attachments, materials or inherited roles.
+    lines.push(...transcriptLines(ref.source));
+  } else if (ref.depth === 'quote') {
     const trail = ref.chain
       .filter((n) => !n.data.archived)
       .map((n) => nodeTitle(n));
@@ -288,6 +294,23 @@ export function buildContext(
   return compileContext(nodeId, nodes, edges, 'record', branchContext, excludedAttachmentIds, includedAttachmentIds, staleIds);
 }
 
+/** Compile every incoming edge of a newly created turn, including @-mention
+ *  references. The caller appends that turn's own question and attachments. */
+export function buildIncomingContext(
+  nodeId: string,
+  nodes: ThoughtNode[],
+  edges: ThoughtEdge[],
+  branchContext?: string,
+  excludedAttachmentIds?: string[],
+  includedAttachmentIds?: string[],
+  staleIds?: ReadonlySet<string> | string[],
+): BuildContextResult {
+  const upstreamNodes = nodes.map((node) => node.id === nodeId ? {
+    ...node, data: { ...node.data, question: '', response: '', attachments: [] },
+  } : node);
+  return buildContext(nodeId, upstreamNodes, edges, branchContext, excludedAttachmentIds, includedAttachmentIds, staleIds);
+}
+
 /** buildContext with the tool-step rendering chosen: 'record' is what a
  *  model receives; 'raw' is the pre-record shape the fingerprints hash. */
 function compileContext(
@@ -441,7 +464,7 @@ function compileContext(
   // ── L2: the conversation — structural chain, current node last.
   // Collapse is PURELY visual: the solid chain always flows full text
   // (One Rule without asterisks). Budget control lives in the explicit
-  // dials — archive, highlight filter, reference depth.
+  // dials — archive, highlight filter, single-node references.
   for (const node of mainline) {
     // Archived = pruned-but-kept: contributes NOTHING to context (the walk
     // itself already passed through it, so descendants keep their ancestry)

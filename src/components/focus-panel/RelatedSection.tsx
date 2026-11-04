@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ChevronDown, ChevronRight, Link2, Loader2, Plus, Sparkles, X } from 'lucide-react';
 import { whyBridge, hasWhy } from '../../lib/why-bridge';
 import { recallTerms } from '../../lib/recall';
@@ -8,6 +8,8 @@ import { useUiStore } from '../../lib/ui-store';
 import { useProjects } from '../../store/projects';
 import { HitCards } from '../ui/RecallResults';
 import { useT, fmt } from '../../i18n';
+import { useInlineEditDismiss } from '../../lib/use-inline-edit-dismiss';
+import { isImeComposing } from '../../utils';
 
 // On demand, for one node: the past conversations related to it. One row
 // of chips — the node's own terms (hollow) and the topics it is about
@@ -25,6 +27,7 @@ export default function RelatedSection({ question, answer }: { question: string;
   const [terms, setTerms] = useState<string[]>(() => recallTerms(question));
   const [adding, setAdding] = useState(false);
   const [input, setInput] = useState('');
+  const addRef = useRef<HTMLDivElement>(null);
   const [suggested, setSuggested] = useState<{ term: string; count: number }[] | null>(null);
   const [expanding, setExpanding] = useState(false);
   const [table, setTable] = useState<WhyTopics['topics'] | null>(null);
@@ -80,9 +83,13 @@ export default function RelatedSection({ question, answer }: { question: string;
     return () => { alive = false; window.clearTimeout(id); };
   }, [open, terms, picked, activeId]);
 
-  if (!hasWhy()) return null;
-
   const addTerm = (term: string) => { const v = term.trim(); if (!v || terms.some((x) => x.toLowerCase() === v.toLowerCase())) return; setTerms([...terms, v]); setSuggested((s) => s?.filter((x) => x.term !== v) ?? null); };
+  const finishAdding = () => { addTerm(input); setInput(''); setAdding(false); };
+  const termEdit = useInlineEditDismiss({
+    active: open && adding, ref: addRef, onOutside: finishAdding,
+    onCancel: () => { setInput(''); setAdding(false); },
+  });
+  if (!hasWhy()) return null;
   const expand = async () => {
     setExpanding(true); setError(null);
     try { setSuggested(await expandTerms(question, answer, terms)); } catch (e) { setError(e instanceof Error ? e.message : String(e)); } finally { setExpanding(false); }
@@ -101,14 +108,14 @@ export default function RelatedSection({ question, answer }: { question: string;
       </button>
       {open && (
         <div className="mt-2 space-y-2">
-          <div className="flex flex-wrap items-center gap-1" data-related-chips>
+          <div ref={addRef} onBlur={termEdit.onBlur} className="flex flex-wrap items-center gap-1" data-related-chips>
             {terms.map((term) => (
-              <span key={term} className="inline-flex items-center gap-1 text-2xs px-2 py-0.5 rounded-full border border-line bg-wash text-ink" data-related-term={term}>
+              <span key={term} className="inline-flex items-center gap-1 text-2xs px-2 py-0.5 rounded-tag border border-line bg-wash text-ink" data-related-term={term}>
                 {term}<button onClick={() => setTerms(terms.filter((x) => x !== term))} className="text-ink-faint hover:text-ink"><X size={10} /></button>
               </span>
             ))}
             {picked.map((id) => (
-              <span key={id} className="inline-flex items-center gap-1 text-2xs px-2 py-0.5 rounded-full border border-accent/40 bg-accent/10 text-accent" data-related-topic={id} aria-pressed="true">
+              <span key={id} className="inline-flex items-center gap-1 text-2xs px-2 py-0.5 rounded-tag border border-accent/40 bg-accent/10 text-accent" data-related-topic={id} aria-pressed="true">
                 {nameOf(id)}<button onClick={() => togglePick(id)} className="hover:text-ink"><X size={10} /></button>
               </span>
             ))}
@@ -117,32 +124,31 @@ export default function RelatedSection({ question, answer }: { question: string;
                 value={input}
                 autoFocus
                 onChange={(e) => setInput(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addTerm(input); setInput(''); setAdding(false); } if (e.key === 'Escape') { setAdding(false); setInput(''); } }}
-                onBlur={() => { if (input.trim()) addTerm(input); setInput(''); setAdding(false); }}
+                onKeyDown={(e) => { if (e.key === 'Enter' && !isImeComposing(e)) { e.preventDefault(); e.stopPropagation(); finishAdding(); } }}
                 placeholder={t('panel.relatedTermPlaceholder')}
                 className="text-2xs bg-transparent border-b border-accent focus:outline-none px-1 py-0.5 w-[90px] text-ink placeholder:text-ink-faint"
                 data-related-input
               />
             ) : (
-              <button onClick={() => setAdding(true)} className="inline-flex items-center gap-0.5 text-2xs px-2 py-0.5 rounded-full border border-dashed border-line text-ink-faint hover:text-ink hover:border-line-strong" data-related-add><Plus size={10} /> {t('panel.relatedAddChip')}</button>
+              <button onClick={() => setAdding(true)} className="inline-flex items-center gap-0.5 text-2xs px-2 py-0.5 rounded-tag border border-dashed border-line text-ink-faint hover:text-ink hover:border-line-strong" data-related-add><Plus size={10} /> {t('panel.relatedAddChip')}</button>
             )}
-            <button onClick={() => void expand()} disabled={expanding} className="ml-auto text-2xs text-accent hover:bg-accent/10 px-1.5 py-0.5 rounded-md disabled:opacity-50 flex items-center gap-1" data-related-expand>
+            <button onClick={() => void expand()} disabled={expanding} className="ml-auto text-2xs text-accent hover:bg-accent/10 px-1.5 py-0.5 rounded-tag disabled:opacity-50 flex items-center gap-1" data-related-expand>
               {expanding ? <Loader2 size={10} className="animate-spin" /> : <Sparkles size={10} strokeWidth={1.75} />} {expanding ? t('panel.relatedExpanding') : t('panel.relatedExpandBtn')}
             </button>
+            {adding && (
+              <div className="flex w-full flex-wrap items-center gap-1 pt-1" data-related-topic-picker>
+                <span className="text-2xs text-ink-faint">{t('panel.relatedPickTopic')}</span>
+                {(table ?? []).filter((x) => !picked.includes(x.id)).map((x) => (
+                  <button key={x.id} onMouseDown={(e) => e.preventDefault()} onClick={() => { togglePick(x.id); finishAdding(); }} title={x.description} className="text-2xs px-2 py-0.5 rounded-tag border border-line text-ink-muted hover:bg-wash" data-related-topic-option={x.id}>{x.name}</button>
+                ))}
+              </div>
+            )}
           </div>
-          {(adding || (table && table.some((x) => !picked.includes(x.id)))) && adding && (
-            <div className="flex flex-wrap items-center gap-1" data-related-topic-picker>
-              <span className="text-2xs text-ink-faint">{t('panel.relatedPickTopic')}</span>
-              {(table ?? []).filter((x) => !picked.includes(x.id)).map((x) => (
-                <button key={x.id} onMouseDown={(e) => e.preventDefault()} onClick={() => { togglePick(x.id); setAdding(false); }} title={x.description} className="text-2xs px-2 py-0.5 rounded-full border border-line text-ink-muted hover:bg-wash" data-related-topic-option={x.id}>{x.name}</button>
-              ))}
-            </div>
-          )}
           {suggested && (
             <div className="flex flex-wrap items-center gap-1" data-related-suggested>
               {suggested.length === 0 && <span className="text-2xs text-ink-faint">{t('panel.relatedNoSuggest')}</span>}
               {suggested.map((s) => (
-                <button key={s.term} onClick={() => addTerm(s.term)} title={`${s.count}`} className="text-2xs px-2 py-0.5 rounded-full border border-dashed border-accent/50 text-accent hover:bg-accent/10" data-related-suggest={s.term}>+ {s.term}</button>
+                <button key={s.term} onClick={() => addTerm(s.term)} title={`${s.count}`} className="text-2xs px-2 py-0.5 rounded-tag border border-dashed border-accent/50 text-accent hover:bg-accent/10" data-related-suggest={s.term}>+ {s.term}</button>
               ))}
             </div>
           )}

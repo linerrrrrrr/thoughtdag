@@ -14,6 +14,9 @@ export const HISTORY_LIMIT = 50;
 // Rendered node card width (ThoughtNode w-[520px]).
 export const NODE_CSS_WIDTH = 520;
 
+// Arrowheads keep their own canvas size when a context path is highlighted.
+export const EDGE_ARROW_GEOMETRY = { width: 24, height: 24, markerUnits: 'userSpaceOnUse' };
+
 // Layout column pitch — wider than the card so edges have breathing room.
 // Gaps sit at the tight end: enough air for the wires and the edge chips,
 // no more — a denser canvas keeps more of the graph in one glance.
@@ -36,10 +39,10 @@ export const COLLAPSED_LAYOUT_HEIGHT = 240;
 // edge styles / markers / minimap, which take literal color values.
 // Keep in sync with index.css.
 export const COLORS = {
-  surface: '#FAF9F7',
+  surface: '#F4F5F7',
   card: '#FFFFFF',
-  line: '#E8E5E0',
-  inkMuted: '#6B6560',
+  line: '#CDD3DD',
+  inkMuted: '#515E70',
   accent: '#6B5CE7',   // continue edges, primary actions
   warm: '#E08A3C',     // explore branch edges
   trace: '#F59E0B',    // ancestor-path highlight
@@ -64,7 +67,7 @@ export const FRAME_COLORS: Record<string, { border: string; bg: string; dot: str
 export const PANEL_WIDTH_KEY = 'thoughtdag.panelWidth';
 export const PANEL_MIN_WIDTH = 380;
 export const PANEL_DEFAULT_WIDTH = 520;
-export const PANEL_INSET = 12; // matches right-3/top-3/bottom-3
+export const PANEL_INSET = 16; // Matches --spacing-canvas-inset in index.css.
 
 export function loadPanelWidth(): number {
   const raw = localStorage.getItem(PANEL_WIDTH_KEY);

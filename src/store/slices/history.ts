@@ -27,7 +27,7 @@ import { t } from '../../i18n';
 // follow the content they were written from.
 
 /** Set while the app works, never by the person: a snapshot never brings them back. */
-const TRANSIENT: (keyof ThoughtData)[] = ['isLoading', 'isEditing', 'isEditingResponse', 'restreaming', 'pendingApprovals', 'agentTrace', 'reasoning', 'recallProgress'];
+const TRANSIENT: (keyof ThoughtData)[] = ['isLoading', 'isEditing', 'isEditingResponse', 'questionEditor', 'responseEditor', 'restreaming', 'pendingApprovals', 'agentTrace', 'agentActivity', 'reasoning', 'recallProgress'];
 /** Choices for the next ask (its model, search, recall): settings, not steps; they stay as the person last set them. */
 const SETTINGS: (keyof ThoughtData)[] = ['model', 'webSearch', 'scholarSearch', 'recall', 'recallReach', 'recallScale'];
 /** Written from a node's content (plaques, ladders, counts): they follow that content. */
@@ -114,7 +114,7 @@ export function sameGraph(a: Snapshot, b: Snapshot): boolean {
   return sameById(a.nodes, b.nodes, sameNode) && sameById(a.edges, b.edges, sameEdge);
 }
 
-const QUIET: Partial<ThoughtData> = { isLoading: false, isEditing: false, isEditingResponse: false, restreaming: undefined, pendingApprovals: undefined, agentTrace: undefined, reasoning: undefined, recallProgress: undefined };
+const QUIET: Partial<ThoughtData> = { isLoading: false, isEditing: false, isEditingResponse: false, questionEditor: undefined, responseEditor: undefined, restreaming: undefined, pendingApprovals: undefined, agentTrace: undefined, agentActivity: undefined, reasoning: undefined, recallProgress: undefined };
 
 function restoreData(target: ThoughtData, live: ThoughtData | undefined): ThoughtData {
   if (!live) {
@@ -153,7 +153,7 @@ function restore(target: Snapshot, live: Snapshot): Snapshot {
   const edges = target.edges.map((e) => {
     const cur = liveEdges.get(e.id);
     if (cur && (cur === e || sameEdge(cur, e))) return cur;
-    return e.selected ? { ...e, selected: false } : e;
+    return { ...e, selected: cur?.selected ?? false };
   });
   return { nodes, edges };
 }

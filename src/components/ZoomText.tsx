@@ -12,9 +12,9 @@
 // Two faces: ZoomText reads the level off the canvas zoom; LadderMorph takes
 // the level as a prop (the timeline overview's detail slider drives it).
 import { useLayoutEffect, useMemo, useRef } from 'react';
-import { useStore as useRfStore } from '@xyflow/react';
 import type { Ladder } from '../types';
-import { LEVEL_FONT, pickLevel, ladderPieces, needsSpace, type LadderLevel } from '../lib/ladder';
+import { LEVEL_FONT, ladderPieces, needsSpace, type LadderLevel } from '../lib/ladder-core';
+import { useLadderLevel } from '../lib/use-map-mode';
 
 const DUR = 320;
 const EASE = 'cubic-bezier(.2,.7,.2,1)';
@@ -22,12 +22,6 @@ const EASE = 'cubic-bezier(.2,.7,.2,1)';
 const CLOSING = /^[,.;:!?)\]}”’」』】〕〉》〗〙）］｝。，、；：！？…～%‰]+$/;
 /** …or only opening punctuation */
 const OPENING = /^[([{“‘「『【〔〈《〖〘（［｛]+$/;
-
-/** The level for the live zoom, with hysteresis kept across renders; the component re-renders only when the level changes. */
-function useLadderLevel(): LadderLevel {
-  const ref = useRef<LadderLevel | null>(null);
-  return useRfStore((s) => { ref.current = pickLevel(s.transform[2], ref.current); return ref.current; });
-}
 
 export function LadderMorph({ ladder, level, fontSize, ink = true, weight = 'font-semibold', className = '' }: { ladder: Ladder; level: LadderLevel; /** css px; defaults to the level's canvas size */ fontSize?: number; ink?: boolean; weight?: string; className?: string }) {
   const host = useRef<HTMLDivElement>(null);
@@ -45,7 +39,8 @@ export function LadderMorph({ ladder, level, fontSize, ink = true, weight = 'fon
     // long level just switches. Hundreds of plaques morphing at once was the zoom's CPU spike.
     const r = el.getBoundingClientRect();
     const onScreen = r.bottom > 0 && r.top < window.innerHeight && r.right > 0 && r.left < window.innerWidth && r.width > 0;
-    if (before && before.level !== level && onScreen && spans.length <= 140) {
+    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (before && before.level !== level && onScreen && spans.length <= 140 && !reducedMotion) {
       for (const s of spans) {
         const b = before.rects.get(s.dataset.id ?? '');
         if (b) {

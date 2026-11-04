@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useDismissableLayer } from '../../lib/use-dismissable-layer';
 import { createPortal } from 'react-dom';
 import { ArrowLeft, Copy, Download, Loader2, Sparkles, X } from 'lucide-react';
 import { useStore } from '../../store';
@@ -207,6 +208,8 @@ export default function ThoughtMapDialog() {
   const nodes = useStore((s) => s.nodes);
   const edges = useStore((s) => s.edges);
   const projectName = useProjects((s) => s.projects.find((p) => p.id === s.activeId)?.name ?? '');
+  const projectId = useProjects(s => s.activeId) ?? 'default';
+  const draftKey = `thought-map:${projectId}`;
 
   const [step, setStep] = useState<'image' | 'share'>('image');
   const [layout, setLayout] = useState<'tidy' | 'hand'>('tidy');
@@ -229,6 +232,13 @@ export default function ThoughtMapDialog() {
   const [drafting, setDrafting] = useState(false);
   const [busy, setBusy] = useState(false);
   const artRef = useRef<HTMLDivElement | null>(null);
+  const layerRef = useRef<HTMLDivElement>(null);
+  const capTouched = useRef(false);
+  const close = () => {
+    useUiStore.getState().setDraft(draftKey, JSON.stringify({ title, subtitle, caption, mapLang, capLang, touched: capTouched.current }));
+    useUiStore.getState().setThoughtMapOpen(false);
+  };
+  useDismissableLayer({ open, refs: [layerRef], onDismiss: close, modal: true });
 
   const structure = useMemo(() => extractStructure(nodes, edges), [nodes, edges]);
   const stats = useMemo(() => computeStats(nodes), [nodes]);
@@ -251,6 +261,16 @@ export default function ThoughtMapDialog() {
   useEffect(() => {
     if (!open) return;
     setStep('image');
+    const saved = useUiStore.getState().drafts[draftKey];
+    if (saved) {
+      try {
+        const draft = JSON.parse(saved) as { title: string; subtitle: string; caption: string; mapLang: 'zh' | 'en'; capLang: 'zh' | 'en'; touched: boolean };
+        setTitle(draft.title); setSubtitle(draft.subtitle); setCaption(draft.caption);
+        setMapLang(draft.mapLang); setCapLang(draft.capLang); capTouched.current = draft.touched;
+        return;
+      } catch { /* An invalid session draft falls back to the canvas title. */ }
+    }
+    capTouched.current = false;
     setMapLang(uiLang);
     setCapLang(uiLang);
     // the signature is identity, not content: remembered, never AI-drafted
@@ -260,25 +280,16 @@ export default function ThoughtMapDialog() {
     setSubtitle('');
     setCaption(`${fallbackCaption(uiLang, projectName || 'ThoughtDAG', stats)}\n\n${attributionLine()}`);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
+  }, [open, draftKey]);
 
   // the caption language rewrites the fallback text (untouched drafts only)
-  const capTouched = useRef(false);
   useEffect(() => {
     if (!open || capTouched.current) return;
     setCaption(`${fallbackCaption(capLang, title || 'ThoughtDAG', stats)}\n\n${attributionLine()}`);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [capLang, mapLang]);
 
-  useEffect(() => {
-    if (!open) return;
-    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopPropagation(); useUiStore.getState().setThoughtMapOpen(false); } };
-    window.addEventListener('keydown', handler, true);
-    return () => window.removeEventListener('keydown', handler, true);
-  }, [open]);
-
   if (!open) return null;
-  const close = () => { capTouched.current = false; useUiStore.getState().setThoughtMapOpen(false); };
 
   const downloadPng = async (): Promise<boolean> => {
     setBusy(true);
@@ -373,7 +384,7 @@ export default function ThoughtMapDialog() {
     cur: string,
     set: (v: string) => void,
   ) => (
-    <div className="flex rounded-lg border border-line overflow-hidden">
+    <div className="flex rounded-control border border-line overflow-hidden">
       {entries.map(([v, label], i) => (
         <button key={v} onClick={() => set(v)}
           className={`flex-1 px-2 py-1.5 text-2xs whitespace-nowrap transition-colors ${i > 0 ? 'border-l border-line' : ''} ${cur === v ? 'bg-accent/10 text-accent font-medium' : 'text-ink-muted hover:bg-wash'}`}>
@@ -384,11 +395,11 @@ export default function ThoughtMapDialog() {
   );
 
   return createPortal((
-    <div className="fixed inset-0 z-[85] bg-ink/25 backdrop-blur-[2px] flex items-center justify-center animate-fade-in" data-thought-map>
-      <div className="bg-surface rounded-2xl shadow-2xl border border-line w-[min(1128px,96vw)] max-h-[95vh] overflow-y-auto p-6" onClick={(e) => e.stopPropagation()}>
+    <div className="fixed inset-0 z-[85] bg-ink/25 flex items-center justify-center animate-fade-in" data-thought-map>
+      <div ref={layerRef} role="dialog" aria-modal="true" aria-label={t('tmap.title')} tabIndex={-1} className="bg-surface rounded-panel shadow-lg border border-line w-[min(1128px,96vw)] max-h-[95vh] overflow-y-auto p-6" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-start justify-between mb-4">
           <div className="text-sm font-semibold text-ink">{t('tmap.title')}{step === 'share' ? ` · ${t('tmap.shareStep')}` : ''}</div>
-          <button onClick={close} className="w-7 h-7 rounded-lg text-ink-faint hover:bg-wash hover:text-ink flex items-center justify-center transition-colors">
+          <button onClick={close} className="w-7 h-7 rounded-control text-ink-faint hover:bg-wash hover:text-ink flex items-center justify-center transition-colors">
             <X size={15} strokeWidth={1.75} />
           </button>
         </div>
@@ -402,25 +413,25 @@ export default function ThoughtMapDialog() {
                 <div className="text-2xs text-ink-faint mb-1 flex items-center justify-between">
                   <span>{t('tmap.publicTitle')}</span>
                   <button onClick={() => void draft()} disabled={drafting} data-tmap-draft
-                    className="flex items-center gap-1 text-2xs text-accent hover:bg-accent/10 rounded-md px-1.5 py-0.5 transition-colors disabled:opacity-50">
+                    className="flex items-center gap-1 text-2xs text-accent hover:bg-accent/10 rounded-tag px-1.5 py-0.5 transition-colors disabled:opacity-50">
                     {drafting ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} strokeWidth={1.75} />}
                     {drafting ? t('tmap.drafting') : t('tmap.draft')}
                   </button>
                 </div>
                 <input value={title} onChange={(e) => setTitle(clampWeight(e.target.value, TITLE_MAX))} data-tmap-title placeholder={t('tmap.subtitlePh')}
-                  className="w-full border border-line rounded-lg px-3 py-1.5 text-xs bg-card text-ink placeholder-ink-faint focus:outline-none focus:ring-1 focus:ring-accent/40" />
+                  className="w-full border border-line rounded-control px-3 py-1.5 text-xs bg-card text-ink placeholder-ink-faint focus:outline-none focus:ring-1 focus:ring-accent/40" />
                 <div className="text-2xs text-ink-faint font-mono text-right mt-0.5">{textWeight(title)}/{TITLE_MAX}</div>
               </div>
               <div>
                 <div className="text-2xs text-ink-faint mb-1">{t('tmap.subtitle')}</div>
                 <input value={subtitle} onChange={(e) => setSubtitle(clampWeight(e.target.value, SUB_MAX))} placeholder={t('tmap.subtitlePh')} data-tmap-subtitle
-                  className="w-full border border-line rounded-lg px-3 py-1.5 text-xs bg-card text-ink placeholder-ink-faint focus:outline-none focus:ring-1 focus:ring-accent/40" />
+                  className="w-full border border-line rounded-control px-3 py-1.5 text-xs bg-card text-ink placeholder-ink-faint focus:outline-none focus:ring-1 focus:ring-accent/40" />
               </div>
               <div>
                 <div className="text-2xs text-ink-faint mb-1">{t('tmap.sig')}</div>
                 <input value={sig} placeholder={t('tmap.subtitlePh')} data-tmap-sig
                   onChange={(e) => { const v = clampWeight(e.target.value, 48); setSig(v); localStorage.setItem('thoughtdag.tmapSignature', v); }}
-                  className="w-full border border-line rounded-lg px-3 py-1.5 text-xs bg-card text-ink placeholder-ink-faint focus:outline-none focus:ring-1 focus:ring-accent/40" />
+                  className="w-full border border-line rounded-control px-3 py-1.5 text-xs bg-card text-ink placeholder-ink-faint focus:outline-none focus:ring-1 focus:ring-accent/40" />
               </div>
               <div className="flex items-center gap-2">
                 <span className="text-2xs text-ink-faint w-[56px] shrink-0">{t('tmap.sigPos')}</span>
@@ -450,7 +461,7 @@ export default function ThoughtMapDialog() {
             </div>
             {/* centre: the artifact, displayed at 1.2× (the design and the
                 export stay 460×575 underneath — the wrapper only magnifies) */}
-            <div className="shrink-0 rounded-md shadow-xl overflow-hidden" style={{ width: 552, height: 690 }}>
+            <div className="shrink-0 rounded-none overflow-hidden" style={{ width: 552, height: 690 }}>
               <div style={{ transform: 'scale(1.2)', transformOrigin: 'top left', width: 460, height: 575 }}>
                 <Artifact structure={structure} positions={positions} stats={stats}
                   title={title} subtitle={subtitle} mapLang={mapLang} paper={paper} rot={rot} tst={tst} tss={tss} tsx={tsx}
@@ -459,7 +470,7 @@ export default function ThoughtMapDialog() {
             </div>
             {/* right: the honesty check on top, the marks below, the exit at the bottom */}
             <div className="w-[198px] shrink-0 flex flex-col gap-2" style={{ height: 690 }}>
-              <div className="rounded-sm shadow-lg overflow-hidden self-center" style={{ width: 132, height: 165 }}>
+              <div className="rounded-none overflow-hidden self-center" style={{ width: 132, height: 165 }}>
                 <div style={{ transform: 'scale(0.28695)', transformOrigin: 'top left', width: 460, height: 575 }}>
                   <Artifact structure={structure} positions={positions} stats={stats}
                     title={title} subtitle={subtitle} mapLang={mapLang} paper={paper} rot={rot} tst={tst} tss={tss} tsx={tsx}
@@ -481,7 +492,7 @@ export default function ThoughtMapDialog() {
               ))}
               <div className="flex-1" />
               <button onClick={() => { void downloadPng().then((ok) => { if (ok) setStep('share'); }); }} disabled={busy} data-tmap-download
-                className="flex items-center justify-center gap-1.5 text-xs font-semibold bg-accent text-white hover:bg-accent-strong rounded-lg px-3 py-2.5 transition-colors disabled:opacity-50">
+                className="flex items-center justify-center gap-1.5 text-xs font-semibold bg-action text-white hover:bg-action-strong rounded-control px-3 py-2.5 transition-colors disabled:opacity-50">
                 {busy ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} strokeWidth={1.75} />}
                 {t('tmap.download')}
               </button>
@@ -490,7 +501,7 @@ export default function ThoughtMapDialog() {
         ) : (
           <div className="flex gap-6 flex-wrap" data-tmap-share-step>
             <div className="shrink-0 flex flex-col gap-3" style={{ width: 184 }}>
-              <div className="rounded-sm shadow-lg overflow-hidden" style={{ width: 184, height: 230 }}>
+              <div className="rounded-none overflow-hidden" style={{ width: 184, height: 230 }}>
                 <div style={{ transform: 'scale(0.4)', transformOrigin: 'top left', width: 460, height: 575 }}>
                   <Artifact structure={structure} positions={positions} stats={stats}
                     title={title} subtitle={subtitle} mapLang={mapLang} paper={paper} rot={rot} tst={tst} tss={tss} tsx={tsx}
@@ -498,7 +509,7 @@ export default function ThoughtMapDialog() {
                 </div>
               </div>
               <button onClick={() => setStep('image')} data-tmap-back
-                className="flex items-center justify-center gap-1.5 text-xs border border-line text-ink-muted hover:bg-wash rounded-lg px-3 py-2 transition-colors">
+                className="flex items-center justify-center gap-1.5 text-xs border border-line text-ink-muted hover:bg-wash rounded-control px-3 py-2 transition-colors">
                 <ArrowLeft size={13} strokeWidth={1.75} /> {t('tmap.backToImage')}
               </button>
             </div>
@@ -507,32 +518,32 @@ export default function ThoughtMapDialog() {
                 <div className="text-2xs text-ink-faint mb-1 flex items-center justify-between">
                   <span>{t('tmap.caption')}</span>
                   <span className="flex items-center gap-2">
-                    <span className="flex rounded-md border border-line overflow-hidden" data-tmap-caplang>
+                    <span className="flex rounded-control border border-line overflow-hidden" data-tmap-caplang>
                       {(['zh', 'en'] as const).map((v, i) => (
-                        <button key={v} onClick={() => { capTouched.current = false; setCapLang(v); }}
+                        <button key={v} onClick={() => setCapLang(v)}
                           className={`px-2 py-0.5 text-2xs transition-colors ${i > 0 ? 'border-l border-line' : ''} ${capLang === v ? 'bg-accent/10 text-accent font-medium' : 'text-ink-muted hover:bg-wash'}`}>
                           {v === 'zh' ? '中文' : 'EN'}
                         </button>
                       ))}
                     </span>
                     <button onClick={() => void draft()} disabled={drafting}
-                      className="flex items-center gap-1 text-2xs text-accent hover:bg-accent/10 rounded-md px-1.5 py-0.5 transition-colors disabled:opacity-50">
+                      className="flex items-center gap-1 text-2xs text-accent hover:bg-accent/10 rounded-tag px-1.5 py-0.5 transition-colors disabled:opacity-50">
                       {drafting ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} strokeWidth={1.75} />}
                       {drafting ? t('tmap.drafting') : t('tmap.draft')}
                     </button>
                   </span>
                 </div>
                 <textarea value={caption} onChange={(e) => { capTouched.current = true; setCaption(e.target.value); }} rows={7} data-tmap-caption
-                  className="w-full border border-line rounded-lg px-3 py-2 text-xs bg-card text-ink leading-relaxed resize-none focus:outline-none focus:ring-1 focus:ring-accent/40" />
+                  className="w-full border border-line rounded-control px-3 py-2 text-xs bg-card text-ink leading-relaxed resize-none focus:outline-none focus:ring-1 focus:ring-accent/40" />
               </div>
               <div className="flex flex-wrap gap-2">
                 <button onClick={() => { void navigator.clipboard.writeText(caption); toast('success', t('tmap.captionCopied')); }}
-                  className="flex items-center gap-1.5 text-xs font-medium bg-accent/10 text-accent hover:bg-accent/20 border border-accent/30 rounded-lg px-3 py-2 transition-colors">
+                  className="flex items-center gap-1.5 text-xs font-medium bg-accent/10 text-accent hover:bg-accent/20 border border-accent/30 rounded-control px-3 py-2 transition-colors">
                   <Copy size={13} strokeWidth={1.75} /> {t('tmap.copyCaption')}
                 </button>
                 {PLATFORMS.map(([name, kind]) => (
                   <button key={name} onClick={() => share(kind, name)}
-                    className="text-xs border border-line text-ink-muted hover:bg-wash rounded-lg px-3 py-2 transition-colors">
+                    className="text-xs border border-line text-ink-muted hover:bg-wash rounded-control px-3 py-2 transition-colors">
                     {name}
                   </button>
                 ))}

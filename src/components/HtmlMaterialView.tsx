@@ -148,7 +148,7 @@ function PageFrame({ srcdoc, page, onSelect, clipMode, onClipped, clipFailedText
         srcDoc={srcdoc}
         onLoad={handleLoad}
         style={{ height }}
-        className="w-full border-0 bg-white shadow-md rounded-sm"
+        className="w-full border-0 bg-white rounded-content"
         // aria-label, not title: a title tooltip pops on hover anywhere over
         // the page surface — reader noise
         aria-label={page != null ? `p.${page}` : 'document'}
@@ -164,13 +164,13 @@ function PageFrame({ srcdoc, page, onSelect, clipMode, onClipped, clipFailedText
           onMouseLeave={() => { if (band) finishClip(); }}
         >
           {clipping && (
-            <div className="absolute top-2 right-2 flex items-center gap-1.5 text-2xs text-warm bg-card/95 border border-line rounded-lg px-2 py-1 shadow-sm">
+            <div className="absolute top-2 right-2 flex items-center gap-1.5 text-2xs text-warm bg-card border border-line rounded-content px-2 py-1">
               <Loader2 size={11} strokeWidth={1.75} className="animate-spin" />
             </div>
           )}
           {band && (
             <div
-              className="absolute border-2 border-warm bg-warm/10 rounded-sm pointer-events-none"
+              className="absolute border-2 border-warm bg-warm/10 rounded-none pointer-events-none"
               style={{
                 left: `${Math.min(band.x0, band.x1) * 100}%`,
                 top: `${Math.min(band.y0, band.y1) * 100}%`,

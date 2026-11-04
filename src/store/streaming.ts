@@ -23,6 +23,8 @@ import { notifyWaiting } from '../lib/agents/waiting';
 import { isViewerMode } from '../lib/viewer';
 import type { Reference } from '../types';
 import type { StoreState } from './types';
+import { settleAgentActivity, upsertAgentActivity } from '../lib/agent-activity';
+import type { AgentActivityEntry } from '../types';
 
 // Background summary generation — fire and forget. Display channel ONLY:
 // the human reads the summary on the map, the model always reads the full
@@ -186,7 +188,7 @@ export async function runNodeGeneration(
   set((state) => ({
     nodes: state.nodes.map((n) =>
       n.id === nodeId
-        ? { ...n, data: { ...n.data, generationFailed: undefined, reasoning: undefined, restreaming: n.data.response ? true : undefined } }
+        ? { ...n, data: { ...n.data, generationFailed: undefined, reasoning: undefined, agentActivity: [], restreaming: n.data.response ? true : undefined } }
         : n
     ),
   }));
@@ -228,7 +230,7 @@ export async function runNodeGeneration(
   // live sweep firing while the agent works does not append it a second time
   let harnessClaim: Promise<boolean> | null = null;
 
-  const writeFinal = (response: string, failed = false) => {
+  const writeFinal = (response: string, failed = false, activityStatus: Exclude<AgentActivityEntry['status'], 'running'> = failed ? 'failed' : 'completed') => {
     if (!isCurrent()) return; // superseded: a newer generation owns this node
     const tokenCount = countTokens(question + response);
     const modelUsed = actualModel ?? requestedModel;
@@ -246,8 +248,8 @@ export async function runNodeGeneration(
         // back). Stale placeholders from earlier failed rounds are dropped
         // so repeated retries don't stack failure entries.
         const failText = new Set([t('node.failedPlaceholder'), t('node.emptyResponse')]);
-        const kept = versionMode === 'append' || failed
-          ? n.data.responses.map((r, i) => ({ r, q: n.data.questions?.[i], by: n.data.generatedBy?.[i], rs: n.data.reasonings?.[i], rt: n.data.reasoningTokens?.[i], at: n.data.generatedAts?.[i], ed: n.data.editedAts?.[i], gw: n.data.gatewaySearches?.[i], ef: n.data.generatedEfforts?.[i] })).filter(({ r }) => r && !(failed && failText.has(r)))
+        const kept = versionMode === 'append' || failed || activityStatus === 'interrupted'
+          ? n.data.responses.map((r, i) => ({ r, q: n.data.questions?.[i], by: n.data.generatedBy?.[i], rs: n.data.reasonings?.[i], rt: n.data.reasoningTokens?.[i], at: n.data.generatedAts?.[i], ed: n.data.editedAts?.[i], gw: n.data.gatewaySearches?.[i], ef: n.data.generatedEfforts?.[i], ac: n.data.agentActivities?.[i] })).filter(({ r, ac }) => r && !(failed && failText.has(r) && !ac?.length))
           : [];
         const now = new Date().toISOString();
         const responses = [...kept.map(({ r }) => r), response];
@@ -263,7 +265,8 @@ export async function runNodeGeneration(
         const reasoningTokens = kept.some(({ rt }) => rt) ? [...kept.map(({ rt }) => rt), undefined] : undefined;
         const generatedAts = [...kept.map(({ at }) => at), now];
         const editedAts = [...kept.map(({ ed }) => ed), undefined];
-        return { ...n, data: { ...n.data, response, responses, questions, generatedBy, gatewaySearches, generatedEfforts, reasonings, reasoningTokens, generatedAts, editedAts, reasoning: undefined, restreaming: undefined, pendingApprovals: undefined, agentTrace: undefined, responseIndex: responses.length - 1, isLoading: false, tokenCount, generationFailed: failed || undefined, references, highlights: pruneHighlights(n.data.highlights, response), lastContextHash: contextHash, lastContextParts: contextParts, lastGeneratedAt: now } };
+        const agentActivities = [...kept.map(({ ac }) => ac), settleAgentActivity(n.data.agentActivity, activityStatus)];
+        return { ...n, data: { ...n.data, response, responses, questions, generatedBy, gatewaySearches, generatedEfforts, reasonings, reasoningTokens, generatedAts, editedAts, agentActivities, agentActivity: undefined, reasoning: undefined, restreaming: undefined, pendingApprovals: undefined, agentTrace: undefined, responseIndex: responses.length - 1, isLoading: false, tokenCount, generationFailed: failed || undefined, references, highlights: pruneHighlights(n.data.highlights, response), lastContextHash: contextHash, lastContextParts: contextParts, lastGeneratedAt: now } };
       }),
     }));
   };
@@ -328,6 +331,7 @@ export async function runNodeGeneration(
   if (isAgentModel(requestedModel) || isHarnessAgentModel(requestedModel)) messages = recordsForAgent(messages);
   else if (declaresTools(requestedModel, toolPrefsNow())) messages = recordsWithTools(messages);
 
+  let flushStream = () => {};
   try {
     // Context budget: browser-configured models carry their probed window.
     // When the wired context alone clearly exceeds it, fail fast with the
@@ -346,7 +350,9 @@ export async function runNodeGeneration(
     // thinking most of all). Committing every frame re-renders the whole
     // canvas and locks the tab; buffer the latest text and commit at most
     // every ~100ms (leading + trailing), with a final flush after the await.
-    let streamLatest: { response?: string; reasoning?: string } | null = null;
+    type StreamPatch = { response?: string; reasoning?: string; agentActivity?: AgentActivityEntry[] };
+    let streamLatest: StreamPatch | null = null;
+    let activity: AgentActivityEntry[] = [];
     let streamTimer: number | null = null;
     const commitStream = () => {
       if (!streamLatest || !isCurrent()) { streamLatest = null; return; }
@@ -357,19 +363,20 @@ export async function runNodeGeneration(
           n.id === nodeId
             ? { ...n, data: { ...n.data,
                 ...(patch.response !== undefined ? { response: patch.response, restreaming: undefined } : {}),
-                ...(patch.reasoning !== undefined ? { reasoning: patch.reasoning } : {}) } }
+                ...(patch.reasoning !== undefined ? { reasoning: patch.reasoning } : {}),
+                ...(patch.agentActivity !== undefined ? { agentActivity: patch.agentActivity } : {}) } }
             : n
         ),
       }));
     };
-    const pushStream = (patch: { response?: string; reasoning?: string }) => {
+    const pushStream = (patch: StreamPatch) => {
       streamLatest = { ...(streamLatest ?? {}), ...patch };
       if (streamTimer == null) {
         commitStream();
         streamTimer = window.setTimeout(() => { streamTimer = null; commitStream(); }, 100);
       }
     };
-    const flushStream = () => {
+    flushStream = () => {
       if (streamTimer != null) { clearTimeout(streamTimer); streamTimer = null; }
       commitStream();
     };
@@ -458,6 +465,11 @@ export async function runNodeGeneration(
             return { ...n, data: { ...n.data, agentTrace: trace } };
           }),
         }));
+      },
+      onAgentActivity: (item) => {
+        if (!isCurrent()) return;
+        activity = upsertAgentActivity(activity, item);
+        pushStream({ agentActivity: activity });
       },
       onAgentSession: (session) => {
         if (!isCurrent()) return;
@@ -559,13 +571,15 @@ export async function runNodeGeneration(
     triggerAutoReruns(set, get, nodeId);
     triggerParadigmCascade(get, nodeId);
   } catch (err) {
+    flushStream();
     if (!isCurrent()) return; // superseded: the abort was ours to swallow
     activeAbortControllers.delete(nodeId);
-    const partial = get().nodes.find((n) => n.id === nodeId)?.data.response || '';
+    const current = get().nodes.find((n) => n.id === nodeId)?.data;
+    const partial = current?.restreaming ? '' : current?.response || '';
     const isAbort = err instanceof DOMException && err.name === 'AbortError';
     if (isAbort) {
       // User pressed Stop — keep whatever streamed, no error surfacing
-      writeFinal(partial || t('node.stoppedPlaceholder'));
+      writeFinal(partial || t('node.stoppedPlaceholder'), false, 'interrupted');
     } else {
       // Real failure: details go to a toast, the node gets a Retry affordance
       const message = err instanceof Error ? err.message : t('toast.unknownError');
@@ -585,6 +599,8 @@ export async function runNodeGeneration(
       writeFinal(partial || t('node.failedPlaceholder'), true);
     }
     get().settleNode(nodeId);
+  } finally {
+    flushStream();
   }
 }
 

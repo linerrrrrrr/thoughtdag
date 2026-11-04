@@ -27,7 +27,7 @@ export default function Toaster() {
         return (
           <div
             key={t.id}
-            className={`flex items-start gap-2.5 border rounded-xl shadow-lg px-4 py-3 animate-fade-in ${KIND_STYLES[t.kind]}`}
+            className={`flex items-start gap-2.5 border rounded-overlay shadow-lg px-4 py-3 animate-fade-in ${KIND_STYLES[t.kind]}`}
           >
             <Icon size={16} strokeWidth={1.75} className="shrink-0 mt-0.5" />
             {/* message owns the full row; the action drops below it — a long
@@ -37,7 +37,7 @@ export default function Toaster() {
               {t.action && (
                 <button
                   onClick={() => { t.action!.run(); dismissToast(t.id); }}
-                  className="mt-2 text-2xs font-medium bg-accent/10 text-accent hover:bg-accent/20 px-2.5 py-1 rounded-lg transition-colors"
+                  className="mt-2 text-2xs font-medium bg-accent/10 text-accent hover:bg-accent/20 px-2.5 py-1 rounded-tag transition-colors"
                 >
                   {t.action.label}
                 </button>

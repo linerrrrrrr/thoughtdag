@@ -198,6 +198,26 @@ export interface AgentTraceEntry {
   endedAt?: string;
 }
 
+/** A public runtime item snapshot. Display only: never compiled into model context. */
+export interface AgentActivityEntry {
+  id: string;
+  kind: 'commentary' | 'reasoning' | 'message' | 'command' | 'tool' | 'plan' | 'file' | 'status' | 'unknown';
+  status: 'running' | 'completed' | 'failed' | 'interrupted';
+  title?: string;
+  text?: string;
+  output?: string;
+  command?: string;
+  cwd?: string;
+  exitCode?: number | null;
+  durationMs?: number | null;
+  details?: unknown;
+  startedAt: number;
+  endedAt?: number;
+  truncated?: boolean;
+  sourceType?: string;
+  phase?: string;
+}
+
 export type ApprovalOutcome = 'allowed-once' | 'allowed-session' | 'rejected' | 'cancelled' | 'unavailable' | 'answered';
 
 /** A decided approval: part of the turn's record, like a tool footprint. */
@@ -215,8 +235,17 @@ export interface Reference {
   date?: string;
 }
 
+export type NodeDetailLevel = 'compact' | 'summary' | 'full';
+
 export interface ThoughtData extends Record<string, unknown> {
+  /** Locked presentation detail; absent follows the global canvas preference. */
+  detailLevel?: NodeDetailLevel;
+  /** Canvas-only preferences; never change the content carried by an edge. */
+  layoutDirection?: 'vertical' | 'horizontal';
+  edgeRouteDefault?: 'auto' | 'curve' | 'orthogonal';
   question: string;
+  /** Optional canvas label. Presentation only: never replaces question, response, or model context. */
+  displayName?: string;
   response: string;
   responses: string[];
   /** Question wording per version, parallel to `responses` — a version is a
@@ -228,6 +257,9 @@ export interface ThoughtData extends Record<string, unknown> {
   isCollapsed: boolean;
   isEditing: boolean;
   isEditingResponse: boolean;
+  /** The surface that opened an editor owns its draft and keyboard focus. */
+  questionEditor?: 'canvas' | 'panel';
+  responseEditor?: 'canvas' | 'panel';
   isLoading: boolean;
   generationFailed?: boolean; // set on LLM failure; cleared on retry/success (persisted so Retry survives refresh)
   references?: Reference[]; // web sources cited by the current response ([n] markers)
@@ -261,6 +293,10 @@ export interface ThoughtData extends Record<string, unknown> {
   };
   /** Transient: the tool calls of the agent turn running now, in order. */
   agentTrace?: AgentTraceEntry[];
+  /** Public runtime items for the current run, ordered by first occurrence. */
+  agentActivity?: AgentActivityEntry[];
+  /** Completed activity records, aligned with responses. Display only. */
+  agentActivities?: (AgentActivityEntry[] | undefined | null)[];
   /** A note cited from the why layer: which agent's turn or memory entry
       it quotes. Provenance for the reader; the note's text is the quote. */
   recallSource?: { kind: 'turn' | 'memory'; runner: string; session: string; turn: number; title: string; file: string; at?: string; open: string; cwd: string };
@@ -327,6 +363,10 @@ export interface ThoughtData extends Record<string, unknown> {
   linkSnapshotHtml?: string;
   frameColor?: string; // frame node: fixed-palette color token (wayfinding, not decoration)
   frameCarry?: boolean; // frame node: dragging carries contained nodes (absent = true; new frames start false so they can be adjusted into place first)
+  canvasGroupId?: string; // explicit canvas group; independent of context edges and frames
+  previousCanvasGroupId?: string; // ungrouped membership retained for regroup
+  lockAspectRatio?: boolean; // preserve each card's ratio during numeric and handle resizing
+  keepOverviewHeight?: boolean; // explicit group heights remain visible in compact overviews
   instruction?: string; // paradigm body: the prompt (prompt node) or operator guidance (human node)
   fanoutRoles?: { name: string; prompt: string }[]; // role list carried by fanout steps/placeholders
   autoRerunRounds?: number; // max auto-triggered runs per user action (default 1); >1 enables loops
@@ -419,6 +459,9 @@ export type ThoughtNode = Node<ThoughtData, 'thought'>;
 
 export interface ThoughtEdge extends Edge {
   data?: {
+    /** Visual overrides. Absence follows the source node's canvas preference. */
+    route?: 'auto' | 'curve' | 'orthogonal';
+    label?: string;
     isCrossLink?: boolean;
     isBranchFromSelection?: boolean;
     /** Position of this edge's upstream BLOCK in the target's context when

@@ -65,21 +65,21 @@ export default function RecallSection({ nodeId, items, meta, recallOn, progress 
           {items && items.length === 0 && <p className="text-2xs text-ink-faint italic">{t('panel.recallNone')}</p>}
           {items && items.length > 0 && <p className="text-2xs text-ink-muted" data-recall-lead>{leadParts.length ? fmt(t('panel.recallLead'), { what: leadParts.join(t('panel.recallLeadJoin')) }) : t('panel.recallAllOff')}</p>}
           {(items ?? []).map((i) => (
-            <div key={i.id} className={`rounded-lg border px-2.5 py-1.5 ${i.dossier ? 'border-accent/40 bg-accent/10' : 'border-line/70'} ${i.excluded ? 'opacity-50' : ''}`} data-recall-item={i.excluded ? 'excluded' : 'included'} data-recall-item-kind={i.dossier ? 'dossier' : i.kind}>
+            <div key={i.id} className={`rounded-content border px-2.5 py-1.5 ${i.dossier ? 'border-accent/40 bg-accent/10' : 'border-line/70'} ${i.excluded ? 'opacity-50' : ''}`} data-recall-item={i.excluded ? 'excluded' : 'included'} data-recall-item-kind={i.dossier ? 'dossier' : i.kind}>
               <div className="flex items-start gap-2">
                 <button onClick={() => setUnfolded(unfolded === i.id ? null : i.id)} className="flex-1 min-w-0 text-left">
                   <div className={`text-2xs text-ink leading-relaxed ${i.excluded ? 'line-through' : ''}`}>{i.dossier ? fmt(t('dossier.title'), { name: i.dossier.name }) : cardLine(i)}</div>
                   <div className="text-2xs text-ink-faint mt-0.5 flex items-center gap-1.5 flex-wrap">
                     {i.dossier
                       ? <span>{t('dossier.updated')} {i.dossier.updatedAt.slice(0, 10)}</span>
-                      : <span className="font-mono border border-line rounded px-1 py-px" title={i.file}>{i.runner} · {day(i.at)}</span>}
+                      : <span className="font-mono border border-line rounded-tag px-1 py-px" title={i.file}>{i.runner} · {day(i.at)}</span>}
                     <span className="font-mono">{i.card ? i.cardTokens ?? 0 : i.tokens} tok</span>
                     {i.relevance !== undefined && <span className="sr-only" data-recall-relevance>{i.relevance.toFixed(2)}</span>}
                   </div>
                 </button>
                 <button
                   onClick={() => toggle(i.id)}
-                  className="shrink-0 text-ink-faint hover:text-ink w-6 h-6 rounded-full flex items-center justify-center hover:bg-wash transition-colors"
+                  className="shrink-0 text-ink-faint hover:text-ink w-6 h-6 rounded-control flex items-center justify-center hover:bg-wash transition-colors"
                   title={i.excluded ? t('panel.recallInclude') : t('panel.recallExclude')}
                   data-recall-item-toggle
                 >
@@ -97,7 +97,7 @@ export default function RecallSection({ nodeId, items, meta, recallOn, progress 
                 {how ? <ChevronDown size={11} /> : <ChevronRight size={11} />} {t('panel.recallHow')}
               </button>
               {excerpts && (
-                <button onClick={() => void loadMore()} disabled={more !== 'idle'} className="text-2xs text-accent hover:bg-accent/10 px-1.5 py-0.5 rounded-md disabled:opacity-50 flex items-center gap-1" data-recall-more>
+                <button onClick={() => void loadMore()} disabled={more !== 'idle'} className="text-2xs text-accent hover:bg-accent/10 px-1.5 py-0.5 rounded-tag disabled:opacity-50 flex items-center gap-1" data-recall-more>
                   {more === 'busy' && <Loader2 size={11} className="animate-spin" />}
                   {more === 'none' ? t('panel.recallNoMore') : t('panel.recallMore')}
                 </button>
@@ -113,7 +113,7 @@ export default function RecallSection({ nodeId, items, meta, recallOn, progress 
               {!!meta.heldBack?.length && (
                 <div className="flex items-center gap-2" data-recall-held>
                   <span>{fmt(t('panel.recallHeld'), { n: meta.heldBack.length })}</span>
-                  <button onClick={() => { setHeldBusy(true); void recallHeld(nodeId).finally(() => setHeldBusy(false)); }} disabled={heldBusy} className="text-accent hover:bg-accent/10 px-1.5 py-0.5 rounded disabled:opacity-50" data-recall-held-add>{heldBusy ? '…' : t('panel.recallHeldAdd')}</button>
+                  <button onClick={() => { setHeldBusy(true); void recallHeld(nodeId).finally(() => setHeldBusy(false)); }} disabled={heldBusy} className="text-accent hover:bg-accent/10 px-1.5 py-0.5 rounded-control disabled:opacity-50" data-recall-held-add>{heldBusy ? '…' : t('panel.recallHeldAdd')}</button>
                 </div>
               )}
               {meta.budget ? <div className="flex items-center gap-2 flex-wrap">{fmt(t('panel.recallUsed'), { b: meta.budget, u: total })}</div> : null}

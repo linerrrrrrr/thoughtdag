@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useDismissableLayer } from '../lib/use-dismissable-layer';
 import { Archive, FileText, Frame, Link2, MessageSquare, Minimize2, Search, StickyNote, X } from 'lucide-react';
 import { useStore } from '../store';
 import { useUiStore } from '../lib/ui-store';
@@ -35,6 +36,8 @@ export default function SearchBar({
   const [query, setQuery] = useState('');
   const [cursor, setCursor] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
+  const layerRef = useRef<HTMLDivElement>(null);
+  useDismissableLayer({ open, refs: [layerRef], onDismiss: onClose, dismissOnOutside: false });
 
   // Reset on open (render-time state sync, no effect cascade)
   const [prevOpen, setPrevOpen] = useState(open);
@@ -91,9 +94,9 @@ export default function SearchBar({
   };
 
   return (
-    <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 w-[460px]" data-canvas-search>
-      <div className="bg-card border border-line rounded-xl shadow-xl overflow-hidden">
-        <div className="flex items-center gap-2 px-4 py-2.5 transition-shadow focus-within:ring-1 focus-within:ring-accent/40">
+    <div ref={layerRef} className="canvas-search" data-canvas-search>
+      <div className="absolute inset-x-0 top-0 bg-card border border-line rounded-overlay shadow-lg overflow-hidden">
+        <div className="flex h-12 items-center gap-2 px-3 transition-shadow focus-within:ring-1 focus-within:ring-accent/40">
           <Search size={15} strokeWidth={1.75} className="text-ink-faint shrink-0" />
           <input
             ref={inputRef}
@@ -101,13 +104,12 @@ export default function SearchBar({
             value={query}
             onChange={(e) => { setQuery(e.target.value); setCursor(0); }}
             onKeyDown={(e) => {
-              if (e.key === 'Escape') { e.stopPropagation(); onClose(); }
               if (e.key === 'ArrowDown') { e.preventDefault(); setCursor((c) => Math.min(c + 1, matches.length - 1)); }
               if (e.key === 'ArrowUp') { e.preventDefault(); setCursor((c) => Math.max(c - 1, 0)); }
               if (e.key === 'Enter' && !isImeComposing(e) && matches[cursor]) { e.preventDefault(); locate(matches[cursor]); }
             }}
             placeholder={t('search.placeholder')}
-            className="flex-1 bg-transparent text-sm text-ink placeholder-ink-faint focus:outline-none"
+            className="min-w-0 flex-1 bg-transparent text-sm text-ink placeholder-ink-faint focus:outline-none"
             data-search-input
           />
           {query && (
@@ -115,7 +117,7 @@ export default function SearchBar({
               {fmt(t('search.count'), { n: matches.length })}
             </span>
           )}
-          <button onClick={onClose} className="text-ink-faint hover:text-ink transition-colors shrink-0">
+          <button type="button" onClick={onClose} aria-label={t('common.close')} className="text-ink-faint hover:text-ink transition-colors shrink-0">
             <X size={14} strokeWidth={1.75} />
           </button>
         </div>
@@ -142,7 +144,7 @@ export default function SearchBar({
                     </p>
                     <p className="text-2xs text-ink-faint mt-0.5 break-all leading-relaxed">
                       {m.snippet.slice(0, m.matchStart)}
-                      <mark className="bg-accent/20 text-accent rounded-sm px-px">
+                      <mark className="bg-accent/20 text-accent rounded-tag px-px">
                         {m.snippet.slice(m.matchStart, m.matchStart + m.matchLen)}
                       </mark>
                       {m.snippet.slice(m.matchStart + m.matchLen)}

@@ -1,4 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
+import { useDismissableLayer } from '../../lib/use-dismissable-layer';
+import { useCanvasPanelPosition } from '../../lib/use-canvas-panel-position';
+import { useCanvasToolCard } from '../../lib/use-canvas-tool-card';
+import { isImeComposing } from '../../utils';
 import { Check, ChevronDown, Cpu, KeyRound, RefreshCw, Info, Loader2, ChevronRight, Scale } from 'lucide-react';
 import { toast, useUiStore } from '../../lib/ui-store';
 import { profileLines } from '../../lib/profile';
@@ -36,7 +40,14 @@ export default function ModelPicker({ value, onChange, compact }: PickerProps) {
   const selectedModel = useUiStore((s) => s.selectedModel);
   const setSelectedModel = useUiStore((s) => s.setSelectedModel);
   const data = useModels();
-  const [open, setOpen] = useState(false);
+  const [requestedOpen, setOpen] = useState(false);
+  const cardOpen = useCanvasToolCard('model', requestedOpen && !nodeMode, () => setOpen(false));
+  const open = nodeMode ? requestedOpen : cardOpen;
+  const panelPosition = useCanvasPanelPosition(open && !nodeMode);
+  const anysearchKey = useUiStore(s => s.anysearchKey);
+  // This credential draft lives only in this mounted control, never in the
+  // generic draft cache. Outside dismissal suspends; Escape discards it.
+  const [anysearchDraft, setAnysearchDraft] = useState(anysearchKey);
   const [refreshing, setRefreshing] = useState(false);
   // the effort step unfolded under a just-picked agent model (see pick); closes with the menu
   const [effortStepFor, setEffortStepFor] = useState<string | null>(null);
@@ -56,14 +67,10 @@ export default function ModelPicker({ value, onChange, compact }: PickerProps) {
   const bare = !nodeMode && (data?.models.length ?? 0) === 0 && typeof window !== 'undefined' && !!window.desktopAgents;
   useEffect(() => { if (bare) ensureAgentsFresh(); }, [bare]);
 
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: MouseEvent) => {
-      if (!rootRef.current?.contains(e.target as Node)) setOpen(false);
-    };
-    window.addEventListener('mousedown', onDown);
-    return () => window.removeEventListener('mousedown', onDown);
-  }, [open]);
+  useDismissableLayer({ dismissOnFocusOutside: true, open, refs: [rootRef], onDismiss: reason => {
+    if (reason === 'escape') setAnysearchDraft(anysearchKey);
+    setOpen(false);
+  } });
 
   // A successful connect pings the GLOBAL picker open: the user lands on
   // their fresh model list instead of wondering whether anything happened.
@@ -134,12 +141,14 @@ export default function ModelPicker({ value, onChange, compact }: PickerProps) {
           else { setEffortStepFor(null); setOpen((v) => !v); }
         }}
         className={compact
-          ? `text-xs px-3 py-2 rounded-lg transition-colors flex items-center gap-1.5 max-w-[200px] ${value ? 'bg-accent/10 text-accent' : 'bg-wash hover:bg-line text-ink-muted'}`
+          ? `text-xs px-3 py-2 rounded-control transition-colors flex items-center gap-1.5 max-w-[200px] ${value ? 'bg-accent/10 text-accent' : 'bg-wash hover:bg-line text-ink-muted'}`
           : noModels
-            ? 'bg-accent/10 backdrop-blur border border-accent/40 rounded-lg h-8 px-2.5 flex items-center gap-1.5 shadow-sm hover:bg-accent/20 transition-colors text-accent max-w-[190px]'
-            : 'bg-card/90 backdrop-blur border border-line rounded-lg h-8 px-2.5 flex items-center gap-1.5 shadow-sm hover:bg-wash transition-colors text-ink-muted max-w-[190px]'}
+            ? 'bg-accent/10 border border-accent/40 rounded-control h-8 px-2.5 flex items-center gap-1.5 hover:bg-accent/20 transition-colors text-accent max-w-[190px]'
+            : 'bg-card border border-line rounded-control h-8 px-2.5 flex items-center gap-1.5 hover:bg-wash transition-colors text-ink-muted max-w-[190px]'}
         title={noModels ? t('apikey.entryTitle') : nodeMode && !value ? t('model.inherit') : t('toolbar.model')}
         data-apikey-entry={noModels || undefined}
+        aria-expanded={open}
+        data-model-picker-trigger
       >
         {noModels
           ? (data?.agentsPending ? <Loader2 size={14} strokeWidth={1.75} className="shrink-0 animate-spin" /> : <KeyRound size={14} strokeWidth={1.75} className="shrink-0" />)
@@ -151,7 +160,8 @@ export default function ModelPicker({ value, onChange, compact }: PickerProps) {
       {open && (
         // Both placements drop DOWN: the compact picker lives in the panel
         // header now (an upward menu would fly off the viewport top)
-        <div className="absolute top-9 right-0 bg-card border border-line rounded-xl shadow-xl py-1.5 w-80 max-h-[60vh] overflow-y-auto z-30">
+        <div className={nodeMode ? 'absolute top-9 right-0 bg-card border border-line rounded-overlay shadow-lg py-1.5 w-80 max-h-[60vh] overflow-y-auto z-30' : 'canvas-tool-panel canvas-tool-menu py-1.5'}
+          style={nodeMode ? undefined : panelPosition} data-model-picker-panel>
           {nodeMode && (
             <button
               onClick={() => pick(null)}
@@ -261,14 +271,14 @@ export default function ModelPicker({ value, onChange, compact }: PickerProps) {
               }}
               disabled={refreshing}
               title={t('model.refreshList')}
-              className="w-6 h-6 rounded-full flex items-center justify-center text-ink-faint hover:text-accent hover:bg-wash transition-colors shrink-0"
+              className="w-6 h-6 rounded-control flex items-center justify-center text-ink-faint hover:text-accent hover:bg-wash transition-colors shrink-0"
               data-model-refresh
             >
               <RefreshCw size={12} strokeWidth={1.75} className={refreshing ? 'animate-spin' : ''} />
             </button>
             </div>
           )}
-          {!nodeMode && <GlobalCapabilities />}
+          {!nodeMode && <GlobalCapabilities anysearchDraft={anysearchDraft} setAnysearchDraft={setAnysearchDraft} />}
         </div>
       )}
     </div>
@@ -294,8 +304,8 @@ function JudgeRow({ onOpen }: { onOpen: () => void }) {
             <span className="block text-2xs text-ink-faint truncate">{state}{on && !configured ? <span className="text-accent ml-1">{t('judge.goConfigure')}</span> : null}</span>
           </span>
         </button>
-        <button role="switch" aria-checked={on} onClick={(e) => { e.stopPropagation(); setJudge({ provider: on ? 'off' : 'none' }); }} className={`relative w-8 h-[18px] rounded-full transition-colors shrink-0 ${on ? 'bg-accent' : 'bg-line-strong'}`} data-picker-judge-toggle>
-          <span className={`absolute top-0.5 left-0.5 w-3.5 h-3.5 rounded-full bg-white shadow transition-transform ${on ? 'translate-x-3.5' : ''}`} />
+        <button role="switch" aria-checked={on} onClick={(e) => { e.stopPropagation(); setJudge({ provider: on ? 'off' : 'none' }); }} className={`relative w-8 h-[18px] rounded-control transition-colors shrink-0 ${on ? 'bg-accent' : 'bg-line-strong'}`} data-picker-judge-toggle>
+          <span className={`absolute top-0.5 left-0.5 w-3.5 h-3.5 shape-circle bg-white transition-transform ${on ? 'translate-x-3.5' : ''}`} />
         </button>
       </div>
     </div>
@@ -313,20 +323,20 @@ function EffortStep({ model, onDone }: { model: ModelInfo; onDone: () => void })
   const levels = model.efforts ?? [];
   const value = levels.includes(effort) ? effort : '';
   return (
-    <div className="mx-3 mb-1.5 mt-0.5 rounded-lg bg-wash/70 border border-line px-2 py-1.5 flex items-center gap-2" title={t('model.effortHint')} data-agent-effort>
+    <div className="mx-3 mb-1.5 mt-0.5 rounded-content bg-wash/70 border border-line px-2 py-1.5 flex items-center gap-2" title={t('model.effortHint')} data-agent-effort>
       <span className="text-2xs text-ink-faint uppercase tracking-wider font-medium shrink-0">{t('model.effort')}</span>
       <select
         value={value}
         onChange={(e) => setEffort(e.target.value)}
         onClick={(e) => e.stopPropagation()}
         autoFocus
-        className="flex-1 min-w-0 text-2xs text-ink bg-card border border-line rounded-md px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-accent/40"
+        className="flex-1 min-w-0 text-2xs text-ink bg-card border border-line rounded-control px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-accent/40"
         data-agent-effort-select
       >
         <option value="">{model.defaultEffort ? fmt(t('model.effortDefaultKnown'), { level: model.defaultEffort }) : t('model.effortDefault')}</option>
         {levels.map((l) => <option key={l} value={l}>{l}</option>)}
       </select>
-      <button onClick={(e) => { e.stopPropagation(); onDone(); }} className="text-2xs px-2 py-1 rounded-md bg-accent text-white hover:bg-accent/90 transition-colors shrink-0" data-agent-effort-ok>{t('model.effortConfirm')}</button>
+      <button onClick={(e) => { e.stopPropagation(); onDone(); }} className="text-2xs px-2 py-1 rounded-tag bg-action text-white hover:bg-action-strong transition-colors shrink-0" data-agent-effort-ok>{t('model.effortConfirm')}</button>
     </div>
   );
 }
@@ -336,7 +346,7 @@ function EffortStep({ model, onDone }: { model: ModelInfo; onDone: () => void })
 // hints at hidden features), and the one extra model choice: which
 // vision model reads images and recognizes scanned pages.
 const CAPS_OPEN_KEY = 'thoughtdag.pickerCapsOpen';
-function GlobalCapabilities() {
+function GlobalCapabilities({ anysearchDraft, setAnysearchDraft }: { anysearchDraft: string; setAnysearchDraft: (value: string) => void }) {
   const t = useT();
   const [capsOpen, setCapsOpen] = useState<boolean>(() => { try { return localStorage.getItem(CAPS_OPEN_KEY) === 'open'; } catch { return false; } });
   const data = useModels();
@@ -345,7 +355,6 @@ function GlobalCapabilities() {
   const searchEnginePref = useUiStore((s) => s.searchEnginePref);
   const setSearchEnginePref = useUiStore((s) => s.setSearchEnginePref);
   const anysearchKey = useUiStore((s) => s.anysearchKey);
-  const [anysearchDraft, setAnysearchDraft] = useState(anysearchKey);
   const saveAnysearchKey = async () => {
     const k = anysearchDraft.trim();
     if (k === anysearchKey) return;
@@ -367,7 +376,7 @@ function GlobalCapabilities() {
   if (!caps) return null;
   const hasVision = visionModels.length > 0;
   const dot = (on: boolean) => (
-    <span className={`w-1.5 h-1.5 rounded-full shrink-0 mt-1.5 ${on ? 'bg-emerald-500' : 'bg-line-strong'}`} />
+    <span className={`w-1.5 h-1.5 shape-circle shrink-0 mt-1.5 ${on ? 'bg-emerald-500' : 'bg-line-strong'}`} />
   );
   const anysearchKeyRow = (hintKey: 'caps.anysearchHintQuota' | 'caps.anysearchHintEnable') => (
     <div className="mt-1">
@@ -375,13 +384,14 @@ function GlobalCapabilities() {
         type="password"
         value={anysearchDraft}
         onChange={(e) => setAnysearchDraft(e.target.value)}
-        onBlur={() => void saveAnysearchKey()}
-        onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+        onKeyDown={(e) => { if (e.key === 'Enter' && !isImeComposing(e)) { e.preventDefault(); void saveAnysearchKey(); } }}
         onClick={(e) => e.stopPropagation()}
         placeholder={t('caps.anysearchKeyPlaceholder')}
         data-anysearch-key
-        className="w-full text-2xs text-ink-muted bg-wash border border-line rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-accent/40 placeholder-ink-faint font-mono"
+        className="w-full text-2xs text-ink-muted bg-wash border border-line rounded-control px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-accent/40 placeholder-ink-faint font-mono"
       />
+      <button type="button" onClick={() => void saveAnysearchKey()} disabled={anysearchDraft.trim() === anysearchKey}
+        className="mt-1 text-xs text-accent px-2 py-1 rounded-control hover:bg-wash disabled:opacity-40" data-anysearch-save>{t('common.save')}</button>
       <p className="text-2xs text-ink-faint leading-relaxed mt-0.5">
         {t(hintKey)}{' '}
         <a href="https://www.anysearch.com" target="_blank" rel="noreferrer" className="text-accent hover:underline" onClick={(e) => e.stopPropagation()}>anysearch.com</a>
@@ -412,7 +422,7 @@ function GlobalCapabilities() {
               onChange={(e) => setSearchEnginePref(e.target.value)}
               onClick={(e) => e.stopPropagation()}
               title={t('caps.enginePickTitle')}
-              className="mt-1 w-full text-2xs text-ink-muted bg-wash border border-line rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-accent/40"
+              className="mt-1 w-full text-2xs text-ink-muted bg-wash border border-line rounded-control px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-accent/40"
             >
               <option value="server">{fmt(t('caps.engineServer'), { engine: caps.searchEngine })}</option>
               <option value="search_std">{t('caps.engineStd')}</option>
@@ -452,7 +462,7 @@ function GlobalCapabilities() {
           <button
             onClick={(e) => { e.stopPropagation(); setMemoryEnabled(!memoryEnabled); }}
             title={t('caps.memoryTitle')}
-            className={`text-2xs px-2 py-0.5 rounded-full transition-colors shrink-0 ${memoryEnabled ? 'bg-accent/10 text-accent' : 'bg-wash text-ink-faint'}`}
+            className={`text-2xs px-2 py-0.5 rounded-tag transition-colors shrink-0 ${memoryEnabled ? 'bg-accent/10 text-accent' : 'bg-wash text-ink-faint'}`}
           >
             {memoryEnabled ? t('caps.on') : t('caps.off')}
           </button>
@@ -468,7 +478,7 @@ function GlobalCapabilities() {
               onChange={(e) => setVisionModelPref(e.target.value)}
               onClick={(e) => e.stopPropagation()}
               title={t('caps.visionPickTitle')}
-              className="mt-1 w-full text-2xs text-ink-muted bg-wash border border-line rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-accent/40"
+              className="mt-1 w-full text-2xs text-ink-muted bg-wash border border-line rounded-control px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-accent/40"
             >
               <option value="auto">{t('caps.visionAuto')}</option>
               {visionModels.map((m) => (

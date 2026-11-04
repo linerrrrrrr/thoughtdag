@@ -1,16 +1,22 @@
 import type { StateCreator } from 'zustand';
 import type { ThoughtNode, ThoughtEdge } from '../../types';
 import { generateId, countTokens } from '../../utils';
-import { COLORS } from '../../lib/constants';
+import { COLORS, FRAME_COLORS } from '../../lib/constants';
 import { healLegacyNoteEdges, autoLayout, placeNewNodes, estimateNodeHeight, nodeHeight } from '../../lib/layout';
 import { getDescendantIds, walkUpAncestors } from '../../lib/graph';
 import { referenceBlockContent, upstreamFingerprint, buildContext } from '../context-builder';
 import { pruneHighlights } from '../../lib/highlight-match';
 import { toast } from '../../lib/ui-store';
-import { t, fmt } from '../../i18n';
+import { t, fmt, type MessageKey } from '../../i18n';
 import type { StoreState, NodeSlice } from '../types';
 import { condenseGuard } from '../../lib/condense-guard';
 import { activeAbortControllers } from '../streaming';
+import { canGroup, canvasGroupId, expandGroupSelection, regroupCandidates } from '../../lib/node-groups';
+import { arrangeNodes } from '../../lib/arrange-selection';
+import { fittedFrameRect, frameContentIds, isFrameNode, nodesRect } from '../../lib/frames';
+import { applySelectionGeometry } from '../../lib/node-geometry';
+import { applyEdgeSettings, applyBatchEdgeSettings } from '../../lib/edge-edit';
+import { planCanvasLayout } from '../../lib/canvas-layout';
 
 // A node that goes while it is still generating takes its stream with it:
 // the Stop button went with the card, so the only way to end the call is
@@ -32,8 +38,34 @@ export const createNodeSlice: StateCreator<StoreState, [], [], NodeSlice> = (set
 
   setNodes: (nodes) => set({ nodes }),
   setEdges: (edges) => set({ edges }),
-  setSelectedNodeId: (id) => set({ selectedNodeId: id, selectedNodeIds: id ? [id] : [] }),
-  setSelectedNodeIds: (ids) => set({ selectedNodeIds: ids, selectedNodeId: ids.length === 1 ? ids[0] : null }),
+  setSelectedNodeId: (id, options) => {
+    const ids = id ? expandGroupSelection(get().nodes, [id]) : [];
+    const selected = new Set(ids);
+    set((state) => ({
+      selectedNodeId: options?.focus && id && ids.includes(id) ? id : ids.length === 1 ? ids[0] : null,
+      selectedNodeIds: ids,
+      // Programmatic selection and React Flow outlines share one selection.
+      nodes: state.nodes.map((n) => !!n.selected === selected.has(n.id) ? n : { ...n, selected: selected.has(n.id) }),
+    }));
+  },
+  setSelectedNodeIds: (ids) => {
+    const expanded = expandGroupSelection(get().nodes, ids);
+    const selected = new Set(expanded);
+    set((state) => ({
+      selectedNodeIds: expanded,
+      selectedNodeId: expanded.length === 1 ? expanded[0] : null,
+      nodes: state.nodes.map((n) => !!n.selected === selected.has(n.id) ? n : { ...n, selected: selected.has(n.id) }),
+    }));
+  },
+
+  setSelectionGeometry: (ids, patch) => {
+    if (condenseGuard()) return;
+    const nodes = applySelectionGeometry(get().nodes, ids, patch);
+    if (nodes === get().nodes) return;
+    get().pushHistory();
+    set({ nodes });
+    get().pushHistory();
+  },
 
   deleteNode: (nodeId: string) => {
     if (condenseGuard()) return;
@@ -103,7 +135,9 @@ export const createNodeSlice: StateCreator<StoreState, [], [], NodeSlice> = (set
 
     // Current height is measured; the post-toggle height must be estimated
     const oldHeight = nodeHeight(node);
-    const newHeight = estimateNodeHeight({ ...node, data: { ...node.data, isCollapsed: !node.data.isCollapsed } });
+    const newHeight = node.data.isCollapsed && node.height != null
+      ? node.height
+      : estimateNodeHeight({ ...node, data: { ...node.data, isCollapsed: !node.data.isCollapsed } });
     const delta = newHeight - oldHeight;
 
     // Find all descendants of this node
@@ -125,20 +159,20 @@ export const createNodeSlice: StateCreator<StoreState, [], [], NodeSlice> = (set
     get().pushHistory();
   },
 
-  setEditing: (nodeId: string, editing: boolean) => {
+  setEditing: (nodeId: string, editing: boolean, surface = 'canvas') => {
     if (editing && condenseGuard()) return;
     set((state) => ({
       nodes: state.nodes.map((n) =>
-        n.id === nodeId ? { ...n, data: { ...n.data, isEditing: editing } } : n
+        n.id === nodeId ? { ...n, data: { ...n.data, isEditing: editing, questionEditor: editing ? surface : undefined } } : n
       ),
     }));
   },
 
-  setEditingResponse: (nodeId: string, editing: boolean) => {
+  setEditingResponse: (nodeId: string, editing: boolean, surface = 'canvas') => {
     if (editing && condenseGuard()) return;
     set((state) => ({
       nodes: state.nodes.map((n) =>
-        n.id === nodeId ? { ...n, data: { ...n.data, isEditingResponse: editing } } : n
+        n.id === nodeId ? { ...n, data: { ...n.data, isEditingResponse: editing, responseEditor: editing ? surface : undefined } } : n
       ),
     }));
   },
@@ -155,6 +189,8 @@ export const createNodeSlice: StateCreator<StoreState, [], [], NodeSlice> = (set
       dragHandle: '.drag-handle',
       data: {
         ...node.data,
+        canvasGroupId: undefined,
+        previousCanvasGroupId: undefined,
         isCollapsed: true,
         isEditing: false,
         isEditingResponse: false,
@@ -335,20 +371,40 @@ export const createNodeSlice: StateCreator<StoreState, [], [], NodeSlice> = (set
     get().pushHistory();
   },
 
-  setCrossLinkDepth: (edgeId: string, depth: 'quote' | 'full') => {
+  updateEdgeSettings: (edgeId, settings) => {
+    const { nodes, edges } = get();
+    const edge = edges.find((item) => item.id === edgeId);
+    if (!edge) return { ok: false, error: 'missing-node' };
+    const result = applyEdgeSettings(edge, nodes, edges, settings);
+    if (!result.ok) return result;
+    if (JSON.stringify(result.edge) === JSON.stringify(edge)) return { ok: true };
     get().pushHistory();
-    set((state) => ({
-      edges: state.edges.map((e) => {
-        if (e.id !== edgeId || !e.data?.isCrossLink) return e;
-        return {
-          ...e,
-          // full = denser dash + heavier stroke; the depth is readable off the line
-          style: { ...e.style, strokeDasharray: depth === 'full' ? '12 3' : '8 4', strokeWidth: depth === 'full' ? 3 : 2 },
-          data: { ...e.data, contextDepth: depth === 'full' ? 'full' as const : undefined },
-        };
-      }),
-    }));
+    set({ edges: edges.map((item) => item.id === edgeId ? result.edge : item) });
     get().pushHistory();
+    return { ok: true };
+  },
+
+  updateSelectedEdges: (ids, patch) => {
+    if (condenseGuard()) return { ok: false, error: 'restricted' };
+    const { nodes, edges } = get();
+    const result = applyBatchEdgeSettings(nodes, edges, ids, patch);
+    if (!result.ok) return result;
+    if (result.edges === edges) return { ok: true };
+    get().pushHistory();
+    set({ edges: result.edges });
+    get().pushHistory();
+    return { ok: true };
+  },
+
+  applyCanvasLayout: (options, selectedIds) => {
+    const state = get();
+    const result = planCanvasLayout(state.nodes, state.edges, options, selectedIds);
+    if (result.error) return { ok: false, error: result.error };
+    if (result.nodes === state.nodes) return { ok: true };
+    get().pushHistory();
+    set({ nodes: result.nodes });
+    get().pushHistory();
+    return { ok: true };
   },
 
   navigateVersion: (nodeId: string, direction: 'prev' | 'next') => {
@@ -365,7 +421,7 @@ export const createNodeSlice: StateCreator<StoreState, [], [], NodeSlice> = (set
           ...n,
           // navigating away from a failed placeholder reclaims the older answer;
           // the question mirrors its version's wording (a version is a PAIR)
-          data: { ...n.data, responseIndex: newIndex, response: responses[newIndex], question: n.data.questions?.[newIndex] ?? n.data.question, generationFailed: undefined, highlights: pruneHighlights(n.data.highlights, responses[newIndex]) },
+          data: { ...n.data, responseIndex: newIndex, response: responses[newIndex], agentActivity: undefined, question: n.data.questions?.[newIndex] ?? n.data.question, generationFailed: undefined, highlights: pruneHighlights(n.data.highlights, responses[newIndex]) },
         };
       }),
     }));
@@ -394,6 +450,8 @@ export const createNodeSlice: StateCreator<StoreState, [], [], NodeSlice> = (set
             summaryTypes: n.data.summaryTypes?.filter((_, i) => i !== versionIndex),
             reasonings: n.data.reasonings?.filter((_, i) => i !== versionIndex),
             reasoningTokens: n.data.reasoningTokens?.filter((_, i) => i !== versionIndex),
+            agentActivities: n.data.agentActivities?.filter((_, i) => i !== versionIndex),
+            agentActivity: undefined,
             generatedAts: n.data.generatedAts?.filter((_, i) => i !== versionIndex),
             editedAts: n.data.editedAts?.filter((_, i) => i !== versionIndex),
             highlights: pruneHighlights(n.data.highlights, newResponses[newIndex]),
@@ -405,6 +463,10 @@ export const createNodeSlice: StateCreator<StoreState, [], [], NodeSlice> = (set
   },
 
   relayout: () => {
+    if (get().nodes.some((node) => canvasGroupId(node))) {
+      toast('info', t('arrange.ungroupLayoutFirst'));
+      return;
+    }
     if (condenseGuard()) return;
     get().pushHistory();
     set((state) => {
@@ -439,45 +501,182 @@ export const createNodeSlice: StateCreator<StoreState, [], [], NodeSlice> = (set
     }));
   },
 
+  arrangeSelection: (nodeIds, action, reference, viewport) => {
+    if (condenseGuard()) return;
+    const state = get();
+    const result = arrangeNodes(state.nodes, state.edges, nodeIds, action, reference, viewport);
+    if (result.reason) {
+      toast('info', t(`arrange.blocked.${result.reason}` as MessageKey));
+      return;
+    }
+    if (!result.changed) return;
+    state.pushHistory();
+    set({ nodes: result.nodes });
+    get().pushHistory();
+  },
+
+  groupSelection: (nodeIds) => {
+    if (condenseGuard() || !canGroup(get().nodes, nodeIds)) return;
+    const ids = expandGroupSelection(get().nodes, nodeIds);
+    const selected = new Set(ids);
+    const group = generateId();
+    get().pushHistory();
+    set((state) => ({
+      nodes: state.nodes.map((n) => selected.has(n.id)
+        ? { ...n, selected: true, data: { ...n.data, canvasGroupId: group, previousCanvasGroupId: undefined } }
+        : n.selected ? { ...n, selected: false } : n),
+      selectedNodeId: null,
+      selectedNodeIds: ids,
+    }));
+    get().pushHistory();
+  },
+
+  createFrameFromSelection: (nodeIds) => {
+    if (condenseGuard()) return undefined;
+    const state = get();
+    const ids = new Set(expandGroupSelection(state.nodes, nodeIds));
+    const members = state.nodes.filter((node) => ids.has(node.id));
+    if (!members.length || members.some((node) => node.data.stepKind === 'frame')) return undefined;
+    const bounds = nodesRect(members)!;
+    const id = generateId();
+    const frame: ThoughtNode = {
+      id, type: 'thought',
+      position: { x: bounds.x - 32, y: bounds.y - 64 },
+      width: Math.max(280, bounds.width + 64),
+      height: Math.max(180, bounds.height + 96),
+      zIndex: -1, dragHandle: '.drag-handle', selected: true,
+      data: {
+        question: '', stepKind: 'frame', frameCarry: true,
+        response: '', responses: [], responseIndex: -1,
+        isCollapsed: false, isEditing: false, isEditingResponse: false, isLoading: false,
+        tokenCount: 0, highlights: [], highlightMode: 'tag',
+        attachments: [], excludedAttachmentIds: [], includedAttachmentIds: [],
+        roleMode: 'inherit', isRoot: false, isBranch: false,
+      },
+    };
+    state.pushHistory();
+    set({
+      nodes: [...state.nodes.map((node) => node.selected ? { ...node, selected: false } : node), frame],
+      selectedNodeId: id, selectedNodeIds: [id],
+    });
+    get().pushHistory();
+    return id;
+  },
+
+  setFrameProperties: (frameIds, patch) => {
+    if (condenseGuard()) return;
+    if (patch.title !== undefined && typeof patch.title !== 'string') return;
+    if (patch.color !== undefined && !Object.hasOwn(FRAME_COLORS, patch.color)) return;
+    if (patch.carry !== undefined && typeof patch.carry !== 'boolean') return;
+    const state = get();
+    const requested = new Set(frameIds);
+    const frames = state.nodes.filter(node => isFrameNode(node) && requested.has(node.id));
+    const title = frames.length === 1 && patch.title !== undefined ? patch.title.trim() : undefined;
+    let changed = false;
+    const nodes = state.nodes.map(node => {
+      if (!isFrameNode(node) || !requested.has(node.id)) return node;
+      const data = { ...node.data };
+      if (title !== undefined) data.question = title;
+      if (patch.color !== undefined) data.frameColor = patch.color;
+      if (patch.carry !== undefined) data.frameCarry = patch.carry;
+      if (data.question === node.data.question
+        && (data.frameColor ?? 'gray') === (node.data.frameColor ?? 'gray')
+        && (data.frameCarry !== false) === (node.data.frameCarry !== false)) return node;
+      changed = true;
+      return { ...node, data };
+    });
+    if (!changed) return;
+    state.pushHistory();
+    set({ nodes });
+    get().pushHistory();
+  },
+
+  selectFrameContents: (frameIds, includeFrames = false) => {
+    const nodes = get().nodes;
+    const roots = new Set(frameIds);
+    const selected = new Set(frameContentIds(nodes, frameIds, includeFrames));
+    if (includeFrames) for (const node of nodes) if (isFrameNode(node) && roots.has(node.id)) selected.add(node.id);
+    get().setSelectedNodeIds(nodes.filter(node => selected.has(node.id)).map(node => node.id));
+  },
+
+  fitFramesToContents: (frameIds) => {
+    if (condenseGuard()) return;
+    const state = get();
+    const selected = new Set(frameIds);
+    let changed = false;
+    const nodes = state.nodes.map(node => {
+      if (!isFrameNode(node) || !selected.has(node.id)) return node;
+      const bounds = fittedFrameRect(node, state.nodes);
+      if (!bounds || (bounds.x === node.position.x && bounds.y === node.position.y
+        && bounds.width === node.width && bounds.height === node.height)) return node;
+      changed = true;
+      return { ...node, position: { x: bounds.x, y: bounds.y }, width: bounds.width, height: bounds.height };
+    });
+    if (!changed) return;
+    state.pushHistory();
+    set({ nodes });
+    get().pushHistory();
+  },
+
+  duplicateFrames: (frameIds, withContents) => {
+    if (condenseGuard()) return;
+    const nodes = get().nodes;
+    const requested = new Set(frameIds);
+    const roots = nodes.filter(node => isFrameNode(node) && requested.has(node.id)).map(node => node.id);
+    const selected = new Set(withContents ? [...roots, ...frameContentIds(nodes, roots, true)] : roots);
+    get().duplicateSelection(nodes.filter(node => selected.has(node.id)).map(node => node.id));
+  },
+
+  ungroupSelection: (nodeIds) => {
+    if (condenseGuard()) return;
+    const selected = new Set(nodeIds);
+    const groups = new Set(get().nodes.filter((n) => selected.has(n.id) && canvasGroupId(n)).map(canvasGroupId));
+    if (!groups.size) return;
+    get().pushHistory();
+    set((state) => ({ nodes: state.nodes.map((n) => n.data.canvasGroupId && groups.has(n.data.canvasGroupId)
+      ? { ...n, data: { ...n.data, previousCanvasGroupId: n.data.canvasGroupId, canvasGroupId: undefined } }
+      : n) }));
+    get().pushHistory();
+  },
+
+  regroupSelection: (nodeIds) => {
+    if (condenseGuard()) return;
+    const candidates = regroupCandidates(get().nodes, nodeIds);
+    if (!candidates.size) return;
+    const memberships = new Map([...candidates].flatMap(([group, ids]) => ids.map((id) => [id, group] as const)));
+    get().pushHistory();
+    set((state) => ({
+      nodes: state.nodes.map((n) => memberships.has(n.id)
+        ? { ...n, selected: true, data: { ...n.data, canvasGroupId: memberships.get(n.id), previousCanvasGroupId: undefined } }
+        : n.selected ? { ...n, selected: false } : n),
+      selectedNodeId: null,
+      selectedNodeIds: [...memberships.keys()],
+    }));
+    get().pushHistory();
+  },
+
   alignSelection: (nodeIds: string[]) => {
     if (nodeIds.length < 2) return;
     const selected = new Set(nodeIds);
     const { nodes, edges } = get();
-
-    // Conversation order: within the selection, an arrow-ancestor comes
-    // before its descendants (structural + adopted links); ties break by y.
-    const depth = new Map<string, number>();
-    const structural = edges.filter((e) => !e.data?.isWatch);
-    const depthOf = (id: string, seen: Set<string>): number => {
-      if (depth.has(id)) return depth.get(id)!;
-      if (seen.has(id)) return 0;
-      seen.add(id);
-      const parents = structural.filter((e) => e.target === id && selected.has(e.source));
-      const d = parents.length === 0 ? 0 : 1 + Math.max(...parents.map((e) => depthOf(e.source, seen)));
-      depth.set(id, d);
-      return d;
-    };
-    const ordered = nodeIds
-      .map((id) => nodes.find((n) => n.id === id))
-      .filter((n): n is ThoughtNode => !!n)
-      .sort((a, b) =>
-        (depthOf(a.id, new Set()) - depthOf(b.id, new Set())) || (a.position.y - b.position.y)
-      );
-
-    get().pushHistory();
-    const anchor = ordered[0].position;
-    let y = anchor.y;
-    const placed = new Map<string, { x: number; y: number }>();
-    for (const n of ordered) {
-      placed.set(n.id, { x: anchor.x, y });
-      y += nodeHeight(n) + 40;
+    if (nodes.filter(node => selected.has(node.id)).length < 2) return;
+    if (nodes.some((node) => selected.has(node.id) && node.data.stepKind === 'frame')) {
+      toast('info', t('arrange.nodesOnly'));
+      return;
     }
-    set((state) => ({
-      nodes: state.nodes.map((n) => {
-        const pos = placed.get(n.id);
-        return pos ? { ...n, position: pos } : n;
-      }),
-    }));
+    if (nodes.some((node) => selected.has(node.id) && canvasGroupId(node))) {
+      toast('info', t('arrange.ungroupFirst'));
+      return;
+    }
+
+    const first = nodes.find((node) => selected.has(node.id));
+    const result = planCanvasLayout(nodes, edges, {
+      method: 'chains', direction: first?.data.layoutDirection ?? 'vertical',
+      density: 'standard', route: first?.data.edgeRouteDefault ?? 'auto',
+    }, nodeIds);
+    if (result.error) { toast('info', t('canvasLayout.boundaryBlocked')); return; }
+    get().pushHistory();
+    set({ nodes: result.nodes });
     get().pushHistory();
   },
 
@@ -541,6 +740,13 @@ export const createNodeSlice: StateCreator<StoreState, [], [], NodeSlice> = (set
     // would entangle the copy with its source.
     const idMap = new Map<string, string>();
     const attIdMap = new Map<string, string>();
+    const groupIdMap = new Map<string, string>();
+    for (const n of originals) {
+      const group = canvasGroupId(n);
+      if (group && !groupIdMap.has(group) && nodes.filter((member) => canvasGroupId(member) === group).every((member) => selected.has(member.id))) {
+        groupIdMap.set(group, generateId());
+      }
+    }
     for (const n of originals) {
       idMap.set(n.id, generateId());
       for (const a of n.data.attachments ?? []) attIdMap.set(a.id, generateId());
@@ -554,6 +760,8 @@ export const createNodeSlice: StateCreator<StoreState, [], [], NodeSlice> = (set
       selected: true,
       data: {
         ...n.data,
+        canvasGroupId: canvasGroupId(n) ? groupIdMap.get(canvasGroupId(n)!) : undefined,
+        previousCanvasGroupId: undefined,
         attachments: (n.data.attachments ?? []).map((a) => ({ ...a, id: attIdMap.get(a.id)! })),
         excludedAttachmentIds: remapAttIds(n.data.excludedAttachmentIds),
         includedAttachmentIds: remapAttIds(n.data.includedAttachmentIds),

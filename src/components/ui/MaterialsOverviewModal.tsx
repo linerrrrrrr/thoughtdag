@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react';
+import { useDismissableLayer } from '../../lib/use-dismissable-layer';
+import { useRef, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { BookOpen, FileText, Image as ImageIcon, Link2, Paperclip, StickyNote, X } from 'lucide-react';
 import { useStore } from '../../store';
@@ -69,6 +70,9 @@ export default function MaterialsOverviewModal({ onLocate }: { onLocate: (nodeId
     return sorted.map((e, i) => ({ ...e, showGroup: sort === 'node' && (i === 0 || sorted[i - 1].nodeTitle !== e.nodeTitle) }));
   }, [open, nodes, sort, t]);
 
+  const layerRef = useRef<HTMLDivElement>(null);
+  useDismissableLayer({ open, refs: [layerRef], onDismiss: () => setOpen(false), modal: true });
+
   if (!open) return null;
 
   const close = () => setOpen(false);
@@ -77,19 +81,19 @@ export default function MaterialsOverviewModal({ onLocate }: { onLocate: (nodeId
     useUiStore.getState().setReaderNodeId(nodeId);
   };
 
-  const chip = 'shrink-0 text-2xs font-mono text-accent bg-accent/10 hover:bg-accent/20 rounded-full px-1.5 py-0.5 transition-colors';
+  const chip = 'shrink-0 text-2xs font-mono text-accent bg-accent/10 hover:bg-accent/20 rounded-tag px-1.5 py-0.5 transition-colors';
   const sortBtn = (v: 'time' | 'node', label: string) => (
     <button
       onClick={() => setSort(v)}
-      className={`text-2xs px-2.5 py-1 rounded-full transition-colors ${sort === v ? 'bg-accent/10 text-accent' : 'text-ink-faint hover:bg-wash'}`}
+      className={`text-2xs px-2.5 py-1 rounded-tag transition-colors ${sort === v ? 'bg-accent/10 text-accent' : 'text-ink-faint hover:bg-wash'}`}
     >
       {label}
     </button>
   );
 
   return createPortal((
-    <div className="fixed inset-0 z-[60] bg-ink/30 backdrop-blur-sm flex items-center justify-center p-6" onClick={close}>
-      <div className="bg-card rounded-2xl shadow-2xl border border-line w-[640px] max-h-[80vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+    <div className="fixed inset-0 z-[60] bg-ink/30 flex items-center justify-center p-6">
+      <div ref={layerRef} role="dialog" aria-modal="true" aria-label={t('matov.title')} tabIndex={-1} className="bg-card rounded-panel shadow-lg border border-line w-[640px] max-h-[80vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center gap-2 px-5 py-3 border-b border-line shrink-0">
           <Paperclip size={15} strokeWidth={1.75} className="text-warm" />
           <span className="text-sm font-semibold text-ink">{t('matov.title')}</span>
@@ -97,7 +101,7 @@ export default function MaterialsOverviewModal({ onLocate }: { onLocate: (nodeId
           <div className="flex-1" />
           {sortBtn('time', t('hlov.byTime'))}
           {sortBtn('node', t('hlov.byNode'))}
-          <button onClick={close} className="text-ink-faint hover:text-ink w-7 h-7 rounded-lg hover:bg-wash flex items-center justify-center transition-colors ml-1">
+          <button onClick={close} className="text-ink-faint hover:text-ink w-7 h-7 rounded-control hover:bg-wash flex items-center justify-center transition-colors ml-1">
             <X size={15} strokeWidth={1.75} />
           </button>
         </div>
@@ -112,7 +116,7 @@ export default function MaterialsOverviewModal({ onLocate }: { onLocate: (nodeId
                   <div className="text-2xs text-ink-faint font-medium mt-3 mb-1 first:mt-0 truncate">{e.nodeTitle}</div>
                 )}
                 <div className="group flex items-center gap-2.5 py-1.5 border-b border-line/50 last:border-0">
-                  <span className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
+                  <span className={`w-7 h-7 rounded-tag flex items-center justify-center shrink-0 ${
                     e.icon === 'note' ? 'bg-amber-100 text-amber-600' : e.icon === 'link' ? 'bg-cyan-100 text-cyan-700' : 'bg-wash text-ink-muted'
                   }`}>
                     <Icon size={14} strokeWidth={1.75} />
@@ -138,7 +142,7 @@ export default function MaterialsOverviewModal({ onLocate }: { onLocate: (nodeId
                     <button
                       onClick={() => openReader(e.nodeId)}
                       title={t('attach.openReader')}
-                      className="w-7 h-7 rounded-lg text-ink-faint hover:text-accent hover:bg-wash flex items-center justify-center transition-colors shrink-0"
+                      className="w-7 h-7 rounded-control text-ink-faint hover:text-accent hover:bg-wash flex items-center justify-center transition-colors shrink-0"
                     >
                       <BookOpen size={14} strokeWidth={1.75} />
                     </button>

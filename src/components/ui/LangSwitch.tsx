@@ -1,21 +1,27 @@
-import { useI18n } from '../../i18n';
+import { useI18n, useT } from '../../i18n';
 
-// Compact EN/中 toggle used on the canvas toolbar and the landing page.
-export default function LangSwitch() {
+// Compact switch for standalone controls, full-width segments for settings menus.
+export default function LangSwitch({ variant = 'compact' }: { variant?: 'compact' | 'menu' }) {
   const lang = useI18n((s) => s.lang);
   const setLang = useI18n((s) => s.setLang);
+  const t = useT();
+  const inMenu = variant === 'menu';
 
   return (
-    <div className="flex items-center bg-card/90 backdrop-blur border border-line rounded-lg shadow-sm overflow-hidden">
-      {(['en', 'zh'] as const).map((l) => (
+    <div role="group" aria-label={t('lang.label')} className={`flex border border-line rounded-control overflow-hidden ${inMenu ? 'w-full text-2xs' : 'h-control-size items-center bg-card'}`}>
+      {(['en', 'zh'] as const).map((l, i) => (
         <button
+          type="button"
           key={l}
           onClick={() => setLang(l)}
-          className={`px-2 h-8 text-2xs font-medium transition-colors ${
-            lang === l ? 'bg-accent text-white' : 'text-ink-muted hover:bg-wash'
+          aria-pressed={lang === l}
+          className={inMenu ? `flex-1 px-1 py-1.5 transition-colors ${i > 0 ? 'border-l border-line' : ''} ${
+            lang === l ? 'bg-accent/10 text-accent font-medium' : 'text-ink-muted hover:bg-wash'
+          }` : `w-8 h-full text-2xs font-medium transition-colors ${
+            lang === l ? 'bg-action text-white' : 'text-ink-muted hover:bg-wash'
           }`}
         >
-          {l === 'en' ? 'EN' : '中'}
+          {l === 'en' ? inMenu ? 'English' : 'EN' : inMenu ? '中文' : '中'}
         </button>
       ))}
     </div>

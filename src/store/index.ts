@@ -13,26 +13,34 @@ import { createHighlightSlice } from './slices/highlights';
 import { createAttachmentSlice } from './slices/attachments';
 import { createEvaluatorSlice } from './slices/evaluator';
 import { createEventSlice } from './slices/events';
+import { recoverInterruptedAgentRun, settleAgentActivity } from '../lib/agent-activity';
+import { t } from '../i18n';
 
 // Reset transient UI flags — applied both when persisting and when rehydrating,
 // so a refresh mid-stream/mid-edit never restores a node stuck in loading state.
 export function stripTransient(nodes: ThoughtNode[]): ThoughtNode[] {
-  return nodes.map((n) => ({
-    ...n,
-    selected: false,
-    data: {
-      ...n.data,
-      isLoading: false,
-      isEditing: false,
-      isEditingResponse: false,
-      restreaming: undefined,
-      pendingApprovals: undefined,
-      agentTrace: undefined,
-      attachments: (n.data.attachments || []).map((a) =>
-        a.isExtracting ? { ...a, isExtracting: false } : a
-      ),
-    },
-  }));
+  return nodes.map((n) => {
+    const data = recoverInterruptedAgentRun(n.data, t('node.stoppedPlaceholder'));
+    return {
+      ...n,
+      selected: false,
+      data: {
+        ...data,
+        isLoading: false,
+        isEditing: false,
+        isEditingResponse: false,
+        questionEditor: undefined,
+        responseEditor: undefined,
+        restreaming: undefined,
+        pendingApprovals: undefined,
+        agentTrace: undefined,
+        agentActivity: settleAgentActivity(data.agentActivity, 'interrupted'),
+        attachments: (data.attachments || []).map((a) =>
+          a.isExtracting ? { ...a, isExtracting: false } : a
+        ),
+      },
+    };
+  });
 }
 
 export const useStore = create<StoreState>()(persist((...a) => ({
