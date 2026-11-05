@@ -1,0 +1,79 @@
+/* Only the reference page scrolls; product canvas behavior stays untouched. */
+html.design-system-document { height: auto; min-height: 100%; overflow: auto; }
+body.design-system-page { height: auto; min-height: 100vh; overflow: visible; }
+.design-system-page #root { height: auto; min-height: 100%; overflow: visible; }
+.ds-page {
+  max-width: 1440px;
+  margin-inline: auto;
+  padding: calc(var(--spacing-surface-inset) * 2) var(--spacing-surface-inset) calc(var(--spacing-surface-inset) * 4);
+  font-size: var(--text-control);
+  line-height: var(--text-control--line-height);
+}
+.ds-page ::selection { background: color-mix(in srgb, var(--color-accent) 28%, transparent); }
+.ds-page :is(input, textarea) { caret-color: var(--color-accent); }
+.ds-plain-prose { white-space: pre-wrap; }
+.ds-page :is(button, input, textarea):focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+.ds-page svg { width: var(--text-title); height: var(--text-title); flex-shrink: 0; stroke-width: 1.75; }
+.ds-page-header { max-width: 75ch; }
+.ds-page-header h1 { font-size: var(--text-page); line-height: var(--text-page--line-height); font-weight: 600; text-wrap: balance; }
+.ds-page-header > p { margin-top: var(--spacing-related); }
+.ds-caption { color: var(--color-ink-muted); font-size: var(--text-control); line-height: var(--text-control--line-height); }
+.ds-notice { color: var(--color-ink-muted); font-size: var(--text-meta); line-height: var(--text-meta--line-height); }
+.ds-notice { min-height: 1.5em; margin-top: var(--spacing-related); }
+.ds-controls { display: flex; flex-wrap: wrap; align-items: start; gap: var(--spacing-surface-inset); margin-top: calc(var(--spacing-surface-inset) * 1.5); }
+.ds-controls .ds-choice { flex: 0 1 15rem; min-width: min(100%, 12rem); }
+.ds-controls .canvas-layout-choices { background: var(--color-card); }
+.ds-section { margin-top: calc(var(--spacing-surface-inset) * 3); }
+.ds-section > h2 { font-size: var(--text-section); line-height: var(--text-section--line-height); font-weight: 600; }
+.ds-section-note { max-width: 75ch; margin: var(--spacing-related) 0 calc(var(--spacing-surface-inset) * 1.5); color: var(--color-ink-muted); }
+.ds-specimens { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, var(--specimen-width)), var(--specimen-width))); gap: calc(var(--spacing-surface-inset) * 2); align-items: start; }
+.ds-sample { min-width: 0; }
+.ds-sample-title { margin-bottom: var(--spacing-section-gap); font-size: var(--text-title); line-height: var(--text-title--line-height); font-weight: 600; }
+.ds-tool-specimen > .canvas-toolbar { width: fit-content; margin-bottom: var(--spacing-related); }
+.ds-tool-panel.canvas-tool-panel { position: static; width: 100%; }
+.ds-tool-heading { padding: var(--spacing-section-gap) var(--spacing-surface-inset); border-bottom: 1px solid var(--color-line); }
+.ds-tool-heading h4 { font-size: var(--text-title); line-height: var(--text-title--line-height); font-weight: 600; }
+.ds-tool-heading p { margin-top: var(--spacing-control-gap); font-size: var(--text-meta); color: var(--color-ink-muted); }
+.ds-tool-footer { display: flex; justify-content: flex-end; gap: var(--spacing-control-gap); padding: var(--spacing-toolbar-inset); border-top: 1px solid var(--color-line); }
+.ds-dimensions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--spacing-related); }
+.ds-dimensions label { display: flex; flex-direction: column; gap: var(--spacing-control-gap); font-size: var(--text-control); color: var(--color-ink-muted); }
+.ds-dimensions input { width: 100%; min-width: 0; min-height: var(--spacing-control-size); padding: var(--spacing-control-gap) var(--spacing-related); border: 1px solid var(--color-line); border-radius: var(--radius-control); background: var(--color-card); color: var(--color-ink); font-size: var(--text-control); font-variant-numeric: tabular-nums; }
+.ds-node-header { display: flex; justify-content: space-between; align-items: center; gap: var(--spacing-related); border-bottom: 1px solid var(--color-line); }
+.ds-node-identity { display: flex; align-items: center; flex-wrap: wrap; gap: var(--spacing-related); min-width: 0; }
+.ds-node-name { padding-bottom: var(--spacing-section-gap); font-size: var(--text-title); line-height: var(--text-title--line-height); font-weight: 600; overflow-wrap: anywhere; }
+.ds-action-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--spacing-control-gap); }
+.ds-reader { border: 1px solid var(--color-line); border-radius: var(--radius-panel); overflow: hidden; }
+.ds-reader-heading { border-bottom: 1px solid var(--conversation-line); }
+.ds-reader-heading .ds-caption { display: block; margin-top: var(--spacing-control-gap); }
+.ds-editor { padding: var(--spacing-surface-inset); border: 1px solid var(--color-line); border-radius: var(--radius-panel); background: var(--color-card); }
+.ds-field-label { display: block; margin-bottom: var(--spacing-related); font-size: var(--text-control); font-weight: 500; }
+.ds-editor textarea { display: block; width: 100%; min-width: 0; resize: vertical; padding: var(--spacing-section-gap); border: 1px solid var(--conversation-line); }
+.ds-editor textarea::placeholder { color: var(--color-ink-faint); }
+.ds-editor > .ds-caption { margin-top: var(--spacing-related); }
+.ds-editor > .ds-action-row { margin-top: var(--spacing-section-gap); }
+.ds-error { margin-top: var(--spacing-related); font-size: var(--text-control); color: var(--color-watch); }
+.ds-input-preview { margin-top: var(--spacing-surface-inset); padding-block: var(--spacing-section-gap); border-top: 1px solid var(--color-line); border-bottom: 1px solid var(--color-line); overflow-wrap: anywhere; font-size: var(--text-body); }
+.ds-state-field { margin-top: var(--spacing-surface-inset); }
+.ds-table-scroll { overflow-x: auto; }
+.ds-type-table { width: 100%; border-collapse: collapse; text-align: left; }
+.ds-type-table :is(th, td) { padding: var(--spacing-section-gap) var(--spacing-surface-inset); border-bottom: 1px solid var(--color-line); vertical-align: baseline; }
+.ds-type-table :is(th, td):first-child { padding-left: 0; }
+.ds-type-table thead { color: var(--color-ink-muted); font-size: var(--text-meta); }
+.ds-type-table tbody th { font-weight: 400; }
+.ds-type-table td:last-child { min-width: 16rem; }
+.ds-token-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: var(--spacing-surface-inset); }
+.ds-color-token > div { height: calc(var(--spacing-control-size) * 1.5); border: 1px solid var(--color-line); border-radius: var(--radius-content); }
+.ds-token-grid figcaption, .ds-geometry figcaption { margin-top: var(--spacing-related); font-size: var(--text-meta); color: var(--color-ink-muted); overflow-wrap: anywhere; }
+.ds-geometry { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 24rem), 1fr)); gap: calc(var(--spacing-surface-inset) * 2); }
+.ds-space-list { display: grid; gap: var(--spacing-section-gap); align-content: start; }
+.ds-space-token { display: flex; gap: var(--spacing-surface-inset); align-items: center; }
+.ds-space-token > span { display: block; flex-shrink: 0; height: var(--spacing-control-size); background: var(--color-accent); }
+.ds-space-token figcaption { margin: 0; }
+.ds-radius-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(7rem, 1fr)); gap: var(--spacing-surface-inset); }
+.ds-radius-grid figure > span { display: block; width: calc(var(--spacing-control-size) * 2); height: calc(var(--spacing-control-size) * 2); border: 1px solid var(--color-line-strong); background: var(--color-card); }
+@media (max-width: 600px) {
+  .ds-page { padding-top: var(--spacing-surface-inset); }
+  .ds-controls .ds-choice { flex-grow: 1; }
+  .ds-section { margin-top: calc(var(--spacing-surface-inset) * 2); }
+  .ds-type-table :is(th, td) { padding-inline: var(--spacing-related); }
+}

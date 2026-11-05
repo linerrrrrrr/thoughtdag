@@ -19,10 +19,12 @@
 
 import type { ContextMessage, ImageAttachment, StreamCallbacks } from '../api';
 import type { ModelInfo } from '../use-models';
-import type { AgentRuntime, AgentPermissionMode } from '../../types';
-import { useUiStore } from '../ui-store';
+import type { AgentRuntime, AgentPermissionMode, ThoughtData, ThoughtNode } from '../../types';
+import { toast, useUiStore } from '../ui-store';
 import { useStore } from '../../store';
 import { isAgentActivity } from '../agent-activity';
+import type { AppServerThread } from '../adapters/codex-appserver';
+import { t } from '../../i18n';
 
 /** The runtimes the shell can run, keyed by the prefix of their picker ids. */
 export const AGENT_RUNTIMES: Record<AgentRuntime, { prefix: string; label: string; rootKey: string }> = {
@@ -86,14 +88,33 @@ export async function agentModels(): Promise<ModelInfo[]> {
   return (await agentCatalog()).models;
 }
 
-export type AgentRoute = { cwd: string; sessionPath?: string; forkEntryId?: string; continue?: boolean };
+export type AgentRoute = { cwd: string; sessionPath?: string; sessionId?: string; forkEntryId?: string; continue?: boolean };
+
+/** An imported agent conversation keeps its runtime unless the person pins
+ * another model. The default marker is resolved from that runtime's catalog
+ * immediately before sending, never from an unrelated API model. */
+export function deriveFollowupModel(data: Partial<ThoughtData> | undefined, globalModel?: string | null): string | undefined {
+  if (data?.model) return data.model;
+  const runtime = data?.agentSession?.runtime ?? (data?.importSource?.runner === 'codex' ? 'codex' : undefined);
+  if (!runtime) return undefined;
+  const previous = data?.generatedBy?.[data.responseIndex ?? 0];
+  if (runtimeOf(previous) === runtime) return previous ?? undefined;
+  if (runtimeOf(globalModel) === runtime) return globalModel ?? undefined;
+  return `${AGENT_RUNTIMES[runtime].prefix}${runtime}/default`;
+}
+
+const normalizedHostPath = (value: string): string => {
+  const normalized = value.replace(/\\/g, '/').replace(/\/+$/, '');
+  return /^[a-z]:\//i.test(normalized) || normalized.startsWith('//') ? normalized.toLowerCase() : normalized;
+};
+const sameHostPath = (left: string, right: string): boolean => normalizedHostPath(left) === normalizedHostPath(right);
 
 export type CwdChoice = { cwd: string; kind: 'chosen' | 'mirrored' | 'session' | 'workspace' };
 
 /** The working directory the active canvas's agent turns run in: the one
  *  the person chose for this canvas, else the project its mirrored nodes
  *  came from, else the canvas's own workspace. */
-export async function resolveAgentCwd(forHarness = false): Promise<CwdChoice | null> {
+export async function resolveAgentCwd(forHarness = false, previewOnly = false): Promise<CwdChoice | null> {
   if (!window.desktopAgents) return null;
   try {
     const { useStore } = await import('../../store');
@@ -108,8 +129,7 @@ export async function resolveAgentCwd(forHarness = false): Promise<CwdChoice | n
     }
     let best: string | null = null; let bestN = 0;
     for (const [c, n] of counts) if (n > bestN) { best = c; bestN = n; }
-    const workspace = await window.desktopAgents.workspace(activeId ?? 'default');
-    if (best && best !== workspace) return { cwd: best, kind: 'mirrored' };
+    if (best) return { cwd: best, kind: 'mirrored' };
     // a Harness Agent turn without a choice of its own follows the session
     // the chat shows, not the canvas's workspace folder
     if (forHarness) {
@@ -117,7 +137,8 @@ export async function resolveAgentCwd(forHarness = false): Promise<CwdChoice | n
       const session = currentDshSession()?.cwd;
       if (session) return { cwd: session, kind: 'session' };
     }
-    return { cwd: workspace, kind: 'workspace' };
+    if (previewOnly) return null;
+    return { cwd: await window.desktopAgents.workspace(activeId ?? 'default'), kind: 'workspace' };
   } catch {
     return null;
   }
@@ -146,54 +167,97 @@ async function agentSessionFile(runtime: AgentRuntime, sessionId: string, tail: 
   const own = tail?.data.agentSession;
   if (own?.sessionId === sessionId && own.sessionFile) return own.sessionFile;
   const bridge = window.desktopSessions;
-  if (!bridge) return null;
+  // The app-server can resume a thread by its public id even when a remote
+  // or newly created thread has no locally readable rollout yet.
+  const nativeId = runtime === 'codex' && /^[\da-f]{8}(?:-[\da-f]{4}){3}-[\da-f]{12}$/i.test(sessionId) ? sessionId : null;
+  if (!bridge) return nativeId;
   try {
     const rootKey = AGENT_RUNTIMES[runtime].rootKey;
     const roots = await bridge.roots();
     const root = roots.find((x) => x.key === rootKey);
-    if (!root) return null;
+    if (!root) return nativeId;
     const files = await bridge.list(rootKey);
     const hit = files.find((f) => f.rel.includes(sessionId));
-    return hit ? `${root.path.replace(/\/$/, '')}/${hit.rel}` : null;
-  } catch { return null; }
+    return hit ? `${root.path.replace(/[\\/]$/, '')}/${hit.rel}` : nativeId;
+  } catch { return nativeId; }
 }
 
 /**
  * The route for the node about to generate. A question asked DIRECTLY off
- * the tail of a Pi session this canvas subscribes to, with nothing else
+ * the tail of a native session this canvas subscribes to, with nothing else
  * wired in, continues that session in its own directory: the session
  * already holds the conversation, so only the question travels. Any other
  * wiring, or a different working directory, opens a fresh session carrying
  * the compiled context.
  */
 export async function agentOutbound(model: string | undefined, nodeId?: string): Promise<AgentRoute | undefined> {
+  const { nodes, edges } = useStore.getState();
+  const incoming = nodeId ? edges.filter((e) => e.target === nodeId) : [];
+  return routeForParent(model, incoming.length === 1 ? incoming[0].source : undefined,
+    nodeId ? nodes.find((n) => n.id === nodeId) : undefined);
+}
+
+/** Read-only composer preview. Unlike dispatch it never creates a workspace
+ * directory merely because the reader opened a node. */
+export async function previewAgentFollowup(nodeId: string, model: string | undefined, options?: {
+  branchContext?: string; hasAttachments?: boolean; recall?: boolean; hasReferences?: boolean; excludeAttachments?: boolean;
+}): Promise<AgentRoute | undefined> {
+  const route = await routeForParent(model, nodeId, undefined, true);
+  return route && (options?.branchContext || options?.hasAttachments || options?.recall || options?.hasReferences || options?.excludeAttachments)
+    ? { cwd: route.cwd } : route;
+}
+
+async function routeForParent(model: string | undefined, parentId?: string, child?: ThoughtNode, previewOnly = false): Promise<AgentRoute | undefined> {
   const runtime = runtimeOf(model);
   if (!window.desktopAgents || !runtime) return undefined;
-  const choice = await resolveAgentCwd();
-  if (!choice) return undefined;
-  if (!nodeId) return { cwd: choice.cwd };
-  try {
-    const { useStore } = await import('../../store');
-    const { useProjects } = await import('../../store/projects');
-    const { projects, activeId } = useProjects.getState();
-    const ss = projects.find((p) => p.id === activeId)?.sourceSession;
-    if (!ss) return { cwd: choice.cwd };
-    const { nodes, edges } = useStore.getState();
-    const incoming = edges.filter((e) => e.target === nodeId);
-    if (incoming.length !== 1) return { cwd: choice.cwd };
-    const parentId = incoming[0].source;
-    const entries = [ss, ...(ss.chapters ?? []), ...(ss.branches ?? [])].filter((e) => e.runner === runtime && e.sessionId);
-    const entry = entries.find((e) => e.tailNodeId === parentId);
-    if (!entry) return { cwd: choice.cwd };
-    const tail = nodes.find((n) => n.id === parentId);
-    const sessionCwd = tail?.data.agentSession?.cwd ?? tail?.data.importSource?.cwd ?? null;
-    if (sessionCwd && sessionCwd !== choice.cwd) return { cwd: choice.cwd };
-    const sessionPath = await agentSessionFile(runtime, entry.sessionId, tail);
-    if (!sessionPath) return { cwd: choice.cwd };
-    return { cwd: sessionCwd ?? choice.cwd, sessionPath, continue: true };
-  } catch {
-    return { cwd: choice.cwd };
+  const { useProjects } = await import('../../store/projects');
+  const { projects, activeId } = useProjects.getState();
+  const meta = projects.find((p) => p.id === activeId);
+  const { nodes, edges } = useStore.getState();
+  const tail = nodes.find((n) => n.id === parentId);
+  const sessionCwd = tail?.data.agentSession?.cwd ?? tail?.data.importSource?.cwd;
+  // A branch follows its own source directory, not the majority directory
+  // of a canvas that may contain several projects.
+  const cwd = meta?.agentCwd ?? sessionCwd ?? (await resolveAgentCwd(false, previewOnly))?.cwd;
+  if (!cwd) return undefined;
+  const fresh = { cwd };
+  const ss = meta?.sourceSession;
+  if (!tail) return fresh;
+  const entries = ss ? [ss, ...(ss.chapters ?? []), ...(ss.branches ?? [])].filter((e) => e.runner === runtime && e.sessionId) : [];
+  const own = tail.data.agentSession;
+  // A successful run can have no readable rollout yet. Its acknowledged
+  // native session remains usable without pretending that it was imported.
+  const ownTail = own?.runtime === runtime && own.sessionId
+    && !nodes.some((n) => n.id !== tail.id && (n.data.agentSession?.sessionId ?? n.data.importSource?.sessionId) === own.sessionId
+      && edges.some((e) => e.source === tail.id && e.target === n.id));
+  const entry = entries.find((e) => e.tailNodeId === parentId)
+    ?? (ownTail && !entries.some((e) => e.sessionId === own.sessionId) ? { sessionId: own.sessionId! } : undefined);
+  if (!entry || (sessionCwd && !sameHostPath(sessionCwd, cwd))) return fresh;
+  const d = child?.data;
+  if (d?.branchContext || d?.rolePrompt || d?.roleMode === 'reset' || d?.instruction
+    || d?.attachments?.some((a) => !a.op) || d?.recall || d?.recallItems?.length
+    || (d?.excludedAttachmentIds?.length && nodes.some((n) => n.data.attachments?.some((a) => !a.op && d.excludedAttachmentIds.includes(a.id))))
+    || edges.some((e) => e.target === child?.id && (e.data?.isBranchFromSelection || e.data?.isCrossLink))) return fresh;
+  // Native resume owns its old context. If that context was edited on the
+  // canvas, use the compiled branch instead of silently ignoring the edit.
+  const seen = new Set<string>();
+  const queue = [tail.id];
+  while (queue.length) {
+    const id = queue.pop()!;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    const node = nodes.find((n) => n.id === id);
+    if (!node) continue;
+    const data = node.data;
+    if (data.isLoading || data.archived || data.highlightMode === 'filter' || data.rolePrompt || data.instruction
+      || (data.responses?.length && data.responseIndex !== data.responses.length - 1)) return fresh;
+    if (data.source && (data.response !== data.source.response
+      || (data.question !== data.source.question && !(data.agentSession && data.source.question.trim().endsWith(data.question.trim()))))) return fresh;
+    if (edges.some((e) => e.target === id && e.data?.isCrossLink)) return fresh;
+    queue.push(...edges.filter((e) => e.target === id).map((e) => e.source));
   }
+  const sessionPath = await agentSessionFile(runtime, entry.sessionId, tail);
+  return sessionPath ? { cwd, sessionId: entry.sessionId, sessionPath, continue: true } : fresh;
 }
 
 /**
@@ -283,6 +347,49 @@ export function compileForAgent(messages: ContextMessage[]): { question: string;
 
 type AgentEvent = { runId: string; event: Record<string, unknown> & { type: string } };
 const handlers = new Map<string, (event: AgentEvent['event']) => void>();
+const nodeRuns = new Map<string, { runId: string; runtime: AgentRuntime; stop: () => void }>();
+
+/** Retryable native stop, independent of an already-aborted browser signal. */
+export function requestAgentStop(nodeId: string): boolean {
+  const active = nodeRuns.get(nodeId);
+  if (!active) return false;
+  active.stop();
+  return true;
+}
+
+export function canSteerAgentNode(nodeId: string): boolean {
+  return nodeRuns.get(nodeId)?.runtime === 'codex' && typeof window.desktopAgents?.steer === 'function';
+}
+
+/** An explicit user action, acknowledged by the runtime before the composer
+ * may clear its draft. Never turn a failed steer into a new agent run. */
+export async function steerAgentNode(nodeId: string, text: string): Promise<void> {
+  const active = nodeRuns.get(nodeId);
+  const prompt = text.trim();
+  if (!prompt) throw new Error('Additional instructions cannot be empty.');
+  if (!active || active.runtime !== 'codex' || !window.desktopAgents?.steer) throw new Error('This agent run is not ready to receive additional instructions.');
+  if (!await window.desktopAgents.steer(active.runId, prompt)) throw new Error('The agent did not accept these instructions. Keep the draft and retry.');
+  useStore.setState((state) => ({ nodes: state.nodes.map((node) => {
+    if (node.id !== nodeId) return node;
+    const question = `${node.data.question}\n\n${prompt}`;
+    // Completion may arrive before the control response. Keep the accepted
+    // input on that answer's version as well as on the active question.
+    const questions = !node.data.isLoading && node.data.responseIndex >= 0
+      ? Object.assign([...(node.data.questions ?? node.data.responses.map(() => node.data.question))], { [node.data.responseIndex]: question })
+      : node.data.questions;
+    return { ...node, data: { ...node.data, question, questions } };
+  }) }));
+}
+
+/** A permission granted for a conversation belongs only to that native
+ * session, never to an unrelated branch placed on the same canvas. */
+export function sessionAllowRules(runtime: AgentRuntime, route: AgentRoute | undefined, nodes: ThoughtNode[]): string[] {
+  if (!route?.continue || !route.sessionId) return [];
+  const prefix = runtime === 'claude-code' ? 'claude:' : `${runtime}:`;
+  return [...new Set(nodes.filter((n) => (n.data.agentSession?.sessionId ?? n.data.importSource?.sessionId) === route.sessionId)
+    .flatMap((n) => (n.data.approvals ?? []).filter((a) => a.outcome === 'allowed-session'
+      && typeof a.rule === 'string' && a.rule.startsWith(prefix)).map((a) => a.rule as string)))];
+}
 // IPC/SSE may beat the run-id response. Only retain events while this client
 // is starting runs, and replay strictly by the returned run id.
 const earlyEvents = new Map<string, AgentEvent['event'][]>();
@@ -318,10 +425,10 @@ function toolQuery(name: string, args: unknown): string {
 }
 
 /**
- * One turn on the Pi runtime with the streamed-call contract: text deltas
+ * One turn on an agent runtime with the streamed-call contract: text deltas
  * through onChunk, thinking through onReasoning, tool starts through
  * onToolCall, the session through onAgentSession; resolves with the final
- * text; an aborted signal stops Pi and rejects with AbortError.
+ * text; an accepted stop rejects with AbortError.
  */
 export async function agentCallStream(
   messages: ContextMessage[],
@@ -333,27 +440,40 @@ export async function agentCallStream(
   route: AgentRoute | undefined,
   nodeId?: string,
 ): Promise<string> {
+  signal?.throwIfAborted();
   const bridge = window.desktopAgents;
   if (!bridge) throw new Error('agent runtimes need the desktop app');
   const target = agentTarget(modelId);
   if (!target) throw new Error('not an agent model: ' + modelId);
+  if (target.id === 'default') {
+    const catalog = await bridge.models(target.runtime);
+    signal?.throwIfAborted();
+    if (!catalog.installed) throw new Error(catalog.error || 'The local agent runtime is not available. Check its installation and connection.');
+    const selected = catalog.models.find((m) => `${m.provider}/${m.id}` === catalog.default) ?? catalog.models[0];
+    if (!selected) throw new Error('The local agent did not provide an available model.');
+    target.provider = selected.provider;
+    target.id = selected.id;
+    callbacks?.onRerouted?.(modelId, `${AGENT_RUNTIMES[target.runtime].prefix}${target.provider}/${target.id}`);
+  }
   const cwd = route?.cwd ?? (await agentOutbound(modelId))?.cwd;
   if (!cwd) throw new Error('no working directory for this canvas');
+  signal?.throwIfAborted();
   const { question, context } = compileForAgent(messages);
-  await writeGuard(cwd);
+  await writeGuard(cwd, true);
+  signal?.throwIfAborted();
   const continuing = !!route?.continue && !!route?.sessionPath;
   const materials = continuing ? '' : await materialsToDisk(nodeId, cwd);
+  signal?.throwIfAborted();
   const ahead = continuing ? '' : [context, materials].filter(Boolean).join('\n\n');
   const prompt = ahead ? `${ahead}\n\n---\n\n${question}` : question;
   const effort = useUiStore.getState().agentEffort || undefined;
-  // what this conversation already allowed for good: every 'allowed-session'
-  // decision on this canvas whose rule belongs to this runtime
-  const allowRules = [...new Set(useStore.getState().nodes.flatMap((n) => (n.data.approvals ?? []).filter((a) => a.outcome === 'allowed-session' && typeof a.rule === 'string' && a.rule.startsWith(target.runtime === 'claude-code' ? 'claude:' : target.runtime + ':')).map((a) => a.rule as string)))];
+  const allowRules = sessionAllowRules(target.runtime, route, useStore.getState().nodes);
   subscribe();
 
   let full = '';
   let reasoning = '';
   let finalText: string | null = null;
+  let stopRejected = false;
   startingRuns++;
   const done = new Promise<{ how: string; error?: string }>((resolve) => {
     void bridge.run({
@@ -365,9 +485,28 @@ export async function agentCallStream(
       ...(effort ? { effort } : {}),
       ...(allowRules.length ? { allowRules } : {}),
     }).then((runId) => {
-      const stop = () => { void bridge.abort(runId).catch(() => undefined); };
-      if (signal?.aborted) { stop(); }
+      let ended = false;
+      const finish = (result: { how: string; error?: string }) => {
+        if (ended) return;
+        ended = true;
+        handlers.delete(runId);
+        if (nodeId && nodeRuns.get(nodeId)?.runId === runId) nodeRuns.delete(nodeId);
+        signal?.removeEventListener('abort', stop);
+        resolve(result);
+      };
+      let stopPending = false;
+      const stop = () => {
+        if (stopPending || ended) return;
+        stopPending = true;
+        void bridge.abort(runId).then((accepted) => {
+          if (accepted) finish({ how: 'aborted' });
+          else if (!ended) { stopRejected = true; toast('error', t('agent.stopFailed')); }
+        }).catch((error: unknown) => {
+          if (!ended) { stopRejected = true; toast('error', `${t('agent.stopFailed')} ${error instanceof Error ? error.message : String(error)}`); }
+        }).finally(() => { stopPending = false; });
+      };
       signal?.addEventListener('abort', stop, { once: true });
+      if (nodeId) nodeRuns.set(nodeId, { runId, runtime: target.runtime, stop });
       handlers.set(runId, (event) => {
         switch (event.type) {
           case 'session': {
@@ -437,14 +576,10 @@ export async function agentCallStream(
             break;
           case 'run_end':
             finalText = typeof event.text === 'string' ? event.text : full;
-            handlers.delete(runId);
-            signal?.removeEventListener('abort', stop);
-            resolve({ how: String(event.how ?? 'end') });
+            finish({ how: String(event.how ?? 'end') });
             break;
           case 'run_error':
-            handlers.delete(runId);
-            signal?.removeEventListener('abort', stop);
-            resolve({ how: 'error', error: String(event.message ?? 'agent run failed') });
+            finish({ how: 'error', error: String(event.message ?? 'agent run failed') });
             break;
           default:
             break;
@@ -458,6 +593,7 @@ export async function agentCallStream(
       } else {
         for (const event of pending ?? []) handlers.get(runId)?.(event);
       }
+      if (signal?.aborted && !ended) stop();
     }).catch((e: unknown) => resolve({ how: 'error', error: e instanceof Error ? e.message : String(e) }))
       .finally(() => {
         startingRuns--;
@@ -465,8 +601,8 @@ export async function agentCallStream(
       });
   });
   const r = await done;
-  if (signal?.aborted || r.how === 'aborted' || r.how === 'interrupted') throw new DOMException('The operation was aborted.', 'AbortError');
   if (r.how === 'error') throw new Error(r.error ?? 'agent run failed');
+  if ((signal?.aborted && !stopRejected) || r.how === 'aborted' || r.how === 'interrupted') throw new DOMException('The operation was aborted.', 'AbortError');
   return finalText ?? full;
 }
 
@@ -479,21 +615,31 @@ export async function agentCallStream(
 export async function adoptAgentTurn(nodeId: string, session: { runtime: AgentRuntime; sessionFile: string | null; sessionId: string | null; cwd: string }, question: string): Promise<boolean> {
   const why = (reason: string): false => { console.warn('[agent] turn not adopted:', reason, session.runtime, session.sessionFile); return false; };
   const bridge = window.desktopSessions;
-  if (!bridge || !session.sessionFile) return why(!bridge ? 'no sessions bridge' : 'no session file');
+  if (!bridge) return why('no sessions bridge');
   const rootKey = AGENT_RUNTIMES[session.runtime].rootKey;
   try {
-    const roots = await bridge.roots();
-    const root = roots.find((x) => x.key === rootKey);
-    if (!root) return why('no root ' + rootKey);
-    const base = root.path.replace(/\/$/, '') + '/';
-    if (!session.sessionFile.startsWith(base)) return why('file outside root ' + base);
-    const rel = session.sessionFile.slice(base.length);
-    const { anyRunnerSessionConversation } = await import('../adapters');
+    let conv: import('../import-chat').ImportableConversation | null = null;
+    if (session.sessionFile) {
+      const roots = await bridge.roots();
+      const root = roots.find((x) => x.key === rootKey);
+      if (root) {
+        const base = root.path.replace(/\\/g, '/').replace(/\/$/, '') + '/';
+        const file = session.sessionFile.replace(/\\/g, '/');
+        const rel = file.slice(base.length);
+        if (normalizedHostPath(file).startsWith(normalizedHostPath(base) + '/') && !rel.split('/').some((part) => part === '..')) {
+          const { anyRunnerSessionConversation } = await import('../adapters');
+          const text = await bridge.read(rootKey, rel).catch(() => '');
+          if (text) conv = await anyRunnerSessionConversation(text);
+        }
+      }
+    }
+    if (!conv && session.runtime === 'codex' && session.sessionId && bridge.codexThreadRead) {
+      const { appServerThreadConversation } = await import('../adapters/codex-appserver');
+      const thread = await bridge.codexThreadRead(session.sessionId) as AppServerThread | null;
+      conv = appServerThreadConversation(thread);
+    }
     const { useStore } = await import('../../store');
     const { useProjects, registerLedgerEntry, updateSourceSession, subscribedSessionIds } = await import('../../store/projects');
-    const text = await bridge.read(rootKey, rel);
-    if (!text) return why('empty file');
-    const conv = await anyRunnerSessionConversation(text);
     if (!conv?.sessionId) return why('no conversation recognized');
     const built = conv.build();
     const qa = built.nodes.filter((n) => n.data.importSource);
@@ -566,11 +712,14 @@ export async function guardConfig(): Promise<{ mode: AgentPermissionMode; allow:
 
 /** Write the guard file for a working directory (the run's, or the
  *  canvas's current one when omitted). */
-export async function writeGuard(cwd?: string): Promise<void> {
+export async function writeGuard(cwd?: string, required = false): Promise<void> {
   if (!window.desktopAgents) return;
   const dir = cwd ?? (await resolveAgentCwd())?.cwd;
   if (!dir) return;
-  try { await window.desktopAgents.guardWrite(dir, await guardConfig()); } catch { /* the guard falls back to asking */ }
+  try {
+    const ok = await window.desktopAgents.guardWrite(dir, await guardConfig());
+    if (!ok && required) throw new Error('The working directory permissions could not be saved. The agent was not started.');
+  } catch (error) { if (required) throw error; }
 }
 
 /** Switch the active canvas's permission mode: Pi's guard reads it on the

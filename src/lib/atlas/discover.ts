@@ -1,3 +1,5 @@
+import { isInternalCodexSession } from '../adapters/codex-session-kind';
+
 // Session atlas — the discovery half of the continuity layer. The desktop
 // shell hands us fenced fs primitives (window.desktopSessions); this module
 // owns every piece of runner knowledge: where sessions live, how to read a
@@ -28,6 +30,15 @@ export interface SessionCard {
   parentSessionId?: string;
 }
 
+// Retain only header identity for repairing old mirrors; internal workers
+// never become atlas cards, including when "show subagents" is enabled.
+interface DiscoveredSession extends SessionCard { internal?: boolean }
+const internalChildren = new Map<string, SessionCard[]>();
+export const internalCodexChildren = (parentSessionId: string): string[] =>
+  (internalChildren.get(parentSessionId) ?? []).map((c) => c.sessionId);
+export const internalCodexSessions = (parentSessionId: string): SessionCard[] =>
+  [...(internalChildren.get(parentSessionId) ?? [])];
+
 /** The identity a session file answers to. One rule for every reader
  *  (cards, the live watcher, deep links): a codex rollout is its
  *  session_meta id; a claude-code file is its sessionId — EXCEPT a
@@ -40,7 +51,7 @@ export function identityFromHead(head: string): string | null {
     try { l = JSON.parse(raw) as typeof l; } catch { continue; }
     // dsh: the session-open event names the file at the TOP level
     if (l.type === 'session' && typeof l.id === 'string') return l.id;
-    if (l.type === 'session_meta' && l.payload?.id) return l.payload.id;
+    if (l.type === 'session_meta' && l.payload?.id) return isInternalCodexSession(l.payload) ? null : l.payload.id;
     if ((l.type === 'user' || l.type === 'assistant') && typeof l.sessionId === 'string') {
       return l.isSidechain && typeof l.agentId === 'string' ? l.agentId : l.sessionId;
     }
@@ -67,7 +78,7 @@ const HEAD_RETRY_BYTES = 262144;
 // The runner is detected from CONTENT, not from which root the file came
 // from — a custom directory can hold any mix of formats, and a file no
 // signature claims is skipped, never guessed at.
-function cardFromHead(rootKey: string, rel: string, head: string, mtime: number, size: number): SessionCard | null {
+function cardFromHead(rootKey: string, rel: string, head: string, mtime: number, size: number): DiscoveredSession | null {
   const lines: Record<string, unknown>[] = [];
   for (const raw of head.split('\n')) {
     try { lines.push(JSON.parse(raw) as Record<string, unknown>); } catch { /* truncated tail of the head */ }
@@ -101,9 +112,11 @@ function cardFromHead(rootKey: string, rel: string, head: string, mtime: number,
   const meta = lines.find((l) => l.type === 'session_meta') as { payload?: { id?: string; cwd?: string; parent_thread_id?: string } } | undefined;
   if (meta?.payload?.id) {
     const id = meta.payload.id;
+    const internal = isInternalCodexSession(meta.payload);
     return {
       runner: 'codex', rootKey, rel, sessionId: id, cwd: meta.payload.cwd ?? null,
-      title: firstUserLine(head) ?? `session ${id.slice(0, 8)}`, mtime, size,
+      title: internal ? '' : firstUserLine(head) ?? `session ${id.slice(0, 8)}`, mtime, size,
+      ...(internal ? { internal: true } : {}),
       subagent: !!meta.payload.parent_thread_id,
       ...(meta.payload.parent_thread_id ? { parentSessionId: meta.payload.parent_thread_id } : {}),
     };
@@ -184,7 +197,7 @@ export const knownSessionIds = new Set<string>();
 // purpose: a fresh launch starts clean, and the scan behind this is seconds.
 // Each scan drops the rows of files it no longer lists, so the map holds at
 // most the files of the last scan and this one.
-const cardCache = new Map<string, SessionCard | null>();
+const cardCache = new Map<string, DiscoveredSession | null>();
 const cardKey = (rootKey: string, rel: string, size: number, mtime: number): string => `${rootKey}\u0000${rel}\u0000${size}\u0000${mtime}`;
 
 /** The card for one listed file, from the cache when nothing about the file
@@ -193,7 +206,7 @@ async function cardForFile(
   bridge: NonNullable<Window['desktopSessions']>,
   rootKey: string,
   f: { rel: string; size: number; mtime: number },
-): Promise<SessionCard | null> {
+): Promise<DiscoveredSession | null> {
   const key = cardKey(rootKey, f.rel, f.size, f.mtime);
   if (cardCache.has(key)) return cardCache.get(key) ?? null;
   // DSH titles ride session/title AFTER the first user message, which can be
@@ -217,7 +230,7 @@ export async function scanSessions(): Promise<SessionCard[]> {
   if (!bridge) return [];
   const off = disabledRoots();
   const roots = (await bridge.roots().catch(() => [])).filter((r) => r.exists && !off.has(r.key)).map((r) => r.key);
-  const cards: SessionCard[] = [];
+  const cards: DiscoveredSession[] = [];
   const live = new Set<string>();
   for (const rootKey of roots) {
     const files = await bridge.list(rootKey).catch(() => []);
@@ -234,8 +247,17 @@ export async function scanSessions(): Promise<SessionCard[]> {
   // forget rows whose file disappeared (deleted, disabled root, renamed log)
   for (const key of [...cardCache.keys()]) if (!live.has(key)) cardCache.delete(key);
   knownSessionIds.clear();
-  for (const c of cards) knownSessionIds.add(c.sessionId);
-  return cards.sort((a, b) => b.mtime - a.mtime);
+  internalChildren.clear();
+  for (const c of cards) {
+    if (c.internal) {
+      if (c.parentSessionId) {
+        const children = internalChildren.get(c.parentSessionId) ?? [];
+        if (!children.some((child) => child.sessionId === c.sessionId)) children.push(c);
+        internalChildren.set(c.parentSessionId, children);
+      }
+    } else knownSessionIds.add(c.sessionId);
+  }
+  return cards.filter((c) => !c.internal).sort((a, b) => b.mtime - a.mtime);
 }
 
 export function groupByCwd(cards: SessionCard[]): AtlasGroup[] {

@@ -1,16 +1,17 @@
 import { useRef, useState } from 'react';
 import { useDismissableLayer } from '../../lib/use-dismissable-layer';
-import { Archive, ArchiveRestore, ClipboardCopy, Copy, Ellipsis, FileDown, GitFork, RefreshCw, Split, Square, Trash2, Undo2 } from 'lucide-react';
+import { Archive, ArchiveRestore, ClipboardCopy, Copy, Ellipsis, FileDown, GitFork, MessageSquarePlus, RefreshCw, Split, Square, Trash2, Undo2 } from 'lucide-react';
 import { useStore } from '../../store';
 import { contextChainMarkdown, downloadMarkdown, copyText } from '../../lib/export';
 import ModelPicker from '../ui/ModelPicker';
 import FanOutModal from '../FanOutModal';
 import { toast } from '../../lib/ui-store';
 import { useT } from '../../i18n';
+import { canSteerAgentNode, deriveFollowupModel, isAgentModel } from '../../lib/agents/agent-runtime';
+import { useUiStore } from '../../lib/ui-store';
+import AgentInstructionInput from './AgentInstructionInput';
 
-// Compact action strip: the two actions you actually reach for (regenerate,
-// archive) plus the model chip, everything else behind "…". Perspectives
-// (once = candidates, follow = reviewers) live here until the palette lands.
+// The reading header keeps the model and menu; answer actions live below the prose.
 
 export default function HeaderActions({ nodeId, isLoading }: { nodeId: string; isLoading: boolean }) {
   const regenerate = useStore((s) => s.regenerate);
@@ -20,6 +21,9 @@ export default function HeaderActions({ nodeId, isLoading }: { nodeId: string; i
   const deleteNode = useStore((s) => s.deleteNode);
   const setNodeModel = useStore((s) => s.setNodeModel);
   const nodeModel = useStore((s) => s.nodes.find((n) => n.id === nodeId)?.data.model);
+  const nodeData = useStore(s => s.nodes.find(n => n.id === nodeId)?.data);
+  const globalModel = useUiStore(s => s.selectedModel);
+  const agent = isAgentModel(deriveFollowupModel(nodeData, globalModel) ?? globalModel);
   const setArchived = useStore((s) => s.setArchived);
   const isArchived = useStore((s) => !!s.nodes.find((n) => n.id === nodeId)?.data.archived);
   const nodeQuestion = useStore((s) => s.nodes.find((n) => n.id === nodeId)?.data.question ?? '');
@@ -46,48 +50,59 @@ export default function HeaderActions({ nodeId, isLoading }: { nodeId: string; i
 
   const [menuOpen, setMenuOpen] = useState(false);
   const [fanOutOpen, setFanOutOpen] = useState(false);
+  const [instructionOpen, setInstructionOpen] = useState(false);
+  const [instructionPosition, setInstructionPosition] = useState({ right: 16, top: 80 });
+  const [previousLoading, setPreviousLoading] = useState(isLoading);
+  if (previousLoading !== isLoading) {
+    setPreviousLoading(isLoading);
+    if (!isLoading) setInstructionOpen(false);
+  }
   const menuRef = useRef<HTMLDivElement>(null);
+  const menuButtonRef = useRef<HTMLButtonElement>(null);
+  const canSteer = isLoading && canSteerAgentNode(nodeId);
+
+  const openInstructions = () => {
+    const rect = menuButtonRef.current?.getBoundingClientRect();
+    if (rect) setInstructionPosition({ right: Math.max(16, window.innerWidth - rect.right), top: rect.bottom + 8 });
+    setMenuOpen(false);
+    setInstructionOpen(true);
+  };
 
   useDismissableLayer({ dismissOnFocusOutside: true, open: menuOpen, refs: [menuRef], onDismiss: () => setMenuOpen(false) });
 
   const iconBtn = 'text-ink-faint hover:text-ink hover:bg-line/50 rounded-control w-8 h-8 flex items-center justify-center transition-colors';
-  const menuItem = 'w-full text-left px-3 py-2 text-xs text-ink-muted hover:bg-wash transition-colors flex items-center gap-2';
+  const menuItem = 'w-full text-left px-3 py-2 text-control text-ink-muted hover:bg-wash transition-colors flex items-center gap-2';
 
   return (
-    <div className="relative flex items-center gap-1 shrink-0">
-      {isLoading ? (
+    <div className="focus-panel-header-actions relative flex items-center gap-1 shrink-0">
+      {isLoading && (
         <button
           onClick={() => stopGeneration(nodeId)}
+          data-agent-stop
           title={t('actions.stop')}
           className="text-white bg-red-500 hover:bg-red-600 rounded-control w-8 h-8 flex items-center justify-center transition-colors"
         >
           <Square size={12} strokeWidth={1.75} fill="currentColor" />
         </button>
-      ) : (
-        <button
-          onClick={() => void rerunNode(nodeId, {})}
-          disabled={isLoading}
-          title={isLoading ? t('node.generatingTitle') : t('common.regenerate')}
-          className={`${iconBtn} disabled:opacity-25 disabled:cursor-not-allowed`}
-        >
-          <RefreshCw size={16} strokeWidth={1.75} className={isLoading ? 'animate-spin' : ''} />
-        </button>
       )}
-      <button
-        onClick={() => setArchived([nodeId], !isArchived)}
-        title={isArchived ? t('archive.restoreTitle') : t('archive.title')}
-        className={isArchived ? 'text-amber-600 bg-amber-500/10 rounded-control w-8 h-8 flex items-center justify-center' : iconBtn}
-      >
-        {isArchived ? <ArchiveRestore size={16} strokeWidth={1.75} /> : <Archive size={16} strokeWidth={1.75} />}
-      </button>
-      <ModelPicker compact value={nodeModel} onChange={(m) => setNodeModel(nodeId, m)} />
+      {!agent && <ModelPicker compact value={nodeModel} onChange={(m) => setNodeModel(nodeId, m)} />}
 
       <div ref={menuRef} className="relative">
-        <button onClick={() => setMenuOpen((v) => !v)} title={t('panel.more')} className={`${iconBtn} ${menuOpen ? 'bg-line/50 text-ink' : ''}`}>
+        <button ref={menuButtonRef} onClick={() => setMenuOpen((v) => !v)} title={t('panel.more')} aria-label={t('panel.more')} aria-expanded={menuOpen} className={`${iconBtn} ${menuOpen ? 'bg-line/50 text-ink' : ''}`}>
           <Ellipsis size={17} strokeWidth={1.75} />
         </button>
         {menuOpen && (
           <div className="absolute right-0 top-full mt-1 bg-card border border-line rounded-overlay shadow-lg py-1 w-[210px] z-30 animate-fade-in">
+            {canSteer && <button className={menuItem} data-agent-instruction-trigger onClick={openInstructions}>
+              <MessageSquarePlus size={15} strokeWidth={1.75} /> {t('agent.addInstructions')}
+            </button>}
+            <button className={menuItem} disabled={isLoading} onClick={() => { setMenuOpen(false); void rerunNode(nodeId, {}); }}>
+              <RefreshCw size={15} strokeWidth={1.75} /> {t('common.regenerate')}
+            </button>
+            <button className={menuItem} onClick={() => { setMenuOpen(false); setArchived([nodeId], !isArchived); }}>
+              {isArchived ? <ArchiveRestore size={15} strokeWidth={1.75} /> : <Archive size={15} strokeWidth={1.75} />}
+              {t(isArchived ? 'archive.restoreTitle' : 'archive.title')}
+            </button>
             <button className={menuItem} onClick={() => { setMenuOpen(false); setFanOutOpen(true); }} title={t('fanout.entryTitle')}>
               <Split size={15} strokeWidth={1.75} /> {t('fanout.entry')}
             </button>
@@ -110,7 +125,7 @@ export default function HeaderActions({ nodeId, isLoading }: { nodeId: string; i
             )}
             <div className="border-t border-line my-1" />
             <button
-              className="w-full text-left px-3 py-2 text-xs text-red-500 hover:bg-red-50 transition-colors flex items-center gap-2"
+              className="w-full text-left px-3 py-2 text-control text-red-500 hover:bg-red-50 transition-colors flex items-center gap-2"
               onClick={() => { setMenuOpen(false); deleteNode(nodeId); }}
             >
               <Trash2 size={15} strokeWidth={1.75} /> {t('common.delete')}
@@ -122,6 +137,8 @@ export default function HeaderActions({ nodeId, isLoading }: { nodeId: string; i
       {fanOutOpen && (
         <FanOutModal parentId={nodeId} initialQuestion={nodeQuestion} onClose={() => setFanOutOpen(false)} />
       )}
+      <AgentInstructionInput nodeId={nodeId} open={instructionOpen && canSteer} position={instructionPosition}
+        triggerRef={menuButtonRef} onClose={() => setInstructionOpen(false)} />
     </div>
   );
 }

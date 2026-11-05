@@ -88,7 +88,7 @@ interface TextTurn { q: string; a: string; m?: string }
 interface TextIndex { version: number; sessions: Record<string, number> }
 interface TextLine extends TextTurn { k: string; i: number }
 
-const INDEX_VERSION = 14; // 14: archived canvas nodes leave the record (#51); 13: failed tool calls are no footprints (#50)
+const INDEX_VERSION = 15; // 15: exclude internal approval transcripts, including unchanged cached sources
 const EXCERPT = 200;
 
 const HOME = process.env.THOUGHTDAG_HOME ?? path.join(os.homedir(), '.thoughtdag');
@@ -654,6 +654,17 @@ async function buildIndex(full: boolean, canvasDir?: string): Promise<BuildRepor
 
 async function buildIndexLocked(full: boolean, t0: number): Promise<BuildReport> {
   await fsp.rm(LEGACY_FILE, { force: true }).catch(() => undefined);
+  // The manifests and raw text are one projection. Once any manifest is
+  // incompatible, its old keys are no longer available to the incremental
+  // removal pass; retaining old text lines would leak excluded sources into
+  // the vocabulary (even when facts no longer expose them to search).
+  if (!full) {
+    const compatible = await Promise.all([FACT_FILE, CACHE_FILE, TEXT_FILE].map(async (file) => {
+      try { return (JSON.parse(await fsp.readFile(file, 'utf8')) as { version?: number }).version === INDEX_VERSION; }
+      catch { return false; }
+    }));
+    full = compatible.some((current) => !current);
+  }
   const facts = full ? emptyFacts() : await loadFacts();
   const cache = full ? emptyCache() : await loadCache();
   const text = full ? emptyText() : await loadText();
@@ -673,7 +684,18 @@ async function buildIndexLocked(full: boolean, t0: number): Promise<BuildReport>
     // presence, not truthiness: a session with no text at all (an empty rollout) is still indexed
     if (prev && prev.mtime === f.mtime && prev.size === f.size && key in cache.sessions && key in text.sessions) { kept++; continue; }
     const r = await parseSession(f).catch(() => null);
-    if (!r) { facts.skipped[key] = { mtime: f.mtime, size: f.size }; skipped++; continue; }
+    if (!r) {
+      // A previously indexed source can become non-conversational after its
+      // metadata changes. Drop every old projection, not just its next parse.
+      if (prev) removed++;
+      delete facts.sessions[key];
+      delete cache.sessions[key];
+      delete text.sessions[key];
+      removedKeys.add(key);
+      facts.skipped[key] = { mtime: f.mtime, size: f.size };
+      skipped++;
+      continue;
+    }
     delete facts.skipped[key];
     facts.sessions[key] = r.fact;
     cache.sessions[key] = r.cache;
@@ -1214,6 +1236,9 @@ function editDistance(a: string, b: string, max: number): number {
  *  (one edit for short words, two from six characters on), closest and
  *  most frequent first. Empty for a term that is itself in the text. */
 async function suggestJson(term: string, k = 8): Promise<{ term: string; known: number; suggestions: Suggestion[] }> {
+  // Suggestions expose indexed words too, so they need the same migration
+  // and source-classification checks as find/recall, even when called first.
+  await ensureFresh();
   const t = term.toLowerCase().trim();
   const counts = await vocabulary();
   const known = counts.get(t) ?? 0;

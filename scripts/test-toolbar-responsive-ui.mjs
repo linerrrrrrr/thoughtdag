@@ -65,7 +65,7 @@ try {
         isCollapsed: false, isEditing: false, isLoading: false, tokenCount: 10, highlights: [], attachments: [],
       } }));
     nodes.push({ id: 'frame', type: 'frame', position: { x: 80, y: 600 }, width: 600, height: 200,
-      data: { stepKind: 'frame', question: '研究区域', response: '' } });
+      data: { stepKind: 'frame', question: '研究区域', response: '', responses: [] } });
     const edges = [{ id: 'ab', source: 'a', target: 'b', type: 'thought', data: {} }];
     window.__store.setState({ nodes, edges, selectedNodeIds: [], selectedNodeId: null, history: [{ nodes, edges }], historyIndex: 0 });
     const { useProjects } = await window.__importLive('/src/store/projects.ts');
@@ -90,7 +90,7 @@ try {
         densities.add(g.density);
         if (lang === 'zh' && panelWidth === 0 && [1760, 390].includes(width)) {
           await item('toolbar-more').click();
-          assert.equal(await item('menu-quick-layout').isVisible(), true);
+          assert.equal(await item('menu-quick-layout').count(), 0);
           assert.equal(await item('layout-entry').isVisible(), true);
           await page.screenshot({ path: `${output}/menu-${width}.png` });
           await page.keyboard.press('Escape');
@@ -217,7 +217,7 @@ try {
     const toolbar = document.querySelector('[data-top-toolbar]').getBoundingClientRect();
     return { left: toolbar.left, right: toolbar.right, availableRight: header.right, height: toolbar.height };
   });
-  assert.ok(viewer.left >= 16 && viewer.right <= viewer.availableRight + 1 && viewer.height === 42, JSON.stringify(viewer));
+  assert.ok(viewer.left >= 16 && viewer.right <= viewer.availableRight + 1 && viewer.height === 50, JSON.stringify(viewer));
   console.log('PASS paradigm and read-only toolbars also fit narrow windows');
   assert.deepEqual(errors, []);
   assert.deepEqual(writes, []);

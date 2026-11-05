@@ -97,9 +97,9 @@ export default function TimelineOverviewModal({ onLocate }: { onLocate: (nodeId:
       <div ref={layerRef} role="dialog" aria-modal="true" aria-label={t('tlov.title')} tabIndex={-1} className="bg-card rounded-panel shadow-lg border border-line w-[640px] h-[80vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center gap-2 px-5 py-3 border-b border-line shrink-0">
           <History size={15} strokeWidth={1.75} className="text-accent" />
-          <span className="text-sm font-semibold text-ink">{t('tlov.title')}</span>
-          <span className="text-2xs text-ink-faint">{fmt(t('tlov.count'), { n: entries.length })}</span>
-          <label className="flex items-center gap-2 ml-3 text-2xs text-ink-faint" title={t('tlov.detailTitle')}>
+          <span className="text-section font-semibold text-ink">{t('tlov.title')}</span>
+          <span className="text-meta text-ink-faint">{fmt(t('tlov.count'), { n: entries.length })}</span>
+          <label className="flex items-center gap-2 ml-3 text-control text-ink-faint" title={t('tlov.detailTitle')}>
             <span>{t('tlov.detail')}</span>
             <input type="range" min={0} max={3} step={0.01} value={detail} onChange={(e) => changeDetail(Number(e.target.value))} className="w-28 accent-accent" data-tlov-detail />
             <span className="text-ink-muted w-8">{t(`ladder.level${level}` as 'ladder.level0')}</span>
@@ -109,7 +109,7 @@ export default function TimelineOverviewModal({ onLocate }: { onLocate: (nodeId:
             onClick={() => { close(); useUiStore.getState().setThoughtMapOpen(true); }}
             disabled={entries.length === 0}
             data-tmap-from-timeline
-            className="flex items-center gap-1.5 text-2xs text-ink-muted hover:text-accent hover:bg-accent/10 rounded-tag px-2.5 py-1 transition-colors disabled:opacity-50"
+            className="flex items-center gap-1.5 text-control text-ink-muted hover:text-accent hover:bg-accent/10 rounded-tag px-2.5 py-1 transition-colors disabled:opacity-50"
           >
             <ImageDown size={13} strokeWidth={1.75} />
             {t('tmap.export')}
@@ -123,27 +123,27 @@ export default function TimelineOverviewModal({ onLocate }: { onLocate: (nodeId:
           {!shown && !gedLoading && (
             <button
               onClick={writeJourney}
-              className="flex items-center gap-1.5 text-2xs text-accent bg-accent/10 hover:bg-accent/20 rounded-control px-3 py-1.5 transition-colors"
+              className="flex items-center gap-1.5 text-control text-accent bg-accent/10 hover:bg-accent/20 rounded-control px-3 py-1.5 transition-colors"
             >
               <Sparkles size={12} strokeWidth={1.75} />
               {t('tlov.gedankenGenerate')}
             </button>
           )}
           {gedLoading && (
-            <p className="text-2xs text-ink-faint italic py-1.5">{t('tlov.gedankenLoading')}</p>
+            <p className="text-control text-ink-faint italic py-1.5">{t('tlov.gedankenLoading')}</p>
           )}
           {gedFailed && !gedLoading && (
-            <p className="text-2xs text-red-500 py-1">{t('tlov.gedankenFailed')}</p>
+            <p className="text-control text-red-500 py-1">{t('tlov.gedankenFailed')}</p>
           )}
           {shown && !gedLoading && (
             <div className={`rounded-content bg-wash px-4 py-3 ${stale ? 'opacity-60' : ''}`}>
-              <p className="text-sm text-ink leading-relaxed">{shown.text}</p>
+              <p className="text-body text-ink">{shown.text}</p>
               <div className="flex items-center gap-2 mt-1.5">
-                <span className="text-2xs text-ink-faint">
+                <span className="text-control text-ink-faint">
                   {stale ? t('tlov.gedankenStale') : new Date(shown.at).toLocaleString(dateLocale)}
                 </span>
                 {stale && (
-                  <button onClick={writeJourney} className="text-2xs text-accent hover:underline">
+                  <button onClick={writeJourney} className="text-control text-accent hover:underline">
                     {t('tlov.gedankenRedo')}
                   </button>
                 )}
@@ -153,7 +153,7 @@ export default function TimelineOverviewModal({ onLocate }: { onLocate: (nodeId:
         </div>
 
         <div ref={listRef} className="flex-1 min-h-0 overflow-y-auto px-5 py-3" data-timeline-overview>
-          {entries.length === 0 && <p className="text-xs text-ink-faint italic py-2">{t('tlov.empty')}</p>}
+          {entries.length === 0 && <p className="text-control text-ink-faint italic py-2">{t('tlov.empty')}</p>}
           {entries.map((e, i) => {
             const prevDay = i > 0 ? dayOf(entries[i - 1].createdAt) : undefined;
             const day = dayOf(e.createdAt);
@@ -161,7 +161,7 @@ export default function TimelineOverviewModal({ onLocate }: { onLocate: (nodeId:
             return (
               <div key={e.id}>
                 {newDay && (
-                  <div className="sticky top-0 bg-card text-2xs text-ink-faint font-medium pt-3 pb-1 first:pt-0">
+                  <div className="sticky top-0 bg-card text-control text-ink-faint font-medium pt-3 pb-1 first:pt-0">
                     {day || t('tlov.undated')}
                   </div>
                 )}
@@ -170,7 +170,7 @@ export default function TimelineOverviewModal({ onLocate }: { onLocate: (nodeId:
                     className="w-2 h-2 shape-circle shrink-0"
                     style={{ background: e.color, opacity: e.archived ? 0.35 : 1 }}
                   />
-                  <span className="text-2xs font-mono text-ink-faint shrink-0 w-11">{fmtClock(e.createdAt)}</span>
+                  <span className="text-meta font-mono text-ink-faint shrink-0 w-11">{fmtClock(e.createdAt)}</span>
                   <div className="flex-1 min-w-0">
                     {e.ladder ? (
                       // the level whole, morphing word by word as the slider crosses a half-step; the shorter level's words keep full ink
@@ -182,11 +182,11 @@ export default function TimelineOverviewModal({ onLocate }: { onLocate: (nodeId:
                       </p>
                     )}
                     {e.modifiedAt && e.modifiedAt !== e.createdAt && (
-                      <p className="text-2xs text-ink-faint">{t('timeline.modified')} {new Date(e.modifiedAt).toLocaleString(dateLocale)}</p>
+                      <p className="text-meta text-ink-faint">{t('timeline.modified')} {new Date(e.modifiedAt).toLocaleString(dateLocale)}</p>
                     )}
                   </div>
                   <button
-                    className="shrink-0 text-2xs font-mono text-accent bg-accent/10 hover:bg-accent/20 rounded-tag px-1.5 py-0.5 transition-colors opacity-0 group-hover:opacity-100"
+                    className="shrink-0 text-control font-mono text-accent bg-accent/10 hover:bg-accent/20 rounded-tag px-1.5 py-0.5 transition-colors opacity-0 group-hover:opacity-100"
                     onClick={() => { close(); onLocate(e.id); }}
                     title={t('hlov.locateTitle')}
                   >

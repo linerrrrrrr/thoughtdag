@@ -13,7 +13,7 @@ export default function CanvasToolbarOverflowAction({ children, label, icon }: {
     <span className="canvas-toolbar-minimal-secondary contents">{children}</span>
     {target && createPortal(<button type="button" disabled={children.props.disabled}
       onClick={event => { close(); children.props.onClick?.(event); }}
-      className="w-full text-left px-3 py-2 text-xs text-ink hover:bg-wash disabled:opacity-30 flex items-center gap-2.5">
+      className="w-full text-left px-3 py-2 text-control text-ink hover:bg-wash disabled:opacity-30 flex items-center gap-2.5">
       {icon}<span>{label}</span>
     </button>, target)}
   </>;

@@ -33,11 +33,11 @@ export default function Toaster() {
             {/* message owns the full row; the action drops below it — a long
                 action label once crushed the message to two chars a line */}
             <div className="flex-1 min-w-0">
-              <p className="text-xs leading-relaxed break-words">{t.message}</p>
+              <p className="text-control break-words">{t.message}</p>
               {t.action && (
                 <button
                   onClick={() => { t.action!.run(); dismissToast(t.id); }}
-                  className="mt-2 text-2xs font-medium bg-accent/10 text-accent hover:bg-accent/20 px-2.5 py-1 rounded-tag transition-colors"
+                  className="mt-2 text-control font-medium bg-accent/10 text-accent hover:bg-accent/20 px-2.5 py-1 rounded-tag transition-colors"
                 >
                   {t.action.label}
                 </button>

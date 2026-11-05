@@ -95,7 +95,7 @@ export default function FrameNode({ id, data, selected }: NodeProps<ThoughtNodeT
       }`}
       onClick={(event) => { if (!event.ctrlKey && !event.metaKey && !event.shiftKey) setSelectedNodeId(id); }}
     >
-      <span ref={measureRef} aria-hidden="true" className={`absolute invisible pointer-events-none whitespace-nowrap font-semibold ${editing ? 'text-sm' : 'text-xs'}`}>{label}</span>
+      <span ref={measureRef} aria-hidden="true" className={`absolute invisible pointer-events-none whitespace-nowrap font-semibold ${editing ? 'text-title' : 'text-control'}`}>{label}</span>
       {/* The label adapts to existing space; it never expands the region. */}
       <div
         data-frame-header
@@ -112,13 +112,13 @@ export default function FrameNode({ id, data, selected }: NodeProps<ThoughtNodeT
             onKeyDown={(e) => { if (e.key === 'Enter' && !isImeComposing(e)) { e.preventDefault(); e.stopPropagation(); commit(); } }}
             placeholder={t('frame.titlePlaceholder')}
             autoFocus
-            className="flex-1 min-w-0 bg-transparent text-sm font-semibold text-ink-muted focus:outline-none placeholder-ink-faint nodrag"
+            className="flex-1 min-w-0 bg-transparent text-title font-semibold text-ink-muted focus:outline-none placeholder-ink-faint nodrag"
             data-frame-title-editor
           />
         ) : (
           <span
             onDoubleClick={() => { if (isViewerMode) return; setDraft(data.question); setEditing(true); }}
-            className="flex-1 min-w-0 truncate font-semibold text-ink-muted/80 select-none text-xs"
+            className="flex-1 min-w-0 truncate font-semibold text-ink-muted/80 select-none text-control"
             title={data.question || t('frame.titlePlaceholder')}
           >
             {data.question || <span className="text-ink-faint normal-case tracking-normal">{t('frame.titlePlaceholder')}</span>}

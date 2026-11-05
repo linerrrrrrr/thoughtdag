@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { Check, X } from 'lucide-react';
+import { Check, Pencil, X } from 'lucide-react';
 import { useStore } from '../../store';
 import { isImeComposing } from '../../utils';
 import { useT } from '../../i18n';
@@ -12,14 +12,19 @@ import { useInlineEditDismiss } from '../../lib/use-inline-edit-dismiss';
 export default function QuestionSection({
   nodeId,
   question,
+  displayQuestion,
   isEditing,
   isHuman,
   awaiting,
   placeholder,
   branchContext,
+  base,
 }: {
   nodeId: string;
+  base?: string;
   question: string;
+  /** Reading only; the editor retains the complete canonical question. */
+  displayQuestion?: string;
   isEditing: boolean;
   /** Paradigm human turn: edits record the question without generating. */
   isHuman?: boolean;
@@ -86,15 +91,14 @@ export default function QuestionSection({
   };
 
   return (
-    <div className="panel-card px-4 py-3">
-      <label className="text-2xs font-semibold text-accent mb-1 block">{t('panel.question')}</label>
+    <section className={`focus-question-section ${isEditing ? 'is-editing' : ''}`} aria-label={t('panel.question')} data-conversation-question>
       {branchContext && (
-        <div className="mb-2 text-xs pl-3 py-1.5 pr-2 border border-warm/30 bg-warm/10 rounded-content text-ink-muted italic leading-relaxed">
+        <div className="mb-2 text-control pl-3 py-1.5 pr-2 border border-warm/30 bg-warm/10 rounded-content text-ink-muted italic leading-relaxed">
           “{branchContext.slice(0, 240)}{branchContext.length > 240 ? '…' : ''}”
         </div>
       )}
       {isEditing && !isViewerMode ? (
-        <div ref={editorRef} onBlur={dismiss.onBlur}>
+        <div ref={editorRef} onBlur={dismiss.onBlur} className="focus-message-editor">
           <textarea
             value={editValue}
             onChange={(e) => { setEditValue(e.target.value); useUiStore.getState().setDraft(draftKey, e.target.value, true); }}
@@ -102,7 +106,7 @@ export default function QuestionSection({
             onInput={(e) => autoGrowTa(e.currentTarget)}
             ref={autoGrowTa}
             placeholder={placeholder}
-            className="w-full bg-wash border border-accent rounded-control p-3 text-sm text-ink resize-none focus:outline-none focus:ring-2 focus:ring-accent/20"
+            className="w-full bg-wash border border-accent rounded-control p-3 text-body text-ink resize-none focus:outline-none focus:ring-2 focus:ring-accent/20"
             rows={3}
             autoFocus
           />
@@ -115,7 +119,7 @@ export default function QuestionSection({
               <button
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={cancelEdit}
-                className="text-xs text-ink-muted hover:text-red-500 hover:bg-wash px-3 py-1.5 rounded-control transition-colors flex items-center gap-1"
+                className="text-control text-ink-muted hover:text-red-500 hover:bg-wash px-3 py-1.5 rounded-control transition-colors flex items-center gap-1"
                 data-edit-cancel
               >
                 <X size={12} strokeWidth={2} /> {t('question.editCancel')}
@@ -124,23 +128,31 @@ export default function QuestionSection({
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={handleEditSubmit}
                 disabled={!editValue.trim()}
-                className="text-xs bg-action hover:bg-action-strong disabled:opacity-30 disabled:cursor-not-allowed text-white px-3.5 py-1.5 rounded-control transition-colors flex items-center gap-1.5"
+                className="text-control bg-action hover:bg-action-strong disabled:opacity-30 disabled:cursor-not-allowed text-white px-3.5 py-1.5 rounded-control transition-colors flex items-center gap-1.5"
                 data-edit-submit
               >
                 <Check size={12} strokeWidth={2.25} /> {t('question.editSubmit')}
               </button>
             </div>
           )}
-          {!awaiting && <p className="mt-1.5 text-2xs text-ink-faint">{t('edit.draftHint')}</p>}
+          {!awaiting && <p className="mt-1.5 text-control text-ink-faint">{t('edit.draftHint')}</p>}
         </div>
       ) : (
+        <div className="focus-user-turn">
         <div
           onDoubleClick={handleDoubleClickQuestion}
-          className="question-md markdown-body text-sm text-ink font-semibold cursor-pointer hover:bg-wash rounded-content py-related transition-colors max-h-[240px] overflow-y-auto"
+          className="focus-user-message question-md markdown-body text-body text-ink cursor-text max-h-[300px] overflow-y-auto"
+          data-conversation-user-message
         >
-          <Markdown>{question || placeholder || ''}</Markdown>
+          <Markdown base={base}>{(displayQuestion ?? question) || placeholder || ''}</Markdown>
+        </div>
+        {!isViewerMode && <button type="button" onClick={handleDoubleClickQuestion}
+          title={t('actions.editQuestion')} aria-label={t('actions.editQuestion')} data-edit-question
+          className="focus-question-edit">
+          <Pencil size={14} strokeWidth={1.75} />
+        </button>}
         </div>
       )}
-    </div>
+    </section>
   );
 }

@@ -82,7 +82,7 @@ export function TimelineBar() {
     >
       {hovered && hover && (
         <div
-          className="fixed left-[124px] max-w-[320px] bg-card border border-line rounded-overlay shadow-lg px-3 py-2 text-xs pointer-events-none z-20"
+          className="fixed left-[124px] max-w-[320px] bg-card border border-line rounded-overlay shadow-lg px-3 py-2 text-control pointer-events-none z-20"
           style={{ top: hover.y - 14 }}
         >
           <div className="font-medium text-ink truncate">
@@ -95,7 +95,7 @@ export function TimelineBar() {
           {hovered.modifiedAt && hovered.modifiedAt !== hovered.createdAt && (
             <div className="text-ink-faint">{t('timeline.modified')} {fmtTime(hovered.modifiedAt)}</div>
           )}
-          <div className="text-[10px] text-ink-faint/80 mt-1">{t('timeline.clickHint')}</div>
+          <div className="text-meta text-ink-faint/80 mt-1">{t('timeline.clickHint')}</div>
         </div>
       )}
       <button
@@ -151,7 +151,7 @@ export function TimelineBar() {
                   }}
                 />
                 {newDay && (
-                  <span className="absolute left-[67px] top-1/2 -translate-y-1/2 text-[10px] leading-none text-ink-faint select-none whitespace-nowrap">
+                  <span className="absolute left-[67px] top-1/2 -translate-y-1/2 text-meta leading-none text-ink-faint select-none whitespace-nowrap">
                     {fmtDay(day)}
                   </span>
                 )}

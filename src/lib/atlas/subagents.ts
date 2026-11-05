@@ -6,12 +6,12 @@
 // adopts what is found before it builds, and each run becomes a branch off
 // the turn that launched it (see adapters/shared.ts).
 import type { ImportableConversation } from '../import-chat';
-import type { SessionCard } from './discover';
+import { internalCodexChildren, internalCodexSessions, scanSessions, type SessionCard } from './discover';
 import type { SubagentSession } from '../adapters/shared';
 
-interface LineCollector { feedLine(raw: string): void; toSubagentSession(): SubagentSession | null }
+interface LineCollector { feedLine(raw: string): void }
 
-async function collect(c: LineCollector, next: () => Promise<string | null>): Promise<SubagentSession | null> {
+async function feed(c: LineCollector, next: () => Promise<string | null>): Promise<void> {
   let carry = '';
   for (;;) {
     const chunk = await next();
@@ -21,6 +21,10 @@ async function collect(c: LineCollector, next: () => Promise<string | null>): Pr
     for (const ln of lines) c.feedLine(ln);
   }
   if (carry) c.feedLine(carry);
+}
+
+async function collect(c: LineCollector & { toSubagentSession(): SubagentSession | null }, next: () => Promise<string | null>): Promise<SubagentSession | null> {
+  await feed(c, next);
   return c.toSubagentSession();
 }
 
@@ -48,8 +52,23 @@ export async function withSubagents(
           if (sub) subs.push(sub);
         }
       }
-    } else if (conv.source === 'codex' && cards) {
-      const kids = cards.filter((c) => c.runner === 'codex' && c.subagent && c.parentSessionId === conv.sessionId);
+    } else if (conv.source === 'codex') {
+      // Live refresh and deep links do not supply cards. Use the same cached
+      // header scan as the atlas so adoption and repair have identical input.
+      const currentCards = cards ?? await scanSessions();
+      conv.excludedSessionIds = internalCodexChildren(conv.sessionId);
+      if (conv.adoptApprovals) {
+        const { CodexApprovalCollector } = await import('../adapters/codex-approval');
+        for (const c of internalCodexSessions(conv.sessionId)) {
+          const collector = new CodexApprovalCollector();
+          try {
+            await feed(collector, shellSessionReader(c.rootKey, c.rel));
+            const review = collector.finish();
+            if (review) conv.adoptApprovals([review]);
+          } catch { /* an unreadable audit never prevents importing the conversation */ }
+        }
+      }
+      const kids = currentCards.filter((c) => c.runner === 'codex' && c.subagent && c.parentSessionId === conv.sessionId);
       if (kids.length) {
         const { CodexSessionCollector } = await import('../adapters/codex-session');
         for (const k of kids) {

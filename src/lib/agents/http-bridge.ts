@@ -5,6 +5,7 @@
 // hosted deployment has no machine to run an agent on and never does.
 
 import { IN_HARNESS_FRAME } from '../embedded';
+import { installLocalFilesBridge } from '../local-files-bridge';
 
 export async function installAgentsHttpBridge(apiBase: string): Promise<boolean> {
   if (window.desktopAgents) return true;
@@ -15,9 +16,13 @@ export async function installAgentsHttpBridge(apiBase: string): Promise<boolean>
     if (!r.ok) return false;
     available = await r.json();
   } catch { return false; }
+  installLocalFilesBridge(api);
   const post = async <T,>(path: string, body: unknown): Promise<T> => {
     const r = await fetch(api + path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'same-origin', body: JSON.stringify(body ?? {}) });
-    if (!r.ok) throw new Error(`${path}: ${r.status}`);
+    if (!r.ok) {
+      const error = await r.json().catch(() => null);
+      throw new Error(typeof error?.error === 'string' ? error.error : `${path}: ${r.status}`);
+    }
     return r.json() as Promise<T>;
   };
   const listeners: ((p: { runId: string; event: Record<string, unknown> & { type: string } }) => void)[] = [];
@@ -102,6 +107,7 @@ export async function installAgentsHttpBridge(apiBase: string): Promise<boolean>
       return r.runId;
     },
     abort: async (runId) => (await post<{ ok: boolean }>('/agents/abort', { runId })).ok,
+    steer: async (runId, prompt) => (await post<{ ok: boolean }>('/agents/steer', { runId, prompt })).ok,
     answer: async (runId, requestId, response) => (await post<{ ok: boolean }>('/agents/answer', { runId, requestId, response })).ok,
     workspace: async (canvasId) => (await post<{ dir: string }>('/agents/workspace', { canvasId })).dir,
     pickCwd: () => pickThroughHarness(),

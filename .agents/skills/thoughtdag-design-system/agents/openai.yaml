@@ -1,0 +1,6 @@
+interface:
+  display_name: "ThoughtDAG Design System"
+  short_description: "Apply ThoughtDAG UI roles and verify design consistency"
+  default_prompt: "Use $thoughtdag-design-system to refine this ThoughtDAG interface while preserving its design language and interaction rules."
+policy:
+  allow_implicit_invocation: true

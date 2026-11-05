@@ -32,8 +32,8 @@ export interface NodeSlice {
   setEdges: (edges: ThoughtEdge[]) => void;
   setSelectedNodeId: (id: string | null, options?: { focus?: boolean }) => void;
   setSelectedNodeIds: (ids: string[]) => void;
-  /** Apply an undoable size/ratio edit; coordinates are available only for one object. */
-  setSelectionGeometry: (nodeIds: string[], patch: import('../lib/node-geometry').NodeGeometryPatch) => void;
+  /** Apply ordered size/ratio edits as one undo step; coordinates require one object. */
+  setSelectionGeometry: (nodeIds: string[], patch: import('../lib/node-geometry').NodeGeometryPatch | import('../lib/node-geometry').NodeGeometryPatch[]) => void;
   deleteNode: (nodeId: string) => void;
   deleteEdges: (edgeIds: string[]) => void;
   editResponse: (nodeId: string, response: string) => void;

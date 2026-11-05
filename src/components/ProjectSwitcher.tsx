@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { Archive, Check, ChevronDown, Dna, FolderOpen, Loader2, Map as MapIcon, Minimize2, Pencil, Plus, RefreshCw, Trash2, Upload } from 'lucide-react';
+import { Archive, ArrowLeftRight, Check, ChevronDown, Dna, FolderOpen, Loader2, Map as MapIcon, Minimize2, Pencil, Plus, RefreshCw, Trash2, Upload } from 'lucide-react';
 import SessionAtlas from './SessionAtlas';
 import HarnessViewSwitch from './ui/HarnessViewSwitch';
 import { knownSessionIds } from '../lib/atlas/discover';
@@ -107,7 +107,7 @@ export default function ProjectSwitcher({ onSwitched, children }: { onSwitched: 
           onClick={() => setOpen(!open)}
           title={active?.name} aria-label={active?.name} aria-expanded={open}
           disabled={switching}
-          className="canvas-project-button bg-card border border-line rounded-control h-8 px-3 hover:bg-wash transition-colors flex items-center gap-2 text-xs leading-none text-ink disabled:opacity-60"
+          className="canvas-toolbar-button canvas-project-button disabled:opacity-60"
         >
           {switching
             ? <Loader2 size={16} strokeWidth={1.75} className="animate-spin shrink-0 text-accent" />
@@ -129,16 +129,17 @@ export default function ProjectSwitcher({ onSwitched, children }: { onSwitched: 
           // (assume live: never a false alarm)
           const unreachable = knownSessionIds.size > 0 && !knownSessionIds.has(active.sourceSession.sessionId);
           return (
-            <CanvasToolbarOverflowAction label={unreachable ? ti('switcher.mirrorBadgeGone') : fmt(ti('switcher.mirrorBadge'), { runner: active.sourceSession!.runner })} icon={<span aria-hidden="true">⇄</span>}>
+            <CanvasToolbarOverflowAction label={unreachable ? ti('switcher.mirrorBadgeGone') : fmt(ti('switcher.mirrorBadge'), { runner: active.sourceSession!.runner })} icon={<ArrowLeftRight size={14} strokeWidth={1.75} aria-hidden="true" />}>
             <button
               title={unreachable
                 ? ti('switcher.mirrorBadgeGone')
                 : fmt(ti('switcher.mirrorBadge'), { runner: active.sourceSession!.runner })}
               onClick={() => { setAtlasFocus(active.sourceSession!.sessionId); setAtlasOpen(true); }}
-              className={`bg-card border border-line rounded-control h-8 px-2 hover:bg-wash transition-colors text-2xs leading-none font-mono flex items-center gap-1 ${unreachable ? 'text-ink-faint/50 line-through decoration-1' : 'text-ink-faint hover:text-accent'}`}
+              className={`canvas-toolbar-button canvas-session-button font-mono ${unreachable ? 'opacity-50 line-through decoration-1' : ''}`}
               data-twin-badge={unreachable ? 'unreachable' : 'live'}
             >
-              ⇄ {active.sourceSession!.runner}
+              <ArrowLeftRight size={14} strokeWidth={1.75} className="shrink-0" aria-hidden="true" />
+              <span>{active.sourceSession!.runner}</span>
             </button>
             </CanvasToolbarOverflowAction>
           );
@@ -168,17 +169,17 @@ export default function ProjectSwitcher({ onSwitched, children }: { onSwitched: 
                       }
                     }}
                     onBlur={renameEdit.onBlur}
-                    className="flex-1 text-sm text-ink border border-accent/40 rounded-control px-2 py-1 bg-surface focus:outline-none"
+                    className="flex-1 text-control text-ink border border-accent/40 rounded-control px-2 py-1 bg-surface focus:outline-none"
                     data-project-name-editor
                   />
                 ) : (
                   <>
                     <div className="flex-1 min-w-0">
                       {/* the name owns its line; provenance rides below with the time */}
-                      <div className={`text-sm truncate ${p.id === activeId ? 'text-accent font-medium' : 'text-ink'}`}>
+                      <div className={`text-control truncate ${p.id === activeId ? 'text-accent font-medium' : 'text-ink'}`}>
                         {p.name}
                       </div>
-                      <div className="text-2xs text-ink-faint flex items-center gap-1.5">
+                      <div className="text-meta text-ink-faint flex items-center gap-1.5">
                         <span>{relativeTime(p.updatedAt)}</span>
                         {!!p.sourceSession?.sessionId && (
                           <span className="font-mono border border-line rounded-tag px-1 py-px" data-mirror-mark>
@@ -219,19 +220,19 @@ export default function ProjectSwitcher({ onSwitched, children }: { onSwitched: 
           <div className="border-t border-line mt-1 pt-1">
             <button
               onClick={() => { setOpen(false); void createProject().then(onSwitched); }}
-              className="w-full text-left px-3 py-2 text-sm text-accent hover:bg-wash transition-colors flex items-center gap-2"
+              className="w-full text-left px-3 py-2 text-control text-accent hover:bg-wash transition-colors flex items-center gap-2"
             >
               <Plus size={15} strokeWidth={1.75} /> {t('switcher.newCanvas')}
             </button>
             <button
               onClick={() => importFileRef.current?.click()}
-              className="w-full text-left px-3 py-2 text-sm text-ink-muted hover:bg-wash transition-colors flex items-center gap-2"
+              className="w-full text-left px-3 py-2 text-control text-ink-muted hover:bg-wash transition-colors flex items-center gap-2"
             >
               <Upload size={15} strokeWidth={1.75} /> {t('switcher.importBackup')}
             </button>
             <button
               onClick={() => { setOpen(false); setAtlasOpen(true); }}
-              className="w-full text-left px-3 py-2 text-sm text-ink-muted hover:bg-wash transition-colors flex items-center gap-2"
+              className="w-full text-left px-3 py-2 text-control text-ink-muted hover:bg-wash transition-colors flex items-center gap-2"
               data-open-atlas
             >
               <MapIcon size={15} strokeWidth={1.75} /> {t('switcher.allCanvases')}
@@ -239,12 +240,12 @@ export default function ProjectSwitcher({ onSwitched, children }: { onSwitched: 
             {window.desktop && (
               <button
                 onClick={() => { setOpen(false); void window.desktop!.checkForUpdates(); }}
-                className="w-full text-left px-3 py-2 text-sm text-ink-muted hover:bg-wash transition-colors flex items-center gap-2"
+                className="w-full text-left px-3 py-2 text-control text-ink-muted hover:bg-wash transition-colors flex items-center gap-2"
                 data-check-updates
               >
                 <RefreshCw size={15} strokeWidth={1.75} /> {t('update.checkMenu')}
                 {/* the one place that answers "which version am I on" at a glance */}
-                <span className="ml-auto text-2xs text-ink-faint">
+                <span className="ml-auto text-meta text-ink-faint">
                   v{new URLSearchParams(window.location.search).get('dv')}
                 </span>
               </button>
@@ -256,7 +257,7 @@ export default function ProjectSwitcher({ onSwitched, children }: { onSwitched: 
                   setCloseToTray(on);
                   void window.desktop!.tray!({ on }).then((r) => setCloseToTray(r.closeToTray)).catch(() => setCloseToTray(!on));
                 }}
-                className="w-full text-left px-3 py-2 text-sm text-ink-muted hover:bg-wash transition-colors flex items-center gap-2"
+                className="w-full text-left px-3 py-2 text-control text-ink-muted hover:bg-wash transition-colors flex items-center gap-2"
                 title={t('switcher.closeToTrayHint')}
                 data-close-to-tray={closeToTray ? 'on' : 'off'}
               >

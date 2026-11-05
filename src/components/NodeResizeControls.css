@@ -1,0 +1,59 @@
+/* Geometry grips share one visual vocabulary; hit targets are independent of it. */
+.node-resize-controls { position: absolute; inset: 0; pointer-events: none; z-index: 12; }
+.node-resize-handle { pointer-events: auto; }
+.node-resize-handle,
+.selection-resize-handle {
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--color-ink-faint);
+  touch-action: none;
+  user-select: none;
+  transition: color 120ms ease;
+}
+.node-resize-handle > *,
+.selection-resize-handle > * { pointer-events: none; }
+.node-resize-handle:hover,
+.node-resize-handle:focus-visible,
+.node-resize-handle[data-resize-active='true'],
+.selection-resize-handle:hover,
+.selection-resize-handle:focus-visible,
+.selection-resize-handle[data-resize-active='true'] { color: var(--color-accent); }
+.node-resize-handle:focus-visible,
+.selection-resize-handle:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+.node-resize-handle {
+  position: absolute;
+  z-index: 12;
+  width: calc(var(--spacing-control-size) / clamp(.35, var(--tdag-zoom, 1), 1));
+  height: calc(var(--spacing-control-size) / clamp(.35, var(--tdag-zoom, 1), 1));
+  transform: translate(-50%, -50%);
+}
+.node-resize-width { left: 100%; top: 50%; cursor: ew-resize; }
+.node-resize-height { left: 75%; top: 100%; cursor: ns-resize; }
+.node-resize-both { left: 100%; top: 100%; cursor: nwse-resize; }
+.node-resize-controls[hidden],
+.node-resize-handle[hidden],
+.selection-resize-handle[hidden] { display: none; }
+
+.resize-grip { display: block; flex: none; }
+.resize-grip-width,
+.resize-grip-height { background: currentColor; border-radius: var(--radius-port); }
+.resize-grip-width { width: 2px; height: 14px; }
+.resize-grip-height { width: 14px; height: 2px; }
+.resize-grip-both { width: 14px; height: 14px; transform: translate(-6px, -6px); }
+
+.selection-resizer[data-selection-gesture='width'] .selection-resize-width,
+.selection-resizer[data-selection-gesture='height'] .selection-resize-height,
+.selection-resizer[data-selection-gesture='both'] .selection-resize-both { color: var(--color-accent); }
+
+@media (prefers-reduced-motion: reduce) {
+  .node-resize-handle,
+  .selection-resize-handle { transition: none; }
+}

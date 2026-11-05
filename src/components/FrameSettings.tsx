@@ -9,7 +9,7 @@ import { confirmDialog } from '../lib/ui-store';
 import { isImeComposing } from '../utils';
 import { useT, fmt } from '../i18n';
 
-const actionClass = 'w-full min-h-8 px-2.5 py-1.5 rounded-control text-xs text-ink-muted hover:bg-wash transition-colors flex items-center gap-2 text-left focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-40 disabled:cursor-not-allowed';
+const actionClass = 'w-full min-h-8 px-2.5 py-1.5 rounded-control text-control text-ink-muted hover:bg-wash transition-colors flex items-center gap-2 text-left focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-40 disabled:cursor-not-allowed';
 const colorLabels = {
   gray: 'frame.colorGray', violet: 'frame.colorViolet', amber: 'frame.colorAmber',
   green: 'frame.colorGreen', sky: 'frame.colorSky', rose: 'frame.colorRose',
@@ -28,13 +28,13 @@ function FrameName({ frame }: { frame: ThoughtNode }) {
   const dismiss = useInlineEditDismiss({ active: editing, ref: editor, onOutside: commit, onCancel: cancel });
   return <div ref={editor} onBlur={dismiss.onBlur} className="space-y-2">
     <label className="block space-y-1.5">
-      <span className="text-xs text-ink-muted">{t('frame.settingsName')}</span>
+      <span className="text-control text-ink-muted">{t('frame.settingsName')}</span>
       <input data-frame-name aria-label={t('frame.settingsName')} type="text" maxLength={120}
         value={editing ? draft : frame.data.question} placeholder={t('frame.titlePlaceholder')}
         onFocus={() => { setDraft(frame.data.question); setEditing(true); }}
         onChange={event => { setDraft(event.target.value); setEditing(true); }}
         onKeyDown={event => { if (event.key === 'Enter' && !isImeComposing(event)) { event.preventDefault(); event.stopPropagation(); commit(); } }}
-        className="h-9 w-full rounded-control border border-line bg-card px-2.5 text-sm text-ink placeholder:text-ink-faint outline-none focus:border-accent focus:ring-1 focus:ring-accent" />
+        className="h-9 w-full rounded-control border border-line bg-card px-2.5 text-control text-ink placeholder:text-ink-faint outline-none focus:border-accent focus:ring-1 focus:ring-accent" />
     </label>
     {editing && draft !== frame.data.question && <div className="flex justify-end gap-1">
       <button type="button" className={`${actionClass} !w-auto`} onClick={cancel} aria-label={t('common.cancel')}><X size={14} /></button>
@@ -62,9 +62,9 @@ export default function FrameSettings({ frames, children }: { frames: ThoughtNod
   return <>
     <section className="px-4 py-3 space-y-3" aria-label={t('frame.settingsBasic')} data-frame-settings>
       {frames.length === 1 ? <FrameName key={frames[0].id} frame={frames[0]} />
-        : <p className="text-xs text-ink-muted leading-relaxed">{t('frame.namesIndependent')}</p>}
+        : <p className="text-control text-ink-muted">{t('frame.namesIndependent')}</p>}
       <div className="space-y-2">
-        <div className="flex gap-2 items-center text-xs text-ink-muted">
+        <div className="flex gap-2 items-center text-control text-ink-muted">
           <span>{t('frame.settingsColor')}</span>
           {colors.size > 1 && <span className="text-ink-faint">{t('format.mixed')}</span>}
         </div>
@@ -81,8 +81,8 @@ export default function FrameSettings({ frames, children }: { frames: ThoughtNod
     </section>
     <div className="border-t border-line">{children}</div>
     <section className="px-4 py-3 border-t border-line space-y-3" aria-label={t('frame.settingsMovement')}>
-      <h3 className="text-xs font-medium text-ink">{t('frame.settingsMovement')}</h3>
-      <label className="flex items-start gap-2 text-xs text-ink-muted cursor-pointer min-h-6 leading-5">
+      <h3 className="text-title font-semibold text-ink">{t('frame.settingsMovement')}</h3>
+      <label className="flex items-start gap-2 text-control text-ink-muted cursor-pointer min-h-6 leading-5">
         <input ref={carryInput} type="checkbox" checked={allCarry} aria-checked={mixedCarry ? 'mixed' : allCarry}
           data-frame-carry onChange={event => useStore.getState().setFrameProperties(ids, { carry: event.target.checked })}
           className="h-3.5 w-3.5 mt-0.5 shrink-0 accent-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent" />
@@ -90,9 +90,9 @@ export default function FrameSettings({ frames, children }: { frames: ThoughtNod
       </label>
     </section>
     <section className="px-4 py-3 border-t border-line space-y-2" aria-label={t('frame.settingsRange')}>
-      <h3 className="text-xs font-medium text-ink">{t('frame.settingsRange')}</h3>
-      <p className="text-xs text-ink-muted leading-relaxed" data-frame-range-hint>{t('frame.rangeHint')}</p>
-      <p className="text-xs text-ink-muted leading-relaxed" data-frame-content-count>
+      <h3 className="text-title font-semibold text-ink">{t('frame.settingsRange')}</h3>
+      <p className="text-control text-ink-muted" data-frame-range-hint>{t('frame.rangeHint')}</p>
+      <p className="text-control text-ink-muted" data-frame-content-count>
         {fmt(t('frame.contentCount'), { nodes: content.length })}
         {nestedFrames > 0 && <span className="block">{fmt(t('frame.nestedCount'), { n: nestedFrames })}</span>}
       </p>

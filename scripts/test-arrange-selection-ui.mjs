@@ -36,6 +36,9 @@ const positions = (nodes) => nodes.map(({ id, position }) => ({ id, position }))
 const size = (node) => ({ w: node.measured?.width ?? node.width, h: node.measured?.height ?? node.height });
 const select = (ids) => page.evaluate((ids) => window.__store.getState().setSelectedNodeIds(ids), ids);
 const expandFormat = async () => {
+  // The inspector mounts after the canvas double-click grace period.
+  await page.locator('[data-node-format-panel]').waitFor();
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
   const reopen = page.locator('[data-node-format-reopen]');
   if (await reopen.isVisible()) await reopen.click();
 };
@@ -323,10 +326,10 @@ try {
   await select([frameId, 'arrange-a', 'arrange-b']);
   await expandFormat();
   assert.ok(await page.locator('[data-create-selection-frame]').isDisabled(), 'A selection containing a partition cannot create another partition');
-  await arrangeMenu();
-  assert.equal(await page.locator('[data-arrange-chain]').isDisabled(), false, 'A selected partition and its contents remain eligible for automatic layout');
   const beforeRegionLayout = await readNodes();
-  await page.locator('[data-arrange-chain]').click();
+  await page.locator('[data-toolbar-more]').click();
+  await page.locator('[data-layout-entry]').click();
+  await page.locator('[data-layout-apply]').click();
   await page.waitForFunction(() => !window.__canvasEditing.getState().layoutBusy);
   const afterRegionLayout = await readNodes();
   assert.deepEqual(afterRegionLayout.find(n => n.id === 'arrange-c').position, beforeRegionLayout.find(n => n.id === 'arrange-c').position);
@@ -428,6 +431,8 @@ try {
   await page.getByRole('button', { name: 'English', exact: true }).click();
   await page.locator('[data-appearance-lighting]').getByRole('button', { name: 'Dark', exact: true }).click();
   await closeMenus();
+  // Restoring the format card after a temporary tool mounts it folded.
+  await expandFormat();
   await page.locator('[data-selection-align]').click();
   assert.equal(await page.getByRole('menuitem', { name: 'Align left', exact: true }).count(), 1);
   await menuWithinViewport('Align');
@@ -445,7 +450,7 @@ try {
   assert.ok(await page.locator('[data-create-selection-frame]').isVisible());
   check('desktop, narrow viewport, dark theme and English menus remain accessible');
   await closeMenus();
-  for (const width of [390, 800]) {
+  for (const width of [1000, 390, 800]) {
     await page.setViewportSize({ width, height: 844 });
     await fixture(['arrange-a', 'arrange-b']);
     await page.evaluate(() => {
@@ -459,28 +464,37 @@ try {
     await page.locator('[data-node-format-close]').click();
     await page.locator('.react-flow__node[data-id="arrange-a"] [data-node-details]').click();
     const readingPanel = page.locator('[data-focus-panel]');
-    await readingPanel.waitFor();
-    await page.locator('[data-selection-toolbar]').waitFor();
-    assert.equal(await page.locator('[data-selection-toolbar]').count(), 1, 'Reading and formatting remain available together');
-    const panelBox = await readingPanel.boundingBox();
-    assert.ok(panelBox && panelBox.x >= 0 && panelBox.x + panelBox.width <= width, 'Reading panel remains in the viewport');
-    assert.deepEqual([...(await page.evaluate(() => window.__store.getState().selectedNodeIds))].sort(), ['arrange-a']);
-    if (width === 390) await page.screenshot({ path: `${outputDir}/reading-mobile.png` });
-    await readingPanel.getByTitle('关闭面板', { exact: true }).click();
+    if (width >= 960) {
+      await readingPanel.waitFor();
+      const panelBox = await readingPanel.boundingBox();
+      assert.ok(panelBox && panelBox.x >= 0 && panelBox.x + panelBox.width <= width, 'Reading panel remains in the viewport');
+      assert.equal(await page.locator('[data-selection-toolbar]').count(), 1, 'Reading and formatting remain available together');
+      await page.locator('[data-node-details-close]').click();
+    } else {
+      // The reading contract closes details below 960px and keeps the selection.
+      await page.waitForFunction(() => !window.__ui.getState().panelOpen);
+      assert.equal(await readingPanel.count(), 0, 'Narrow windows reserve space for the canvas and format card');
+      if (width === 390) await page.screenshot({ path: `${outputDir}/reading-collapsed-mobile.png` });
+    }
     await page.locator('[data-selection-toolbar]').waitFor();
     const closedNodes = await readNodes();
     assert.equal(closedNodes.length, 3);
     assert.deepEqual([...(await page.evaluate(() => window.__store.getState().selectedNodeIds))].sort(), ['arrange-a']);
     assert.equal(await page.evaluate(() => window.__store.getState().selectedNodeId), 'arrange-a');
-    await page.locator('[data-node-format-reopen]').click();
+    await expandFormat();
     const toolbarBox = await page.locator('[data-selection-toolbar]').boundingBox();
     assert.ok(toolbarBox && toolbarBox.x >= 0 && toolbarBox.x + toolbarBox.width <= width, 'Restored selection toolbar remains in the viewport');
     assert.equal(await page.locator('[data-selection-align]').count(), 1);
     assert.equal(await page.locator('[data-selection-group]').count(), 0);
     assert.ok(await page.locator('[data-create-selection-frame]').isVisible());
     if (width === 390) await page.screenshot({ path: `${outputDir}/reading-closed-mobile.png` });
-    check(`reading at ${width}px coexists with formatting and closing preserves the selection within the viewport`);
+    check(width >= 960
+      ? `reading at ${width}px coexists with formatting and closing preserves the selection within the viewport`
+      : `reading at ${width}px closes automatically while the selection and format actions remain usable`);
   }
+  await page.setViewportSize({ width: 1600, height: 1000 });
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  assert.equal(await page.locator('[data-focus-panel]').count(), 0, 'Widening the window does not reopen previously closed details');
   assert.deepEqual(errors, [], 'No runtime errors');
   assert.deepEqual(writes, [], 'No external write/model requests');
   await writeFile(`${outputDir}/results.json`, JSON.stringify({ checks, errors, writes }, null, 2));

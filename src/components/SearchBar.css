@@ -1,0 +1,39 @@
+.canvas-tool-panel.canvas-search-panel {
+  border-radius: var(--radius-overlay);
+  box-shadow: none;
+  transition: border-color .15s;
+}
+/* One input boundary, without the generic transparent-field outline or a second ring. */
+.canvas-search-panel:has(.canvas-search-input:focus-visible) { border-color: var(--color-accent); }
+.canvas-search-row {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  min-height: 40px;
+  gap: 8px;
+  padding: 0 12px;
+}
+.canvas-search-input {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--color-ink);
+  font-size: var(--text-control);
+  font-weight: 400;
+  line-height: var(--text-control--line-height);
+}
+.canvas-search-input::placeholder { color: var(--color-ink-faint); opacity: 1; }
+.canvas-search-input:focus-visible { outline: none; box-shadow: none; }
+.canvas-search-close { display: flex; align-items: center; justify-content: center; width: 24px; height: 28px; border-radius: var(--radius-control); }
+.canvas-search-close:focus-visible { outline-offset: -2px; }
+.canvas-search-hint {
+  flex-shrink: 0;
+  margin: 0;
+  padding: 8px 12px;
+  border-top: 1px solid color-mix(in srgb, var(--color-line) 60%, transparent);
+  color: var(--color-ink-faint);
+  font-size: var(--text-control);
+  line-height: var(--text-control--line-height);
+}

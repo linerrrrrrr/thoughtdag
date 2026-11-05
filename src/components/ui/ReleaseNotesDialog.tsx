@@ -35,8 +35,8 @@ export default function ReleaseNotesDialog() {
         data-release-notes
       >
         <div className="px-6 pt-5 pb-4 border-b border-line">
-          <div className="text-2xs uppercase tracking-wide text-ink-faint">ThoughtDAG</div>
-          <h2 id="release-notes-title" className="text-base font-semibold text-ink mt-0.5">{t('releaseNotes.title')}</h2>
+          <div className="text-control uppercase tracking-wide text-ink-faint">ThoughtDAG</div>
+          <h2 id="release-notes-title" className="text-section font-semibold text-ink mt-0.5">{t('releaseNotes.title')}</h2>
         </div>
         <ol className="px-6 divide-y divide-line">
           {WHATS_NEW.map((entry) => {
@@ -44,13 +44,13 @@ export default function ReleaseNotesDialog() {
             return (
               <li key={entry.version} className="py-4" data-release={entry.version}>
                 <div className="flex items-baseline gap-2.5 flex-wrap">
-                  <span className="text-sm font-semibold text-ink tabular-nums">v{entry.version}</span>
-                  <span className="text-xs text-ink-faint tabular-nums">{entry.date}</span>
+                  <span className="text-title font-semibold text-ink tabular-nums">v{entry.version}</span>
+                  <span className="text-meta text-ink-faint tabular-nums">{entry.date}</span>
                   {current && (
-                    <span className="text-2xs font-medium uppercase tracking-wide text-accent bg-accent/10 rounded-tag px-2 py-0.5">{t('releaseNotes.current')}</span>
+                    <span className="text-control font-medium uppercase tracking-wide text-accent bg-accent/10 rounded-tag px-2 py-0.5">{t('releaseNotes.current')}</span>
                   )}
                 </div>
-                <p className="text-sm text-ink-muted leading-relaxed mt-1.5 [overflow-wrap:anywhere]">{entry.lead[lang]}</p>
+                <p className="text-body text-ink-muted mt-1.5 [overflow-wrap:anywhere]">{entry.lead[lang]}</p>
                 <WhatsNewItems items={entry.items} lang={lang} />
               </li>
             );
@@ -58,14 +58,14 @@ export default function ReleaseNotesDialog() {
         </ol>
         <div className="sticky bottom-0 bg-card px-6 py-4 border-t border-line flex items-center justify-between gap-4">
           {/* the history's two doors back to the repository: the full notes, and the star */}
-          <div className="flex items-center gap-2 text-xs min-w-0 flex-wrap">
+          <div className="flex items-center gap-2 text-control min-w-0 flex-wrap">
             <a href={`${REPO_URL}/releases`} target="_blank" rel="noreferrer" className="text-ink-muted hover:text-ink hover:underline" data-release-notes-github>{t('releaseNotes.onGithub')}</a>
             <span className="text-ink-faint" aria-hidden>｜</span>
             <a href={REPO_URL} target="_blank" rel="noreferrer" className="font-medium text-accent hover:underline whitespace-nowrap" data-release-notes-star>{t('whatsNew.starLink')} ⭐？</a>
           </div>
           <button
             onClick={() => setOpen(false)}
-            className="text-xs text-ink px-4 py-2 rounded-control border border-line hover:bg-wash transition-colors"
+            className="text-control text-ink px-4 py-2 rounded-control border border-line hover:bg-wash transition-colors"
           >
             {t('common.close')}
           </button>

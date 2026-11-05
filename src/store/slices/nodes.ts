@@ -68,7 +68,8 @@ export const createNodeSlice: StateCreator<StoreState, [], [], NodeSlice> = (set
 
   setSelectionGeometry: (ids, patch) => {
     if (condenseGuard()) return;
-    const nodes = applySelectionGeometry(get().nodes, ids, patch);
+    const patches = Array.isArray(patch) ? patch : [patch];
+    const nodes = patches.reduce((current, edit) => applySelectionGeometry(current, ids, edit), get().nodes);
     if (nodes === get().nodes) return;
     get().pushHistory();
     set({ nodes });

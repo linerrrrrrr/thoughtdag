@@ -1,0 +1,282 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>模型与 Agent：用户操作流程演示</title>
+</head>
+<body>
+<div id="td-flow-proposal">
+  <style>
+    #td-flow-proposal { --td-bg:light-dark(#F4F5F7,#171B22); --td-card:light-dark(#FFFFFF,#222833); --td-wash:light-dark(#EBEEF3,#2B3240); --td-line:light-dark(#CDD3DD,#465164); --td-ink:light-dark(#202632,#E9EDF4); --td-muted:light-dark(#515E70,#BAC3D2); --td-accent:light-dark(#6B5CE7,#A79FF4); --td-action:light-dark(#6251D8,#A79FF4); --td-action-ink:light-dark(#FFFFFF,#171B22); --td-user:light-dark(#EDF2FA,#263B58); --td-warn:light-dark(#866424,#D5BB83); --td-note:light-dark(#FFFCF5,#2C2922); color:var(--td-ink); font:14px/1.5 'Inter Variable','Microsoft YaHei','Segoe UI',sans-serif; }
+    #td-flow-proposal * { box-sizing:border-box; }
+    #td-flow-proposal [hidden] { display:none !important; }
+    #td-flow-proposal h2,#td-flow-proposal h3,#td-flow-proposal p { margin:0; }
+    #td-flow-proposal h2 { font-size:18px; font-weight:600; }
+    #td-flow-proposal h3 { font-size:16px; font-weight:600; }
+    #td-flow-proposal button,#td-flow-proposal input,#td-flow-proposal select,#td-flow-proposal textarea { font:inherit; color:inherit; }
+    #td-flow-proposal button { min-height:32px; padding:5px 10px; border:1px solid var(--td-line); border-radius:6px; background:var(--td-card); text-align:center; }
+    #td-flow-proposal button:hover:not(:disabled) { background:var(--td-wash); }
+    #td-flow-proposal button:disabled { opacity:.5; cursor:not-allowed; }
+    #td-flow-proposal button:focus-visible,#td-flow-proposal input:focus-visible,#td-flow-proposal select:focus-visible,#td-flow-proposal textarea:focus-visible { outline:2px solid var(--td-accent); outline-offset:3px; }
+    #td-flow-proposal button.primary { background:var(--td-action); color:var(--td-action-ink); border-color:var(--td-action); }
+    #td-flow-proposal button.primary:hover { filter:brightness(.95); }
+    #td-flow-proposal button[aria-pressed=true] { border-color:var(--td-accent); background:var(--td-wash); color:var(--td-ink); }
+    #td-flow-proposal button.ghost { border-color:transparent; background:transparent; }
+    #td-flow-proposal input:not([type=checkbox]),#td-flow-proposal select,#td-flow-proposal textarea { display:block; width:100%; min-width:0; background:var(--td-card); border:1px solid var(--td-line); border-radius:6px; padding:7px 9px; }
+    #td-flow-proposal textarea { min-height:102px; resize:vertical; font-size:16px; line-height:1.75; }
+    #td-flow-proposal label.field { display:flex; flex-direction:column; gap:5px; min-width:0; }
+    #td-flow-proposal input[type=checkbox] { width:16px; height:16px; accent-color:var(--td-accent); flex-shrink:0; }
+    #td-flow-proposal .muted { color:var(--td-muted); }
+    #td-flow-proposal .small { font-size:12px; }
+    #td-flow-proposal .row { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+    #td-flow-proposal .between { justify-content:space-between; }
+    #td-flow-proposal .stack { display:flex; flex-direction:column; gap:12px; min-width:0; }
+    #td-flow-proposal .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+    #td-flow-proposal .app { background:var(--td-bg); border:1px solid var(--td-line); border-radius:14px; overflow:hidden; }
+    #td-flow-proposal .chrome { padding:12px 16px; display:flex; align-items:center; gap:12px; flex-wrap:wrap; border-bottom:1px solid var(--td-line); background:var(--td-card); padding-right:96px; }
+    #td-flow-proposal .brand { font-size:16px; font-weight:600; }
+    #td-flow-proposal .chrome .title { flex:1; min-width:130px; }
+    #td-flow-proposal .process { padding:16px; border-bottom:1px solid var(--td-line); background:var(--td-card); }
+    #td-flow-proposal .process-title { margin-bottom:12px; }
+    #td-flow-proposal .steps { display:grid; grid-template-columns:1fr 24px 1fr 24px 1fr 24px 1fr 24px 1fr; align-items:center; gap:4px; }
+    #td-flow-proposal .step { padding:8px 5px; text-align:left; border:0; border-bottom:2px solid transparent; border-radius:0; background:transparent; }
+    #td-flow-proposal .step span { display:block; }
+    #td-flow-proposal .step[aria-pressed=true] { border:0; border-bottom:2px solid var(--td-accent); background:transparent; }
+    #td-flow-proposal .step .small { color:var(--td-muted); }
+    #td-flow-proposal .flow-arrow { width:24px; height:20px; color:var(--td-muted); }
+    #td-flow-proposal .workspace { display:grid; grid-template-columns:minmax(0,1fr) 340px; }
+    #td-flow-proposal .canvas { padding:20px; min-width:0; background-image:radial-gradient(var(--td-line) .8px,transparent .8px); background-size:20px 20px; }
+    #td-flow-proposal .canvas-title { margin-bottom:16px; }
+    #td-flow-proposal .node { max-width:460px; margin:auto; background:var(--td-card); border:1px solid var(--td-line); border-radius:14px; }
+    #td-flow-proposal .node-head { padding:9px 14px; border-bottom:1px solid var(--td-line); display:flex; align-items:center; justify-content:space-between; gap:8px; }
+    #td-flow-proposal .node-body { padding:14px 16px; }
+    #td-flow-proposal .node.question { border-color:var(--td-accent); }
+    #td-flow-proposal .node .question-text { background:var(--td-user); border-radius:8px 8px 4px 8px; padding:10px 12px; margin-bottom:10px; font-size:16px; }
+    #td-flow-proposal .node-link { display:block; margin:auto; width:100%; height:46px; color:var(--td-muted); }
+    #td-flow-proposal .node-summary { display:flex; flex-direction:column; gap:6px; padding:10px 16px; border-top:1px solid var(--td-line); }
+    #td-flow-proposal .node-summary .row { gap:6px; }
+    #td-flow-proposal .tag { font-size:12px; color:var(--td-muted); }
+    #td-flow-proposal .inspector { padding:20px 16px; border-left:1px solid var(--td-line); background:var(--td-card); min-width:0; }
+    #td-flow-proposal .inspector header { margin-bottom:16px; }
+    #td-flow-proposal .section { padding-top:12px; border-top:1px solid var(--td-line); }
+    #td-flow-proposal .choice { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+    #td-flow-proposal .choice button { padding:9px 8px; }
+    #td-flow-proposal .choice button span { display:block; }
+    #td-flow-proposal .connection { padding:10px 0; border-bottom:1px solid var(--td-line); }
+    #td-flow-proposal .connection strong { font-weight:500; }
+    #td-flow-proposal .notice { padding:10px 12px; background:var(--td-note); color:var(--td-warn); border-radius:8px; overflow-wrap:anywhere; }
+    #td-flow-proposal .check { display:flex; align-items:flex-start; gap:8px; padding:8px 0; }
+    #td-flow-proposal .kv { display:grid; grid-template-columns:76px minmax(0,1fr); gap:8px; }
+    #td-flow-proposal .kv > :nth-child(odd) { color:var(--td-muted); }
+    #td-flow-proposal .kv span { overflow-wrap:anywhere; }
+    #td-flow-proposal .timeline { margin:0; padding:0 0 0 20px; }
+    #td-flow-proposal .timeline li { padding:6px 0; }
+    #td-flow-proposal .request { border-top:1px solid var(--td-line); padding-top:12px; }
+    #td-flow-proposal .footer { border-top:1px solid var(--td-line); background:var(--td-card); padding:10px 16px; }
+    #td-flow-proposal .footer span { overflow-wrap:anywhere; }
+    #td-flow-proposal .branches { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+    #td-flow-proposal .branches .node { width:100%; }
+    #td-flow-proposal .draft { border:1px dashed var(--td-line); padding:14px; border-radius:14px; background:var(--td-card); max-width:460px; margin:auto; }
+    #td-flow-proposal .pathtext { overflow-wrap:anywhere; }
+    @media(max-width:760px) { #td-flow-proposal .workspace { grid-template-columns:1fr; } #td-flow-proposal .inspector { border-left:0; border-top:1px solid var(--td-line); } #td-flow-proposal .canvas { padding:16px; } }
+    @media(max-width:540px) { #td-flow-proposal .steps { grid-template-columns:1fr; gap:0; } #td-flow-proposal .step { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:6px 8px; } #td-flow-proposal .flow-arrow { width:24px; height:24px; justify-self:center; transform:rotate(90deg); } #td-flow-proposal .process { padding:12px; } #td-flow-proposal .chrome { padding:12px; padding-right:96px; } #td-flow-proposal .grid2,#td-flow-proposal .branches { grid-template-columns:1fr; } }
+    @media(pointer:coarse) { #td-flow-proposal button { min-height:44px; } #td-flow-proposal input,#td-flow-proposal select { font-size:16px; } }
+  </style>
+  <div class="app">
+    <div class="chrome">
+      <span class="brand">ThoughtDAG</span>
+      <span class="title muted">模型与 Agent · 操作流程</span>
+      <span class="small muted">设计提案 · 模拟状态</span>
+    </div>
+    <div class="process">
+      <div class="row between process-title"><h2>从选择到交接</h2><span class="small muted">选择步骤，查看对应界面</span></div>
+      <div class="steps" aria-label="用户操作流程">
+        <button type="button" class="step cursor-interaction" data-step="connect" aria-pressed="false"><span>接入</span><span class="small">连接与可用状态</span></button>
+        <svg class="flow-arrow" aria-hidden="true"><path d="M2 10H20M15 5L20 10L15 15" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>
+        <button type="button" class="step cursor-interaction" data-step="choose" aria-pressed="true"><span>选择</span><span class="small">方式、执行者、模型</span></button>
+        <svg class="flow-arrow" aria-hidden="true"><path d="M2 10H20M15 5L20 10L15 15" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>
+        <button type="button" class="step cursor-interaction" data-step="context" aria-pressed="false"><span>检查</span><span class="small">上下文与会话去向</span></button>
+        <svg class="flow-arrow" aria-hidden="true"><path d="M2 10H20M15 5L20 10L15 15" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>
+        <button type="button" class="step cursor-interaction" data-step="run" aria-pressed="false"><span>执行</span><span class="small">发送、审批、结果</span></button>
+        <svg class="flow-arrow" aria-hidden="true"><path d="M2 10H20M15 5L20 10L15 15" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>
+        <button type="button" class="step cursor-interaction" data-step="handoff" aria-pressed="false"><span>交接</span><span class="small">新节点换方式</span></button>
+      </div>
+    </div>
+    <div class="workspace">
+      <div class="canvas">
+        <div class="row between canvas-title"><span class="muted">画布 · 项目改进</span><button type="button" class="ghost cursor-interaction" data-go="connect">连接与默认</button></div>
+        <div class="node">
+          <div class="node-head"><span>需求与验收清单</span><span class="tag">已完成 · 模型回答</span></div>
+          <div class="node-body"><div class="question-text">整理需求，并列出可以验证的验收条件。</div><div>方案、限制和验收条件已整理，可交给下一步处理。</div></div>
+          <div class="node-summary"><span class="small muted">研究接入 · 模型甲 · 来源记录固定</span></div>
+        </div>
+        <svg class="node-link" aria-hidden="true"><path d="M50 0" fill="none"/><line x1="50%" x2="50%" y1="0" y2="37" stroke="currentColor" stroke-width="1.3"/><path class="headpath" d="M-5 -6L0 0L5 -6" transform="translate(0 0)" fill="none"/><svg x="50%" y="35" width="12" height="10" overflow="visible"><path d="M-5 -5L0 1L5 -5" fill="none" stroke="currentColor" stroke-width="1.3"/></svg></svg>
+        <div class="node question" id="td-active-node">
+          <div class="node-head"><span id="td-node-title">下一步问题</span><span class="tag" id="td-node-state">草稿 · 模型回答</span></div>
+          <div class="node-body stack">
+            <label class="field" for="td-question"><span class="small muted">本轮问题</span><textarea id="td-question">检查这些验收条件是否完整，指出需要补充的内容。</textarea></label>
+            <div class="row between"><span class="small muted" id="td-context-count">上下文：1 个节点 · 1 份材料</span><button type="button" class="ghost cursor-interaction" data-go="context">检查上下文</button></div>
+            <div class="row"><button type="button" class="cursor-interaction" data-go="choose" id="td-node-route">模型回答 · 研究接入</button><span class="small muted" id="td-node-model">模型甲</span></div>
+            <div id="td-node-agent" class="small muted stack" hidden><span class="pathtext" id="td-node-directory">目录：D:/project</span><span id="td-node-session">新建会话 · 带入所连上下文</span></div>
+            <div class="row between"><span class="small muted" id="td-node-tools">工具：按本次选择启用</span><button type="button" class="primary cursor-interaction" id="td-send">发送问题</button></div>
+          </div>
+        </div>
+        <svg class="node-link" aria-hidden="true"><line x1="50%" x2="50%" y1="0" y2="37" stroke="currentColor" stroke-width="1.3"/><svg x="50%" y="35" width="12" height="10" overflow="visible"><path d="M-5 -5L0 1L5 -5" fill="none" stroke="currentColor" stroke-width="1.3"/></svg></svg>
+        <div class="draft stack" id="td-next-node"><span>从结果拉出新节点</span><span class="small muted">继续当前方式，或改选模型 / Agent</span><div class="row"><button type="button" class="cursor-interaction" data-go="handoff">查看混用路径</button></div></div>
+      </div>
+      <aside class="inspector" aria-label="当前步骤的 GUI">
+        <section data-panel="connect" hidden>
+          <header><h3>连接与默认</h3><span class="small muted">全局入口 · 配置不启动任务</span></header>
+          <div class="stack">
+            <div class="connection stack"><div class="row between"><strong>研究接入</strong><span class="small muted">模型 API · 示例就绪</span></div><div class="row"><button type="button" class="cursor-interaction" id="td-config-api">编辑接入</button><button type="button" class="cursor-interaction" data-route-use="api">本节点使用</button></div></div>
+            <div class="connection stack"><div class="row between"><strong>项目助手</strong><span class="small muted" id="td-agent-ready">Agent · 未验证</span></div><span class="small muted">执行位置：本机</span><div class="row"><button type="button" class="cursor-interaction" id="td-probe">模拟检查</button><button type="button" class="cursor-interaction" data-route-use="agent">本节点使用</button></div></div>
+            <div id="td-api-form" hidden class="stack section">
+              <label class="field">连接名称<input id="td-api-name" value="研究接入" autocomplete="off"></label>
+              <label class="field">接口地址<input value="https://api.example.com/v1" autocomplete="off" readonly></label>
+              <label class="field">密钥<input value="演示中不收集密钥" readonly></label>
+              <div class="row"><button type="button" class="cursor-interaction" id="td-test">模拟测试连接</button><button type="button" class="primary cursor-interaction" id="td-save-api" disabled>保存接入</button><button type="button" class="ghost cursor-interaction" id="td-cancel-api">取消</button></div>
+              <span class="small muted" id="td-api-state" role="status">尚未测试</span>
+            </div>
+            <div class="section stack"><label class="field">新节点默认方式<select id="td-default"><option value="api">模型回答</option><option value="agent">Agent 执行</option></select></label><button type="button" class="cursor-interaction" id="td-save-default">应用默认设置</button><span class="small muted">当前草稿与历史节点保持其选择</span></div>
+          </div>
+        </section>
+        <section data-panel="choose">
+          <header><h3>本轮由谁完成</h3><span class="small muted">节点设置 · 先方式，再选模型</span></header>
+          <div class="stack">
+            <div class="choice"><button type="button" class="cursor-interaction" data-route="api" aria-pressed="true"><span>模型回答</span><span class="small muted">分析 / 写作 / 资料</span></button><button type="button" class="cursor-interaction" data-route="agent" aria-pressed="false"><span>Agent 执行</span><span class="small muted">文件 / 命令 / 工具</span></button></div>
+            <div id="td-api-options" class="stack">
+              <label class="field">API 连接<select id="td-api-connection"><option>研究接入</option><option>备用接入</option></select></label>
+              <label class="field">模型<select id="td-api-model"><option>模型甲</option><option>模型乙</option></select></label>
+              <label class="check"><input type="checkbox" id="td-search"><span>启用已接入的搜索工具</span></label>
+              <span class="small muted">根据资料类型和工具能力选择模型</span>
+            </div>
+            <div id="td-agent-options" class="stack" hidden>
+              <label class="field">Agent 实例<select id="td-agent"><option value="project">项目助手 · 本机</option><option value="review">复核助手 · 本机</option><option value="host">宿主助手 · 需要插件连接</option></select></label>
+              <label class="field">Agent 的模型<select id="td-agent-model"><option>使用 Agent 默认模型</option><option>模型丙</option><option>模型丁</option></select></label>
+              <label class="field">工作目录<input id="td-cwd" value="D:/project" autocomplete="off"></label>
+              <label class="field">权限<select id="td-permission"><option>需要时询问</option><option>自动审查（需运行时支持）</option></select></label>
+              <button type="button" class="cursor-interaction" id="td-save-agent">应用目录与权限</button>
+              <div class="notice small" id="td-host-warning" hidden>宿主未连接；完成插件接入后才能发送</div>
+              <span class="small muted">本地执行不等于模型离线</span>
+            </div>
+            <div class="section stack"><span class="small muted">只修改当前草稿，发送前可继续调整</span><button type="button" class="primary cursor-interaction" data-go="context">下一步：检查上下文</button></div>
+          </div>
+        </section>
+        <section data-panel="context" hidden>
+          <header><h3>本轮将接收什么</h3><span class="small muted">非模态检查 · 与画布协同</span></header>
+          <div class="stack">
+            <div><label class="check"><input type="checkbox" id="td-ctx-answer" checked><span>需求与验收清单<span class="small muted"> · 已选回答版本</span></span></label><label class="check"><input type="checkbox" id="td-ctx-material" checked><span>需求材料<span class="small muted"> · 已选片段</span></span></label><label class="check"><input type="checkbox" id="td-ctx-tools"><span>工具记录<span class="small muted"> · 作为历史证据</span></span></label></div>
+            <button type="button" class="cursor-interaction" id="td-apply-context">应用上下文选择</button>
+            <div class="section stack" id="td-session-controls" hidden>
+              <label class="field">来源场景<select id="td-source"><option value="cross">来自模型回答节点</option><option value="tail">同一 Agent 的未改动链尾</option><option value="edited">历史分支或上下文已修改</option><option value="other">切换了 Agent 或目录</option></select></label>
+              <div class="kv"><span>会话去向</span><span id="td-session-result">新建会话</span><span>原因</span><span id="td-session-reason">跨运行方式，携带所连上下文</span></div>
+              <div class="notice small" id="td-native-history" hidden>继续原会话会保留原生历史；若要排除旧历史，需以检查后的上下文新建会话。</div>
+            </div>
+            <div class="section kv"><span>运行方式</span><span id="td-check-mode">模型回答</span><span>内容范围</span><span id="td-check-count">1 个节点 · 1 份材料</span><span>执行授权</span><span>不从上游节点自动继承</span></div>
+            <div class="row"><button type="button" class="cursor-interaction" data-go="choose">返回选择</button><button type="button" class="primary cursor-interaction" id="td-reviewed-send">发送问题</button></div>
+          </div>
+        </section>
+        <section data-panel="run" hidden>
+          <header><h3>执行与待处理</h3><span class="small muted">本轮身份在发送时固定</span></header>
+          <div class="stack">
+            <div class="kv"><span>状态</span><span id="td-run-state">尚未发送</span><span>执行者</span><span id="td-run-owner">待发送后记录</span><span>当前模型</span><span id="td-run-model">待发送后记录</span></div>
+            <ol class="timeline" id="td-run-log"><li class="muted">等待明确发送</li></ol>
+            <div id="td-run-actions" class="row" hidden><button type="button" class="cursor-interaction" id="td-complete">模拟完成</button><button type="button" class="cursor-interaction" id="td-stop">停止</button><button type="button" class="ghost cursor-interaction" id="td-disconnect">模拟失联</button></div>
+            <div id="td-request" class="request stack" hidden><strong>等待授权 · 项目操作</strong><span class="small muted">工作目录内写入一份结果文件</span><div class="row"><button type="button" class="cursor-interaction" id="td-deny">拒绝</button><button type="button" class="primary cursor-interaction" id="td-allow">仅本次允许</button></div></div>
+            <div id="td-run-finished" class="section stack" hidden><span class="small muted" id="td-result-note"></span><button type="button" class="cursor-interaction" data-go="handoff">从结果创建下一步</button></div>
+            <div id="td-run-empty" class="row"><button type="button" class="cursor-interaction" data-go="context">返回发送前检查</button></div>
+          </div>
+        </section>
+        <section data-panel="handoff" hidden>
+          <header><h3>混用发生在节点之间</h3><span class="small muted">连接传递上下文 · 下游明确发送</span></header>
+          <div class="stack">
+            <label class="field">操作路径<select id="td-example"><option value="plan">模型拟方案 → Agent 实施 → 模型复核</option><option value="evidence">Agent 取证 → 模型分析 → Agent 处理</option><option value="team">Agent 甲产出 → 模型整理 → Agent 乙接手</option></select></label>
+            <ol class="timeline" id="td-example-steps"><li>模型：需求、限制和验收清单</li><li>Agent：明确目录后执行并留证据</li><li>模型：根据结果与证据复核</li></ol>
+            <div class="section stack"><span>交接给下一节点</span><label class="check"><input type="checkbox" checked disabled><span>已选择的回答、材料与证据</span></label><label class="check"><input type="checkbox" disabled><span>上游密钥、会话授权与隐藏状态</span></label></div>
+            <div class="notice small">多个 Agent 共用目录时，需检查写入冲突。断开上下文边不隔离文件。</div>
+            <div class="row"><button type="button" class="cursor-interaction" id="td-next-api">新建模型子节点</button><button type="button" class="cursor-interaction" id="td-next-agent">新建 Agent 子节点</button></div>
+          </div>
+        </section>
+      </aside>
+    </div>
+    <div class="footer row between"><span class="small muted" id="td-feedback" role="status" aria-live="polite">选择仅改变草稿；明确发送后才开始执行。</span><span class="small muted">不连接真实服务</span></div>
+  </div>
+  <script>
+    (() => {
+      const root=document.getElementById('td-flow-proposal');
+      const q=s=>root.querySelector(s), all=s=>Array.from(root.querySelectorAll(s));
+      const state={step:'choose',route:'api',run:'draft',ready:false,source:'cross',cwd:'D:/project',permission:'需要时询问',answer:true,material:true,tools:false,contextChanged:false,runOwner:'',runModel:'',defaultRoute:'api',example:'plan',approved:false};
+      const running=()=>state.run==='running'||state.run==='waiting';
+      const say=t=>q('#td-feedback').textContent=t;
+      const remember=()=>{try{const p=window.openai?.setWidgetState?.({modelContent:{step:state.step,mode:state.route==='api'?'模型回答':'Agent 执行',scenario:q('#td-example').selectedOptions[0].textContent},privateContent:{step:state.step,route:state.route,example:state.example}});p?.catch(()=>{});}catch{}};
+      const currentModel=()=>state.route==='api'?q('#td-api-model').value:q('#td-agent-model').value;
+      const currentOwner=()=>state.route==='api'?q('#td-api-connection').value:q('#td-agent').selectedOptions[0].textContent;
+      const canResume=()=>state.route==='agent'&&state.source==='tail'&&!state.contextChanged&&q('#td-agent').value==='project'&&state.cwd==='D:/project';
+      function showStep(step,save=true){if(!['connect','choose','context','run','handoff'].includes(step))return;state.step=step;all('[data-step]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.step===step)));all('[data-panel]').forEach(p=>p.hidden=p.dataset.panel!==step);if(save)remember();}
+      function route(value,save=true){if(running()){say('本轮正在执行；先停止或完成，再在新节点选择执行者。');return;}state.route=value==='agent'?'agent':'api';state.contextChanged=false;update();if(save)remember();}
+      function update(){
+        const agent=state.route==='agent',active=running(),finished=['completed','stopped','unknown'].includes(state.run),host=agent&&q('#td-agent').value==='host';
+        all('[data-route]').forEach(b=>{b.setAttribute('aria-pressed',String(b.dataset.route===state.route));b.disabled=active||finished;});
+        q('#td-api-options').hidden=agent;q('#td-agent-options').hidden=!agent;q('#td-node-agent').hidden=!agent;q('#td-session-controls').hidden=!agent;q('#td-host-warning').hidden=!host;
+        q('#td-node-route').textContent=(agent?'Agent 执行':'模型回答')+' · '+(state.runOwner||currentOwner());q('#td-node-model').textContent=state.runModel||currentModel();
+        q('#td-node-directory').textContent='目录：'+state.cwd;
+        const resume=canResume(),session=resume?'继续原会话':'新建会话';
+        q('#td-node-session').textContent=session+(resume?' · 保留原生历史':' · 带入所连上下文');q('#td-session-result').textContent=session;
+        const reasons={cross:'跨运行方式，携带所连上下文',tail:'同一 Agent、同目录、未改动的会话链尾',edited:'历史分支或上下文发生变化',other:'执行者或目录已改变'};
+        q('#td-session-reason').textContent=resume?reasons.tail:state.contextChanged?'已修改本轮上下文范围':state.source==='tail'?'执行者或目录与来源不一致':reasons[state.source];
+        q('#td-native-history').hidden=!resume;
+        const count=(state.answer?'1 个节点':'0 个节点')+' · '+(state.material?'1 份材料':'0 份材料')+(state.tools?' · 工具证据':'');
+        q('#td-context-count').textContent='上下文：'+count;q('#td-check-count').textContent=count;q('#td-check-mode').textContent=agent?'Agent 执行':'模型回答';
+        q('#td-node-tools').textContent=agent?state.permission:(q('#td-search').checked?'工具：搜索':'工具：未启用');
+        const blocked=active||finished||host||(agent&&!state.ready)||!q('#td-question').value.trim()||(agent&&!state.cwd.trim());
+        q('#td-send').textContent=agent?'开始执行':'发送问题';q('#td-reviewed-send').textContent=agent?'开始执行':'发送问题';q('#td-send').disabled=blocked;q('#td-reviewed-send').disabled=blocked;
+        ['#td-api-connection','#td-api-model','#td-agent','#td-agent-model','#td-cwd','#td-permission','#td-search','#td-source','#td-ctx-answer','#td-ctx-material','#td-ctx-tools','#td-save-agent','#td-apply-context'].forEach(s=>q(s).disabled=active||finished);
+        q('#td-question').readOnly=active||finished;
+        q('#td-next-api').disabled=active;q('#td-next-agent').disabled=active;
+        const labels={draft:'草稿',running:'执行中',waiting:'等待授权',completed:'已完成',stopped:'已停止',unknown:'状态未确认'};
+        q('#td-node-state').textContent=labels[state.run]+' · '+(agent?'Agent 执行':'模型回答');q('#td-run-state').textContent=state.run==='draft'?'尚未发送':labels[state.run];
+        q('#td-run-owner').textContent=state.runOwner||'待发送后记录';q('#td-run-model').textContent=state.runModel||'待发送后记录';
+        q('#td-run-actions').hidden=!active;q('#td-request').hidden=state.run!=='waiting';q('#td-run-finished').hidden=!finished;q('#td-run-empty').hidden=state.run!=='draft';q('#td-complete').disabled=state.run==='waiting';
+      }
+      function send(){update();if(q('#td-send').disabled){say(state.route==='agent'&&!state.ready?'先在“接入”检查 Agent 可用状态。':'当前条件不足；检查连接、问题和执行状态。');return;}
+        state.run=state.route==='agent'?'waiting':'running';state.runOwner=currentOwner();state.runModel=currentModel();state.approved=false;
+        q('#td-run-log').innerHTML=state.route==='agent'?'<li>本轮执行配置已固定</li><li>读取所选项目与上下文</li><li>请求写入工作目录中的结果文件</li>':'<li>本轮连接与模型已固定</li><li>编译已选择的节点与材料</li><li>请求模型回答</li>';
+        update();showStep('run');say('模拟执行已开始；选择和关闭面板不会批准请求。');if(state.run==='waiting')q('#td-deny').focus();
+      }
+      function appendLog(t){const li=document.createElement('li');li.textContent=t;q('#td-run-log').append(li);}
+      function end(status){if(!running())return;state.run=status;const text={completed:'已收到完成确认；结果与实际执行者保留。',stopped:'已确认停止；此前的文件变化和输出仍需检查。',unknown:'连接中断，终态待核对；不要直接重放执行。'}[status];appendLog(text);q('#td-result-note').textContent=text;update();say(text);}
+      function next(value){if(running()){say('当前任务仍在执行；可先停止或完成。');return;}state.run='draft';state.runOwner='';state.runModel='';state.source='cross';state.contextChanged=false;q('#td-source').value='cross';q('#td-question').value=value==='agent'?'根据上游方案检查项目，并按验收条件执行。':'根据上游结果与证据复核，列出结论与仍缺少的证据。';q('#td-node-title').textContent='下一步问题';route(value);showStep('choose');say('已模拟创建空白子节点；仍需明确发送。');}
+      all('[data-step],[data-go]').forEach(b=>b.addEventListener('click',()=>showStep(b.dataset.step||b.dataset.go)));
+      all('[data-route]').forEach(b=>b.addEventListener('click',()=>{route(b.dataset.route);say(state.route==='agent'&&!state.ready?'Agent 尚未验证；在“接入”模拟检查后才能执行。':'当前节点已改选；问题草稿保持。');}));
+      all('[data-route-use]').forEach(b=>b.addEventListener('click',()=>{if(running()||state.run!=='draft'){say('请在新的未发送节点应用连接。');return;}route(b.dataset.routeUse);showStep('choose');say('连接已应用到当前草稿，尚未发送。');}));
+      q('#td-send').addEventListener('click',send);q('#td-reviewed-send').addEventListener('click',send);
+      q('#td-question').addEventListener('input',update);q('#td-question').addEventListener('keydown',e=>{if(e.isComposing||e.keyCode===229)return;if(e.key==='Enter'&&(e.ctrlKey||e.metaKey)){e.preventDefault();send();}if(e.key==='Escape'){e.currentTarget.blur();say('问题草稿保留；没有发送。');}});
+      ['#td-api-connection','#td-api-model','#td-agent-model','#td-search'].forEach(s=>q(s).addEventListener('change',update));
+      q('#td-agent').addEventListener('change',()=>{if(state.source==='tail')state.source='other';q('#td-source').value=state.source;update();});
+      q('#td-save-agent').addEventListener('click',()=>{const nextCwd=q('#td-cwd').value.trim();if(!nextCwd||!(/^[a-zA-Z]:[\\/]/.test(nextCwd)||nextCwd.startsWith('/'))){say('请输入绝对工作目录。');return;}if(state.cwd!==nextCwd){state.source='other';q('#td-source').value='other';}state.cwd=nextCwd;state.permission=q('#td-permission').value;update();say('目录与权限已明确应用；尚未开始执行。');});
+      q('#td-source').addEventListener('change',()=>{state.source=q('#td-source').value;update();say('会话去向已更新；预览没有创建会话。');});
+      q('#td-apply-context').addEventListener('click',()=>{const a=q('#td-ctx-answer').checked,m=q('#td-ctx-material').checked,t=q('#td-ctx-tools').checked;state.contextChanged=state.contextChanged||a!==state.answer||m!==state.material||t!==state.tools;state.answer=a;state.material=m;state.tools=t;update();say('上下文选择已应用；会话去向随实际变化重新判断。');});
+      q('#td-probe').addEventListener('click',()=>{state.ready=true;q('#td-agent-ready').textContent='Agent · 示例就绪';update();say('已模拟通过检测；真实实现须验证登录、协议与模型能力。');});
+      q('#td-config-api').addEventListener('click',()=>{q('#td-api-form').hidden=!q('#td-api-form').hidden;});
+      q('#td-test').addEventListener('click',()=>{q('#td-api-state').textContent='模拟测试成功；尚未保存';q('#td-save-api').disabled=false;});
+      q('#td-api-name').addEventListener('input',()=>{q('#td-save-api').disabled=true;q('#td-api-state').textContent='配置已改变，请重新测试';});
+      q('#td-save-api').addEventListener('click',()=>{const name=q('#td-api-name').value.trim();if(!name){say('请填写连接名称。');return;}q('#td-api-connection').options[0].textContent=name;q('#td-api-form').hidden=true;update();say('接入已模拟保存；未自动发送问题。');});
+      q('#td-cancel-api').addEventListener('click',()=>{q('#td-api-form').hidden=true;q('#td-api-name').value=q('#td-api-connection').options[0].textContent;q('#td-save-api').disabled=true;say('已取消当前表单编辑。');});
+      q('#td-save-default').addEventListener('click',()=>{state.defaultRoute=q('#td-default').value;say('已模拟应用新节点默认方式；当前草稿和历史节点未改变。');});
+      q('#td-allow').addEventListener('click',()=>{if(state.run!=='waiting')return;state.run='running';state.approved=true;appendLog('用户明确批准本次操作');update();say('仅批准本次操作；后续节点不自动继承。');});
+      q('#td-deny').addEventListener('click',()=>{if(state.run!=='waiting')return;state.run='running';appendLog('用户拒绝写入；等待 Agent 调整方案');update();say('拒绝已记录；拒绝不自动等于任务失败。');});
+      q('#td-complete').addEventListener('click',()=>end('completed'));q('#td-stop').addEventListener('click',()=>end('stopped'));q('#td-disconnect').addEventListener('click',()=>end('unknown'));
+      const examples={plan:['模型：整理需求、限制和验收清单','Agent：明确目录后执行并保留证据','模型：根据结果与证据复核'],evidence:['Agent：读取项目资料或计算数据','模型：解释原因与比较可选方案','Agent：用户选定后再执行处理'],team:['Agent 甲：在明确目录内完成任务','模型：整理目标、证据和待办事项','Agent 乙：独立确认目录与权限后接手']};
+      function example(){state.example=q('#td-example').value;q('#td-example-steps').replaceChildren(...examples[state.example].map(t=>{const li=document.createElement('li');li.textContent=t;return li;}));}
+      q('#td-example').addEventListener('change',()=>{example();remember();});q('#td-next-api').addEventListener('click',()=>next('api'));q('#td-next-agent').addEventListener('click',()=>next('agent'));
+      root.addEventListener('keydown',e=>{if(e.key!=='Escape'||e.isComposing||e.keyCode===229)return;if(!q('#td-api-form').hidden){e.stopPropagation();q('#td-cancel-api').click();q('#td-config-api').focus();}});
+      function restore(v){const p=v?.privateContent;if(!p)return;if(['api','agent'].includes(p.route))route(p.route,false);if(examples[p.example]){q('#td-example').value=p.example;example();}showStep(p.step,false);}
+      restore(window.openai?.widgetState);window.addEventListener('openai:set_globals',e=>{if(e.detail?.globals?.widgetState&&state.run==='draft')restore(e.detail.globals.widgetState);});update();
+    })();
+  </script>
+</div>
+
+</body>
+</html>

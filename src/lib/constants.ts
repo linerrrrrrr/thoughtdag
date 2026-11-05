@@ -68,6 +68,7 @@ export const PANEL_WIDTH_KEY = 'thoughtdag.panelWidth';
 export const PANEL_MIN_WIDTH = 380;
 export const PANEL_DEFAULT_WIDTH = 520;
 export const PANEL_INSET = 16; // Matches --spacing-canvas-inset in index.css.
+export const PANEL_MIN_WINDOW_WIDTH = 960; // Keep in sync with the narrow-panel CSS guard.
 
 export function loadPanelWidth(): number {
   const raw = localStorage.getItem(PANEL_WIDTH_KEY);

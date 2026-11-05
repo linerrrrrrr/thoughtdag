@@ -8,7 +8,7 @@ export default function LangSwitch({ variant = 'compact' }: { variant?: 'compact
   const inMenu = variant === 'menu';
 
   return (
-    <div role="group" aria-label={t('lang.label')} className={`flex border border-line rounded-control overflow-hidden ${inMenu ? 'w-full text-2xs' : 'h-control-size items-center bg-card'}`}>
+    <div role="group" aria-label={t('lang.label')} className={`flex border border-line rounded-control overflow-hidden ${inMenu ? 'w-full text-control' : 'h-control-size items-center bg-card'}`}>
       {(['en', 'zh'] as const).map((l, i) => (
         <button
           type="button"
@@ -17,7 +17,7 @@ export default function LangSwitch({ variant = 'compact' }: { variant?: 'compact
           aria-pressed={lang === l}
           className={inMenu ? `flex-1 px-1 py-1.5 transition-colors ${i > 0 ? 'border-l border-line' : ''} ${
             lang === l ? 'bg-accent/10 text-accent font-medium' : 'text-ink-muted hover:bg-wash'
-          }` : `w-8 h-full text-2xs font-medium transition-colors ${
+          }` : `w-8 h-full text-control font-medium transition-colors ${
             lang === l ? 'bg-action text-white' : 'text-ink-muted hover:bg-wash'
           }`}
         >

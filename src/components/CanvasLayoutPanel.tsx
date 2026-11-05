@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import type { ReactFlowInstance } from '@xyflow/react';
-import { LayoutGrid, Loader2, X } from 'lucide-react';
+import { Loader2, X } from 'lucide-react';
 import { useStore } from '../store';
 import { useT } from '../i18n';
 import { useCanvasEditing } from '../lib/canvas-editing';
@@ -14,6 +14,29 @@ import type { ThoughtNode, ThoughtEdge } from '../types';
 import './CanvasLayoutPanel.css';
 import { canvasToolViewport, useCanvasPanelPosition } from '../lib/use-canvas-panel-position';
 import { beginCanvasLayoutTask, canvasLayoutBounds, canvasLayoutErrorKey, fitCanvasLayout, readCanvasLayoutOptions, saveCanvasLayoutOptions } from '../lib/canvas-layout-preferences';
+
+const actionClass = 'min-h-8 px-2.5 rounded-control text-control text-ink-muted hover:bg-wash transition-colors flex items-center justify-center gap-2 focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-40 disabled:cursor-not-allowed';
+
+function LayoutChoices<V extends string>({ name, label, value, choices, disabled, onChange }: {
+  name: string;
+  label: string;
+  value: V;
+  choices: { value: V; label: string; disabled?: boolean }[];
+  disabled?: boolean;
+  onChange: (value: V) => void;
+}) {
+  const groupName = useId();
+  return <fieldset className="canvas-layout-field" disabled={disabled} {...{ [`data-layout-${name}`]: '' }}>
+    <legend>{label}</legend>
+    <div className="canvas-layout-choices" style={{ gridTemplateColumns: `repeat(${choices.length}, minmax(0, 1fr))` }}>
+      {choices.map((choice) => <label key={choice.value} className="canvas-layout-choice">
+        <input type="radio" name={groupName} value={choice.value} checked={value === choice.value}
+          disabled={choice.disabled} onChange={() => onChange(choice.value)} />
+        <span>{choice.label}</span>
+      </label>)}
+    </div>
+  </fieldset>;
+}
 
 export default function CanvasLayoutPanel({ flow: rf }: { flow: ReactFlowInstance<ThoughtNode, ThoughtEdge> }) {
   const t = useT();
@@ -117,65 +140,61 @@ export default function CanvasLayoutPanel({ flow: rf }: { flow: ReactFlowInstanc
     } catch { if (task.isCurrent()) setError('layout-failed'); }
     finally { stop(); task.finish(); if (pending.current === task) pending.current = undefined; }
   };
-  const apply = async (quick = false) => {
+  const apply = async () => {
     const task = beginCanvasLayoutTask();
     if (!task) return;
     pending.current = task;
     setError(undefined);
-    const appliedIds = quick ? (selectedIds.length ? selectedIds : undefined) : ids;
-    const saved = quick ? readCanvasLayoutOptions(appliedIds) : options;
-    const appliedOptions = quick && saved.method === 'manual' ? { ...saved, method: 'chains' as const } : saved;
     try {
-      const applied = await useStore.getState().applyCanvasLayout(appliedOptions, appliedIds, task.isCurrent);
+      const applied = await useStore.getState().applyCanvasLayout(options, ids, task.isCurrent);
       if (!task.isCurrent()) return;
       if (!applied.ok) { setError(applied.error); return; }
-      if (!quick) {
-        saveCanvasLayoutOptions(options);
-        useUiStore.getState().setDraft(draftKey, '');
-      }
+      saveCanvasLayoutOptions(options);
+      useUiStore.getState().setDraft(draftKey, '');
       useCanvasEditing.getState().setLayoutOpen(false);
-      fitCanvasLayout(rf, appliedIds);
+      fitCanvasLayout(rf, ids);
     } catch { if (task.isCurrent()) setError('layout-failed'); }
     finally { task.finish(); if (pending.current === task) pending.current = undefined; }
   };
   const errorMessage = t(canvasLayoutErrorKey(error));
   return <div ref={panel} style={panelPosition} className="canvas-tool-panel canvas-layout-panel nodrag nopan nowheel" role="dialog" aria-labelledby="canvas-layout-title" aria-busy={busy} data-canvas-layout-panel
     onKeyDown={(event) => { if (event.key !== 'Escape' || isImeComposing(event)) event.stopPropagation(); }}>
-    <div className="flex shrink-0 items-center justify-between gap-3 px-4 py-3 border-b border-line">
-      <h2 id="canvas-layout-title" className="text-sm font-medium">{t('canvasLayout.title')}</h2>
-      <button type="button" onClick={close} className="p-1 rounded-control hover:bg-wash" aria-label={t('common.close')}><X size={16} /></button>
-    </div>
-    <div className="shrink-0 border-b border-line px-4 py-3 space-y-2">
-      <button type="button" data-layout-quick disabled={busy} onClick={() => apply(true)}
-        className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-control bg-action text-white text-xs hover:bg-action-strong disabled:opacity-50 disabled:cursor-wait">
-        <LayoutGrid size={14} aria-hidden="true" />{t('canvasLayout.quick')}
-      </button>
-      <p className="text-xs text-ink-muted leading-relaxed">{t(selectedIds.length ? 'canvasLayout.quickSelection' : 'canvasLayout.quickAll')}</p>
+    <div className="canvas-layout-header flex shrink-0 items-center justify-between gap-3 px-4 py-3 border-b border-line">
+      <h2 id="canvas-layout-title" className="text-title font-semibold">{t('canvasLayout.title')}</h2>
+      <button type="button" onClick={close} className="flex h-7 w-7 -mr-1 items-center justify-center rounded-control text-ink-muted hover:bg-wash hover:text-ink transition-colors focus-visible:outline-2 focus-visible:outline-accent" aria-label={t('common.close')}><X size={16} /></button>
     </div>
     <div className="canvas-layout-fields">
-    <p className="text-xs text-ink-muted leading-relaxed">{t('canvasLayout.hint')}</p>
-    <label>{t('canvasLayout.scope')}<select value={scope} data-layout-scope onChange={(event) => {
-      setScope(event.target.value as typeof scope); setError(undefined); invalidate();
-    }}><option value="all">{t('canvasLayout.all')}</option><option value="selection" disabled={!selectedIds.length}>{t('canvasLayout.selection')}</option></select></label>
-    <label>{t('canvasLayout.method')}<select value={options.method} data-layout-method onChange={(event) => change('method', event.target.value as CanvasLayoutOptions['method'])}>
-      <option value="manual">{t('canvasLayout.manual')}</option><option value="chains">{t('canvasLayout.chains')}</option><option value="layers">{t('canvasLayout.layers')}</option>
-    </select></label>
-    <label>{t('canvasLayout.direction')}<select value={options.direction} data-layout-direction onChange={(event) => change('direction', event.target.value as CanvasLayoutOptions['direction'])}>
-      <option value="vertical">{t('canvasLayout.vertical')}</option><option value="horizontal">{t('canvasLayout.horizontal')}</option>
-    </select></label>
-    <label>{t('canvasLayout.density')}<select value={options.density} disabled={options.method === 'manual'} data-layout-density onChange={(event) => change('density', event.target.value as CanvasLayoutOptions['density'])}>
-      <option value="compact">{t('canvasLayout.compact')}</option><option value="standard">{t('canvasLayout.standard')}</option><option value="relaxed">{t('canvasLayout.relaxed')}</option>
-    </select></label>
-    <label>{t('canvasLayout.route')}<select value={options.route} data-layout-route onChange={(event) => change('route', event.target.value as CanvasLayoutOptions['route'])}>
-      <option value="curve">{t('canvasLayout.curve')}</option><option value="orthogonal">{t('canvasLayout.orthogonal')}</option>
-    </select></label>
-    {error && <p className="text-xs text-red-600" role="alert">{errorMessage}</p>}
-    {busy && <p className="flex items-center gap-2 text-xs text-ink-muted" role="status"><Loader2 size={14} className="animate-spin" />{t('canvasLayout.busy')}</p>}
+      <LayoutChoices name="scope" label={t('canvasLayout.scope')} value={scope} onChange={(value) => {
+        setScope(value); setError(undefined); invalidate();
+      }} choices={[
+        { value: 'all', label: t('canvasLayout.all') },
+        { value: 'selection', label: t('canvasLayout.selection'), disabled: !selectedIds.length },
+      ]} />
+      <LayoutChoices name="method" label={t('canvasLayout.method')} value={options.method} onChange={(value) => change('method', value)} choices={[
+        { value: 'manual', label: t('canvasLayout.manual') },
+        { value: 'chains', label: t('canvasLayout.chains') },
+        { value: 'layers', label: t('canvasLayout.layers') },
+      ]} />
+      <LayoutChoices name="direction" label={t('canvasLayout.direction')} value={options.direction} onChange={(value) => change('direction', value)} choices={[
+        { value: 'vertical', label: t('canvasLayout.vertical') },
+        { value: 'horizontal', label: t('canvasLayout.horizontal') },
+      ]} />
+      <LayoutChoices name="density" label={t('canvasLayout.density')} value={options.density} disabled={options.method === 'manual'} onChange={(value) => change('density', value)} choices={[
+        { value: 'compact', label: t('canvasLayout.compact') },
+        { value: 'standard', label: t('canvasLayout.standard') },
+        { value: 'relaxed', label: t('canvasLayout.relaxed') },
+      ]} />
+      <LayoutChoices name="route" label={t('canvasLayout.route')} value={options.route} onChange={(value) => change('route', value)} choices={[
+        { value: 'curve', label: t('canvasLayout.curve') },
+        { value: 'orthogonal', label: t('canvasLayout.orthogonal') },
+      ]} />
+    {error && <p className="text-control text-red-600" role="alert">{errorMessage}</p>}
+    {busy && <p className="flex items-center gap-2 text-control text-ink-muted" role="status"><Loader2 size={14} className="animate-spin" />{t('canvasLayout.busy')}</p>}
     </div>
-    <div className="flex shrink-0 flex-wrap justify-end gap-2 border-t border-line px-4 py-3">
-      <button type="button" className="px-3 py-1.5 rounded-control border border-line hover:bg-wash text-xs" onClick={cancel} data-layout-cancel>{t('canvasLayout.cancel')}</button>
-      <button type="button" disabled={busy} className="px-3 py-1.5 rounded-control border border-line hover:bg-wash text-xs disabled:opacity-50" onClick={preview} data-layout-preview>{t('canvasLayout.preview')}</button>
-      <button type="button" disabled={busy} className="px-3 py-1.5 rounded-control bg-action text-white text-xs hover:bg-action-strong disabled:opacity-50" onClick={() => apply()} data-layout-apply>{t('canvasLayout.apply')}</button>
+    <div className="canvas-layout-footer flex shrink-0 flex-wrap justify-end gap-1 border-t border-line px-2 py-2">
+      <button type="button" className={actionClass} onClick={cancel} data-layout-cancel>{t('canvasLayout.cancel')}</button>
+      <button type="button" disabled={busy} className={actionClass} onClick={preview} data-layout-preview>{t('canvasLayout.preview')}</button>
+      <button type="button" disabled={busy} className="text-control bg-action text-white px-3 min-h-8 rounded-control hover:bg-action-strong transition-colors disabled:opacity-40 disabled:cursor-not-allowed focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent" onClick={() => apply()} data-layout-apply>{t('canvasLayout.apply')}</button>
     </div>
   </div>;
 }

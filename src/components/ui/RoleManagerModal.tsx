@@ -44,9 +44,9 @@ function Row({ role, onCommit, onRemove }: {
           onChange={(e) => { setName(e.target.value); setEditing(true); }}
           onKeyDown={event => { if (event.key === 'Enter' && !isImeComposing(event)) { event.preventDefault(); event.stopPropagation(); commit(); } }}
           placeholder={t('roles.namePlaceholder')}
-          className="flex-1 text-sm font-medium text-ink bg-transparent focus:outline-none placeholder-ink-faint"
+          className="flex-1 text-control font-medium text-ink bg-transparent focus:outline-none placeholder-ink-faint"
         />
-        {role.builtin && <span className="text-2xs text-ink-faint bg-wash px-1.5 py-0.5 rounded-tag shrink-0">{t('roles.builtin')}</span>}
+        {role.builtin && <span className="text-control text-ink-faint bg-wash px-1.5 py-0.5 rounded-tag shrink-0">{t('roles.builtin')}</span>}
         <button
           onClick={() => { setEditing(false); onRemove(role); }}
           title={t('common.delete')}
@@ -60,7 +60,7 @@ function Row({ role, onCommit, onRemove }: {
         onChange={(e) => { setPrompt(e.target.value); setEditing(true); }}
         placeholder={t('roles.promptPlaceholder')}
         rows={2}
-        className="w-full text-xs text-ink-muted bg-transparent focus:outline-none resize-y leading-relaxed placeholder-ink-faint"
+        className="w-full text-body text-ink-muted bg-transparent focus:outline-none resize-y placeholder-ink-faint"
       />
     </div>
   );
@@ -98,20 +98,20 @@ export default function RoleManagerModal() {
     <div className="fixed inset-0 z-[60] bg-ink/30 flex items-center justify-center p-6">
       <div ref={layerRef} role="dialog" aria-modal="true" aria-label={t('roles.managerTitle')} tabIndex={-1} className="bg-card rounded-panel shadow-lg border border-line w-[560px] max-h-[80vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center gap-2 px-5 py-3 border-b border-line shrink-0">
-          <span className="text-sm font-semibold text-ink">{t('roles.managerTitle')}</span>
-          <span className="text-2xs text-ink-faint flex-1">{t('roles.hint')}</span>
+          <span className="text-section font-semibold text-ink">{t('roles.managerTitle')}</span>
+          <span className="text-control text-ink-faint flex-1">{t('roles.hint')}</span>
           <button onClick={() => setOpen(false)} className="text-ink-faint hover:text-ink w-7 h-7 rounded-control hover:bg-wash flex items-center justify-center transition-colors shrink-0">
             <X size={15} strokeWidth={1.75} />
           </button>
         </div>
         <div className="flex-1 min-h-0 overflow-y-auto px-5 py-3 space-y-2">
           {roles.map((r) => <Row key={r.id} role={r} onCommit={commit} onRemove={remove} />)}
-          {roles.length === 0 && <p className="text-xs text-ink-faint italic py-2">{t('roles.empty')}</p>}
+          {roles.length === 0 && <p className="text-control text-ink-faint italic py-2">{t('roles.empty')}</p>}
         </div>
         <div className="flex items-center gap-2 px-5 py-3 border-t border-line shrink-0">
           <button
             onClick={add}
-            className="flex items-center gap-1.5 text-xs text-accent hover:bg-accent/10 px-3 py-1.5 rounded-control transition-colors"
+            className="flex items-center gap-1.5 text-control text-accent hover:bg-accent/10 px-3 py-1.5 rounded-control transition-colors"
           >
             <Plus size={14} strokeWidth={1.75} /> {t('roles.add')}
           </button>
@@ -119,7 +119,7 @@ export default function RoleManagerModal() {
           {lib.hidden.length > 0 && (
             <button
               onClick={() => setLib({ ...lib, hidden: [] })}
-              className="text-2xs text-ink-faint hover:text-ink-muted underline decoration-dotted transition-colors"
+              className="text-control text-ink-faint hover:text-ink-muted underline decoration-dotted transition-colors"
             >
               {t('roles.restore')}
             </button>

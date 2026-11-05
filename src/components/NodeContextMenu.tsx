@@ -50,7 +50,7 @@ export default function NodeContextMenu({ x, y, nodeId, onClose }: {
     ? (kind === 'note' || kind === 'link' ? node.data.question : '')
     : node.data.response;
 
-  const item = 'w-full text-left px-3 py-2 text-xs text-ink hover:bg-wash transition-colors flex items-center gap-2.5';
+  const item = 'w-full text-left px-3 py-2 text-control text-ink hover:bg-wash transition-colors flex items-center gap-2.5';
   const icon = 'text-ink-faint shrink-0';
 
   // Keep the menu inside the viewport (it renders at the pointer)
@@ -68,15 +68,15 @@ export default function NodeContextMenu({ x, y, nodeId, onClose }: {
           e.preventDefault();
           commitRename();
         }}>
-          <label htmlFor="node-display-name" className="block text-sm font-medium text-ink">{t('ctx.rename')}</label>
+          <label htmlFor="node-display-name" className="block text-control font-medium text-ink">{t('ctx.rename')}</label>
           <input id="node-display-name" data-node-rename value={renameDraft} onChange={(e) => setRenameDraft(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter' && isImeComposing(e)) e.preventDefault(); }}
             placeholder={getNodeDisplayName({ ...node.data, displayName: undefined }, t('ctx.unnamedNode'))}
-            autoFocus maxLength={80} className="w-full rounded-control border border-line bg-surface px-2.5 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-accent/30" />
-          <p className="text-xs text-ink-muted leading-relaxed">{t('ctx.renameHint')}</p>
+            autoFocus maxLength={80} className="w-full rounded-control border border-line bg-surface px-2.5 py-2 text-control text-ink focus:outline-none focus:ring-2 focus:ring-accent/30" />
+          <p className="text-control text-ink-muted">{t('ctx.renameHint')}</p>
           <div className="flex justify-end gap-2">
-            <button type="button" onClick={onClose} className="px-3 py-1.5 text-xs text-ink-muted hover:bg-wash rounded-control">{t('common.cancel')}</button>
-            <button type="submit" disabled={node.data.isLoading} className="px-3 py-1.5 text-xs text-white bg-accent hover:bg-accent-strong rounded-control disabled:opacity-50">{t('common.save')}</button>
+            <button type="button" onClick={onClose} className="px-3 py-1.5 text-control text-ink-muted hover:bg-wash rounded-control">{t('common.cancel')}</button>
+            <button type="submit" disabled={node.data.isLoading} className="px-3 py-1.5 text-control text-white bg-accent hover:bg-accent-strong rounded-control disabled:opacity-50">{t('common.save')}</button>
           </div>
         </form>
       ) : <>
@@ -141,7 +141,7 @@ export default function NodeContextMenu({ x, y, nodeId, onClose }: {
       )}
       <div className="h-px bg-line my-1" />
       <button
-        className="w-full text-left px-3 py-2 text-xs text-red-600 hover:bg-red-50 transition-colors flex items-center gap-2.5"
+        className="w-full text-left px-3 py-2 text-control text-red-600 hover:bg-red-50 transition-colors flex items-center gap-2.5"
         onClick={run(() => {
           void confirmDialog({
             title: ti('confirm.deleteNodesTitle'),

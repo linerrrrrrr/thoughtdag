@@ -46,11 +46,11 @@ export function HtmlMaterialView({ att, onSelect, clipMode, onClipped, baseUrl }
   }, []);
 
   if (failed) {
-    return <p className="text-sm text-ink-faint italic py-10 text-center">{t('reader.htmlNoText')}</p>;
+    return <p className="text-control text-ink-faint italic py-10 text-center">{t('reader.htmlNoText')}</p>;
   }
   if (!pages) {
     return (
-      <div className="flex items-center justify-center gap-2 h-full min-h-[200px] text-sm text-ink-muted">
+      <div className="flex items-center justify-center gap-2 h-full min-h-[200px] text-control text-ink-muted">
         <Loader2 size={16} strokeWidth={1.75} className="animate-spin text-accent" /> {t('reader.loading')}
       </div>
     );
@@ -60,7 +60,7 @@ export function HtmlMaterialView({ att, onSelect, clipMode, onClipped, baseUrl }
       {pages.map((p) => (
         <div key={p.page ?? 0} data-page={p.page ?? undefined} className="w-full max-w-[860px]">
           {p.page != null && (
-            <div className="text-2xs text-ink-faint font-mono text-center select-none pt-4 pb-2">— p.{p.page} —</div>
+            <div className="text-control text-ink-faint font-mono text-center select-none pt-4 pb-2">— p.{p.page} —</div>
           )}
           <PageFrame srcdoc={p.srcdoc} page={p.page} onSelect={onSelect} clipMode={clipMode} onClipped={onClipped} clipFailedText={t('reader.clipFailed')} />
         </div>
@@ -164,7 +164,7 @@ function PageFrame({ srcdoc, page, onSelect, clipMode, onClipped, clipFailedText
           onMouseLeave={() => { if (band) finishClip(); }}
         >
           {clipping && (
-            <div className="absolute top-2 right-2 flex items-center gap-1.5 text-2xs text-warm bg-card border border-line rounded-content px-2 py-1">
+            <div className="absolute top-2 right-2 flex items-center gap-1.5 text-control text-warm bg-card border border-line rounded-content px-2 py-1">
               <Loader2 size={11} strokeWidth={1.75} className="animate-spin" />
             </div>
           )}

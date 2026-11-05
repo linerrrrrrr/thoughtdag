@@ -20,8 +20,12 @@ export default function NodeDetailsButton({ nodeId, label = false, className = '
       if (event.key === 'Escape') handleDismissableLayerKeyDown(event.nativeEvent);
     }}
     onDoubleClick={(event) => event.stopPropagation()}
-    onClick={(event) => { event.stopPropagation(); useUiStore.getState().setPanelOpen(true, nodeId); }}
-    className={`nodrag nopan inline-flex shrink-0 items-center justify-center gap-1.5 rounded-control text-xs transition-colors focus-visible:outline-2 focus-visible:outline-accent ${label ? 'min-h-8 px-2' : 'w-7 h-7'} ${active ? 'text-accent bg-accent/10' : 'text-ink-muted hover:text-accent hover:bg-wash'} ${className}`}>
+    onClick={(event) => {
+      event.stopPropagation();
+      const ui = useUiStore.getState();
+      ui.setPanelOpen(!(ui.panelOpen && ui.panelNodeId === nodeId), nodeId);
+    }}
+    className={`nodrag nopan inline-flex shrink-0 items-center justify-center gap-1.5 rounded-control text-control transition-colors focus-visible:outline-2 focus-visible:outline-accent ${label ? 'min-h-8 px-2' : 'w-7 h-7'} ${active ? 'text-accent bg-accent/10' : 'text-ink-muted hover:text-accent hover:bg-wash'} ${className}`}>
     <BookOpen size={14} strokeWidth={1.75} />{label && t('ctx.openPanel')}
   </button>;
 }

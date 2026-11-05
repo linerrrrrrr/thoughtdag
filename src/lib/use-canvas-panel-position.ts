@@ -1,4 +1,17 @@
-import { useLayoutEffect, useState, type CSSProperties } from 'react';
+import { useLayoutEffect, useState, useSyncExternalStore, type CSSProperties } from 'react';
+import { PANEL_MIN_WINDOW_WIDTH } from './constants';
+
+const hasFocusPanelSpace = () => window.innerWidth >= PANEL_MIN_WINDOW_WIDTH;
+const subscribeToFocusPanelSpace = (onChange: () => void) => {
+  const media = window.matchMedia(`(min-width: ${PANEL_MIN_WINDOW_WIDTH}px)`);
+  media.addEventListener('change', onChange);
+  return () => media.removeEventListener('change', onChange);
+};
+
+/** Hide the reader before paint when the canvas no longer has room beside it. */
+export function useFocusPanelSpace() {
+  return useSyncExternalStore(subscribeToFocusPanelSpace, hasFocusPanelSpace);
+}
 
 /** Canvas tools share the format inspector's dock below the fixed header row. */
 export function useCanvasPanelPosition(open = true): CSSProperties {
@@ -30,7 +43,7 @@ export function canvasToolViewport(canvas: HTMLElement, panel: HTMLElement) {
   const canvasBounds = canvas.getBoundingClientRect();
   const panelBounds = panel.getBoundingClientRect();
   const readerBounds = document.querySelector<HTMLElement>('[data-focus-panel]')?.getBoundingClientRect();
-  const canvasRight = readerBounds && window.innerWidth >= 960 ? Math.min(canvasBounds.right, readerBounds.left - 16) : canvasBounds.right;
+  const canvasRight = readerBounds && hasFocusPanelSpace() ? Math.min(canvasBounds.right, readerBounds.left - 16) : canvasBounds.right;
   const top = Math.max(16, (document.querySelector('[data-canvas-header]')?.getBoundingClientRect().bottom ?? 66) - canvasBounds.top + 16);
   const beside = { x: 16, y: top, width: Math.max(0, panelBounds.left - canvasBounds.left - 32), height: Math.max(0, canvasBounds.height - top - 16) };
   const belowTop = panelBounds.bottom - canvasBounds.top + 16;

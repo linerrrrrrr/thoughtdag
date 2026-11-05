@@ -1521,6 +1521,11 @@ export async function apply(ctx, config) {
         return sendJson(res, 200, { title, text, fetchedAt: new Date().toISOString(), ...(html ? { html } : {}), url: r.url ?? target, truncated: !!r.truncated })
       }
       // ── agent runtimes on this machine (Pi today), the same surface the desktop shell has ──
+      if (path.startsWith('/local/')) {
+        const body = req.method === 'POST' ? await readJson(req).catch(() => null) : null
+        const localFiles = require(resolve(__dirname, 'runtime', 'local-files.cjs')).createLocalFiles({ allowRemoteOrigin: true })
+        if (await localFiles.handle(req, res, path, body)) return
+      }
       if (path.startsWith('/agents/')) {
         const body = req.method === 'POST' ? await readJson(req, MAX_WRITE_BODY_BYTES).catch(() => null) : null
         if (await agentsHttp().handle(req, res, path, body)) return

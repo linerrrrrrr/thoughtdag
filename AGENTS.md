@@ -29,6 +29,12 @@ npm run lint
 - 与用户交流用中文；代码标识符和注释保持英文。
 - UI 文案（i18n、tooltip、toast、placeholder）不出现第三方品牌名。功能性标识除外：环境变量名、导入格式的身份（如 ChatGPT 导出文件）、实际数据源（arXiv、Semantic Scholar）。举例、推荐、宣传式的品牌提及一律用通称（"外部 OCR 工具""其他助手"）或扩展名（.docx）替代。
 
+## 设计语言
+
+- 新增、调整或审查应用 UI 时，使用项目技能 [thoughtdag-design-system](.agents/skills/thoughtdag-design-system/SKILL.md)，按工具、阅读、画布场景选择规则。
+- [DESIGN.md](DESIGN.md) 说明视觉角色和组件组合；运行数值来自共享 CSS token。避免把当前局部差异直接升级为全局标准。
+- 开发服务器的 `/design-system.html` 提供规范样张；按 [设计验收](docs/reference/design-acceptance.md) 检查实际功能。`npm run design:check` 检查基础 token 快照；确认变量变更后用 `npm run design:sync` 同步受管字段。
+
 ## 编辑与退出（必遵守）
 
 **短名称外点保存；长内容外点收起并保留会话草稿；Esc 只取消最上层，绝不提交。发送、生成、授权、删除和配置提交必须明确触发。**

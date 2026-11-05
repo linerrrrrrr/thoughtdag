@@ -1,0 +1,30 @@
+/* Process text uses the same renderer and rhythm as the final answer. Tool
+   controls remain quiet disclosures between the original progress messages. */
+.agent-activity .activity-heading { font-weight: 500; }
+.agent-activity .activity-row { padding-block: 9px 12px; }
+.agent-activity .activity-commentary,
+.agent-activity .activity-text { white-space: normal; font-size: var(--text-body); line-height: var(--text-body--line-height); }
+.agent-activity .activity-commentary > :first-child,
+.agent-activity .activity-text > :first-child { margin-top: 0; }
+.agent-activity .activity-commentary > :last-child,
+.agent-activity .activity-text > :last-child { margin-bottom: 0; }
+.agent-activity .activity-commentary a,
+.agent-activity .activity-text a { overflow-wrap: anywhere; }
+.agent-activity .activity-commentary pre,
+.agent-activity .activity-text pre { max-width: 100%; overflow-x: auto; }
+.agent-activity .activity-row.activity-commentary::before,
+.agent-activity .activity-row.activity-message::before { display: none; }
+.agent-activity .activity-row.activity-commentary > .activity-marker,
+.agent-activity .activity-row.activity-message > .activity-marker { display: none; }
+.agent-activity .activity-row.activity-user::before,
+.agent-activity .activity-row.activity-user > .activity-marker { display: none; }
+.agent-activity .activity-user-message { margin-left: auto; width: fit-content; max-width: 88%; padding: 10px 14px; border-radius: 16px 16px 5px 16px; background: var(--conversation-user-bg, var(--color-wash)); color: var(--conversation-user-ink, var(--color-ink)); font-size: var(--text-body); line-height: var(--text-body--line-height); }
+.agent-activity .activity-user-message > :first-child { margin-top: 0; }
+.agent-activity .activity-user-message > :last-child { margin-bottom: 0; }
+.agent-activity .activity-item-heading { align-items: center; min-height: 25px; }
+.agent-activity .activity-status { font-weight: 400; }
+.agent-activity .activity-file-path,
+.agent-activity .activity-file-path p { display: inline; margin: 0; font-size: var(--text-control); line-height: var(--text-control--line-height); }
+.agent-activity .activity-file-path a { display: inline; }
+.agent-activity .activity-body { border-left: 1px solid var(--color-line); padding-left: 12px; }
+.agent-activity .activity-plan-pending { border-radius: 50%; }

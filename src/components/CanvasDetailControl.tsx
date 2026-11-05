@@ -12,7 +12,7 @@ import { restoreCanvasToolbarFocus } from '../lib/use-responsive-canvas-header';
 import { useT } from '../i18n';
 import { isViewerMode } from '../lib/viewer';
 
-const optionClass = 'flex min-h-8 items-center justify-center gap-1 rounded-control border px-2 py-1 text-xs transition-colors';
+const optionClass = 'flex min-h-8 items-center justify-center gap-1 rounded-control border px-2 py-1 text-control transition-colors';
 const optionState = (active: boolean) => active ? 'border-accent/40 bg-accent/10 text-accent' : 'border-line text-ink-muted hover:bg-wash';
 
 export function NodeDetailControls({ nodeId }: { nodeId: string }) {
@@ -21,8 +21,8 @@ export function NodeDetailControls({ nodeId }: { nodeId: string }) {
   if (!node || node.data.stepKind === 'frame') return null;
   const locked = node.data.detailLevel;
   return <fieldset className="min-w-0 space-y-2" data-node-detail-controls={nodeId}>
-    <legend className="text-xs font-medium text-ink">{t('detail.node')}</legend>
-    <p className="truncate text-xs text-ink-muted" title={getNodeDisplayName(node.data, t('ctx.unnamedNode'))}>{getNodeDisplayName(node.data, t('ctx.unnamedNode'))}</p>
+    <legend className="text-control font-medium text-ink">{t('detail.node')}</legend>
+    <p className="truncate text-control text-ink-muted" title={getNodeDisplayName(node.data, t('ctx.unnamedNode'))}>{getNodeDisplayName(node.data, t('ctx.unnamedNode'))}</p>
     <button type="button" className={`${optionClass} w-full ${optionState(!locked)}`} aria-pressed={!locked}
       onClick={() => setNodeDetail(nodeId)} data-node-detail="auto">
       <LockKeyholeOpen size={13} />{t('detail.follow')}
@@ -34,7 +34,7 @@ export function NodeDetailControls({ nodeId }: { nodeId: string }) {
         {locked === level && <LockKeyhole size={12} />}{t(`detail.${level}`)}
       </button>)}
     </div>
-    <p className="text-xs leading-relaxed text-ink-muted">{t('detail.lockHint')}</p>
+    <p className="text-control text-ink-muted">{t('detail.lockHint')}</p>
   </fieldset>;
 }
 
@@ -59,13 +59,14 @@ export default function CanvasDetailControl({ openPing = 0 }: { openPing?: numbe
     <button ref={trigger} type="button" onClick={() => setOpen((value) => !value)} aria-expanded={open}
       aria-controls="canvas-detail-panel" aria-label={t('detail.title')} title={`${t('detail.global')} · ${t(`detail.${detail}`)}`}
       className="canvas-toolbar-button canvas-toolbar-secondary canvas-toolbar-icon"
+      data-active={detail !== 'auto' || undefined}
       data-canvas-detail-trigger>
-      <ListFilter size={16} strokeWidth={1.75} className={detail !== 'auto' ? 'text-accent' : undefined} /><span className="canvas-toolbar-label">{t('detail.title')}</span>
+      <ListFilter size={16} strokeWidth={1.75} /><span className="canvas-toolbar-label">{t('detail.toolbarLabel')}</span>
     </button>
     {open && createPortal(<div ref={panel} tabIndex={-1} id="canvas-detail-panel" role="dialog" aria-label={t('detail.title')}
       className="canvas-tool-panel canvas-tool-menu p-3 space-y-3" style={position} data-canvas-detail-panel>
       <fieldset className="space-y-2">
-        <legend className="text-xs font-medium text-ink">{t('detail.global')}</legend>
+        <legend className="text-control font-medium text-ink">{t('detail.global')}</legend>
         <div className="grid grid-cols-2 gap-1" role="group" aria-label={t('detail.global')}>
           {(['auto', ...DETAIL_LEVELS] as const).map((level) => <button key={level} type="button"
             className={`${optionClass} ${optionState(detail === level)}`} aria-pressed={detail === level}

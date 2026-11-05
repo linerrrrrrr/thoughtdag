@@ -29,14 +29,14 @@ function MemoryRow() {
   return (
     <button
       onClick={() => setMemoryManagerOpen(true)}
-      className="w-full text-left rounded-control px-2 py-1.5 hover:bg-wash transition-colors group flex items-center gap-2 text-xs"
+      className="w-full text-left rounded-control px-2 py-1.5 hover:bg-wash transition-colors group flex items-center gap-2 text-control"
       title={t('memory.rowTitle')}
     >
       <span className="text-ink-faint shrink-0">🧠</span>
       <span className="text-ink-muted group-hover:text-accent transition-colors truncate flex-1">
         {t('memory.rowLabel')}
       </span>
-      <span className="text-2xs text-ink-faint font-mono shrink-0">{memories.length} · {tok} tok</span>
+      <span className="text-meta text-ink-faint font-mono shrink-0">{memories.length} · {tok} tokens</span>
     </button>
   );
 }
@@ -90,18 +90,18 @@ export default function ContextChainSection({
     }
     return by;
   }, [partition, ancestors]);
-  const rowCls = 'w-full text-left rounded-control px-2 py-1.5 hover:bg-wash transition-colors group flex items-center gap-2 text-xs';
-  const groupCls = 'text-2xs text-ink-faint font-medium mt-2 mb-0.5';
+  const rowCls = 'w-full text-left rounded-control px-2 py-1.5 hover:bg-wash transition-colors group flex items-center gap-2 text-control';
+  const groupCls = 'text-control text-ink-faint font-medium mt-2 mb-0.5';
 
   return (
     <div className="panel-card px-4 py-3">
       <button
         onClick={() => setContextOpen(!contextOpen)}
-        className="flex items-center gap-1.5 text-2xs font-semibold text-ink-muted mb-1 hover:text-ink transition-colors w-full"
+        className="flex items-center gap-1.5 text-control font-semibold text-ink-muted mb-1 hover:text-ink transition-colors w-full"
       >
         <span>{contextOpen ? <ChevronDown size={14} strokeWidth={1.75} /> : <ChevronRight size={14} strokeWidth={1.75} />}</span>
         <span>{t('chain.title')}</span>
-        <span className="text-ink-faint font-normal ml-auto">{totalContextTokens} tok</span>
+        <span className="text-meta text-ink-faint font-normal ml-auto">{totalContextTokens} tokens</span>
       </button>
 
       {contextOpen && (
@@ -139,13 +139,13 @@ export default function ContextChainSection({
                   {isSingleNodeReference(ref.edge) ? <span
                     onClick={(e) => { e.stopPropagation(); setEdgeStructural(ref.edge.id, true); }}
                     title={t('edge.depthToggleTitle')}
-                    className="text-2xs px-1.5 py-px rounded-tag shrink-0 cursor-pointer bg-wash text-ink-faint transition-shadow hover:ring-1 hover:ring-accent/40"
+                    className="text-control px-1.5 py-px rounded-tag shrink-0 cursor-pointer bg-wash text-ink-faint transition-shadow hover:ring-1 hover:ring-accent/40"
                   >
                     {t('edgeEditor.reference')} →—
-                  </span> : <span className="text-2xs px-1.5 py-px rounded-tag shrink-0 bg-wash text-ink-faint">
+                  </span> : <span className="text-control px-1.5 py-px rounded-tag shrink-0 bg-wash text-ink-faint">
                     {t(ref.edge.data?.isWatch ? 'edgeEditor.watch' : 'edgeEditor.branch')}
                   </span>}
-                  <span className="text-2xs text-ink-faint font-mono shrink-0">
+                  <span className="text-meta text-ink-faint font-mono shrink-0">
                     {countTokens(referenceBlockContent(ref))}
                   </span>
                 </button>
@@ -155,7 +155,7 @@ export default function ContextChainSection({
 
           {/* The conversation itself */}
           {ancestors.length === 0 && partition.materials.length === 0 && partition.references.length === 0 ? (
-            <p className="text-xs text-ink-faint italic mt-1">{t('chain.rootNode')}</p>
+            <p className="text-control text-ink-faint italic mt-1">{t('chain.rootNode')}</p>
           ) : (
             <>
             {(partition.materials.length > 0 || partition.references.length > 0) && ancestors.length > 0 && (
@@ -171,11 +171,11 @@ export default function ContextChainSection({
                 </span>
                 {staleDot(ancestor.id)}
                 {toolsIn.has(ancestor.id) && (
-                  <span className="text-2xs px-1.5 py-px rounded-tag bg-warm/10 text-warm shrink-0" title={t('chain.toolsInTitle')} data-chain-tools-in>
+                  <span className="text-control px-1.5 py-px rounded-tag bg-warm/10 text-warm shrink-0" title={t('chain.toolsInTitle')} data-chain-tools-in>
                     {fmt(t('chain.toolsIn'), { tok: toolsIn.get(ancestor.id)!.toLocaleString() })}
                   </span>
                 )}
-                <span className="text-2xs text-ink-faint font-mono shrink-0">
+                <span className="text-meta text-ink-faint font-mono shrink-0">
                   {countTokens(ancestor.data.question + ancestor.data.response) + (toolsIn.get(ancestor.id) ?? 0)}
                 </span>
               </button>

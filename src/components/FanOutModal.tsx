@@ -89,10 +89,10 @@ export default function FanOutModal({
       <div ref={layerRef} role="dialog" aria-modal="true" aria-label={t('fanout.title')} tabIndex={-1} className="bg-card border border-line rounded-panel shadow-lg w-full max-w-lg flex flex-col" onClick={(e) => e.stopPropagation()}>
         <div className="px-6 py-4 border-b border-line flex items-start justify-between gap-4">
           <div>
-            <h2 className="text-base font-semibold text-ink flex items-center gap-2">
+            <h2 className="text-section font-semibold text-ink flex items-center gap-2">
               <Split size={16} strokeWidth={1.75} className="text-warm" /> {t('fanout.title')}
             </h2>
-            <p className="text-xs text-ink-muted mt-1 leading-relaxed">{t('fanout.subtitle')}</p>
+            <p className="text-control text-ink-muted mt-1">{t('fanout.subtitle')}</p>
           </div>
           <button onClick={close} className="text-ink-faint hover:text-ink transition-colors shrink-0 mt-0.5">
             <X size={16} strokeWidth={1.75} />
@@ -110,7 +110,7 @@ export default function FanOutModal({
                 <button
                   key={m}
                   onClick={() => switchMode(m)}
-                  className={`text-xs px-3 py-2 rounded-control transition-colors flex items-center gap-1.5 ${
+                  className={`text-control px-3 py-2 rounded-control transition-colors flex items-center gap-1.5 ${
                     mode === m
                       ? (m === 'follow' ? 'bg-watch/10 text-watch font-medium ring-1 ring-watch/30' : 'bg-warm/15 text-warm font-medium ring-1 ring-warm/30')
                       : 'bg-wash text-ink-muted hover:bg-line'
@@ -120,40 +120,40 @@ export default function FanOutModal({
                 </button>
               ))}
             </div>
-            <p className="text-2xs text-ink-faint mt-1.5 leading-relaxed">
+            <p className="text-control text-ink-faint mt-1.5">
               {mode === 'once' ? t('fanout.modeOnceHint') : t('fanout.modeFollowHint')}
             </p>
             {mode === 'follow' && (
               <div className="mt-2 flex items-center gap-2">
-                <span className="text-2xs text-ink-muted">{t('fanout.rounds')}</span>
+                <span className="text-control text-ink-muted">{t('fanout.rounds')}</span>
                 {[1, 2, 3].map((r) => (
                   <button
                     key={r}
                     onClick={() => setRounds(r)}
-                    className={`text-2xs w-7 h-6 rounded-control transition-colors ${
+                    className={`text-control w-7 h-6 rounded-control transition-colors ${
                       rounds === r ? 'bg-watch/10 text-watch font-medium ring-1 ring-watch/30' : 'bg-wash text-ink-muted hover:bg-line'
                     }`}
                   >
                     {r}×
                   </button>
                 ))}
-                <span className="text-2xs text-ink-faint">{t('fanout.roundsHint')}</span>
+                <span className="text-control text-ink-faint">{t('fanout.roundsHint')}</span>
               </div>
             )}
           </div>
 
           <div>
-            <label className="text-2xs text-ink-faint uppercase tracking-wider font-medium block mb-1.5">{t(mode === 'follow' ? 'fanout.instruction' : 'fanout.question')}</label>
+            <label className="text-control text-ink-faint uppercase tracking-wider font-medium block mb-1.5">{t(mode === 'follow' ? 'fanout.instruction' : 'fanout.question')}</label>
             <textarea
               value={question}
               onChange={(e) => setQuestion(e.target.value)}
               rows={2}
-              className="w-full text-sm border border-line rounded-control px-3 py-2 focus:outline-none focus:ring-1 focus:ring-accent bg-surface resize-none leading-relaxed"
+              className="w-full text-body border border-line rounded-control px-3 py-2 focus:outline-none focus:ring-1 focus:ring-accent bg-surface resize-none"
             />
           </div>
 
           <div>
-            <label className="text-2xs text-ink-faint uppercase tracking-wider font-medium block mb-1.5">{t('fanout.templates')}</label>
+            <label className="text-control text-ink-faint uppercase tracking-wider font-medium block mb-1.5">{t('fanout.templates')}</label>
             <div className="flex flex-wrap gap-1.5">
               {library.map((tpl) => (
                 <button
@@ -164,7 +164,7 @@ export default function FanOutModal({
                     else next.add(tpl.id);
                     return next;
                   })}
-                  className={`text-2xs px-2.5 py-1.5 rounded-tag transition-colors ${
+                  className={`text-control px-2.5 py-1.5 rounded-tag transition-colors ${
                     picked.has(tpl.id) ? 'bg-warm/15 text-warm font-medium' : 'bg-wash hover:bg-line text-ink-muted'
                   }`}
                 >
@@ -175,25 +175,25 @@ export default function FanOutModal({
           </div>
 
           <div>
-            <label className="text-2xs text-ink-faint uppercase tracking-wider font-medium block mb-1.5">{t('fanout.custom')}</label>
+            <label className="text-control text-ink-faint uppercase tracking-wider font-medium block mb-1.5">{t('fanout.custom')}</label>
             <textarea
               value={customText}
               onChange={(e) => setCustomText(e.target.value)}
               rows={4}
               placeholder={t('fanout.customPlaceholder')}
-              className="w-full text-xs border border-line rounded-control px-3 py-2 focus:outline-none focus:ring-1 focus:ring-accent bg-surface resize-y leading-relaxed font-mono"
+              className="w-full text-body border border-line rounded-control px-3 py-2 focus:outline-none focus:ring-1 focus:ring-accent bg-surface resize-y font-mono"
             />
           </div>
         </div>
 
         <div className="px-6 py-4 border-t border-line flex justify-end gap-2">
-          <button onClick={() => { useUiStore.getState().setDraft(draftKey, ''); onClose(); }} className="text-xs text-ink-muted hover:text-ink px-4 py-2 rounded-control hover:bg-wash transition-colors">
+          <button onClick={() => { useUiStore.getState().setDraft(draftKey, ''); onClose(); }} className="text-control text-ink-muted hover:text-ink px-4 py-2 rounded-control hover:bg-wash transition-colors">
             {t('common.cancel')}
           </button>
           <button
             onClick={run}
             disabled={!question.trim() || roles.length === 0}
-            className={`text-xs text-white px-5 py-2 rounded-control transition-colors disabled:opacity-30 ${
+            className={`text-control text-white px-5 py-2 rounded-control transition-colors disabled:opacity-30 ${
               mode === 'follow' ? 'bg-watch/90 hover:bg-watch' : 'bg-warm hover:bg-warm/90'
             }`}
           >

@@ -76,11 +76,11 @@ export default function AgentPermissionChip() {
       <button
         onClick={() => { if (!disabled) void choose(m); }}
         disabled={disabled}
-        className="w-full text-left px-3 py-1.5 text-xs hover:bg-wash disabled:hover:bg-transparent disabled:opacity-50 flex items-start gap-2"
+        className="w-full text-left px-3 py-1.5 text-control hover:bg-wash disabled:hover:bg-transparent disabled:opacity-50 flex items-start gap-2"
         data-agent-permission={m}
       >
         <RowIcon size={14} strokeWidth={1.75} className={`shrink-0 mt-0.5 ${m === 'allow' ? 'text-amber-600 dark:text-amber-400' : 'text-ink-faint'}`} />
-        <span className="flex-1 min-w-0"><span className="block text-ink">{t(LABEL[m])}</span><span className="block text-2xs text-ink-faint leading-relaxed">{t(hint)}</span></span>
+        <span className="flex-1 min-w-0"><span className="block text-ink">{t(LABEL[m])}</span><span className="block text-control text-ink-faint">{t(hint)}</span></span>
         {mode === m && <Check size={13} strokeWidth={2} className="shrink-0 mt-0.5 text-accent" />}
       </button>
     );
@@ -91,7 +91,7 @@ export default function AgentPermissionChip() {
       <CanvasToolbarOverflowAction label={`${t('agent.perm')} · ${t(LABEL[shown])}`} icon={<Icon size={14} />}>
       <button
         onClick={(e) => { e.stopPropagation(); setOpen((v) => !v); }}
-        className={`bg-card border rounded-control h-8 px-2.5 flex items-center gap-1.5 hover:bg-wash transition-colors text-xs ${shown === 'allow' ? 'border-amber-400/70 text-amber-700 dark:text-amber-300' : 'border-line text-ink'}`}
+        className={`bg-card border rounded-control h-8 px-2.5 flex items-center gap-1.5 hover:bg-wash transition-colors text-control ${shown === 'allow' ? 'border-amber-400/70 text-amber-700 dark:text-amber-300' : 'border-line text-ink'}`}
         title={`${t('agent.perm')} · ${t(LABEL[shown])}`}
         data-agent-permission-chip={shown}
         aria-expanded={open}
@@ -103,16 +103,16 @@ export default function AgentPermissionChip() {
       </CanvasToolbarOverflowAction>
       {open && (
         <div ref={panelRef} tabIndex={-1} className="canvas-tool-panel canvas-tool-menu py-1.5" style={panelPosition} onClick={(e) => e.stopPropagation()} data-agent-permission-menu>
-          <p className="text-2xs text-ink-faint uppercase tracking-wider font-medium px-3 pt-1 pb-1">{t('agent.perm')} · {t('agent.permScope')}</p>
+          <p className="text-control text-ink-faint uppercase tracking-wider font-medium px-3 pt-1 pb-1">{t('agent.perm')} · {t('agent.permScope')}</p>
           {row('ask', ASK_HINT[lane])}
           {row('auto', lane === 'harness' && hostAuto === false ? 'agent.permAutoHarnessOff' : AUTO_HINT[lane], autoOff)}
           {row('allow', lane === 'harness' ? 'agent.permAllowHarness' : 'agent.permAllowHint')}
           {lane === 'pi' && allowed.length > 0 && (
             <>
               <div className="border-t border-line/60 my-1" />
-              <p className="text-2xs text-ink-faint px-3 pt-1 pb-1">{t('agent.guardAllowed')}</p>
+              <p className="text-control text-ink-faint px-3 pt-1 pb-1">{t('agent.guardAllowed')}</p>
               {allowed.map((a) => (
-                <div key={a} className="px-3 py-1 text-xs flex items-center gap-2 min-w-0" data-agent-guard-allowed={a}>
+                <div key={a} className="px-3 py-1 text-control flex items-center gap-2 min-w-0" data-agent-guard-allowed={a}>
                   <span className="flex-1 min-w-0 truncate text-ink-muted font-mono" title={a}>{a}</span>
                   <button onClick={() => void allowLocation(a, true)} className="text-ink-faint hover:text-red-500 shrink-0" title={t('agent.guardRemove')}>
                     <X size={12} strokeWidth={2} />
@@ -122,7 +122,7 @@ export default function AgentPermissionChip() {
             </>
           )}
           <div className="border-t border-line/60 my-1" />
-          <p className="px-3 py-1 text-2xs text-ink-faint leading-relaxed">{t('agent.permQuestions')}</p>
+          <p className="px-3 py-1 text-control text-ink-faint">{t('agent.permQuestions')}</p>
         </div>
       )}
     </div>

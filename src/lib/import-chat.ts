@@ -16,11 +16,17 @@ export interface ImportableConversation {
   /** Runner-session identity — set by session adapters only; the key the
       canonical-canvas contract matches on. */
   sessionId?: string;
+  /** Structurally identified internal children excluded from this projection.
+      Used to repair mirrors created by older importers, never inferred from text. */
+  excludedSessionIds?: string[];
   build: () => { nodes: ThoughtNode[]; edges: ThoughtEdge[] };
   /** Session adapters whose runner keeps subagent transcripts in files of
       their own (Claude Code sidechains, Codex child rollouts) accept them
       here before `build`: each becomes a branch off the turn that spawned it. */
   adopt?: (subs: import('./adapters/shared').SubagentSession[]) => void;
+  /** Approval verdicts are audit attachments on their exact parent turn,
+      never conversation branches or inherited prompt text. */
+  adoptApprovals?: (reviews: import('./adapters/codex-approval').CodexApprovalSession[]) => void;
 }
 
 // ─── format detection ───────────────────────────────────────────

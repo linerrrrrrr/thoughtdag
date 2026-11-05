@@ -97,7 +97,7 @@ export default function ResponseSection({
 
   // Text selection handler
   const handleTextSelection = useCallback((e: MouseEvent) => {
-    // Don't clear selection if clicking inside an input/textarea (branch input, etc.)
+    // Preserve selection while its toolbar or another editor receives focus.
     const target = e.target as HTMLElement;
     if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'BUTTON') {
       return;
@@ -124,7 +124,7 @@ export default function ResponseSection({
   }, []);
 
   useEffect(() => {
-    if (isViewerMode) return; // selection menu stages writes
+    if (isViewerMode) return; // selection actions create nodes or highlights
     document.addEventListener('mouseup', handleTextSelection);
     return () => document.removeEventListener('mouseup', handleTextSelection);
   }, [handleTextSelection]);
@@ -160,7 +160,7 @@ export default function ResponseSection({
   };
 
   const handleBranchFromSelection = () => {
-    onExploreSelection(selectedText); // save before selection clears
+    onExploreSelection(selectedText); // create the draft before selection clears
     setSelectedText('');
     setSelectionPos(null);
     window.getSelection()?.removeAllRanges();
@@ -173,52 +173,49 @@ export default function ResponseSection({
   }
 
   return (
-    <div className="panel-card px-4 py-3">
-      <div className="flex items-center justify-between mb-1.5">
-        <label className="text-2xs font-semibold text-green-600">{t('panel.response')}</label>
-      </div>
+    <section className="focus-response-section" aria-label={t('panel.response')} data-conversation-answer>
 
       {data.isLoading && !!data.pendingApprovals?.length && (
         <div className="py-1 flex flex-col gap-1.5">{data.pendingApprovals.map((req) => <ApprovalCard key={req.id} nodeId={nodeId} request={req} />)}</div>
       )}
-      {!data.isLoading && activity.length > 0 && <AgentActivityView key={`${nodeId}:${data.responseIndex}`} entries={activity} base={data.importSource?.cwd} failed={data.generationFailed} />}
+      {!data.isLoading && activity.length > 0 && <AgentActivityView key={`${nodeId}:${data.responseIndex}`} entries={activity} base={data.agentSession?.cwd ?? data.importSource?.cwd} failed={data.generationFailed} />}
       {data.isLoading && activity.length > 0 ? (
-        <AgentActivityView entries={activity} running base={data.importSource?.cwd} />
+        <AgentActivityView entries={activity} running base={data.agentSession?.cwd ?? data.importSource?.cwd} />
       ) : data.isLoading && data.agentTrace && data.agentTrace.length > 0 && (!data.response || data.restreaming) ? (
         <div className="py-1"><AgentTrace entries={data.agentTrace} /></div>
       ) : data.isLoading && (!data.response || data.restreaming) ? (
         data.reasoning ? (
           <div className="py-1">
-            <div className="text-2xs text-ink-faint mb-1">💭 {t('node.reasoningLive')}</div>
-            <div ref={streamRef} className="text-xs text-ink-faint italic leading-relaxed whitespace-pre-wrap break-words max-h-[300px] overflow-y-auto">
+            <div className="text-control text-ink-faint mb-1">💭 {t('node.reasoningLive')}</div>
+            <div ref={streamRef} className="text-body text-ink-faint italic whitespace-pre-wrap break-words max-h-[300px] overflow-y-auto">
               {data.reasoning.length > 4000 ? '…' + data.reasoning.slice(-4000) : data.reasoning}
             </div>
           </div>
         ) : (
-        <div className="flex items-center gap-2 text-sm text-ink-muted">
+        <div className="flex items-center gap-2 text-body text-ink-muted">
           <span className="animate-pulse text-accent">●</span> {t('common.thinking')}
         </div>
         )
       ) : data.isLoading && data.response && !data.restreaming ? (
-        <div ref={streamRef} className="markdown-body text-sm text-ink leading-relaxed max-h-[500px] overflow-y-auto py-1">
-          <Markdown base={data.importSource?.cwd}>{data.response}</Markdown>
+        <div ref={streamRef} className="focus-assistant-message markdown-body text-body text-ink max-h-[500px] overflow-y-auto">
+          <Markdown base={data.agentSession?.cwd ?? data.importSource?.cwd}>{data.response}</Markdown>
           <span className="inline-block w-2 h-4 bg-accent animate-pulse rounded-none ml-0.5 align-text-bottom" />
         </div>
       ) : editingHere ? (
-        <div ref={editorRef} onBlur={dismiss.onBlur}>
+        <div ref={editorRef} onBlur={dismiss.onBlur} className="focus-message-editor">
           <textarea
             value={editResponseValue}
             onChange={(e) => { setEditResponseValue(e.target.value); useUiStore.getState().setDraft(`response-edit:${nodeId}`, e.target.value, true); }}
             onKeyDown={handleResponseEditKeyDown}
-            className="w-full bg-wash border border-accent rounded-control p-3 text-sm text-ink resize-y focus:outline-none focus:ring-2 focus:ring-accent/20 min-h-[150px]"
+            className="w-full bg-wash border border-accent rounded-control p-3 text-body text-ink resize-y focus:outline-none focus:ring-2 focus:ring-accent/20 min-h-[150px]"
             rows={10}
             autoFocus
           />
           <div className="flex justify-end gap-2 mt-2">
-            <button onClick={cancelEdit} className="text-xs text-ink-muted hover:text-ink px-3 py-1.5 rounded-control hover:bg-wash transition-colors">{t('common.cancel')}</button>
-            <button onClick={handleResponseEditSubmit} className="text-xs bg-action hover:bg-action-strong text-white px-4 py-1.5 rounded-control transition-colors">{t('common.save')}</button>
+            <button onClick={cancelEdit} className="text-control text-ink-muted hover:text-ink px-3 py-1.5 rounded-control hover:bg-wash transition-colors">{t('common.cancel')}</button>
+            <button onClick={handleResponseEditSubmit} className="text-control bg-action hover:bg-action-strong text-white px-4 py-1.5 rounded-control transition-colors">{t('common.save')}</button>
           </div>
-          <p className="mt-1.5 text-2xs text-ink-faint">{t('edit.draftHint')}</p>
+          <p className="mt-1.5 text-control text-ink-faint">{t('edit.draftHint')}</p>
         </div>
       ) : (
         <div ref={responseRef} className="relative">
@@ -226,11 +223,11 @@ export default function ResponseSection({
           {data.reasonings?.[data.responseIndex] && !activity.length && (
             <ReasoningDisclosure text={data.reasonings[data.responseIndex]!} />
           )}
-          <div className="markdown-body text-sm text-ink leading-relaxed cursor-text py-1" onClick={handleExploreMarkClick}>
+          <div className="focus-assistant-message markdown-body text-body text-ink cursor-text" onClick={handleExploreMarkClick}>
             {highlightedTexts.size > 0 || exploreSpecs.length > 0 ? (
-              <HighlightedMarkdown content={data.response} highlights={highlightedTexts} exploreMarks={exploreSpecs} />
+              <HighlightedMarkdown base={data.agentSession?.cwd ?? data.importSource?.cwd} content={data.response} highlights={highlightedTexts} exploreMarks={exploreSpecs} />
             ) : (
-              <Markdown base={data.importSource?.cwd}>{data.response}</Markdown>
+              <Markdown base={data.agentSession?.cwd ?? data.importSource?.cwd}>{data.response}</Markdown>
             )}
           </div>
 
@@ -249,14 +246,14 @@ export default function ResponseSection({
               <div className="flex gap-1 bg-card border border-line rounded-overlay shadow-lg p-1 animate-fade-in">
                 <button
                   onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); handleBranchFromSelection(); }}
-                  className="bg-action hover:bg-action-strong text-white text-xs px-3 py-1.5 rounded-control transition-all whitespace-nowrap cursor-pointer"
+                  className="bg-action hover:bg-action-strong text-white text-control px-3 py-1.5 rounded-control transition-all whitespace-nowrap cursor-pointer"
                 >
                   <GitBranch size={14} strokeWidth={1.75} className="inline" /> {t('common.explore')}
                 </button>
                 {!selectionPos.inCode && (
                   <button
                     onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); handleHighlight(); }}
-                    className="bg-amber-500 hover:bg-amber-400 text-white text-xs px-3 py-1.5 rounded-control transition-all whitespace-nowrap cursor-pointer"
+                    className="bg-amber-500 hover:bg-amber-400 text-white text-control px-3 py-1.5 rounded-control transition-all whitespace-nowrap cursor-pointer"
                   >
                     <Star size={14} strokeWidth={1.75} className="inline" /> {t('common.highlight')}
                   </button>
@@ -271,7 +268,7 @@ export default function ResponseSection({
           under it (LLM-chat convention); the sibling-branch variant is in
           the header's ⋯ menu */}
       {data.response && !data.isLoading && !editingHere && !data.generationFailed && (
-        <div className="mt-2 flex items-center gap-0.5 text-ink-faint">
+        <div className="focus-response-actions flex flex-wrap items-center gap-0.5 text-ink-faint">
           {!isViewerMode && <button
             onClick={() => void rerunNode(nodeId, {})}
             className="rounded-control w-7 h-7 flex items-center justify-center hover:text-accent hover:bg-wash transition-colors"
@@ -299,14 +296,14 @@ export default function ResponseSection({
           <AgentRerunButton nodeId={nodeId} data={data} size="md" />
           {(data.generatedBy?.[data.responseIndex]) && (
             <span
-              className="text-2xs text-ink-faint font-mono ml-1 truncate flex-1 min-w-0 max-w-[420px]"
+              className="focus-model-source text-meta text-ink-faint ml-1 truncate flex-1 min-w-0"
               title={`${t('node.generatedByTitle')} · ${describeModel(data.generatedBy[data.responseIndex], data.generatedEfforts?.[data.responseIndex])}`}
             >
               {describeModel(data.generatedBy[data.responseIndex], data.generatedEfforts?.[data.responseIndex])}
             </span>
           )}
           {hasMultipleVersions && (
-            <div className="flex items-center gap-1 text-xs text-ink-muted ml-1">
+            <div className="flex items-center gap-1 text-control text-ink-muted ml-1">
               <button onClick={() => navigateVersion(nodeId, 'prev')} className="hover:text-accent hover:bg-wash rounded-control w-5 h-5 flex items-center justify-center transition-colors"><ChevronLeft size={14} strokeWidth={1.75} /></button>
               <span className="text-accent font-medium">v{data.responseIndex + 1}/{data.responses.length}</span>
               <button onClick={() => navigateVersion(nodeId, 'next')} className="hover:text-accent hover:bg-wash rounded-control w-5 h-5 flex items-center justify-center transition-colors"><ChevronRight size={14} strokeWidth={1.75} /></button>
@@ -325,11 +322,11 @@ export default function ResponseSection({
       {/* Web references consulted for this response */}
       {data.references && data.references.length > 0 && !data.isLoading && (
         <div className="mt-3 pt-2 border-t border-line/60">
-          <p className="text-2xs text-ink-faint font-medium mb-1.5">{t('refs.title')}</p>
+          <p className="text-control text-ink-faint font-medium mb-1.5">{t('refs.title')}</p>
           <ol className="space-y-1">
             {data.references.map((r, i) => (
-              <li key={i} className="flex items-start gap-2 text-xs leading-snug">
-                <span className="shrink-0 text-2xs text-ink-faint font-mono mt-0.5">[{i + 1}]</span>
+              <li key={i} className="flex items-start gap-2 text-control leading-snug">
+                <span className="shrink-0 text-meta text-ink-faint font-mono mt-0.5">[{i + 1}]</span>
                 {r.url ? (
                   <a href={r.url} target="_blank" rel="noreferrer" className="text-accent hover:text-accent-strong hover:underline break-all">
                     {r.title}
@@ -338,7 +335,7 @@ export default function ResponseSection({
                   <span className="text-ink-muted">{r.title}</span>
                 )}
                 {(r.media || r.date) && (
-                  <span className="shrink-0 text-2xs text-ink-faint">{[r.media, r.date].filter(Boolean).join(' · ')}</span>
+                  <span className="shrink-0 text-meta text-ink-faint">{[r.media, r.date].filter(Boolean).join(' · ')}</span>
                 )}
               </li>
             ))}
@@ -348,7 +345,7 @@ export default function ResponseSection({
 
       {/* Failed generation: retry in place */}
       {data.generationFailed && !data.isLoading && (
-        <div className="mt-2 flex items-center gap-2 text-xs text-red-600 bg-red-50 border border-red-100 rounded-content px-3 py-2">
+        <div className="mt-2 flex items-center gap-2 text-control text-red-600 bg-red-50 border border-red-100 rounded-content px-3 py-2">
           <AlertTriangle size={14} strokeWidth={1.75} className="shrink-0" />
           {t('common.generationFailed')}
           {!isViewerMode && <button
@@ -359,6 +356,6 @@ export default function ResponseSection({
           </button>}
         </div>
       )}
-    </div>
+    </section>
   );
 }

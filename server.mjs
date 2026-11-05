@@ -596,6 +596,11 @@ app.use(express.json({ limit: '50mb' })); // Support image uploads
 import { createRequire } from 'node:module';
 const localRequire = createRequire(import.meta.url);
 let agentsHttp = null;
+const localFiles = localRequire('./runtime/local-files.cjs').createLocalFiles();
+app.all(/^\/api\/local\/.*/, async (req, res) => {
+  const handled = await localFiles.handle(req, res, req.path.replace(/^\/api/, ''), req.body ?? null);
+  if (!handled) res.status(404).json({ error: 'not found' });
+});
 app.all(/^\/api\/agents\/.*/, async (req, res) => {
   if (!agentsHttp) agentsHttp = localRequire('./runtime/agents/http.cjs').createAgentsHttp({ log: (line) => console.log(line) });
   const handled = await agentsHttp.handle(req, res, req.path.replace(/^\/api/, ''), req.body ?? null);

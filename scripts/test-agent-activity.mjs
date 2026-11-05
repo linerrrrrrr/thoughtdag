@@ -17,7 +17,7 @@ const stubs = {
   '../lib/highlight-match': 'export const pruneHighlights=x=>x;',
   '../lib/api': 'export const llmCallStream=(...args)=>globalThis.testStream(...args), declaresTools=()=>false;',
   '../lib/atlas/dsh-bridge': 'export const harnessOutbound=async()=>undefined, claimHarnessTurn=async()=>false, stampHarnessTurn=async()=>{}, isHarnessAgentModel=()=>false;',
-  '../lib/agents/agent-runtime': 'export const agentOutbound=async()=>undefined, adoptAgentTurn=async()=>false, claimAgentTurn=async()=>{}, isAgentModel=()=>true;',
+  '../lib/agents/agent-runtime': 'export const agentOutbound=async()=>undefined, adoptAgentTurn=async()=>false, claimAgentTurn=async()=>{}, deriveFollowupModel=d=>d?.model, isAgentModel=()=>true;',
   '../utils': 'export const countTokens=x=>x.length, activeSummary=()=>"";',
   '../lib/ui-store': uiStub,
   '../lib/use-models': 'export const getModelsOnce=async()=>({models:[],default:"codex/model"}), reconcileModelId=x=>x, describeModel=x=>x;',
@@ -45,6 +45,7 @@ try {
         let contents;
         if (args.importer.endsWith('streaming.ts')) contents = stubs[args.path];
         if (args.importer.endsWith('agent-runtime.ts') && args.path === '../ui-store') contents = uiStub;
+        if (args.importer.endsWith('agent-runtime.ts') && args.path === '../../i18n') contents = 'export const t=x=>x;';
         if (args.importer.endsWith('agent-runtime.ts') && args.path === '../../store') contents = 'export const useStore={getState:()=>({nodes:[]}),setState:()=>{}};';
         if (args.importer.endsWith('agent-runtime.ts') && args.path === '../../store/projects') contents = stubs['./projects'];
         if (args.importer.endsWith('agent-runtime.ts') && args.kind === 'dynamic-import' && !contents) contents = 'export const unused=true;';
@@ -55,13 +56,26 @@ try {
     } }],
   });
   globalThis.window = { setTimeout, addEventListener() {}, dispatchEvent() {} };
-  const { activeAgentActivity, upsertAgentActivity, settleAgentActivity, recoverInterruptedAgentRun, agentCallStream, installAgentsHttpBridge, runNodeGeneration } = await import(pathToFileURL(bundle));
+  const { activeAgentActivity, originalQuestionBeforeInstructions, upsertAgentActivity, settleAgentActivity, recoverInterruptedAgentRun, agentCallStream, installAgentsHttpBridge, runNodeGeneration } = await import(pathToFileURL(bundle));
   const item = (id, extra = {}) => ({ id, kind: 'command', status: 'running', command: 'npm run build', startedAt: 100, ...extra });
   const ordered = upsertAgentActivity(upsertAgentActivity([], item('a')), item('b'));
   assert.deepEqual(upsertAgentActivity(ordered, item('a', { output: 'ready', status: 'completed' })).map(x => x.id), ['a', 'b']);
   assert.equal(ordered[0].output, undefined, 'snapshot updates are immutable');
   assert.equal(settleAgentActivity(ordered, 'interrupted', 200)[0].status, 'interrupted');
   assert.deepEqual(activeAgentActivity({ responseIndex: 1, agentActivities: [[item('old')], [item('new')]] }).map(x => x.id), ['new']);
+  const instructions = [item('u1', { kind: 'user', status: 'completed', text: 'First inspect the tests.' }),
+    item('between', { kind: 'commentary', status: 'completed', text: 'Reading tests.' }),
+    item('u2', { kind: 'user', status: 'completed', text: 'Keep **compatibility**.\nDo not deploy.' })];
+  const canonicalQuestion = 'Fix the issue.\n\nFirst inspect the tests.\n\nKeep **compatibility**.\nDo not deploy.';
+  assert.equal(originalQuestionBeforeInstructions(canonicalQuestion, instructions), 'Fix the issue.', 'supplementary instructions display only at their activity positions');
+  assert.equal(originalQuestionBeforeInstructions('Original\n\nFirst inspect the tests.', [instructions[0]]), 'Original');
+  assert.equal(originalQuestionBeforeInstructions(canonicalQuestion, []), canonicalQuestion, 'no activity never changes question presentation');
+  assert.equal(originalQuestionBeforeInstructions(`${canonicalQuestion}\nEdited`, instructions), `${canonicalQuestion}\nEdited`, 'an edited suffix stays intact');
+  assert.equal(originalQuestionBeforeInstructions('Fix the issue.\nFirst inspect the tests.', [instructions[0]]), 'Fix the issue.\nFirst inspect the tests.', 'matching is exact, including separators');
+  assert.equal(originalQuestionBeforeInstructions('First inspect the tests.\n\nFix the issue.', [instructions[0]]), 'First inspect the tests.\n\nFix the issue.', 'an instruction in the middle or start is not removed');
+  assert.equal(originalQuestionBeforeInstructions('\n\nFirst inspect the tests.', [instructions[0]]), '\n\nFirst inspect the tests.', 'the entire question is never erased');
+  assert.equal(originalQuestionBeforeInstructions('Original\n\nFirst inspect the tests.', [item('pending', { kind: 'user', text: 'First inspect the tests.' })]), 'Original\n\nFirst inspect the tests.', 'unconfirmed user items cannot hide question text');
+  assert.equal(canonicalQuestion, 'Fix the issue.\n\nFirst inspect the tests.\n\nKeep **compatibility**.\nDo not deploy.', 'canonical context remains unchanged');
 
   let deliver;
   window.desktopAgents = {

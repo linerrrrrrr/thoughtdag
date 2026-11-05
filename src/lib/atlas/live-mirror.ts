@@ -16,10 +16,11 @@ import { withSubagents } from './subagents';
  *  path-wide match would hit `<parent-id>/subagents/…` first for any
  *  session that ever spawned an agent. */
 export function pickSessionFile<T extends { rel: string }>(files: T[], sid: string): T | undefined {
-  return files.find((f) => (f.rel.split('/').pop() ?? f.rel).includes(sid));
+  return files.find((f) => (f.rel.split(/[\\/]/).pop() ?? f.rel).includes(sid));
 }
 
 let started = false;
+let waitingForBridge = false;
 let sweep: (() => Promise<void>) | null = null;
 
 /** Sweep the freshest session files through the idempotent pipeline —
@@ -27,7 +28,8 @@ let sweep: (() => Promise<void>) | null = null;
  *  canvas arrival (the live watcher only serves the ACTIVE canvas, so
  *  a canvas you switch TO may have missed its sessions' growth). */
 export function sweepRecentSessions(): void {
-  void sweep?.();
+  if (!started) startLiveMirror();
+  else void sweep?.();
 }
 
 // The deep-link opener, once the mirror is running: a why hit's
@@ -41,16 +43,35 @@ export async function openWhyLink(url: string): Promise<boolean> {
 }
 
 export function startLiveMirror(): void {
+  if (started) return;
   const bridge = window.desktopSessions;
-  if (!bridge || started) return;
+  if (!bridge) {
+    // On the web the /agents/available probe resolves AFTER React mounts.
+    // Waiting for its readiness event is essential: a one-shot mount effect
+    // otherwise leaves both watching and old-projection repair dormant.
+    if (!waitingForBridge) {
+      window.addEventListener('td:agents-ready', startLiveMirror);
+      waitingForBridge = true;
+    }
+    return;
+  }
+  if (waitingForBridge) {
+    window.removeEventListener('td:agents-ready', startLiveMirror);
+    waitingForBridge = false;
+  }
   started = true;
-  void bridge.watchStart();
+  void bridge.watchStart().catch(() => undefined);
 
   let busy = false;
-  let dirty: { rootKey: string; rel: string } | null = null;
+  const pending = new Map<string, { rootKey: string; rel: string }>();
+  // Recheck each active subscription once per app launch, even if its file
+  // did not grow. Import policy fixes must repair an old mirror without
+  // requiring a new source turn or a destructive re-mirror.
+  const checkedProjections = new Set<string>();
+  const projectionKey = (projectId: string | null, rootKey: string, rel: string) => `${projectId}|${rootKey}|${rel}`;
 
   const handle = async (ev: { rootKey: string; rel: string }): Promise<void> => {
-    if (busy) { dirty = ev; return; }
+    if (busy) { pending.set(`${ev.rootKey}|${ev.rel}`, ev); return; }
     busy = true;
     try {
       // anyone listening for atlas-level freshness (badges, folder counts)
@@ -93,8 +114,11 @@ export function startLiveMirror(): void {
       const { streamRunnerConversation } = await import('../adapters');
       const { importOrAppendConversation, shellSessionReader } = await import('./canonical');
       const conv = await withSubagents(await streamRunnerConversation(shellSessionReader(ev.rootKey, ev.rel)).catch(() => null), ev.rootKey, ev.rel);
+      // A slow file read must not reopen the canvas the user just left.
+      if (useProjects.getState().activeId !== activeId) return;
       // a sweep refreshes quietly; only a genuinely new turn lands with focus
       const result = await importOrAppendConversation(conv, { focusOnRefresh: false });
+      if (result) checkedProjections.add(projectionKey(activeId, ev.rootKey, ev.rel));
       if (result?.kind === 'appended') {
         toast('success', fmt(t('atlas.liveAppended'), { n: result.turns }), 8000);
       } else if (result?.kind === 'mounted') {
@@ -102,7 +126,8 @@ export function startLiveMirror(): void {
       }
     } finally {
       busy = false;
-      if (dirty) { const next = dirty; dirty = null; void handle(next); }
+      const next = pending.entries().next().value;
+      if (next) { pending.delete(next[0]); void handle(next[1]); }
     }
   };
 
@@ -199,8 +224,9 @@ export function startLiveMirror(): void {
   // yet) processes the freshest 30 as a baseline and marks the rest.
   const MARK_KEY = 'thoughtdag.atlas.sweepmark';
   sweep = async () => {
-    const { bootProjects } = await import('../../store/projects');
+    const { bootProjects, useProjects, subscribedSessionIds } = await import('../../store/projects');
     await bootProjects();
+    const { useStore } = await import('../../store');
     const roots = await bridge.roots().catch(() => []);
     const files: { rootKey: string; rel: string; mtime: number; size: number }[] = [];
     for (const r of roots) {
@@ -211,7 +237,18 @@ export function startLiveMirror(): void {
     try { mark = JSON.parse(localStorage.getItem(MARK_KEY) ?? '{}') as Record<string, string>; } catch { /* fresh */ }
     const firstRun = Object.keys(mark).length === 0;
     files.sort((a, b) => b.mtime - a.mtime);
+    const { activeId, projects } = useProjects.getState();
+    const active = projects.find((p) => p.id === activeId);
+    // Older canvases can retain provenance after losing their ledger. They
+    // need the same repair pass; handle() can rebuild the subscription.
+    const sessionIds = new Set([
+      ...(active ? subscribedSessionIds(active) : []),
+      ...useStore.getState().nodes.flatMap((node) => node.data.importSource?.sessionId ? [node.data.importSource.sessionId] : []),
+    ]);
+    const subscribedFiles = new Set([...sessionIds]
+      .map((sid) => pickSessionFile(files, sid)).filter((f) => f !== undefined));
     const todo = files.filter((f, i) => {
+      if (subscribedFiles.has(f) && !checkedProjections.has(projectionKey(activeId, f.rootKey, f.rel))) return true;
       const stamp = `${f.mtime}|${f.size}`;
       if (mark[`${f.rootKey}|${f.rel}`] === stamp) return false;
       return firstRun ? i < 30 : true;
@@ -220,5 +257,12 @@ export function startLiveMirror(): void {
     for (const f of files) mark[`${f.rootKey}|${f.rel}`] = `${f.mtime}|${f.size}`;
     localStorage.setItem(MARK_KEY, JSON.stringify(mark));
   };
-  void sweep();
+  void import('../../store/projects').then(({ useProjects }) => {
+    // Project switches also originate in the atlas, recall and other views;
+    // readiness belongs to the store lifecycle, not one switcher's button.
+    useProjects.subscribe((next, prev) => {
+      if (next.activeId !== prev.activeId) sweepRecentSessions();
+    });
+    void sweep?.();
+  });
 }

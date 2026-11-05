@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useDismissableLayer } from '../lib/use-dismissable-layer';
 import { useCanvasToolCard } from '../lib/use-canvas-tool-card';
 import { useCanvasPanelPosition } from '../lib/use-canvas-panel-position';
@@ -8,6 +8,7 @@ import { useUiStore } from '../lib/ui-store';
 import { searchCanvas, type SearchHit } from '../lib/canvas-search';
 import { isImeComposing } from '../utils';
 import { useT, fmt } from '../i18n';
+import './SearchBar.css';
 
 // The canvas searchlight (Cmd+F, or the toolbar icon). Exact search over
 // everything a node remembers — questions, active answers, note bodies,
@@ -33,6 +34,7 @@ export default function SearchBar({
   onLocate: (nodeId: string) => void;
 }) {
   const t = useT();
+  const hintId = useId();
   const open = useCanvasToolCard('search', requestedOpen, onClose);
   const position = useCanvasPanelPosition(open);
   const nodes = useStore((s) => s.nodes);
@@ -98,9 +100,9 @@ export default function SearchBar({
   };
 
   return (
-    <div ref={layerRef} className="canvas-tool-panel flex flex-col shadow-lg" style={position} data-canvas-search>
+    <div ref={layerRef} className="canvas-tool-panel canvas-search-panel flex flex-col" style={position} data-canvas-search>
       <div className="min-h-0 flex flex-col">
-        <div className="flex h-12 shrink-0 items-center gap-2 px-3 transition-shadow focus-within:ring-1 focus-within:ring-accent/40">
+        <div className="canvas-search-row">
           <Search size={15} strokeWidth={1.75} className="text-ink-faint shrink-0" />
           <input
             ref={inputRef}
@@ -113,15 +115,17 @@ export default function SearchBar({
               if (e.key === 'Enter' && !isImeComposing(e) && matches[cursor]) { e.preventDefault(); locate(matches[cursor]); }
             }}
             placeholder={t('search.placeholder')}
-            className="min-w-0 flex-1 bg-transparent text-sm text-ink placeholder-ink-faint focus:outline-none"
+            aria-label={t('search.inputLabel')}
+            aria-describedby={matches.length > 0 ? hintId : undefined}
+            className="canvas-search-input"
             data-search-input
           />
           {query && (
-            <span className="text-2xs text-ink-faint shrink-0">
+            <span className="text-control text-ink-faint shrink-0">
               {fmt(t('search.count'), { n: matches.length })}
             </span>
           )}
-          <button type="button" onClick={onClose} aria-label={t('common.close')} className="text-ink-faint hover:text-ink transition-colors shrink-0">
+          <button type="button" onClick={onClose} aria-label={t('common.close')} className="canvas-search-close text-ink-faint hover:text-ink transition-colors shrink-0">
             <X size={14} strokeWidth={1.75} />
           </button>
         </div>
@@ -140,13 +144,13 @@ export default function SearchBar({
                     className={`w-full text-left px-4 py-2 transition-colors ${i === cursor ? 'bg-accent/8' : ''} ${m.archived ? 'opacity-55' : ''}`}
                     data-search-hit-row
                   >
-                    <p className={`text-xs font-medium truncate flex items-center gap-1.5 ${i === cursor ? 'text-accent' : 'text-ink'}`}>
+                    <p className={`text-control font-medium truncate flex items-center gap-1.5 ${i === cursor ? 'text-accent' : 'text-ink'}`}>
                       <Icon size={12} strokeWidth={1.75} className="text-ink-faint shrink-0" />
                       <span className="truncate flex-1 min-w-0">{title}</span>
                       {m.archived && <Archive size={11} strokeWidth={1.75} className="text-ink-faint shrink-0" />}
-                      {m.count > 1 && <span className="text-2xs text-ink-faint font-normal shrink-0">×{m.count}</span>}
+                      {m.count > 1 && <span className="text-meta text-ink-faint font-normal shrink-0">×{m.count}</span>}
                     </p>
-                    <p className="text-2xs text-ink-faint mt-0.5 break-all leading-relaxed">
+                    <p className="text-control text-ink-faint mt-0.5 break-all">
                       {m.snippet.slice(0, m.matchStart)}
                       <mark className="bg-accent/20 text-accent rounded-tag px-px">
                         {m.snippet.slice(m.matchStart, m.matchStart + m.matchLen)}
@@ -158,10 +162,11 @@ export default function SearchBar({
               );
             })}
             {matches.length > SHOW_LIMIT && (
-              <li className="px-4 py-2 text-2xs text-ink-faint">{fmt(t('search.more'), { n: matches.length - SHOW_LIMIT })}</li>
+              <li className="px-4 py-2 text-control text-ink-faint">{fmt(t('search.more'), { n: matches.length - SHOW_LIMIT })}</li>
             )}
           </ul>
         )}
+        {matches.length > 0 && <p id={hintId} className="canvas-search-hint" data-search-keyboard-hint>{t('search.keyboardHint')}</p>}
       </div>
     </div>
   );

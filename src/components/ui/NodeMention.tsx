@@ -52,7 +52,7 @@ export default function MentionSurface({ m, text, setText }: {
     <>
       {m.query !== null && candidates.length > 0 && (
         <div ref={pickerRef} className="absolute bottom-full mb-1.5 left-0 right-0 z-30 bg-card border border-line rounded-overlay shadow-lg py-1 max-h-[220px] overflow-y-auto animate-fade-in nodrag nopan" data-mention-picker>
-          <div className="px-3 py-1 text-2xs text-ink-faint flex items-center gap-1">
+          <div className="px-3 py-1 text-control text-ink-faint flex items-center gap-1">
             <AtSign size={11} strokeWidth={1.75} /> {t('mention.hint')}
           </div>
           {candidates.map((n, i) => (
@@ -62,10 +62,10 @@ export default function MentionSurface({ m, text, setText }: {
               onMouseDown={(e) => e.preventDefault()}
               onClick={() => { m.pick(n, text, setText); setActive(0); }}
               onMouseEnter={() => setActive(i)}
-              className={`w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 transition-colors ${i === active ? 'bg-accent/10 text-accent' : 'text-ink hover:bg-wash'}`}
+              className={`w-full text-left px-3 py-1.5 text-control flex items-center gap-2 transition-colors ${i === active ? 'bg-accent/10 text-accent' : 'text-ink hover:bg-wash'}`}
             >
               <span className="truncate flex-1">{nodeMentionTitle(n)}</span>
-              {n.data.stepKind && <span className="text-2xs text-ink-faint shrink-0">{n.data.stepKind}</span>}
+              {n.data.stepKind && <span className="text-control text-ink-faint shrink-0">{n.data.stepKind}</span>}
             </button>
           ))}
         </div>
@@ -73,7 +73,7 @@ export default function MentionSurface({ m, text, setText }: {
       {m.mentions.length > 0 && (
         <div className="flex flex-wrap gap-1 mb-1.5">
           {m.mentions.map((x) => (
-            <span key={x.nodeId} className="inline-flex items-center gap-1 text-2xs bg-accent/10 text-accent rounded-tag pl-2 pr-1 py-0.5 max-w-[220px]" data-mention-chip>
+            <span key={x.nodeId} className="inline-flex items-center gap-1 text-control bg-accent/10 text-accent rounded-tag pl-2 pr-1 py-0.5 max-w-[220px]" data-mention-chip>
               <AtSign size={10} strokeWidth={2} className="shrink-0" />
               <span className="truncate">{x.title}</span>
               <button

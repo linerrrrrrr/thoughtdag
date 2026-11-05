@@ -42,7 +42,7 @@ try {
       builder.onLoad({ filter: /.*/, namespace: 'stub' }, args => ({ contents: stubs[args.path], loader: 'js' }));
     } }],
   });
-  const { applySelectionGeometry: apply, effectiveNodeGeometry, makeStore } = await import(pathToFileURL(bundle).href);
+  const { applySelectionGeometry: apply, effectiveNodeGeometry, resizeSelectionBy, makeStore } = await import(pathToFileURL(bundle).href);
   const node = (id, width = 600, height = 300, data = {}, x = 0, y = 0) => ({ id, type: 'thought', position: { x, y }, width, height, data: {
     question: id, response: 'answer', responses: ['answer'], responseIndex: 0,
     isCollapsed: false, isLoading: false, isEditing: false, isEditingResponse: false,
@@ -61,6 +61,43 @@ try {
     assert.deepEqual(sizes(next), [[720, 300], [600, 300]]);
     assert.equal(next[0].position, nodes[0].position);
     assert.equal(next[1], nodes[1]);
+  });
+  test('width edits preserve automatic height while explicit height edits fix it', () => {
+    const automatic = { ...node('a'), height: undefined, measured: { width: 600, height: 480 } };
+    const wider = apply([automatic], ['a'], { width: 720 })[0];
+    assert.equal(wider.height, undefined);
+    assert.equal(wider.width, 720);
+    assert.equal(wider.data.keepOverviewHeight, undefined);
+    const dragged = resizeSelectionBy([automatic], [automatic], 80, undefined)[0];
+    assert.equal(dragged.height, undefined);
+    assert.equal(dragged.width, 680);
+    assert.equal(dragged.data.keepOverviewHeight, undefined);
+    assert.equal(apply([automatic], ['a'], { height: 480 })[0].height, 480);
+  });
+  test('restoring auto height clears the fixed size and ratio without moving or rewriting content', () => {
+    const original = node('a', 650, 420, { keepOverviewHeight: true, lockAspectRatio: true }, 90, -25);
+    const restored = apply([original], ['a'], { autoHeight: true })[0];
+    assert.equal(restored.width, original.width);
+    assert.equal(restored.height, undefined);
+    assert.equal(restored.data.keepOverviewHeight, undefined);
+    assert.equal(restored.data.lockAspectRatio, false);
+    assert.equal(restored.position, original.position);
+    assert.equal(restored.data.response, original.data.response);
+    assert.equal(restored.data.attachments, original.data.attachments);
+    const repeat = [restored];
+    assert.equal(apply(repeat, ['a'], { autoHeight: true }), repeat);
+    const resized = apply([original], ['a'], { width: 400, autoHeight: true })[0];
+    assert.equal(resized.width, 400);
+    assert.equal(resized.height, undefined);
+  });
+  test('automatic height restores eligible cards in a mixed selection but leaves frame geometry intact', () => {
+    const nodes = [node('a'), node('m', 520, 500, { stepKind: 'note' }),
+      node('f', 1200, 900, { stepKind: 'frame', lockAspectRatio: true })];
+    const next = apply(nodes, ['a', 'm', 'f'], { autoHeight: true });
+    assert.equal(next[0].height, undefined);
+    assert.equal(next[1].height, undefined);
+    assert.equal(next[2], nodes[2]);
+    assert.deepEqual(next.map(n => n.position), nodes.map(n => n.position));
   });
   test('retired metadata does not expand single-node formatting or positioning', () => {
     const nodes = [node('a', 600, 300, { canvasGroupId: 'g' }, 85, -40),
@@ -169,6 +206,58 @@ try {
     assert.ok(store.getState().nodes.every(n => n.data.lockAspectRatio));
     store.getState().setSelectionGeometry(['a', 'b'], { width: 900 });
     assert.equal(store.getState().historyIndex, 1);
+  });
+  test('restoring automatic heights and releasing their ratios is one reversible store edit', () => {
+    const store = makeStore();
+    const nodes = [node('a', 600, 420, { lockAspectRatio: true, keepOverviewHeight: true }), node('b', 520, 350)];
+    const edges = [{ id: 'a-b', source: 'a', target: 'b', data: {} }];
+    store.setState({ nodes, edges, history: [{ nodes, edges }], historyIndex: 0 });
+    store.getState().setSelectionGeometry(['a', 'b'], { autoHeight: true });
+    assert.equal(store.getState().historyIndex, 1);
+    assert.ok(store.getState().nodes.every(n => n.height === undefined));
+    assert.equal(store.getState().edges, edges);
+    store.getState().undo();
+    assert.deepEqual(sizes(store.getState().nodes), sizes(nodes));
+    assert.equal(store.getState().nodes[0].data.lockAspectRatio, true);
+    assert.equal(store.getState().nodes[0].data.keepOverviewHeight, true);
+    store.getState().redo();
+    assert.ok(store.getState().nodes.every(n => n.height === undefined));
+    assert.equal(store.getState().nodes[0].data.lockAspectRatio, false);
+    assert.equal(store.getState().nodes[0].data.keepOverviewHeight, undefined);
+    store.getState().setSelectionGeometry(['a', 'b'], { autoHeight: true });
+    assert.equal(store.getState().historyIndex, 1);
+  });
+  test('committing pending fields before enabling ratio lock is one edit without resizing the other axis', () => {
+    const store = makeStore();
+    const nodes = [node('a', 600, 300)];
+    const edges = [];
+    store.setState({ nodes, edges, history: [{ nodes, edges }], historyIndex: 0 });
+    store.getState().setSelectionGeometry(['a'], [{ width: 800 }, { lockAspectRatio: true }]);
+    assert.deepEqual(sizes(store.getState().nodes), [[800, 300]]);
+    assert.equal(store.getState().nodes[0].data.lockAspectRatio, true);
+    assert.equal(store.getState().historyIndex, 1);
+    store.getState().undo();
+    assert.deepEqual(sizes(store.getState().nodes), [[600, 300]]);
+    assert.equal(!!store.getState().nodes[0].data.lockAspectRatio, false);
+    store.getState().redo();
+    assert.deepEqual(sizes(store.getState().nodes), [[800, 300]]);
+    assert.equal(store.getState().nodes[0].data.lockAspectRatio, true);
+  });
+  test('committing pending fields before disabling ratio lock preserves the previous ratio in one edit', () => {
+    const store = makeStore();
+    const nodes = [node('a', 600, 300, { lockAspectRatio: true })];
+    const edges = [];
+    store.setState({ nodes, edges, history: [{ nodes, edges }], historyIndex: 0 });
+    store.getState().setSelectionGeometry(['a'], [{ width: 800 }, { lockAspectRatio: false }]);
+    assert.deepEqual(sizes(store.getState().nodes), [[800, 400]]);
+    assert.equal(store.getState().nodes[0].data.lockAspectRatio, false);
+    assert.equal(store.getState().historyIndex, 1);
+    store.getState().undo();
+    assert.deepEqual(sizes(store.getState().nodes), [[600, 300]]);
+    assert.equal(store.getState().nodes[0].data.lockAspectRatio, true);
+    store.getState().redo();
+    assert.deepEqual(sizes(store.getState().nodes), [[800, 400]]);
+    assert.equal(store.getState().nodes[0].data.lockAspectRatio, false);
   });
 } finally {
   rmSync(bundle, { force: true });

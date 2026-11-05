@@ -1,0 +1,207 @@
+/* A conversation is the reading surface; inspection tools follow below it. */
+.focus-panel-shell {
+  container-type: inline-size;
+  background: var(--conversation-surface, var(--color-card));
+  border-color: var(--conversation-line, var(--color-line));
+  color: var(--color-ink);
+  box-shadow: 0 12px 36px rgb(0 0 0 / 10%);
+}
+
+.focus-panel-header {
+  min-height: 56px;
+  padding: var(--spacing-section-gap) var(--spacing-surface-inset);
+}
+
+.focus-panel-title {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  font-size: var(--text-title);
+  font-weight: 600;
+  line-height: var(--text-title--line-height);
+}
+
+.focus-panel-header-actions [data-model-picker-trigger] {
+  max-width: 120px;
+  color: var(--conversation-muted, var(--color-ink-muted));
+  background: transparent;
+}
+
+.focus-panel-content > [data-node-metadata] {
+  max-width: 760px;
+  margin: 0 auto var(--spacing-section-gap);
+  padding-inline: var(--spacing-surface-inset);
+  border: 0;
+}
+
+.focus-panel-content > [data-node-metadata] > [data-node-metadata-toggle] {
+  min-height: 30px;
+  padding-inline: 0;
+  font-size: var(--text-control);
+  line-height: var(--text-control--line-height);
+  color: var(--conversation-muted, var(--color-ink-muted));
+}
+
+.focus-panel-content {
+  padding: var(--spacing-section-gap) 0;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.focus-question-section,
+.focus-response-section {
+  width: 100%;
+  max-width: 760px;
+  margin-inline: auto;
+  padding-inline: var(--spacing-surface-inset);
+}
+
+.focus-question-section {
+  margin-bottom: var(--spacing-surface-inset);
+}
+
+.focus-user-turn {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+.focus-user-message {
+  width: fit-content;
+  max-width: 90%;
+  padding: var(--spacing-section-gap) var(--spacing-surface-inset);
+  border-radius: var(--radius-content) var(--radius-content) var(--radius-tag) var(--radius-content);
+  background: var(--conversation-user-bg, var(--color-wash));
+  color: var(--conversation-user-ink, var(--color-ink));
+  font-size: var(--text-body);
+  font-weight: 400;
+  line-height: var(--text-body--line-height);
+  overflow-wrap: anywhere;
+}
+
+.focus-user-message.markdown-body > :first-child,
+.focus-assistant-message.markdown-body > :first-child {
+  margin-top: 0;
+}
+
+.focus-user-message.markdown-body > :last-child,
+.focus-assistant-message.markdown-body > :last-child {
+  margin-bottom: 0;
+}
+
+.focus-question-edit {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  color: var(--conversation-muted, var(--color-ink-muted));
+}
+
+.focus-question-edit:hover,
+.focus-question-edit:focus-visible {
+  background: var(--conversation-user-bg, var(--color-wash));
+  color: var(--color-ink);
+}
+
+.focus-response-section {
+  margin-bottom: var(--spacing-surface-inset);
+}
+
+.focus-assistant-message {
+  padding: 0;
+  background: transparent;
+  font-size: var(--text-body);
+  line-height: var(--text-body--line-height);
+  overflow-wrap: anywhere;
+}
+
+.focus-response-actions {
+  margin-top: 12px;
+  color: var(--conversation-muted, var(--color-ink-muted));
+}
+
+.focus-model-source {
+  max-width: 220px;
+}
+
+.focus-message-editor textarea {
+  border-color: var(--conversation-line, var(--color-line));
+  background: var(--conversation-composer-bg, var(--color-wash));
+  border-radius: var(--radius-content);
+  font-size: var(--text-body);
+  line-height: var(--text-body--line-height);
+}
+
+.focus-panel-inspect {
+  max-width: 760px;
+  margin: 8px auto 0;
+  padding-inline: var(--spacing-surface-inset);
+}
+
+.focus-panel-role {
+  padding: 8px 0;
+  border-top: 1px solid var(--conversation-line, var(--color-line));
+}
+
+.focus-panel-role [data-role-line-set],
+.focus-panel-role [data-role-line-edit] {
+  color: var(--conversation-muted, var(--color-ink-muted));
+}
+
+.focus-panel-inspect .panel-card,
+.focus-panel-inspect [data-context-order] {
+  padding: 10px 0;
+  border-bottom-color: var(--conversation-line, var(--color-line));
+}
+
+.focus-panel-inspect [data-role-editor] {
+  padding: 12px 0;
+  background: transparent;
+}
+
+.agent-instruction {
+  position: fixed;
+  z-index: 80;
+  width: 360px;
+  max-width: calc(100vw - 32px);
+  max-height: calc(100dvh - 100px);
+  overflow-y: auto;
+  padding: 14px;
+  border-radius: 12px;
+  background: var(--conversation-surface, var(--color-card));
+  color: var(--color-ink);
+  box-shadow: var(--shadow-lg);
+}
+
+.agent-instruction-title { margin-bottom: 10px; font-size: var(--text-title); line-height: var(--text-title--line-height); font-weight: 600; }
+.agent-instruction textarea {
+  display: block;
+  width: 100%;
+  min-height: 92px;
+  resize: vertical;
+  padding: 8px 10px;
+  border: 1px solid var(--conversation-line, var(--color-line));
+  border-radius: 8px;
+  background: var(--conversation-composer-bg, var(--color-wash));
+  font-size: var(--text-body);
+  line-height: var(--text-body--line-height);
+}
+.agent-instruction textarea::placeholder { color: var(--color-ink-muted); }
+.agent-instruction textarea:focus-visible { outline: 1px solid var(--color-ink-faint); outline-offset: 1px; }
+.agent-instruction-error { margin-top: 8px; color: var(--color-danger, #dc2626); font-size: var(--text-control); line-height: var(--text-control--line-height); overflow-wrap: anywhere; }
+.agent-instruction-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
+.agent-instruction-actions button { min-height: 30px; padding: 4px 10px; border-radius: 6px; font-size: var(--text-control); line-height: var(--text-control--line-height); }
+.agent-instruction-actions button:hover { background: var(--color-wash); }
+.agent-instruction-actions .agent-instruction-send { display: inline-flex; align-items: center; gap: 4px; background: var(--color-action); color: white; }
+.agent-instruction-actions .agent-instruction-send:hover { opacity: 0.85; }
+.agent-instruction-actions .agent-instruction-send:disabled { opacity: 0.4; cursor: default; }
+
+@container (max-width: 420px) {
+  .focus-panel-header-actions [data-model-picker-trigger] { max-width: 88px; }
+  .focus-user-message { max-width: 94%; }
+}

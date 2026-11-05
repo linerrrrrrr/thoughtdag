@@ -35,21 +35,20 @@ export default function SelectionTargetControl() {
   };
   const ActiveIcon = target === 'nodes' ? MousePointer2 : Spline;
   return <div className="canvas-selection-control" role="group" aria-label={t('selection.target')} data-selection-target-control>
-      <span className="canvas-toolbar-label canvas-selection-label cursor-default">{t('selection.target')}</span>
       <div className="canvas-selection-segments">
       {(['nodes', 'edges'] as const).map(value => {
         const Icon = value === 'nodes' ? MousePointer2 : Spline;
         return <button key={value} type="button" data-selection-target={value} aria-pressed={target === value}
-          aria-label={t(value === 'nodes' ? 'selection.nodes' : 'selection.edges')} title={t(value === 'nodes' ? 'selection.nodes' : 'selection.edges')}
+          aria-label={t(value === 'nodes' ? 'selection.nodes' : 'selection.edges')} title={`${t('selection.target')} · ${t(value === 'nodes' ? 'selection.nodes' : 'selection.edges')}`}
           className="canvas-toolbar-button"
-          onClick={() => choose(value)}><Icon size={14} aria-hidden="true" /><span className="canvas-toolbar-label">{t(value === 'nodes' ? 'selection.nodes' : 'selection.edges')}</span></button>;
+          onClick={() => choose(value)}><Icon size={16} strokeWidth={1.75} className="canvas-selection-icon" aria-hidden="true" /><span className="canvas-toolbar-label">{t(value === 'nodes' ? 'selection.nodes' : 'selection.edges')}</span></button>;
       })}
       </div>
       <div className="canvas-selection-picker relative h-8 items-center text-accent">
         <ActiveIcon size={14} className="pointer-events-none absolute left-2" aria-hidden="true" />
         <select value={target} onChange={event => choose(event.target.value as 'nodes' | 'edges')}
           aria-label={t('selection.target')} title={`${t('selection.target')} · ${t(target === 'nodes' ? 'selection.nodes' : 'selection.edges')}`}
-          className="h-8 appearance-none rounded-control bg-wash pl-7 pr-6 text-2xs focus-visible:outline-2 focus-visible:outline-accent"
+          className="h-8 appearance-none rounded-control bg-wash pl-7 pr-6 text-control focus-visible:outline-2 focus-visible:outline-accent"
           data-selection-target-picker>
           <option value="nodes">{t('selection.nodes')}</option>
           <option value="edges">{t('selection.edges')}</option>

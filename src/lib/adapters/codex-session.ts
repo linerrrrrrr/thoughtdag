@@ -1,7 +1,10 @@
-import type { ThoughtNode, ThoughtEdge } from '../../types';
+import type { ThoughtNode, ThoughtEdge, AgentActivityEntry } from '../../types';
 import { makeNode, type ImportableConversation } from '../import-chat';
 import { autoLayout } from '../layout';
 import { generateId } from '../../utils';
+import { isInternalCodexSession } from './codex-session-kind';
+import { adoptCodexApprovals } from './codex-approval';
+import { boundedActivity, completeRolloutActivity, publicCodexActivity, rolloutToolActivity } from './codex-activity';
 import {
   turnsToBranch, seedPlaque, seatTurnWork, dropSelfCommandTurns, markImporterNote, toolOpOf, clipText,
   TOOL_CALL_LIMIT, ARTIFACT_CALL_LIMIT, TOOL_RESULT_LIMIT, type RunnerTool, attachSubagentBranches, adoptSubagentSessions, type SubagentRun, type SubagentSession
@@ -17,12 +20,12 @@ import {
 // Projection rules (v0):
 //   - Turns are explicit: turn_context / task_started carry turn_id.
 //   - question = the turn's response_item message role=user (input_text).
-//   - response = role=assistant output_text, in order (commentary and
-//     final answer both lived in the model's context — both project).
+//   - response = assistant answer text. Commentary keeps its original
+//     position in the activity transcript, separate from the final answer.
 //   - function_call pairs with function_call_output by call_id into one
 //     atomic attachment (same grammar as the Claude Code adapter).
-//   - reasoning items are ENCRYPTED upstream — dropped, and honestly
-//     undroppable anyway. Their size is not: the token_count events carry
+//   - only public reasoning summaries are projected; encrypted/raw blocks
+//     are never exposed. The token_count events carry
 //     a running reasoning_output_tokens total, and each turn keeps the
 //     share spent while it ran.
 //   - role=developer messages (sandbox/permission boilerplate re-sent each
@@ -53,6 +56,9 @@ interface RolloutLine {
     turn_id?: string;
     // messages
     role?: string;
+    phase?: string;
+    channel?: string;
+    summary?: Array<{ type?: string; text?: string }>;
     content?: Array<{ type?: string; text?: string }>;
     message?: string;
     // tools (function_call pair and the newer custom_tool_call pair)
@@ -76,6 +82,7 @@ export interface CodexTurn {
   /** child threads adopted onto this turn (Codex names the parent in the child's header, never the child in the parent) */
   subagents?: SubagentRun[];
   reasoningTokens?: number;
+  activity?: AgentActivityEntry[];
 }
 
 const clip = clipText;
@@ -110,7 +117,7 @@ const outputText = (output: unknown): string => {
  *  the string-based entry points below are thin wrappers. */
 export class CodexSessionCollector {
   private turns: CodexTurn[] = [];
-  private pendingCalls = new Map<string, { name: string; call: string; paths: string[]; op: RunnerTool['op'] }>();
+  private pendingCalls = new Map<string, { name: string; call: string; paths: string[]; op: RunnerTool['op']; turn: CodexTurn; activity: AgentActivityEntry }>();
   private current: CodexTurn | null = null;
   private pendingCompaction: string | undefined;
   private sessionId: string | null = null;
@@ -120,6 +127,8 @@ export class CodexSessionCollector {
   private firstQuestion: string | null = null;
   private parentThreadId: string | null = null;
   private startedAt: string | null = null;
+  private internalSession = false;
+  private activitySerial = 0;
   // the session's running reasoning total, as of the last token_count
   // (unknown before the first: a resumed rollout opens on a total that
   // includes runs recorded in earlier files)
@@ -135,13 +144,13 @@ export class CodexSessionCollector {
 
   private flush(): void {
     const c = this.current;
-    if (c && (c.question || c.response || c.tools.length)) this.turns.push(c);
+    if (c && (c.question || c.response || c.tools.length || c.activity?.length)) this.turns.push(c);
     this.current = null;
   }
 
   private ensure(): CodexTurn {
     if (!this.current) {
-      this.current = { question: '', response: '', itemIds: [], tools: [] };
+      this.current = { question: '', response: '', itemIds: [], tools: [], activity: [] };
       if (this.pendingCompaction) {
         this.current.compactionBefore = this.pendingCompaction;
         this.pendingCompaction = undefined;
@@ -152,6 +161,15 @@ export class CodexSessionCollector {
 
   private feed(line: RolloutLine): void {
     const p = line.payload ?? {};
+    if (line.type === 'session_meta' && isInternalCodexSession(p)) {
+      this.internalSession = true;
+      this.turns = [];
+      this.current = null;
+      this.pendingCalls.clear();
+    }
+    // These transcripts contain a copied history and an approval verdict,
+    // not a user conversation. Reject before collecting text or tool facts.
+    if (this.internalSession) return;
     if (line.type === 'session_meta' && p.id && !this.sessionId) {
       this.sessionId = p.id;
       this.cwd = p.cwd ?? '';
@@ -169,6 +187,9 @@ export class CodexSessionCollector {
       return;
     }
     if (line.type === 'turn_context' || (line.type === 'event_msg' && p.type === 'task_started')) {
+      // Repeated markers and in-flight steering can reuse the same turn id.
+      // Keep their user messages and work in the original conversation turn.
+      if (p.turn_id && this.current?.itemIds.includes(p.turn_id)) return;
       this.flush();
       const t = this.ensure();
       if (p.turn_id) t.itemIds.push(p.turn_id);
@@ -193,16 +214,26 @@ export class CodexSessionCollector {
           if (!this.firstQuestion) this.firstQuestion = text.trim();
           const t = this.ensure();
           if (!t.at && line.timestamp) t.at = line.timestamp;
+          if (t.question && t.activity?.length) {
+            const at = line.timestamp ? Date.parse(line.timestamp) || 0 : 0;
+            t.activity.push(boundedActivity({ id: p.id ?? `user:${++this.activitySerial}`, kind: 'user', sourceType: 'userMessage', status: 'completed', text, startedAt: at, endedAt: at }));
+          }
           t.question = t.question ? `${t.question}\n\n${text}` : text;
         }
       } else if (p.role === 'assistant') {
         const text = partText(p.content);
         if (text.trim()) {
           const t = this.ensure();
-          t.response = t.response ? `${t.response}\n\n${text}` : text;
+          const phase = p.phase ?? p.channel;
+          const at = line.timestamp ? Date.parse(line.timestamp) || 0 : 0;
+          (t.activity ??= []).push(boundedActivity({ id: p.id ?? `message:${++this.activitySerial}`, kind: phase === 'commentary' ? 'commentary' : 'message', sourceType: 'agentMessage', status: 'completed', text, phase, startedAt: at, endedAt: at }));
+          if (phase !== 'commentary') t.response = t.response ? `${t.response}\n\n${text}` : text;
         }
       }
       // role=developer: runner boilerplate, dropped
+    } else if (p.type === 'reasoning') {
+      const entry = publicCodexActivity({ type: 'reasoning', id: p.id, summary: p.summary }, `reasoning:${++this.activitySerial}`, line.timestamp ? Date.parse(line.timestamp) || 0 : 0);
+      if (entry) (this.ensure().activity ??= []).push(entry);
     } else if ((p.type === 'function_call' || p.type === 'custom_tool_call') && p.call_id && p.name) {
       const raw = String(p.arguments ?? p.input ?? '');
       const op = toolOpOf(p.name);
@@ -210,12 +241,18 @@ export class CodexSessionCollector {
       // apply_patch names its files in the header; view_image names one in
       // its JSON arguments — both structured, neither guessed from a shell line
       const viewed = op === 'read' ? (() => { try { const a = JSON.parse(raw) as { path?: string }; return typeof a.path === 'string' && a.path ? [a.path] : []; } catch { return []; } })() : [];
-      this.pendingCalls.set(p.call_id, { name: p.name, call: call.text, paths: op === 'edit' ? patchPaths(raw) : viewed, op });
+      const turn = this.ensure();
+      const activity = rolloutToolActivity(p.call_id, p.name, raw, line.timestamp ? Date.parse(line.timestamp) || 0 : 0, this.cwd);
+      (turn.activity ??= []).push(activity);
+      this.pendingCalls.set(p.call_id, { name: p.name, call: call.text, paths: op === 'edit' ? patchPaths(raw) : viewed, op, turn, activity });
     } else if ((p.type === 'function_call_output' || p.type === 'custom_tool_call_output') && p.call_id) {
       const reg = this.pendingCalls.get(p.call_id);
       if (reg) {
-        const t = this.ensure();
-        const res = clip(outputText(p.output), TOOL_RESULT_LIMIT);
+        const t = reg.turn;
+        const output = outputText(p.output);
+        const completed = completeRolloutActivity(reg.activity, output, line.timestamp ? Date.parse(line.timestamp) || 0 : 0);
+        t.activity = t.activity?.map((entry) => entry.id === p.call_id ? completed : entry);
+        const res = clip(output, TOOL_RESULT_LIMIT);
         t.tools.push({
           name: reg.name, call: reg.call, result: res.text, truncated: res.truncated,
           ...(reg.paths.length ? { paths: reg.paths } : {}), op: reg.op, nativeCallId: p.call_id,
@@ -226,6 +263,7 @@ export class CodexSessionCollector {
   }
 
   finish(): { sessionId: string; title: string; turns: CodexTurn[]; subagent: boolean; cwd?: string } | null {
+    if (this.internalSession) return null;
     this.flush();
     if (!this.sessionId || !this.sawItems) return null;
     // A segment without a question is not a turn — it is the previous
@@ -243,6 +281,7 @@ export class CodexSessionCollector {
         if (turn.compactionBefore) carriedCompaction = carriedCompaction ?? turn.compactionBefore;
         if (turn.response) prev.response = prev.response ? `${prev.response}\n\n${turn.response}` : turn.response;
         prev.tools.push(...turn.tools);
+        (prev.activity ??= []).push(...turn.activity ?? []);
         prev.itemIds.push(...turn.itemIds);
         if (turn.reasoningTokens) prev.reasoningTokens = (prev.reasoningTokens ?? 0) + turn.reasoningTokens;
       } else {
@@ -271,6 +310,7 @@ export class CodexSessionCollector {
       sessionId: s.sessionId,
       build: () => buildGraphFromTurns(s.turns, s.sessionId, s.cwd),
       adopt: (subs) => adoptSubagentSessions(s.turns, subs),
+      adoptApprovals: (reviews) => adoptCodexApprovals(s.turns, reviews, s.sessionId),
     };
   }
 

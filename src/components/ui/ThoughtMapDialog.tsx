@@ -387,7 +387,7 @@ export default function ThoughtMapDialog() {
     <div className="flex rounded-control border border-line overflow-hidden">
       {entries.map(([v, label], i) => (
         <button key={v} onClick={() => set(v)}
-          className={`flex-1 px-2 py-1.5 text-2xs whitespace-nowrap transition-colors ${i > 0 ? 'border-l border-line' : ''} ${cur === v ? 'bg-accent/10 text-accent font-medium' : 'text-ink-muted hover:bg-wash'}`}>
+          className={`flex-1 px-2 py-1.5 text-control whitespace-nowrap transition-colors ${i > 0 ? 'border-l border-line' : ''} ${cur === v ? 'bg-accent/10 text-accent font-medium' : 'text-ink-muted hover:bg-wash'}`}>
           {label}
         </button>
       ))}
@@ -398,7 +398,7 @@ export default function ThoughtMapDialog() {
     <div className="fixed inset-0 z-[85] bg-ink/25 flex items-center justify-center animate-fade-in" data-thought-map>
       <div ref={layerRef} role="dialog" aria-modal="true" aria-label={t('tmap.title')} tabIndex={-1} className="bg-surface rounded-panel shadow-lg border border-line w-[min(1128px,96vw)] max-h-[95vh] overflow-y-auto p-6" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-start justify-between mb-4">
-          <div className="text-sm font-semibold text-ink">{t('tmap.title')}{step === 'share' ? ` · ${t('tmap.shareStep')}` : ''}</div>
+          <div className="text-section font-semibold text-ink">{t('tmap.title')}{step === 'share' ? ` · ${t('tmap.shareStep')}` : ''}</div>
           <button onClick={close} className="w-7 h-7 rounded-control text-ink-faint hover:bg-wash hover:text-ink flex items-center justify-center transition-colors">
             <X size={15} strokeWidth={1.75} />
           </button>
@@ -408,45 +408,45 @@ export default function ThoughtMapDialog() {
           <div className="flex gap-6 flex-wrap">
             {/* left: the words and the composition — where the hands live */}
             <div className="w-[252px] shrink-0 flex flex-col gap-3" style={{ minHeight: 690 }}>
-              <div className="text-2xs font-mono tracking-[0.18em] uppercase text-ink-faint">{t('tmap.groupText')}</div>
+              <div className="text-control font-mono tracking-[0.18em] uppercase text-ink-faint">{t('tmap.groupText')}</div>
               <div>
-                <div className="text-2xs text-ink-faint mb-1 flex items-center justify-between">
+                <div className="text-control text-ink-faint mb-1 flex items-center justify-between">
                   <span>{t('tmap.publicTitle')}</span>
                   <button onClick={() => void draft()} disabled={drafting} data-tmap-draft
-                    className="flex items-center gap-1 text-2xs text-accent hover:bg-accent/10 rounded-tag px-1.5 py-0.5 transition-colors disabled:opacity-50">
+                    className="flex items-center gap-1 text-control text-accent hover:bg-accent/10 rounded-tag px-1.5 py-0.5 transition-colors disabled:opacity-50">
                     {drafting ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} strokeWidth={1.75} />}
                     {drafting ? t('tmap.drafting') : t('tmap.draft')}
                   </button>
                 </div>
                 <input value={title} onChange={(e) => setTitle(clampWeight(e.target.value, TITLE_MAX))} data-tmap-title placeholder={t('tmap.subtitlePh')}
-                  className="w-full border border-line rounded-control px-3 py-1.5 text-xs bg-card text-ink placeholder-ink-faint focus:outline-none focus:ring-1 focus:ring-accent/40" />
-                <div className="text-2xs text-ink-faint font-mono text-right mt-0.5">{textWeight(title)}/{TITLE_MAX}</div>
+                  className="w-full border border-line rounded-control px-3 py-1.5 text-control bg-card text-ink placeholder-ink-faint focus:outline-none focus:ring-1 focus:ring-accent/40" />
+                <div className="text-meta text-ink-faint font-mono text-right mt-0.5">{textWeight(title)}/{TITLE_MAX}</div>
               </div>
               <div>
-                <div className="text-2xs text-ink-faint mb-1">{t('tmap.subtitle')}</div>
+                <div className="text-control text-ink-faint mb-1">{t('tmap.subtitle')}</div>
                 <input value={subtitle} onChange={(e) => setSubtitle(clampWeight(e.target.value, SUB_MAX))} placeholder={t('tmap.subtitlePh')} data-tmap-subtitle
-                  className="w-full border border-line rounded-control px-3 py-1.5 text-xs bg-card text-ink placeholder-ink-faint focus:outline-none focus:ring-1 focus:ring-accent/40" />
+                  className="w-full border border-line rounded-control px-3 py-1.5 text-control bg-card text-ink placeholder-ink-faint focus:outline-none focus:ring-1 focus:ring-accent/40" />
               </div>
               <div>
-                <div className="text-2xs text-ink-faint mb-1">{t('tmap.sig')}</div>
+                <div className="text-control text-ink-faint mb-1">{t('tmap.sig')}</div>
                 <input value={sig} placeholder={t('tmap.subtitlePh')} data-tmap-sig
                   onChange={(e) => { const v = clampWeight(e.target.value, 48); setSig(v); localStorage.setItem('thoughtdag.tmapSignature', v); }}
-                  className="w-full border border-line rounded-control px-3 py-1.5 text-xs bg-card text-ink placeholder-ink-faint focus:outline-none focus:ring-1 focus:ring-accent/40" />
+                  className="w-full border border-line rounded-control px-3 py-1.5 text-control bg-card text-ink placeholder-ink-faint focus:outline-none focus:ring-1 focus:ring-accent/40" />
               </div>
               <div className="flex items-center gap-2">
-                <span className="text-2xs text-ink-faint w-[56px] shrink-0">{t('tmap.sigPos')}</span>
+                <span className="text-control text-ink-faint w-[56px] shrink-0">{t('tmap.sigPos')}</span>
                 <div className="flex-1">{seg([['byline', t('tmap.sigByline')], ['corner', t('tmap.sigCorner')]], sigPos, (v) => { setSigPos(v as 'byline' | 'corner'); localStorage.setItem('thoughtdag.tmapSigPos', v); })}</div>
               </div>
-              <div className="text-2xs font-mono tracking-[0.18em] uppercase text-ink-faint mt-auto">{t('tmap.size')}</div>
+              <div className="text-control font-mono tracking-[0.18em] uppercase text-ink-faint mt-auto">{t('tmap.size')}</div>
               {([[t('tmap.slTitle'), tst, setTst], [t('tmap.slSub'), tss, setTss], [t('tmap.statsLbl'), tsx, setTsx]] as [string, number, (v: number) => void][]).map(([label, val, set]) => (
                 <div key={label} className="flex items-center gap-3">
-                  <span className="text-2xs text-ink-faint w-[44px] shrink-0">{label}</span>
+                  <span className="text-control text-ink-faint w-[44px] shrink-0">{label}</span>
                   <input type="range" min={0.85} max={1.45} step={0.05} value={val} onChange={(e) => set(parseFloat(e.target.value))}
                     className="flex-1 accent-[color:var(--color-accent)]" />
-                  <span className="text-2xs text-ink-faint font-mono w-[34px] text-right">{val.toFixed(2)}</span>
+                  <span className="text-meta text-ink-faint font-mono w-[34px] text-right">{val.toFixed(2)}</span>
                 </div>
               ))}
-              <div className="text-2xs font-mono tracking-[0.18em] uppercase text-ink-faint mt-auto">{t('tmap.groupStyle')}</div>
+              <div className="text-control font-mono tracking-[0.18em] uppercase text-ink-faint mt-auto">{t('tmap.groupStyle')}</div>
               {([
                 [t('tmap.layout'), [['tidy', t('tmap.tidy')], ['hand', t('tmap.hand')]], layout, (v: string) => setLayout(v as 'tidy' | 'hand')],
                 [t('tmap.rotate'), [['off', t('tmap.rotOff')], ['on', t('tmap.rotOn')]], rot ? 'on' : 'off', (v: string) => setRot(v === 'on')],
@@ -454,7 +454,7 @@ export default function ThoughtMapDialog() {
                 [t('tmap.mapLang'), [['zh', '中文'], ['en', 'EN']], mapLang, (v: string) => setMapLang(v as 'zh' | 'en')],
               ] as [string, [string, string][], string, (v: string) => void][]).map(([label, entries, cur, set]) => (
                 <div key={label} className="flex items-center gap-2">
-                  <span className="text-2xs text-ink-faint w-[56px] shrink-0">{label}</span>
+                  <span className="text-control text-ink-faint w-[56px] shrink-0">{label}</span>
                   <div className="flex-1">{seg(entries, cur, set)}</div>
                 </div>
               ))}
@@ -477,8 +477,8 @@ export default function ThoughtMapDialog() {
                     showStats={showStats} timeInk={timeInk} dateText={dateText} sig={sig} sigPos={sigPos} />
                 </div>
               </div>
-              <div className="text-2xs text-ink-faint text-center mb-1">{t('tmap.thumbCap')}</div>
-              <div className="text-2xs font-mono tracking-[0.18em] uppercase text-ink-faint">{t('tmap.groupMarks')}</div>
+              <div className="text-control text-ink-faint text-center mb-1">{t('tmap.thumbCap')}</div>
+              <div className="text-control font-mono tracking-[0.18em] uppercase text-ink-faint">{t('tmap.groupMarks')}</div>
               {([
                 [t('tmap.statsLbl'), [['on', t('tmap.show')], ['off', t('tmap.hide')]], showStats ? 'on' : 'off', (v: string) => setShowStats(v === 'on')],
                 [t('tmap.timeInk'), [['off', t('tmap.hide')], ['on', t('tmap.show')]], timeInk ? 'on' : 'off', (v: string) => setTimeInk(v === 'on')],
@@ -486,13 +486,13 @@ export default function ThoughtMapDialog() {
                 [t('tmap.dateMode'), [['span', t('tmap.dateSpan')], ['today', t('tmap.dateToday')]], dateMode, (v: string) => setDateMode(v as 'today' | 'span')],
               ] as [string, [string, string][], string, (v: string) => void][]).map(([label, entries, cur, set], i) => (
                 <div key={label} className={`flex items-center gap-2 ${i === 3 && !showDate ? 'opacity-40 pointer-events-none' : ''}`}>
-                  <span className="text-2xs text-ink-faint w-[56px] shrink-0">{label}</span>
+                  <span className="text-control text-ink-faint w-[56px] shrink-0">{label}</span>
                   <div className="flex-1">{seg(entries, cur, set)}</div>
                 </div>
               ))}
               <div className="flex-1" />
               <button onClick={() => { void downloadPng().then((ok) => { if (ok) setStep('share'); }); }} disabled={busy} data-tmap-download
-                className="flex items-center justify-center gap-1.5 text-xs font-semibold bg-action text-white hover:bg-action-strong rounded-control px-3 py-2.5 transition-colors disabled:opacity-50">
+                className="flex items-center justify-center gap-1.5 text-control font-semibold bg-action text-white hover:bg-action-strong rounded-control px-3 py-2.5 transition-colors disabled:opacity-50">
                 {busy ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} strokeWidth={1.75} />}
                 {t('tmap.download')}
               </button>
@@ -509,41 +509,41 @@ export default function ThoughtMapDialog() {
                 </div>
               </div>
               <button onClick={() => setStep('image')} data-tmap-back
-                className="flex items-center justify-center gap-1.5 text-xs border border-line text-ink-muted hover:bg-wash rounded-control px-3 py-2 transition-colors">
+                className="flex items-center justify-center gap-1.5 text-control border border-line text-ink-muted hover:bg-wash rounded-control px-3 py-2 transition-colors">
                 <ArrowLeft size={13} strokeWidth={1.75} /> {t('tmap.backToImage')}
               </button>
             </div>
             <div className="flex-1 min-w-[320px] flex flex-col gap-3">
               <div>
-                <div className="text-2xs text-ink-faint mb-1 flex items-center justify-between">
+                <div className="text-control text-ink-faint mb-1 flex items-center justify-between">
                   <span>{t('tmap.caption')}</span>
                   <span className="flex items-center gap-2">
                     <span className="flex rounded-control border border-line overflow-hidden" data-tmap-caplang>
                       {(['zh', 'en'] as const).map((v, i) => (
                         <button key={v} onClick={() => setCapLang(v)}
-                          className={`px-2 py-0.5 text-2xs transition-colors ${i > 0 ? 'border-l border-line' : ''} ${capLang === v ? 'bg-accent/10 text-accent font-medium' : 'text-ink-muted hover:bg-wash'}`}>
+                          className={`px-2 py-0.5 text-control transition-colors ${i > 0 ? 'border-l border-line' : ''} ${capLang === v ? 'bg-accent/10 text-accent font-medium' : 'text-ink-muted hover:bg-wash'}`}>
                           {v === 'zh' ? '中文' : 'EN'}
                         </button>
                       ))}
                     </span>
                     <button onClick={() => void draft()} disabled={drafting}
-                      className="flex items-center gap-1 text-2xs text-accent hover:bg-accent/10 rounded-tag px-1.5 py-0.5 transition-colors disabled:opacity-50">
+                      className="flex items-center gap-1 text-control text-accent hover:bg-accent/10 rounded-tag px-1.5 py-0.5 transition-colors disabled:opacity-50">
                       {drafting ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} strokeWidth={1.75} />}
                       {drafting ? t('tmap.drafting') : t('tmap.draft')}
                     </button>
                   </span>
                 </div>
                 <textarea value={caption} onChange={(e) => { capTouched.current = true; setCaption(e.target.value); }} rows={7} data-tmap-caption
-                  className="w-full border border-line rounded-control px-3 py-2 text-xs bg-card text-ink leading-relaxed resize-none focus:outline-none focus:ring-1 focus:ring-accent/40" />
+                  className="w-full border border-line rounded-control px-3 py-2 text-body bg-card text-ink resize-none focus:outline-none focus:ring-1 focus:ring-accent/40" />
               </div>
               <div className="flex flex-wrap gap-2">
                 <button onClick={() => { void navigator.clipboard.writeText(caption); toast('success', t('tmap.captionCopied')); }}
-                  className="flex items-center gap-1.5 text-xs font-medium bg-accent/10 text-accent hover:bg-accent/20 border border-accent/30 rounded-control px-3 py-2 transition-colors">
+                  className="flex items-center gap-1.5 text-control font-medium bg-accent/10 text-accent hover:bg-accent/20 border border-accent/30 rounded-control px-3 py-2 transition-colors">
                   <Copy size={13} strokeWidth={1.75} /> {t('tmap.copyCaption')}
                 </button>
                 {PLATFORMS.map(([name, kind]) => (
                   <button key={name} onClick={() => share(kind, name)}
-                    className="text-xs border border-line text-ink-muted hover:bg-wash rounded-control px-3 py-2 transition-colors">
+                    className="text-control border border-line text-ink-muted hover:bg-wash rounded-control px-3 py-2 transition-colors">
                     {name}
                   </button>
                 ))}

@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-11-04T06:50:29.208Z",
+  "generatedAt": "2026-11-05T01:50:51.570Z",
   "title": "Design System: ThoughtDAG",
   "extensions": {
     "colorMeta": {
@@ -563,32 +563,236 @@
           "oklch(84% 0.0186 255.33)",
           "oklch(95% 0.0058 255.33)"
         ]
+      },
+      "conversation-surface": {
+        "role": "neutral",
+        "displayName": "conversation surface",
+        "tonalRamp": [
+          "oklch(15% 0.0000 89.88)",
+          "oklch(26% 0.0000 89.88)",
+          "oklch(37% 0.0000 89.88)",
+          "oklch(48% 0.0000 89.88)",
+          "oklch(60% 0.0000 89.88)",
+          "oklch(72% 0.0000 89.88)",
+          "oklch(84% 0.0000 89.88)",
+          "oklch(95% 0.0000 89.88)"
+        ]
+      },
+      "conversation-user-bg": {
+        "role": "secondary",
+        "displayName": "conversation user bg",
+        "tonalRamp": [
+          "oklch(15% 0.0052 259.82)",
+          "oklch(26% 0.0089 259.82)",
+          "oklch(37% 0.0120 259.82)",
+          "oklch(48% 0.0120 259.82)",
+          "oklch(60% 0.0120 259.82)",
+          "oklch(72% 0.0112 259.82)",
+          "oklch(84% 0.0064 259.82)",
+          "oklch(95% 0.0020 259.82)"
+        ]
+      },
+      "conversation-user-ink": {
+        "role": "secondary",
+        "displayName": "conversation user ink",
+        "tonalRamp": [
+          "oklch(15% 0.0216 256.73)",
+          "oklch(26% 0.0372 256.73)",
+          "oklch(37% 0.0502 256.73)",
+          "oklch(48% 0.0502 256.73)",
+          "oklch(60% 0.0502 256.73)",
+          "oklch(72% 0.0467 256.73)",
+          "oklch(84% 0.0266 256.73)",
+          "oklch(95% 0.0085 256.73)"
+        ]
+      },
+      "conversation-line": {
+        "role": "neutral",
+        "displayName": "conversation line",
+        "tonalRamp": [
+          "oklch(15% 0.0065 260.73)",
+          "oklch(26% 0.0114 260.73)",
+          "oklch(37% 0.0153 260.73)",
+          "oklch(48% 0.0153 260.73)",
+          "oklch(60% 0.0153 260.73)",
+          "oklch(72% 0.0143 260.73)",
+          "oklch(84% 0.0081 260.73)",
+          "oklch(95% 0.0025 260.73)"
+        ]
+      },
+      "conversation-muted": {
+        "role": "neutral",
+        "displayName": "conversation muted",
+        "tonalRamp": [
+          "oklch(15% 0.0143 256.56)",
+          "oklch(26% 0.0248 256.56)",
+          "oklch(37% 0.0333 256.56)",
+          "oklch(48% 0.0333 256.56)",
+          "oklch(60% 0.0333 256.56)",
+          "oklch(72% 0.0311 256.56)",
+          "oklch(84% 0.0178 256.56)",
+          "oklch(95% 0.0056 256.56)"
+        ]
+      },
+      "conversation-composer-bg": {
+        "role": "neutral",
+        "displayName": "conversation composer bg",
+        "tonalRamp": [
+          "oklch(15% 0.0032 260.73)",
+          "oklch(26% 0.0055 260.73)",
+          "oklch(37% 0.0075 260.73)",
+          "oklch(48% 0.0075 260.73)",
+          "oklch(60% 0.0075 260.73)",
+          "oklch(72% 0.0070 260.73)",
+          "oklch(84% 0.0040 260.73)",
+          "oklch(95% 0.0012 260.73)"
+        ]
+      },
+      "conversation-code-bg": {
+        "role": "neutral",
+        "displayName": "conversation code bg",
+        "tonalRamp": [
+          "oklch(15% 0.0032 260.73)",
+          "oklch(26% 0.0055 260.73)",
+          "oklch(37% 0.0075 260.73)",
+          "oklch(48% 0.0075 260.73)",
+          "oklch(60% 0.0075 260.73)",
+          "oklch(72% 0.0070 260.73)",
+          "oklch(84% 0.0040 260.73)",
+          "oklch(95% 0.0012 260.73)"
+        ]
+      },
+      "dark-conversation-surface": {
+        "role": "neutral",
+        "displayName": "dark conversation surface",
+        "tonalRamp": [
+          "oklch(15% 0.0095 262.48)",
+          "oklch(26% 0.0165 262.48)",
+          "oklch(37% 0.0222 262.48)",
+          "oklch(48% 0.0222 262.48)",
+          "oklch(60% 0.0222 262.48)",
+          "oklch(72% 0.0207 262.48)",
+          "oklch(84% 0.0118 262.48)",
+          "oklch(95% 0.0037 262.48)"
+        ]
+      },
+      "dark-conversation-user-bg": {
+        "role": "secondary",
+        "displayName": "dark conversation user bg",
+        "tonalRamp": [
+          "oklch(15% 0.0248 256.65)",
+          "oklch(26% 0.0427 256.65)",
+          "oklch(37% 0.0577 256.65)",
+          "oklch(48% 0.0577 256.65)",
+          "oklch(60% 0.0577 256.65)",
+          "oklch(72% 0.0536 256.65)",
+          "oklch(84% 0.0306 256.65)",
+          "oklch(95% 0.0098 256.65)"
+        ]
+      },
+      "dark-conversation-user-ink": {
+        "role": "secondary",
+        "displayName": "dark conversation user ink",
+        "tonalRamp": [
+          "oklch(15% 0.0084 260.17)",
+          "oklch(26% 0.0145 260.17)",
+          "oklch(37% 0.0195 260.17)",
+          "oklch(48% 0.0195 260.17)",
+          "oklch(60% 0.0195 260.17)",
+          "oklch(72% 0.0182 260.17)",
+          "oklch(84% 0.0103 260.17)",
+          "oklch(95% 0.0033 260.17)"
+        ]
+      },
+      "dark-conversation-line": {
+        "role": "neutral",
+        "displayName": "dark conversation line",
+        "tonalRamp": [
+          "oklch(15% 0.0148 261.31)",
+          "oklch(26% 0.0257 261.31)",
+          "oklch(37% 0.0346 261.31)",
+          "oklch(48% 0.0346 261.31)",
+          "oklch(60% 0.0346 261.31)",
+          "oklch(72% 0.0323 261.31)",
+          "oklch(84% 0.0184 261.31)",
+          "oklch(95% 0.0058 261.31)"
+        ]
+      },
+      "dark-conversation-muted": {
+        "role": "neutral",
+        "displayName": "dark conversation muted",
+        "tonalRamp": [
+          "oklch(15% 0.0100 260.72)",
+          "oklch(26% 0.0173 260.72)",
+          "oklch(37% 0.0233 260.72)",
+          "oklch(48% 0.0233 260.72)",
+          "oklch(60% 0.0233 260.72)",
+          "oklch(72% 0.0218 260.72)",
+          "oklch(84% 0.0124 260.72)",
+          "oklch(95% 0.0039 260.72)"
+        ]
+      },
+      "dark-conversation-composer-bg": {
+        "role": "neutral",
+        "displayName": "dark conversation composer bg",
+        "tonalRamp": [
+          "oklch(15% 0.0116 264.08)",
+          "oklch(26% 0.0200 264.08)",
+          "oklch(37% 0.0270 264.08)",
+          "oklch(48% 0.0270 264.08)",
+          "oklch(60% 0.0270 264.08)",
+          "oklch(72% 0.0252 264.08)",
+          "oklch(84% 0.0144 264.08)",
+          "oklch(95% 0.0045 264.08)"
+        ]
+      },
+      "dark-conversation-code-bg": {
+        "role": "neutral",
+        "displayName": "dark conversation code bg",
+        "tonalRamp": [
+          "oklch(15% 0.0116 264.08)",
+          "oklch(26% 0.0200 264.08)",
+          "oklch(37% 0.0270 264.08)",
+          "oklch(48% 0.0270 264.08)",
+          "oklch(60% 0.0270 264.08)",
+          "oklch(72% 0.0252 264.08)",
+          "oklch(84% 0.0144 264.08)",
+          "oklch(95% 0.0045 264.08)"
+        ]
       }
     },
     "typographyMeta": {
+      "meta": {
+        "displayName": "Metadata",
+        "purpose": "12px/18px short timestamps, token counts, status, file extensions, and compact names. Token estimates use the body family and tabular numerals."
+      },
+      "control": {
+        "displayName": "Control",
+        "purpose": "14px/21px buttons, menus, labels, short fields, explanatory text, and overview summary previews. The same role is used across surfaces."
+      },
       "body": {
         "displayName": "Body",
-        "purpose": "Interface text and reading content; CJK fallbacks share the same stack."
+        "purpose": "16px/28px normal-weight questions, answers, activity prose, notes, source reading, and multiline editors. Card and panel reading and editing use the same role and CJK fallback stack."
       },
-      "label": {
-        "displayName": "Label",
-        "purpose": "Readable compact controls."
+      "title": {
+        "displayName": "Compact title",
+        "purpose": "16px/24px at weight 600 for card, panel, and overview names and name editors. Overview names retain bounded zoom compensation."
       },
-      "caption": {
-        "displayName": "Caption",
-        "purpose": "Secondary node and context metadata."
+      "heading": {
+        "displayName": "Reading heading",
+        "purpose": "18px/27px at weight 600 for Markdown h3 headings across reading surfaces."
       },
-      "overview-name": {
-        "displayName": "Overview name",
-        "purpose": "Stable two-line names with zoom compensation."
+      "section": {
+        "displayName": "Section title",
+        "purpose": "20px/28px at weight 600 for large dialog titles and Markdown h2 headings."
+      },
+      "page": {
+        "displayName": "Page title",
+        "purpose": "24px/32px at weight 600 for page titles and Markdown h1 headings."
       },
       "mono": {
         "displayName": "Mono",
-        "purpose": "Token counts, file extensions, and code."
-      },
-      "node-meta": {
-        "displayName": "Node metadata",
-        "purpose": "Quiet 12px token counts in the conversation header."
+        "purpose": "Family for code, file extensions, and technical identifiers; choose the size from the corresponding semantic role."
       }
     },
     "shadows": [
@@ -605,7 +809,12 @@
       {
         "name": "lg",
         "value": "0 8px 24px rgb(24 35 52 / 0.12)",
-        "purpose": "Menus and reading-panel overlays; xl and 2xl share this value."
+        "purpose": "Menu overlays; xl and 2xl share this value. The conversation reading panel uses its scoped shadow."
+      },
+      {
+        "name": "conversation-focus-panel",
+        "value": "0 12px 36px rgb(0 0 0 / 10%)",
+        "purpose": "Soft separation for the continuous conversation reading panel."
       }
     ],
     "motion": [
@@ -628,12 +837,25 @@
         "name": "reduced-motion",
         "value": "animation-duration: 0.01ms; animation-iteration-count: 1; transition-duration: 0.01ms; scroll-behavior: auto",
         "purpose": "Global prefers-reduced-motion override; animated edge flow is hidden."
+      },
+      {
+        "name": "conversation-composer",
+        "value": "border-color 150ms ease",
+        "purpose": "Conversation input focus feedback; disabled when reduced motion is preferred."
       }
     ],
     "breakpoints": [
       {
         "name": "md",
         "value": "768px"
+      },
+      {
+        "name": "conversation-card-container",
+        "value": "400px"
+      },
+      {
+        "name": "conversation-focus-panel-container",
+        "value": "420px"
       }
     ]
   },
@@ -644,7 +866,7 @@
       "refersTo": "button-primary",
       "description": "Filled save action; the action color keeps white text in both appearances.",
       "html": "<button class=\"ds-primary\">Save</button>",
-      "css": ".ds-primary{font-family:var(--font-sans);background:var(--color-action);color:#fff;border:0;border-radius:var(--radius-control);padding:6px 16px;font-size:.875rem;line-height:1.45;cursor:pointer;transition:background-color .15s ease}.ds-primary:hover{background:var(--color-action-strong)}.ds-primary:disabled{opacity:.3;cursor:not-allowed}.ds-primary:focus-visible,.ds-secondary:focus-visible,.ds-nav button:focus-visible,.ds-tag:focus-visible,.ds-file-name:focus-visible{outline:2px solid var(--color-accent);outline-offset:2px}"
+      "css": ".ds-primary{font-family:var(--font-sans);background:var(--color-action);color:#fff;border:0;border-radius:var(--radius-control);padding:6px 16px;cursor:pointer;transition:background-color .15s ease;font-size:var(--text-control,.875rem);line-height:var(--text-control--line-height,1.5)}.ds-primary:hover{background:var(--color-action-strong)}.ds-primary:disabled{opacity:.3;cursor:not-allowed}.ds-primary:focus-visible,.ds-secondary:focus-visible,.ds-nav button:focus-visible,.ds-tag:focus-visible,.ds-file-name:focus-visible{outline:2px solid var(--color-accent);outline-offset:2px}"
     },
     {
       "name": "Project control",
@@ -652,15 +874,15 @@
       "refersTo": "button-secondary",
       "description": "Compact project navigation aligned with the session controls.",
       "html": "<button class=\"ds-secondary\">Research canvas <span aria-hidden=\"true\">⌄</span></button>",
-      "css": ".ds-secondary{font-family:var(--font-sans);height:32px;display:inline-flex;align-items:center;gap:8px;padding:0 12px;background:var(--color-card);color:var(--color-ink);border:1px solid var(--color-line);border-radius:var(--radius-control);font-size:.875rem;line-height:1;font-weight:500;cursor:pointer;transition:background-color .15s ease}.ds-secondary:hover{background:var(--color-wash)}.ds-primary:focus-visible,.ds-secondary:focus-visible,.ds-nav button:focus-visible,.ds-tag:focus-visible,.ds-file-name:focus-visible{outline:2px solid var(--color-accent);outline-offset:2px}"
+      "css": ".ds-secondary{font-family:var(--font-sans);height:32px;display:inline-flex;align-items:center;gap:8px;padding:0 12px;background:var(--color-card);color:var(--color-ink);border:1px solid var(--color-line);border-radius:var(--radius-control);font-weight:500;cursor:pointer;transition:background-color .15s ease;font-size:var(--text-control,.875rem);line-height:var(--text-control--line-height,1.5)}.ds-secondary:hover{background:var(--color-wash)}.ds-primary:focus-visible,.ds-secondary:focus-visible,.ds-nav button:focus-visible,.ds-tag:focus-visible,.ds-file-name:focus-visible{outline:2px solid var(--color-accent);outline-offset:2px}"
     },
     {
-      "name": "Follow-up composer",
+      "name": "New question input",
       "kind": "input",
-      "refersTo": "composer",
-      "description": "A borderless field whose padded surface carries focus.",
-      "html": "<div class=\"ds-composer\"><textarea aria-label=\"Follow up\" placeholder=\"Follow up…\" rows=\"1\"></textarea></div>",
-      "css": ".ds-composer{background:var(--color-wash);border-radius:var(--radius-content);padding:10px 16px}.ds-composer textarea{font-family:var(--font-sans);display:block;width:100%;background:transparent;color:var(--color-ink);border:0;font-size:1rem;line-height:1.625;resize:none;max-height:160px}.ds-composer textarea::placeholder{color:var(--color-ink-faint)}.ds-composer textarea:focus-visible{outline:none}.ds-composer:focus-within{outline:2px solid var(--color-accent);outline-offset:2px}"
+      "refersTo": "conversation-composer",
+      "description": "Only empty question nodes contain this input, with a separate tool row and circular send action. Answered cards and reading panels have no follow-up composer.",
+      "html": "<div class=\"ds-composer\"><textarea aria-label=\"Question\" placeholder=\"Question…\" rows=\"2\"></textarea><div class=\"ds-composer-tools\"><button aria-label=\"Send\">↑</button></div></div>",
+      "css": ".ds-composer{display:flex;flex-direction:column;gap:8px;background:var(--conversation-composer-bg);border:1px solid var(--conversation-line);border-radius:var(--radius-content);padding:12px;transition:border-color .15s ease}.ds-composer textarea{font-family:var(--font-sans);display:block;width:100%;background:transparent;color:var(--color-ink);border:0;resize:none;font-size:var(--text-body,1rem);line-height:var(--text-body--line-height,1.75)}.ds-composer textarea::placeholder{color:var(--conversation-muted)}.ds-composer textarea:focus-visible{outline:none}.ds-composer:focus-within{border-color:var(--color-accent)}.ds-composer-tools{display:flex;justify-content:flex-end}.ds-composer-tools button{width:30px;height:30px;border:0;border-radius:50%;background:var(--color-action);color:white;cursor:pointer}.ds-composer-tools button:hover{background:var(--color-action-strong)}.ds-composer-tools button:focus-visible{outline:2px solid var(--color-accent);outline-offset:3px}.ds-composer-tools button:disabled{color:var(--conversation-muted);background:var(--conversation-line);cursor:default}"
     },
     {
       "name": "Embedded view switch",
@@ -668,7 +890,7 @@
       "refersTo": "view-switch",
       "description": "Chat and map share one compact control alongside project navigation.",
       "html": "<div class=\"ds-nav\" role=\"group\" aria-label=\"View\"><button aria-pressed=\"false\">Chat</button><button aria-pressed=\"true\">Map</button></div>",
-      "css": ".ds-nav{display:inline-flex;align-items:center;height:32px;padding:2px;background:var(--color-card);border:1px solid var(--color-line);border-radius:var(--radius-control)}.ds-nav button{font-family:var(--font-sans);height:100%;padding:0 12px;border:0;border-radius:var(--radius-tag);background:transparent;color:var(--color-ink-muted);font-size:.875rem;font-weight:600;cursor:pointer;transition:background-color .15s ease}.ds-nav button[aria-pressed=false]:hover{background:var(--color-wash);color:var(--color-ink)}.ds-nav button[aria-pressed=true]{background:var(--color-ink);color:var(--color-card);cursor:default}.ds-primary:focus-visible,.ds-secondary:focus-visible,.ds-nav button:focus-visible,.ds-tag:focus-visible,.ds-file-name:focus-visible{outline:2px solid var(--color-accent);outline-offset:2px}"
+      "css": ".ds-nav{display:inline-flex;align-items:center;height:32px;padding:2px;background:var(--color-card);border:1px solid var(--color-line);border-radius:var(--radius-control)}.ds-nav button{font-family:var(--font-sans);height:100%;padding:0 12px;border:0;border-radius:var(--radius-tag);background:transparent;color:var(--color-ink-muted);font-weight:600;cursor:pointer;transition:background-color .15s ease;font-size:var(--text-control,.875rem);line-height:var(--text-control--line-height,1.5)}.ds-nav button[aria-pressed=false]:hover{background:var(--color-wash);color:var(--color-ink)}.ds-nav button[aria-pressed=true]{background:var(--color-ink);color:var(--color-card);cursor:default}.ds-primary:focus-visible,.ds-secondary:focus-visible,.ds-nav button:focus-visible,.ds-tag:focus-visible,.ds-file-name:focus-visible{outline:2px solid var(--color-accent);outline-offset:2px}"
     },
     {
       "name": "Provenance tag",
@@ -676,15 +898,15 @@
       "refersTo": "provenance-tag",
       "description": "A compact action linking a derived node to its sources.",
       "html": "<button class=\"ds-tag\">Sources · 3</button>",
-      "css": ".ds-tag{font-family:var(--font-sans);display:inline-flex;align-items:center;padding:2px 6px;border:0;border-radius:var(--radius-tag);background:color-mix(in srgb,var(--color-accent) 10%,transparent);color:var(--color-accent);font-size:.8125rem;font-weight:500;line-height:1.35;cursor:pointer;transition:background-color .15s ease}.ds-tag:hover{background:color-mix(in srgb,var(--color-accent) 20%,transparent)}.ds-primary:focus-visible,.ds-secondary:focus-visible,.ds-nav button:focus-visible,.ds-tag:focus-visible,.ds-file-name:focus-visible{outline:2px solid var(--color-accent);outline-offset:2px}"
+      "css": ".ds-tag{font-family:var(--font-sans);display:inline-flex;align-items:center;padding:2px 6px;border:0;border-radius:var(--radius-tag);background:color-mix(in srgb,var(--color-accent) 10%,transparent);color:var(--color-accent);font-weight:500;cursor:pointer;transition:background-color .15s ease;font-size:var(--text-control,.875rem);line-height:var(--text-control--line-height,1.5)}.ds-tag:hover{background:color-mix(in srgb,var(--color-accent) 20%,transparent)}.ds-primary:focus-visible,.ds-secondary:focus-visible,.ds-nav button:focus-visible,.ds-tag:focus-visible,.ds-file-name:focus-visible{outline:2px solid var(--color-accent);outline-offset:2px}"
     },
     {
       "name": "Start node",
       "kind": "card",
       "refersTo": "thought-node",
-      "description": "A representative start card with its accent integrated into the continuous border.",
-      "html": "<article class=\"ds-start\"><header><button aria-label=\"Collapse\">⌄</button><span>Start</span></header><div class=\"ds-node-body\">What should this conversation explore?</div></article>",
-      "css": ".ds-start{font-family:var(--font-sans);width:520px;max-width:100%;background:var(--color-card);color:var(--color-ink);border:1px solid color-mix(in srgb,var(--color-accent) 30%,var(--color-line));border-left:3px solid var(--color-accent);border-radius:var(--radius-node);box-shadow:none;transition:border-color .16s ease}.ds-start:hover{border-color:var(--color-line-strong);border-left-color:var(--color-accent)}.ds-start header{display:flex;align-items:center;gap:8px;padding:8px 16px;border-bottom:1px solid var(--color-line)}.ds-start header button{width:28px;height:28px;border:0;border-radius:var(--radius-control);background:color-mix(in srgb,var(--color-accent) 10%,transparent);color:var(--color-accent);cursor:pointer}.ds-start header button:hover{background:color-mix(in srgb,var(--color-accent) 15%,transparent)}.ds-start header button:focus-visible{outline:2px solid var(--color-accent);outline-offset:2px}.ds-start header span{font-size:12px;font-weight:500;color:var(--color-accent-strong)}.ds-node-body{padding:16px 20px;font-size:1rem;line-height:1.7;overflow-wrap:anywhere}"
+      "description": "A conversation card using the shared card surface, 14px node radius, and 16px content insets, with a draggable status bar, a complete tokens estimate and composition bar, a full-width metadata section, blue user message, and plain assistant answer. Preview counts are illustrative.",
+      "html": "<article class=\"ds-start\"><header><button aria-label=\"Collapse\">⌄</button><span class=\"ds-usage\" tabindex=\"0\" title=\"Illustrative content estimate: question 30 (16.7%); answer 90 (50%); tool record 45 (25%); recorded thinking 15 (8.3%). Excludes other attachments and upstream context; not API billing.\"><span class=\"ds-usage-heading\"><span>≈ 180 tokens</span><span class=\"ds-tools\"><svg width=\"13\" height=\"13\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z\"/></svg>3</span></span><span class=\"ds-usage-bar\" aria-hidden=\"true\"></span></span><span class=\"ds-start-label\">Start</span></header><details class=\"ds-metadata-section\"><summary class=\"ds-metadata\"><svg width=\"12\" height=\"12\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"m9 18 6-6-6-6\"/></svg>Name and summary</summary><div class=\"ds-metadata-fields\"><label>Name<input value=\"Research plan\"/></label><label>Summary<textarea rows=\"2\">Define the question and record the next step.</textarea></label><div class=\"ds-metadata-actions\"><button>AI fill</button><span><button>Cancel</button><button>Save</button></span></div></div></details><div class=\"ds-node-body\"><div class=\"ds-user\">What should this conversation explore?</div><div class=\"ds-answer\">Define the question and record the next step.</div></div></article>",
+      "css": ".ds-start{font-family:var(--font-sans);width:520px;max-width:100%;background:var(--conversation-surface);color:var(--color-ink);border:1px solid var(--color-line);border-left:3px solid var(--color-accent);border-radius:var(--radius-node);box-shadow:none;transition:border-color .16s ease}.ds-start:hover{border-color:var(--color-line-strong);border-left-color:var(--color-accent)}.ds-start header{display:flex;align-items:center;column-gap:10px;row-gap:8px;min-height:52px;padding:12px 16px;border-bottom:1px solid var(--conversation-line);border-radius:calc(var(--radius-node) - 1px) calc(var(--radius-node) - 1px) 0 0;cursor:grab}.ds-start header button{width:28px;height:28px;border:0;border-radius:var(--radius-control);background:color-mix(in srgb,var(--color-accent) 10%,transparent);color:var(--color-accent);cursor:pointer}.ds-start header button:hover{background:color-mix(in srgb,var(--color-accent) 15%,transparent)}.ds-start button:focus-visible{outline:2px solid var(--color-accent);outline-offset:2px}.ds-start header span{color:var(--conversation-muted);font-size:var(--text-meta,.75rem);line-height:var(--text-meta--line-height,1.5)}.ds-metadata-section{padding:0 16px;border-bottom:1px solid var(--conversation-line);background:color-mix(in srgb,var(--conversation-composer-bg) 40%,var(--conversation-surface))}.ds-metadata{display:flex;align-items:center;gap:6px;width:100%;min-height:38px;padding:8px 0;margin:0;border:0;background:transparent;color:var(--conversation-muted);font-weight:500;list-style:none;cursor:pointer;font-size:var(--text-control,.875rem);line-height:var(--text-control--line-height,1.5)}.ds-metadata::-webkit-details-marker{display:none}.ds-metadata-section[open] .ds-metadata svg{transform:rotate(90deg)}.ds-metadata-fields{display:flex;flex-direction:column;gap:12px;padding:8px 0 12px;margin:0;border:0;border-radius:0;background:transparent}.ds-metadata-fields label{display:flex;flex-direction:column;gap:5px;color:var(--conversation-muted);font-size:var(--text-control,.875rem);line-height:var(--text-control--line-height,1.5)}.ds-metadata-fields input,.ds-metadata-fields textarea{width:100%;padding:4px 0;font-family:inherit;background:transparent;color:var(--color-ink);border:0;border-radius:0;outline:none}.ds-metadata-fields input{font-size:var(--text-title,1rem);line-height:var(--text-title--line-height,1.5);font-weight:600}.ds-metadata-fields textarea{resize:vertical;min-height:76px;font-size:var(--text-body,1rem);line-height:var(--text-body--line-height,1.75)}.ds-metadata-fields input:focus-visible,.ds-metadata-fields textarea:focus-visible{box-shadow:0 1px 0 var(--color-accent)}.ds-metadata-actions{display:flex;align-items:center;justify-content:space-between;gap:8px;padding-top:10px;border-top:1px solid var(--conversation-line)}.ds-metadata-actions button{min-height:30px;padding:5px 8px;border:0;border-radius:var(--radius-control);background:transparent;color:var(--conversation-muted);font-family:inherit;font-size:var(--text-control,.875rem);line-height:var(--text-control--line-height,1.5)}.ds-metadata-actions button:hover{background:var(--conversation-line)}.ds-metadata-actions span button:last-child{padding-inline:13px;background:var(--color-ink);color:var(--conversation-surface)}.ds-metadata:hover{color:var(--color-ink)}.ds-node-body{padding:16px;overflow-wrap:anywhere}.ds-user{width:fit-content;max-width:88%;margin:0 0 16px auto;padding:12px 16px;border-radius:var(--radius-content) var(--radius-content) var(--radius-tag) var(--radius-content);background:var(--conversation-user-bg);color:var(--conversation-user-ink);font-weight:400;font-size:var(--text-body,1rem);line-height:var(--text-body--line-height,1.75)}.ds-answer{padding:0;background:transparent;font-size:var(--text-body,1rem);line-height:var(--text-body--line-height,1.75)}.ds-usage{display:inline-flex;flex-direction:column;align-items:stretch;gap:4px;min-width:104px;padding:3px 0;cursor:inherit;user-select:none;font-variant-numeric:tabular-nums;font-weight:500;font-size:var(--text-meta,.75rem);line-height:var(--text-meta--line-height,1.5)}.ds-usage-heading{display:flex;align-items:center;gap:12px;white-space:nowrap}.ds-usage-bar{--ds-usage-question:#8474b4;--ds-usage-answer:#7a8da5;--ds-usage-tool:#ad8251;--ds-usage-think:#548e83;display:block;box-sizing:border-box;width:100%;height:6px;border:1px solid color-mix(in srgb,var(--conversation-muted) 55%,var(--conversation-surface));border-radius:var(--radius-tag);background-color:var(--conversation-line);background-clip:padding-box;background-image:linear-gradient(to right,var(--ds-usage-question) 0% 16.6667%,var(--ds-usage-answer) 16.6667% 66.6667%,var(--ds-usage-tool) 66.6667% 91.6667%,var(--ds-usage-think) 91.6667% 100%)}:root[data-theme=dark] .ds-usage-bar{--ds-usage-question:#b0a0d6;--ds-usage-answer:#9aafc5;--ds-usage-tool:#cfaa79;--ds-usage-think:#7db7a9}.ds-tools{display:inline-flex;align-items:center;gap:5px;user-select:none;cursor:inherit}.ds-start header .ds-start-label{font-size:var(--text-meta,.75rem);line-height:var(--text-meta--line-height,1.5)}.ds-usage:focus-visible,.ds-metadata:focus-visible{outline:2px solid var(--color-accent);outline-offset:4px}"
     },
     {
       "name": "Note material",
@@ -692,7 +914,7 @@
       "refersTo": "note-node",
       "description": "Warm paper distinguishes source notes from generated responses.",
       "html": "<article class=\"ds-note\"><header>Note</header><div>Research observations and source text.</div></article>",
-      "css": ".ds-note{font-family:var(--font-sans);background:var(--color-material-note);color:var(--color-ink);border:1px solid var(--color-material-note-line);border-radius:var(--radius-node);box-shadow:none}.ds-note header{padding:12px 20px;border-bottom:1px solid var(--color-material-note-line);color:var(--color-material-note-ink);font-size:.875rem;font-weight:500}.ds-note>div{padding:16px 20px;font-size:1rem;line-height:1.85;overflow-wrap:anywhere}"
+      "css": ".ds-note{font-family:var(--font-sans);background:var(--color-material-note);color:var(--color-ink);border:1px solid var(--color-material-note-line);border-radius:var(--radius-node);box-shadow:none}.ds-note header{padding:12px 16px;border-bottom:1px solid var(--color-material-note-line);color:var(--color-material-note-ink);font-weight:500;font-size:var(--text-control,.875rem);line-height:var(--text-control--line-height,1.5)}.ds-note>div{padding:16px;overflow-wrap:anywhere;font-size:var(--text-body,1rem);line-height:var(--text-body--line-height,1.75)}"
     },
     {
       "name": "File material",
@@ -700,28 +922,41 @@
       "refersTo": "file-node",
       "description": "Filename-derived extension identity, source name, and an illustrative byte-size label.",
       "html": "<article class=\"ds-file\"><header>Files</header><div class=\"ds-file-row\"><span class=\"ds-file-identity\"><svg width=\"21\" height=\"21\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z\"/><path d=\"M14 2v6h6M8 13h8M8 17h6\"/></svg><span>.docx</span></span><div><button class=\"ds-file-name\">Research notes.docx</button><div class=\"ds-file-meta\">24.0 KiB</div></div></div></article>",
-      "css": ".ds-file{font-family:var(--font-sans);background:var(--color-card);color:var(--color-ink);border:1px solid var(--color-material-file-line);border-radius:var(--radius-node);box-shadow:none}.ds-file header{padding:12px 16px;border-bottom:1px solid var(--color-line);color:var(--color-material-file-ink);font-size:.875rem;font-weight:500}.ds-file-row{display:flex;align-items:center;gap:14px;padding:12px 16px}.ds-file-identity{flex:0 0 58px;min-height:64px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;border:1px solid var(--color-material-file-line);border-radius:var(--radius-control);color:var(--color-material-file-ink);background:var(--color-material-file-wash)}.ds-file-identity span{font-family:var(--font-mono);font-size:10px;line-height:1.2}.ds-file-name{font-family:var(--font-sans);background:transparent;color:var(--color-ink);border:0;padding:0;font-size:15px;font-weight:500;line-height:1.5;text-align:left;overflow-wrap:anywhere;cursor:pointer}.ds-file-name:hover{color:var(--color-accent)}.ds-file-meta{margin-top:5px;color:var(--color-ink-faint);font-size:12px}.ds-primary:focus-visible,.ds-secondary:focus-visible,.ds-nav button:focus-visible,.ds-tag:focus-visible,.ds-file-name:focus-visible{outline:2px solid var(--color-accent);outline-offset:2px}"
+      "css": ".ds-file{font-family:var(--font-sans);background:var(--color-card);color:var(--color-ink);border:1px solid var(--color-material-file-line);border-radius:var(--radius-node);box-shadow:none}.ds-file header{padding:12px 16px;border-bottom:1px solid var(--color-line);color:var(--color-material-file-ink);font-weight:500;font-size:var(--text-control,.875rem);line-height:var(--text-control--line-height,1.5)}.ds-file-row{display:flex;align-items:center;gap:14px;padding:12px 16px}.ds-file-identity{flex:0 0 58px;min-height:64px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;border:1px solid var(--color-material-file-line);border-radius:var(--radius-control);color:var(--color-material-file-ink);background:var(--color-material-file-wash)}.ds-file-identity span{font-family:var(--font-mono);font-size:var(--text-meta,.75rem);line-height:var(--text-meta--line-height,1.5)}.ds-file-name{font-family:var(--font-sans);background:transparent;color:var(--color-ink);border:0;padding:0;text-align:left;overflow-wrap:anywhere;cursor:pointer;font-size:var(--text-title,1rem);line-height:var(--text-title--line-height,1.5);font-weight:600}.ds-file-name:hover{color:var(--color-accent)}.ds-file-meta{margin-top:5px;color:var(--color-ink-faint);font-size:var(--text-meta,.75rem);line-height:var(--text-meta--line-height,1.5)}.ds-primary:focus-visible,.ds-secondary:focus-visible,.ds-nav button:focus-visible,.ds-tag:focus-visible,.ds-file-name:focus-visible{outline:2px solid var(--color-accent);outline-offset:2px}"
     },
     {
       "name": "Continuous reading panel",
       "kind": "custom",
       "refersTo": "focus-panel",
-      "description": "A bounded overlay whose internal sections share one reading surface.",
-      "html": "<aside class=\"ds-panel\"><header>Conversation</header><section><strong>Question</strong><p>What does this source establish?</p></section><section><strong>Response</strong><p>The reading region remains continuous between sections.</p></section></aside>",
-      "css": ".ds-panel{font-family:var(--font-sans);width:520px;max-width:100%;background:var(--color-card);color:var(--color-ink);border:1px solid var(--color-line);border-radius:var(--radius-panel);box-shadow:var(--shadow-lg);overflow:hidden}.ds-panel header{padding:8px 16px;border-bottom:1px solid var(--color-line);font-size:.875rem}.ds-panel section{margin:0;padding:12px 16px;border-bottom:1px solid var(--color-line);background:transparent;border-radius:0;box-shadow:none;font-size:1rem;line-height:1.7}.ds-panel section:last-child{border-bottom:0}.ds-panel strong{font-weight:600}.ds-panel p{margin:8px 0 0}"
+      "description": "A reading panel using the shared card surface and 14px panel radius, with a fixed header and scrolling question, activity and answer content aligned to 16px horizontal insets. Completed nodes have no composer footer; further questions belong to new connected nodes.",
+      "html": "<aside class=\"ds-panel\"><header>Research conversation</header><div class=\"ds-panel-reading\"><div class=\"ds-panel-user\">What is the next step?</div><div class=\"ds-panel-answer\">Clarify the question, then record the evidence supporting each conclusion.</div></div></aside>",
+      "css": ".ds-panel{font-family:var(--font-sans);width:520px;max-width:100%;background:var(--conversation-surface);color:var(--color-ink);border:1px solid var(--conversation-line);border-radius:var(--radius-panel);overflow:hidden;box-shadow:0 12px 36px rgb(0 0 0 / 10%)}.ds-panel>header{min-height:56px;padding:12px 16px;font-size:var(--text-title,1rem);line-height:var(--text-title--line-height,1.5);font-weight:600}.ds-panel-reading{padding:12px 16px}.ds-panel-user{width:fit-content;max-width:90%;margin:0 0 16px auto;padding:12px 16px;border-radius:var(--radius-content) var(--radius-content) var(--radius-tag) var(--radius-content);background:var(--conversation-user-bg);color:var(--conversation-user-ink);font-weight:400;font-size:var(--text-body,1rem);line-height:var(--text-body--line-height,1.75)}.ds-panel-answer{margin-bottom:16px;padding:0;background:transparent;font-size:var(--text-body,1rem);line-height:var(--text-body--line-height,1.75)}"
+    },
+    {
+      "name": "Conversation summary preview",
+      "kind": "card",
+      "refersTo": "node-summary-preview",
+      "description": "Reduced-detail cards expose a two-line name and three-line summary, using the same bounded zoom compensation as their insets.",
+      "html": "<button class=\"ds-summary\"><span class=\"ds-summary-name\">Research plan</span><span class=\"ds-summary-text\">Define the question and record the next step.</span></button>",
+      "css": ".ds-summary{--summary-scale:clamp(.32,var(--tdag-zoom,1),1);display:block;width:100%;font-family:var(--font-sans);text-align:left;padding:calc(var(--spacing-surface-inset) / var(--summary-scale));background:var(--conversation-surface);border:0;border-radius:0 0 calc(var(--radius-node) - 1px) calc(var(--radius-node) - 1px);cursor:pointer}.ds-summary:hover{background:color-mix(in srgb,var(--conversation-composer-bg) 50%,transparent)}.ds-summary:focus-visible{outline:2px solid var(--color-accent);outline-offset:2px}.ds-summary-name,.ds-summary-text{display:-webkit-box;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}.ds-summary-name{-webkit-line-clamp:2;color:var(--color-ink);font-size:calc(var(--text-title,1rem) / var(--summary-scale));line-height:var(--text-title--line-height,1.5);font-weight:600}.ds-summary-text{-webkit-line-clamp:3;margin-top:calc(8px / var(--summary-scale));color:var(--conversation-muted);font-size:calc(var(--text-control,.875rem) / var(--summary-scale));line-height:var(--text-control--line-height,1.5)}"
     }
   ],
   "narrative": {
-    "overview": "ThoughtDAG is an editable conversation canvas: readable question-and-answer cards, directional context edges, and a continuous reading panel. Cool neutral surfaces keep graph structure legible; purple identifies the main conversation and orange identifies exploration.\n\nThis documents the implemented visual system, not a completed accessibility audit or a claim that every detail was individually approved. Rounded corners are welcome when outlines, dividers, and accents join coherently.",
+    "overview": "ThoughtDAG is an editable conversation canvas: readable question-and-answer cards, directional context edges, and a continuous reading panel. Cool neutral canvas controls keep graph structure legible; purple identifies mainline edges and selection, and orange identifies exploration. Conversation cards and the reading panel share the canvas tool cards' surface and boundary roles, with right-aligned blue user messages and plain assistant text.\n\nThis documents the implemented visual system, not a completed accessibility audit or a claim that every detail was individually approved. Rounded corners are welcome when outlines, dividers, and accents join coherently.",
     "keyCharacteristics": [
       "Stable graph geometry across interaction and appearance.",
       "Compact controls, readable content, and restrained overlay depth.",
       "Distinct start, note, and file identities at every semantic zoom tier."
     ],
     "rules": [
+      "Action toolbar: 16px group gaps and 4px related-control gaps; selection uses text in full layouts and accessible icons when compact, with no filled track or visible group caption. Selected/open/non-default controls share accent/9% fill while retaining correct ARIA semantics. Search has a 40px input row, 14px regular input text, a short placeholder, a single focus boundary, no shadow, and 14px keyboard hints only below results.",
+      "Layout inspector follows More and Object Format: shared canvas-tool-panel colors and outline; 16px horizontal/12px vertical content padding, 12px group gaps, 6px label spacing. Segments use More's single 6px-radius border with internal dividers, 14px text, 6px vertical padding, and accent/10 selected fill with accent text at 500 weight. No inset track or separate selected tile. Footer uses 8px padding/4px gaps, plain 32px-minimum Cancel and Preview buttons, and Object Format's filled Apply style.",
       "Editing and dismissal: reversible short names commit outside; content editors suspend with session drafts, including empty drafts. Escape cancels only the top layer; sending, generation, authorization, deletion, and configuration submission require explicit action. See docs/reference/interaction-contract.md and reuse the shared dismiss hooks.",
-      "Canvas spacing: 16px viewport and content insets, 8px toolbar padding, 4px control gaps, 32px controls, 12px section spacing. Compact overview names use 8px padding with the same zoom compensation as their text. Top control groups wrap in the visible canvas.",
-      "Node proportions: 28px header controls with 8px vertical padding; 12px working ports and 16px overview ports; 18px corner grips follow canvas zoom while their invisible hit areas remain generous. Arrowheads use canvas coordinates independently of stroke thickness. First-question inputs group 16px search and send icons in a padded composer with 32px actions."
+      "Canvas spacing: 16px viewport and content insets, 8px toolbar padding, 4px control gaps, 32px controls, 12px section spacing. Compact overview names use 8px padding with the same zoom compensation as their text. Top control groups stay on a 50px single row, shortening labels and moving secondary entries into More as available canvas width decreases. Their 15px outer radius equals the 6px control radius plus 8px inset and 1px border. Project and source-session controls are borderless at rest; model connection keeps an accent fill without a nested outline.",
+      "Node proportions: conversation headers have a 52px minimum height, 12px 16px padding, 10px column gaps, and 28px controls; 12px working ports and 16px overview ports; Shared resize marks use 2px by 14px edge lines and a 14px two-line diagonal corner inset by 6px, with neutral resting color and accent hover/focus/drag states. Single-node marks follow canvas zoom with transparent 32px screen-space targets; multi-selection reuses the marks on its screen-space boundary and hides individual controls. Short-card width targets avoid side ports; wiring and sizing controls yield to the active gesture. Arrowheads use canvas coordinates independently of stroke thickness. First-question inputs group 16px search and send icons in a padded composer with 32px actions.",
+      "Conversation surfaces: thought cards and the focus panel alias the shared card, line, ink-muted, and wash roles used by More and Object Format, with blue right-aligned user messages and plain assistant text. The node radius aliases the 14px panel radius; headers and summary ends use 13px inner corners. User bubbles use 8px content corners with a 4px lower-right tag corner; code blocks, editors, and composers use 8px, while metadata actions use 6px control corners. Metadata is a full-width section with a bottom divider and a 40% composer-tone background. Its 38px disclosure stays folded in full view and becomes the name-and-summary preview in summary view. Metadata uses 16px horizontal insets; expanded fields have 12px gaps and 8px 0 12px padding, transparent backgrounds, and no inner border or radius. The conversation body and summary preview use 16px padding on every side. User bubbles use 12px 16px padding and a 16px gap before the answer, with no extra top margin. The focus header has a 56px minimum height and 12px 16px padding; scrolling content has 12px vertical padding, and all reading sections, metadata, and inspection sections share 16px horizontal insets. Metadata ends with a 12px gap, and question and answer sections each end with 16px. Narrow panels retain these insets and bubble padding while widening user messages to 94%. AI fill edits session drafts; only explicit Save commits them. Summary type and insets divide by canvas zoom clamped from 0.32 to 1. Material identities retain their existing palettes; compact overview corners keep their zoom-compensated form. The draggable header shows complete tokens text immediately followed by a wrench and the tool-call count on the same line, separated by 12px. The 6px-high composition bar with a continuous 1px neutral perimeter below matches the whole group width, with a 104px minimum group width. One block element paints all segments as a hard-stop linear gradient with identical adjacent stop positions. Colors are clipped to the padding box inside a continuous 1px neutral perimeter, keeping their transitions away from the shared outside contour at fractional canvas scales. The tool indicator displays only its wrench icon and count. The total, icon, count, and bar share one hover and keyboard-focus target with one tooltip, which also includes tool names. Hover or focus reveals question, answer, tool-record, and recorded-thinking values using the same estimated-content total; unrecorded thinking has no percentage. This excludes other attachments and upstream context and is not API billing usage. Forwarding is a note, not a bar texture.",
+      "Typography uses purpose-based shared roles from src/index.css: meta 12px/18px, control 14px/21px, body 16px/28px, title 16px/24px, heading 18px/27px, section 20px/28px, and page 24px/32px at the default root size. Titles use weight 600; body and metadata use 400. Questions, answers, activity prose, notes, and multiline editors use body across canvas cards and focus panels. Controls and explanations use control, while short counts and dates use meta. Full cards at 100% zoom match the reading panel. Markdown h1/h2/h3 use page/section/heading consistently. Narrow surfaces reflow rather than shrink labels.",
+      "Overview names use title at 16px, summary previews use control at 14px, and compact names and file identities use meta at 12px. Summary previews intentionally differ from full 16px multiline editors. Existing zoom compensation retains the summary 0.32-to-1 clamp and compact 0.22 lower clamp, allowing smaller apparent text only at extreme canvas distances. Exported .tmap-art artwork, tutorial SVG diagrams, and timeline ladder dynamic text retain separate coordinate-dependent type scales."
     ],
     "dos": [
       "Do use the semantic radius tokens and a continuous card outline.",
@@ -729,7 +964,8 @@
       "Do keep top-left project and session controls aligned at the same height.",
       "Do retain node names and file extensions when reducing visual detail.",
       "Do use actual filenames, extensions, and available file sizes.",
-      "Do verify light and dark appearances without changing component geometry."
+      "Do verify light and dark appearances without changing component geometry.",
+      "Do use the shared semantic typography roles for the same purpose across cards, panels, menus, and settings, including reading and editing states."
     ],
     "donts": [
       "Don't replace coherent rounded corners with an all-square interface.",
@@ -737,7 +973,8 @@
       "Don't translate nodes on hover or clip their external connection ports.",
       "Don't add stacked shadows to the minimap or turn its viewport mask into a dark slab.",
       "Don't nest raised cards throughout the focus panel's reading area.",
-      "Don't invent file metadata, previews, or promotional third-party UI copy."
+      "Don't invent file metadata, previews, or promotional third-party UI copy.",
+      "Don't introduce component-specific font sizes or smaller labels to fit narrow application surfaces."
     ]
   }
 }

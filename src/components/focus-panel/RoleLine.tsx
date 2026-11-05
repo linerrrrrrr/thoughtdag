@@ -3,11 +3,11 @@ import { useT } from '../../i18n';
 import { isViewerMode } from '../../lib/viewer';
 import type { ThoughtData } from '../../types';
 
-// The panel's summary kicker: role · tokens · materials, in one quiet line
-// at the top. The narrow role model: a rolePrompt on a node is the system
+// Inspection metadata: role, tokens and materials share one quiet line
+// after the conversation. The narrow role model: a rolePrompt on a node is the system
 // prompt for it and everything downstream (nearest ancestor wins). Clicking
 // the role text asks the panel to open the editor (RoleEditor, a full-width
-// strip under the header) on ANY node: on the node that set it, the text is
+// strip beside the role line) on ANY node: on the node that set it, the text is
 // its own; elsewhere the inherited text comes prefilled and saving gives
 // this node a role of its own (the "inherited" tag goes). Machine-step
 // personas don't use this at all; they live in prompt text.
@@ -29,7 +29,7 @@ export default function RoleLine({
 
   return (
     <div className="flex-1 min-w-0">
-      <div className="flex items-center gap-1.5 text-xs text-ink-faint min-w-0 h-8">
+      <div className="flex items-center gap-1.5 text-control text-ink-faint min-w-0 h-8">
         <UserCog size={13} strokeWidth={1.75} className="shrink-0" />
         {effective ? (
           isViewerMode ? (
@@ -56,10 +56,10 @@ export default function RoleLine({
           <span className="italic shrink-0">{t('role.noRoleSet')}</span>
         )}
         {!own && effective && (
-          <span className="text-2xs bg-line/50 px-1.5 py-px rounded-tag shrink-0">{t('role.inherited')}</span>
+          <span className="text-control bg-line/50 px-1.5 py-px rounded-tag shrink-0">{t('role.inherited')}</span>
         )}
         <span className="shrink-0">·</span>
-        <span className="shrink-0 text-ink-muted">{data.tokenCount} tok</span>
+        <span className="shrink-0 text-ink-muted">{data.tokenCount} tokens</span>
         {attachCount > 0 && (
           <>
             <span className="shrink-0">·</span>

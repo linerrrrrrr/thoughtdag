@@ -78,7 +78,7 @@ export default function ParadigmNode({ id, data }: NodeProps<ThoughtNodeType>) {
               <Icon size={14} strokeWidth={1.75} />
             </button>
           ))}
-          <span className={`text-2xs self-center ml-1 uppercase tracking-wider font-medium ${kind === 'human' ? 'text-warm' : 'text-accent/80'}`}>
+          <span className={`text-control self-center ml-1 uppercase tracking-wider font-medium ${kind === 'human' ? 'text-warm' : 'text-accent/80'}`}>
             {t(`paradigm.kind.${kind}` as Parameters<typeof t>[0])}
           </span>
         </div>
@@ -97,7 +97,7 @@ export default function ParadigmNode({ id, data }: NodeProps<ThoughtNodeType>) {
           value={data.question}
           onChange={(e) => patch({ question: e.target.value })}
           placeholder={t('paradigm.titlePlaceholder')}
-          className="w-full text-sm font-semibold text-ink bg-transparent focus:outline-none placeholder-ink-faint"
+          className="w-full text-title font-semibold text-ink bg-transparent focus:outline-none placeholder-ink-faint"
         />
 
         {/* body: THE prompt (machine) or operator guidance (human) — one
@@ -107,7 +107,7 @@ export default function ParadigmNode({ id, data }: NodeProps<ThoughtNodeType>) {
           onChange={(e) => patch({ instruction: e.target.value })}
           placeholder={t(kind === 'human' ? 'paradigm.humanHintPlaceholder' : 'paradigm.promptPlaceholder')}
           rows={kind === 'human' ? 3 : 4}
-          className={`w-full text-xs text-ink bg-surface border border-line rounded-control px-2.5 py-2 focus:outline-none focus:ring-1 resize-y leading-relaxed nowheel ${
+          className={`w-full text-body text-ink bg-surface border border-line rounded-control px-2.5 py-2 focus:outline-none focus:ring-1 resize-y nowheel ${
             kind === 'human' ? 'focus:ring-warm/40' : 'focus:ring-accent/40'
           }`}
         />
@@ -119,7 +119,7 @@ export default function ParadigmNode({ id, data }: NodeProps<ThoughtNodeType>) {
               <button
                 key={tpl.id}
                 onClick={() => patch({ instruction: `${tpl.prompt}\n${data.instruction ?? ''}` })}
-                className="text-2xs bg-wash hover:bg-accent/10 hover:text-accent text-ink-muted px-1.5 py-0.5 rounded-tag transition-colors"
+                className="text-control bg-wash hover:bg-accent/10 hover:text-accent text-ink-muted px-1.5 py-0.5 rounded-tag transition-colors"
               >
                 + {tpl.name}
               </button>
@@ -133,7 +133,7 @@ export default function ParadigmNode({ id, data }: NodeProps<ThoughtNodeType>) {
             <button
               onClick={() => patch({ webSearch: !data.webSearch })}
               title={data.webSearch ? t('toolbar.webSearch') : t('toolbar.webSearchOff')}
-              className={`text-2xs px-2 py-1 rounded-control transition-colors flex items-center gap-1 ${
+              className={`text-control px-2 py-1 rounded-control transition-colors flex items-center gap-1 ${
                 data.webSearch ? 'bg-accent/10 text-accent' : 'bg-wash text-ink-faint hover:bg-line'
               }`}
             >
@@ -142,7 +142,7 @@ export default function ParadigmNode({ id, data }: NodeProps<ThoughtNodeType>) {
             <button
               onClick={() => patch({ scholarSearch: !data.scholarSearch })}
               title={data.scholarSearch ? t('toolbar.scholarSearch') : t('toolbar.scholarSearchOff')}
-              className={`text-2xs px-2 py-1 rounded-control transition-colors flex items-center gap-1 ${
+              className={`text-control px-2 py-1 rounded-control transition-colors flex items-center gap-1 ${
                 data.scholarSearch ? 'bg-accent/10 text-accent' : 'bg-wash text-ink-faint hover:bg-line'
               }`}
             >

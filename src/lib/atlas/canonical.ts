@@ -9,6 +9,8 @@ import { useUiStore, toast } from '../ui-store';
 import { t, fmt } from '../../i18n';
 import { generateId } from '../../utils';
 import type { ThoughtNode, ThoughtEdge } from '../../types';
+import { repairInternalSessionNodes, syncApprovalAttachments } from './internal-session-repair';
+import { repairCodexActivity } from './codex-activity-repair';
 
 // The canonical-canvas contract, chapter edition. One canvas = one line
 // of thought; sessions are its physical chapters. Routing order:
@@ -293,13 +295,42 @@ async function appendPastLedger(
   opts: OpenOptions = {},
 ): Promise<CanonicalResult> {
   await switchProject(hit.project.id);
-  const store = useStore.getState();
+  let store = useStore.getState();
+  if (conv.source === 'codex' && conv.sessionId && conv.excludedSessionIds?.length) {
+    const repaired = repairInternalSessionNodes(store.nodes, store.edges, conv.sessionId, conv.excludedSessionIds, built.nodes, hit.entry);
+    if (repaired.changed) {
+      const liveIds = new Set(repaired.nodes.map((node) => node.id));
+      store.pushHistory();
+      useStore.setState((state) => ({
+        nodes: repaired.nodes,
+        edges: repaired.edges,
+        selectedNodeId: state.selectedNodeId && liveIds.has(state.selectedNodeId) ? state.selectedNodeId : null,
+        selectedNodeIds: state.selectedNodeIds.filter((id) => liveIds.has(id)),
+      }));
+      useStore.getState().recomputeStaleness();
+      useStore.getState().pushHistory();
+      await patchLedgerEntry(hit.project.id, conv.sessionId, repaired.ledger);
+      hit = { ...hit, entry: { ...hit.entry, ...repaired.ledger } };
+      store = useStore.getState();
+    }
+  }
+  if (conv.source === 'codex' && conv.sessionId) {
+    const audited = syncApprovalAttachments(store.nodes, built.nodes, conv.sessionId);
+    if (audited !== store.nodes) {
+      useStore.setState({ nodes: audited });
+      store = useStore.getState();
+    }
+  }
   // Anchor resolution, three tiers — deletion is the user's prerogative
   // (removed mirror nodes NEVER come back), so the recorded tail may be
   // gone: ① the entry's tail if it survives; ② the last surviving mirror
   // node of THIS session; ③ nothing left — the appendix lands
   // free-floating with an honest note.
-  const survivors = store.nodes.filter((n) => n.data.importSource?.sessionId === conv.sessionId);
+  const survivors = store.nodes.filter((n) => {
+    const origin = n.data.importSource;
+    return origin && origin.sessionId === conv.sessionId
+      && !(origin.subagent && origin.itemIds.some((id) => conv.excludedSessionIds?.includes(id)));
+  });
   const anchor = store.nodes.find((n) => n.id === hit.entry.tailNodeId) ?? survivors.at(-1) ?? null;
 
   // Half-turn refresh: CLI files stream — the question lands first, the
@@ -332,17 +363,33 @@ async function appendPastLedger(
     const oldAtts = node?.data.attachments ?? [];
     const newAtts = fd.attachments ?? [];
     const attachmentsGrew = !!node && newAtts.length > oldAtts.length && oldAtts.every((a, i) => newAtts[i]?.name === a.name);
-    const changed = textChanged || attachmentsGrew;
+    // Progress may arrive before any answer or completed tool attachment.
+    // Preserve the source order even when only commentary/output changed.
+    const activityChanged = !!node && !!fd.agentActivities?.length
+      && JSON.stringify(fd.agentActivities[0]) !== JSON.stringify(node.data.agentActivities?.[node.data.responseIndex]);
+    const changed = textChanged || attachmentsGrew || activityChanged;
     if (node && pristine && changed) {
-      const attachments = textChanged ? fd.attachments : [...oldAtts, ...newAtts.slice(oldAtts.length)];
+      const attachments = textChanged ? [...fd.attachments.map((attachment) =>
+        oldAtts.find((old) => old.name === attachment.name && old.content === attachment.content) ?? attachment),
+        ...oldAtts.filter((attachment) => !attachment.name.startsWith('tool: '))]
+        : [...oldAtts, ...newAtts.slice(oldAtts.length)];
+      const oldIds = new Set(oldAtts.map((attachment) => attachment.id));
+      // A streamed refresh rebuilds attachment objects. Preserve known IDs
+      // and exclude new tool records just as initial import does; otherwise
+      // an updated answer can silently re-enable its audit/tool context.
+      const excludedAttachmentIds = [...new Set([
+        ...node.data.excludedAttachmentIds,
+        ...attachments.filter((attachment) => !oldIds.has(attachment.id)).map((attachment) => attachment.id),
+      ])];
       useStore.setState((s) => ({
         nodes: s.nodes.map((n) => (n.id === node.id ? {
           ...n,
           data: {
             ...n.data,
-            question: fd.question, response: fd.response,
-            responses: fd.responses, responseIndex: fd.responseIndex,
-            tokenCount: fd.tokenCount, attachments,
+            ...(textChanged ? { question: fd.question, response: fd.response,
+              responses: n.data.responses.map((response, index) => index === n.data.responseIndex ? fd.response : response) } : {}),
+            tokenCount: fd.tokenCount, attachments, excludedAttachmentIds,
+            agentActivities: n.data.responses.map((_, index) => index === n.data.responseIndex ? fd.agentActivities?.[0] ?? n.data.agentActivities?.[index] : n.data.agentActivities?.[index]),
             importSource: fd.importSource, source: fd.source,
           },
         } : n)),
@@ -350,6 +397,9 @@ async function appendPastLedger(
       useStore.getState().recomputeStaleness();
     }
   }
+
+  const upgraded = repairCodexActivity(useStore.getState().nodes, built.nodes);
+  if (upgraded !== useStore.getState().nodes) useStore.setState({ nodes: upgraded });
 
   if (qa.length <= hit.entry.importedCount) {
     if (opts.focusOnRefresh !== false) useUiStore.getState().setArrivalFocusNodeId(anchor?.id ?? null);

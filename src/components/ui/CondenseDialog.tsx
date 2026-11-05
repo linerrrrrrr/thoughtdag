@@ -95,7 +95,7 @@ export default function CondenseDialog({ onFocusSegment }: { onFocusSegment?: (n
       onClick={(e) => e.stopPropagation()}
     >
       <div className="flex items-start justify-between mb-1 cursor-grab active:cursor-grabbing select-none" onMouseDown={startDrag}>
-        <div className="text-sm font-semibold text-ink flex items-center gap-2">
+        <div className="text-title font-semibold text-ink flex items-center gap-2">
           <Minimize2 size={15} strokeWidth={1.75} className="text-accent" /> {t('condense.title')}
         </div>
         <button onClick={close} title={run.status === 'building' ? t('condense.runningBg') : undefined}
@@ -105,29 +105,29 @@ export default function CondenseDialog({ onFocusSegment }: { onFocusSegment?: (n
       {run.status === 'idle' && (
         <>
           <div className="flex items-center justify-between gap-2 mb-2">
-            <p className="text-2xs text-ink-faint leading-snug" title={t('condense.copyIntroFull')}>{t('condense.copyIntroShort')}</p>
+            <p className="text-control text-ink-faint leading-snug" title={t('condense.copyIntroFull')}>{t('condense.copyIntroShort')}</p>
             <button
               onClick={() => setRefreshTick((v) => v + 1)}
               title={t('condense.rescanTitle')}
               data-condense-rescan
-              className="text-2xs text-ink-muted hover:text-accent px-2 py-1 rounded-tag hover:bg-wash transition-colors shrink-0"
+              className="text-control text-ink-muted hover:text-accent px-2 py-1 rounded-tag hover:bg-wash transition-colors shrink-0"
             >
               ⟳ {t('condense.rescan')}
             </button>
           </div>
-          <p className="text-2xs text-ink-faint mb-2" data-condense-scanline>
+          <p className="text-control text-ink-faint mb-2" data-condense-scanline>
             {fmt(t('condense.scanLine'), { turns: String(nodes.filter((n) => n.data.response && !n.data.stepKind).length), n: String(segments.length) })}
           </p>
           <div className="flex items-center gap-2 mb-3">
-            <label className="text-2xs text-ink-muted shrink-0">{t('condense.modelLabel')}</label>
+            <label className="text-control text-ink-muted shrink-0">{t('condense.modelLabel')}</label>
             <select value={model} onChange={(e) => setModel(e.target.value)} data-condense-model
-              className="text-xs bg-wash text-ink rounded-control px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-accent/40 max-w-[220px] truncate">
+              className="text-control bg-wash text-ink rounded-control px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-accent/40 max-w-[220px] truncate">
               <option value="">{fmt(t('condense.modelAuto'), { model: autoModel ?? '—' })}</option>
               {models.map((m) => <option key={m.id} value={m.id}>{m.id}</option>)}
             </select>
           </div>
           {segments.length === 0 ? (
-            <p className="text-xs text-ink-muted py-4">{t('condense.segNothing')}</p>
+            <p className="text-control text-ink-muted py-4">{t('condense.segNothing')}</p>
           ) : (
             <div className="flex-1 min-h-0 overflow-y-auto space-y-2 pr-1">
               {segments.map((seg) => {
@@ -152,9 +152,9 @@ export default function CondenseDialog({ onFocusSegment }: { onFocusSegment?: (n
                         className="accent-[var(--color-accent)]"
                         data-condense-check
                       />
-                      <span className="text-2xs text-ink-faint font-mono">{fmt(t('condense.segMeta'), { n: String(seg.nodeIds.length), tok: String(seg.saving) })}</span>
+                      <span className="text-meta text-ink-faint font-mono">{fmt(t('condense.segMeta'), { n: String(seg.nodeIds.length), tok: String(seg.saving) })}</span>
                     </div>
-                    <p className="text-xs text-ink mt-1 leading-snug line-clamp-2">{seg.headQuestion}</p>
+                    <p className="text-control text-ink mt-1 leading-snug line-clamp-2">{seg.headQuestion}</p>
                   </div>
                 );
               })}
@@ -162,12 +162,12 @@ export default function CondenseDialog({ onFocusSegment }: { onFocusSegment?: (n
           )}
           {segments.length > 0 && (
             <div className="flex items-center justify-between gap-2 pt-3 mt-2 border-t border-line">
-              <span className="text-2xs text-ink-faint">{t('condense.copyFootnote')}</span>
+              <span className="text-control text-ink-faint">{t('condense.copyFootnote')}</span>
               <button
                 onClick={build}
                 disabled={picked.length === 0}
                 data-condense-build
-                className="text-xs bg-action text-white px-3.5 py-2 rounded-control disabled:opacity-40 transition-colors flex items-center gap-1.5 shrink-0"
+                className="text-control bg-action text-white px-3.5 py-2 rounded-control disabled:opacity-40 transition-colors flex items-center gap-1.5 shrink-0"
               >
                 <Copy size={13} strokeWidth={1.75} />
                 {fmt(t('condense.buildCopy'), { n: String(picked.length), tok: String(pickedSaving) })}
@@ -179,18 +179,18 @@ export default function CondenseDialog({ onFocusSegment }: { onFocusSegment?: (n
 
       {run.status === 'building' && (
         <div className="flex-1 min-h-0 flex flex-col">
-          <div className="flex items-center gap-2 text-sm text-ink-muted mb-1.5">
+          <div className="flex items-center gap-2 text-control text-ink-muted mb-1.5">
             <Loader2 size={15} className="animate-spin text-accent" />
             {fmt(t('condense.buildingRun'), { i: String(run.current), n: String(run.total) })}
           </div>
-          <p className="text-2xs text-ink-faint mb-2">{t('condense.runningBg')}</p>
+          <p className="text-control text-ink-faint mb-2">{t('condense.runningBg')}</p>
           {run.streaming && (
-            <div className="flex-1 min-h-0 overflow-y-auto text-2xs text-ink-muted bg-wash rounded-content p-2.5 whitespace-pre-wrap leading-relaxed" data-condense-streaming>
+            <div className="flex-1 min-h-0 overflow-y-auto text-body text-ink-muted bg-wash rounded-content p-2.5 whitespace-pre-wrap" data-condense-streaming>
               {run.streaming}
             </div>
           )}
           <button onClick={() => cancelCondenseRun()} data-condense-cancel
-            className="self-start mt-3 text-xs text-ink-muted hover:text-red-600 px-3 py-1.5 rounded-control hover:bg-wash transition-colors">
+            className="self-start mt-3 text-control text-ink-muted hover:text-red-600 px-3 py-1.5 rounded-control hover:bg-wash transition-colors">
             {t('common.cancel')}
           </button>
         </div>
@@ -198,9 +198,9 @@ export default function CondenseDialog({ onFocusSegment }: { onFocusSegment?: (n
 
       {run.status === 'error' && (
         <div className="flex flex-col gap-2 py-3">
-          <p className="text-2xs text-red-600">{run.error}</p>
+          <p className="text-control text-red-600">{run.error}</p>
           <button onClick={() => useUiStore.getState().setCondenseRun({ status: 'idle', error: undefined })}
-            className="self-start text-xs text-ink-muted hover:text-ink px-3 py-1.5 rounded-control hover:bg-wash transition-colors">
+            className="self-start text-control text-ink-muted hover:text-ink px-3 py-1.5 rounded-control hover:bg-wash transition-colors">
             {t('common.cancel')}
           </button>
         </div>
@@ -208,21 +208,21 @@ export default function CondenseDialog({ onFocusSegment }: { onFocusSegment?: (n
 
       {run.status === 'done' && (
         <div className="flex flex-col gap-3 py-3">
-          <div className="flex items-center gap-2 text-sm text-green-700">
+          <div className="flex items-center gap-2 text-control text-green-700">
             <Check size={16} /> {t('condense.copyReady')}
           </div>
-          <p className="text-2xs text-ink-faint leading-relaxed">{t('condense.copyCompareHint')}</p>
+          <p className="text-control text-ink-faint">{t('condense.copyCompareHint')}</p>
           <div className="flex items-center gap-2">
-            <button onClick={focusCopy} className="text-xs bg-accent/10 text-accent hover:bg-accent/20 px-3 py-2 rounded-control transition-colors">
+            <button onClick={focusCopy} className="text-control bg-accent/10 text-accent hover:bg-accent/20 px-3 py-2 rounded-control transition-colors">
               {t('condense.viewCopy')}
             </button>
             <button onClick={archiveOriginal} data-condense-archive-original
-              className="text-xs border border-line text-ink-muted hover:text-ink hover:bg-wash px-3 py-2 rounded-control transition-colors flex items-center gap-1.5">
+              className="text-control border border-line text-ink-muted hover:text-ink hover:bg-wash px-3 py-2 rounded-control transition-colors flex items-center gap-1.5">
               <Archive size={13} strokeWidth={1.75} /> {t('condense.archiveOriginal')}
             </button>
           </div>
           <button onClick={() => { useUiStore.getState().setCondenseRun({ status: 'idle' }); close(); }}
-            className="self-start text-xs text-ink-faint hover:text-ink transition-colors">{t('common.close')}</button>
+            className="self-start text-control text-ink-faint hover:text-ink transition-colors">{t('common.close')}</button>
         </div>
       )}
     </div>

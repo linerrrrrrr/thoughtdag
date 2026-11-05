@@ -71,6 +71,8 @@ interface DesktopSessionsBridge {
 /** Local paths a response mentions, opened on this machine. */
 interface DesktopLocalBridge {
   open(path: string): Promise<{ ok: boolean; kind?: 'dir' | 'file'; opened?: 'viewer' | 'finder'; reason?: string }>;
+  reveal?(path: string): Promise<{ ok: boolean; reason?: string }>;
+  read?(path: string): Promise<{ ok: boolean; text?: string; truncated?: boolean; reason?: string }>;
   /** data URL for an image file (images only, bounded), null otherwise */
   image(path: string): Promise<string | null>;
 }
@@ -124,6 +126,7 @@ interface DesktopAgentsBridge {
   /** resolves with the run id at once; events follow through onEvent */
   run(request: DesktopAgentRunRequest): Promise<string>;
   abort(runId: string): Promise<boolean>;
+  steer?(runId: string, prompt: string): Promise<boolean>;
   /** the shell-managed working directory of a canvas, created on demand */
   workspace(canvasId: string): Promise<string>;
   /** the person's answer to a runtime's question during a run */

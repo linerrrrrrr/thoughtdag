@@ -201,7 +201,7 @@ export interface AgentTraceEntry {
 /** A public runtime item snapshot. Display only: never compiled into model context. */
 export interface AgentActivityEntry {
   id: string;
-  kind: 'commentary' | 'reasoning' | 'message' | 'command' | 'tool' | 'plan' | 'file' | 'status' | 'unknown';
+  kind: 'user' | 'commentary' | 'reasoning' | 'message' | 'command' | 'tool' | 'plan' | 'file' | 'status' | 'unknown';
   status: 'running' | 'completed' | 'failed' | 'interrupted';
   title?: string;
   text?: string;
@@ -246,6 +246,8 @@ export interface ThoughtData extends Record<string, unknown> {
   question: string;
   /** Optional canvas label. Presentation only: never replaces question, response, or model context. */
   displayName?: string;
+  /** User-saved canvas summary. Empty explicitly hides the automatic preview; never changes model context. */
+  displaySummary?: string;
   response: string;
   responses: string[];
   /** Question wording per version, parallel to `responses` — a version is a

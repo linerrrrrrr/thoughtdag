@@ -67,7 +67,7 @@ export default function RecallChip({ nodeId }: { nodeId?: string } = {}) {
   };
   const seg = (key: string, active: boolean, disabled: boolean, label: string, onClick: () => void, title?: string) => (
     // greyed, not disabled: a disabled button gets no hover, and the hover is where the reason lives
-    <button key={key} type="button" aria-disabled={disabled || undefined} onClick={disabled ? undefined : onClick} title={title} className={`px-2 py-0.5 rounded-tag text-2xs whitespace-nowrap transition-colors ${active ? 'bg-action text-white' : disabled ? 'text-ink-faint opacity-50 cursor-default' : 'text-ink-muted hover:bg-wash'}`} data-recall-menu-option={key}>{label}</button>
+    <button key={key} type="button" aria-disabled={disabled || undefined} onClick={disabled ? undefined : onClick} title={title} className={`px-2 py-0.5 rounded-tag text-control whitespace-nowrap transition-colors ${active ? 'bg-action text-white' : disabled ? 'text-ink-faint opacity-50 cursor-default' : 'text-ink-muted hover:bg-wash'}`} data-recall-menu-option={key}>{label}</button>
   );
   return (
     <div ref={root} className="relative shrink-0">
@@ -77,7 +77,7 @@ export default function RecallChip({ nodeId }: { nodeId?: string } = {}) {
         onClick={(e) => { e.stopPropagation(); const r = e.currentTarget.getBoundingClientRect(); setOpen((v) => (v ? null : { left: Math.max(8, Math.min(r.right - 296, window.innerWidth - 304)), bottom: window.innerHeight - r.top + 8 })); }}
         aria-expanded={!!open}
         title={on ? t('toolbar.recall') : t('toolbar.recallOff')}
-        className={`h-8 px-2.5 rounded-control flex items-center gap-1.5 text-2xs font-medium transition-colors ${on ? 'text-accent bg-accent/15 ring-1 ring-accent/40 hover:bg-accent/25' : 'text-ink-muted opacity-60 hover:opacity-100 hover:bg-line'}`}
+        className={`h-8 px-2.5 rounded-control flex items-center gap-1.5 text-control font-medium transition-colors ${on ? 'text-accent bg-accent/15 ring-1 ring-accent/40 hover:bg-accent/25' : 'text-ink-muted opacity-60 hover:opacity-100 hover:bg-line'}`}
         data-recall-toggle
         data-recall-on={on ? 'on' : 'off'}
         data-recall-reach={on ? reach : undefined}
@@ -87,7 +87,7 @@ export default function RecallChip({ nodeId }: { nodeId?: string } = {}) {
       </button>
       {open && createPortal(
         // mousedown is swallowed AND defaulted away: inside a question editor the textarea must keep its focus (its blur closes the editor)
-        <div ref={menu} style={{ position: 'fixed', left: open.left, bottom: open.bottom }} className="w-[296px] rounded-overlay border border-line bg-card shadow-lg p-3 z-[90] text-xs space-y-2.5" data-recall-menu data-recall-menu-scope={nodeId ? 'node' : 'ask'} onClick={(e) => e.stopPropagation()} onMouseDown={(e) => { e.stopPropagation(); e.preventDefault(); }}>
+        <div ref={menu} style={{ position: 'fixed', left: open.left, bottom: open.bottom }} className="w-[296px] rounded-overlay border border-line bg-card shadow-lg p-3 z-[90] text-control space-y-2.5" data-recall-menu data-recall-menu-scope={nodeId ? 'node' : 'ask'} onClick={(e) => e.stopPropagation()} onMouseDown={(e) => { e.stopPropagation(); e.preventDefault(); }}>
           <div className="flex items-center justify-between gap-3">
             <span className="text-ink font-medium">{t('recall.menuOn')}</span>
             <button type="button" role="switch" aria-checked={on} onClick={() => apply({ enabled: !on })} className={`relative w-9 h-5 rounded-control transition-colors shrink-0 ${on ? 'bg-accent' : 'bg-line-strong'}`} data-recall-menu-switch>
@@ -107,8 +107,8 @@ export default function RecallChip({ nodeId }: { nodeId?: string } = {}) {
             </div>
           </div>
           <div className="flex items-center justify-between gap-2 pt-2 border-t border-line/70">
-            <span className="text-2xs text-ink-faint">{t(nodeId ? 'recall.menuNode' : 'recall.menuOnce')}</span>
-            {!nodeId && <button type="button" onClick={setDefault} disabled={!changed} className="text-2xs text-accent hover:underline disabled:opacity-40 disabled:no-underline" data-recall-menu-default>{t('recall.menuDefault')}</button>}
+            <span className="text-control text-ink-faint">{t(nodeId ? 'recall.menuNode' : 'recall.menuOnce')}</span>
+            {!nodeId && <button type="button" onClick={setDefault} disabled={!changed} className="text-control text-accent hover:underline disabled:opacity-40 disabled:no-underline" data-recall-menu-default>{t('recall.menuDefault')}</button>}
           </div>
         </div>,
         document.body,

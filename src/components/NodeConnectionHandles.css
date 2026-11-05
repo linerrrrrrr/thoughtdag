@@ -30,3 +30,10 @@
   opacity: 0;
   pointer-events: none;
 }
+
+/* Resizing and wiring never compete for the same pointer gesture. */
+.react-flow .react-flow__node:has([data-node-resizing]) .react-flow__handle.tdag-auto-handle:is(.tdag-output-port, .tdag-input-port),
+.react-flow:has([data-selection-gesture='width'], [data-selection-gesture='height'], [data-selection-gesture='both']) .react-flow__node .react-flow__handle.tdag-auto-handle:is(.tdag-output-port, .tdag-input-port) {
+  opacity: .25;
+  pointer-events: none;
+}

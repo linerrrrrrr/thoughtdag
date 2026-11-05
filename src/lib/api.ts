@@ -157,6 +157,8 @@ export type LlmCallOptions = {
   fast?: boolean;
   /** give up after this long (background calls; a question the person asked waits as long as it takes) */
   timeoutMs?: number;
+  /** An explicit editor action may be cancelled without waiting for its deadline. */
+  signal?: AbortSignal;
 };
 
 export async function llmCall(contextMessages: ContextMessage[], images?: ImageAttachment[], modelOverride?: string, opts?: LlmCallOptions): Promise<string> {
@@ -166,19 +168,22 @@ export async function llmCall(contextMessages: ContextMessage[], images?: ImageA
 /** llmCall that also says which model answered: the proxy names it, and it is not always the one asked for
  *  (an id the proxy does not know falls back to its default, an image reroutes to a vision model). */
 export async function llmCallAnswered(contextMessages: ContextMessage[], images?: ImageAttachment[], modelOverride?: string, opts?: LlmCallOptions): Promise<{ text: string; model: string | undefined }> {
+  opts?.signal?.throwIfAborted();
   const modelId = modelOverride || useUiStore.getState().selectedModel || undefined;
   images = await imagesForModel(modelId, images);
+  opts?.signal?.throwIfAborted();
   // The deadline cancels the request itself, on the proxy lane and the direct one alike (the proxy then stops the
   // upstream call, server.mjs), and its message names the wait
   const timeoutMs = opts?.timeoutMs;
   const deadline = timeoutMs ? new AbortController() : null;
   const timer = deadline ? setTimeout(() => deadline.abort(new Error(`no answer within ${Math.round(timeoutMs! / 1000)} s`)), timeoutMs) : undefined;
-  const timedOut = (err: unknown): unknown => (deadline?.signal.aborted ? deadline.signal.reason : err);
+  const signal = opts?.signal && deadline ? AbortSignal.any([opts.signal, deadline.signal]) : opts?.signal ?? deadline?.signal;
+  const timedOut = (err: unknown): unknown => (signal?.aborted ? signal.reason : err);
   const direct = directProvider(modelId);
   if (direct && modelId) {
     try {
       await guardDirectVision(modelId, images);
-      return { text: await directLlmCall(direct, modelId, contextMessages, images, deadline?.signal), model: modelId };
+      return { text: await directLlmCall(direct, modelId, contextMessages, images, signal), model: modelId };
     } catch (err: unknown) {
       throw timedOut(err);
     } finally { clearTimeout(timer); }
@@ -196,7 +201,7 @@ export async function llmCallAnswered(contextMessages: ContextMessage[], images?
         // proxy builds a per-request registry and forgets it (stateless)
         providers: statelessProviders(),
       }),
-      ...(deadline ? { signal: deadline.signal } : {}),
+      ...(signal ? { signal } : {}),
     });
 
     if (!res.ok) {
@@ -277,7 +282,7 @@ export async function llmCallStream(
   /** Agent lanes only: which working directory the turn runs in, which
       session it continues, or which DSH session+turn anchor it forks from.
       The harness fields are ignored by every non-Harness backend. */
-  harness?: { cwd?: string; session?: string; forkSession?: string; forkAnchor?: string; sessionPath?: string; forkEntryId?: string; nodeId?: string; continue?: boolean; permission?: 'auto' | 'allow' },
+  harness?: { cwd?: string; session?: string; forkSession?: string; forkAnchor?: string; sessionPath?: string; sessionId?: string; forkEntryId?: string; nodeId?: string; continue?: boolean; permission?: 'auto' | 'allow' },
 ): Promise<string> {
   // On the Workers deployment, OpenRouter models stream straight from the
   // browser — the proxy's CPU allowance can't survive big contexts + heavy
@@ -285,9 +290,10 @@ export async function llmCallStream(
   const modelId = modelOverride || useUiStore.getState().selectedModel || undefined;
   // An agent runtime in the desktop app: Pi runs the turn with its own
   // tools; the canvas's compiled context rides ahead of the question.
-  if (modelId && isAgentModel(modelId) && window.desktopAgents) {
+  if (modelId && isAgentModel(modelId)) {
+    if (!window.desktopAgents) throw new Error('The local agent connection is unavailable. Start the local server or desktop app and retry.');
     callbacks?.onDispatch?.({ messages: contextMessages, images: images ?? [], model: modelId, toolPrefs: toolPrefs ?? {}, lane: 'proxy' });
-    return agentCallStream(contextMessages, onChunk, signal, images, callbacks, modelId, harness?.cwd ? { cwd: harness.cwd, sessionPath: harness.sessionPath, forkEntryId: harness.forkEntryId, continue: harness.continue } : undefined, harness?.nodeId);
+    return agentCallStream(contextMessages, onChunk, signal, images, callbacks, modelId, harness?.cwd ? { cwd: harness.cwd, sessionPath: harness.sessionPath, sessionId: harness.sessionId, forkEntryId: harness.forkEntryId, continue: harness.continue } : undefined, harness?.nodeId);
   }
   images = await imagesForModel(modelId, images);
 

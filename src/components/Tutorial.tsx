@@ -194,8 +194,8 @@ export default function Tutorial() {
       >
         <div className="flex items-start justify-between px-7 pt-5 pb-1 shrink-0">
           <div className="flex items-baseline gap-3 min-w-0">
-            <h2 className="text-lg font-semibold text-ink tracking-tight shrink-0">{t('tutorial.title')}</h2>
-            <p className="text-xs text-ink-faint truncate">{t('tutorial.subtitle')}</p>
+            <h2 className="text-section font-semibold text-ink tracking-tight shrink-0">{t('tutorial.title')}</h2>
+            <p className="text-control text-ink-faint truncate">{t('tutorial.subtitle')}</p>
           </div>
           <button onClick={() => setOpen(false)} className="text-ink-faint hover:text-ink transition-colors mt-1">
             <X size={18} strokeWidth={1.75} />
@@ -203,7 +203,7 @@ export default function Tutorial() {
         </div>
 
         <div className="px-7 pt-3 pb-1 min-h-[380px]">
-          <p className="text-2xs font-semibold text-accent mb-3 uppercase tracking-wider">{slide.label}</p>
+          <p className="text-control font-semibold text-accent mb-3 uppercase tracking-wider">{slide.label}</p>
           <div className={`grid gap-4 ${slide.steps.length === 3 ? 'grid-cols-1 sm:grid-cols-3' : 'grid-cols-1 sm:grid-cols-2'}`}>
             {slide.steps.map((n) => (
               <div key={n} className="bg-surface border border-line/70 rounded-content p-4 flex flex-col animate-fade-in">
@@ -212,8 +212,8 @@ export default function Tutorial() {
                     ? <img src={`${import.meta.env.BASE_URL}tutorial/${GIF_STEPS[n]}-${lang}.gif`} loading="lazy" alt="" className="w-full h-full object-cover" />
                     : DIAGRAMS[n]}
                 </div>
-                <h3 className="text-[13px] font-semibold text-ink leading-snug">{t(`tutorial.step${n}.title` as Parameters<typeof t>[0])}</h3>
-                <p className="text-xs text-ink-muted leading-relaxed mt-1.5">{t(`tutorial.step${n}.desc` as Parameters<typeof t>[0])}</p>
+                <h3 className="text-title font-semibold text-ink">{t(`tutorial.step${n}.title` as Parameters<typeof t>[0])}</h3>
+                <p className="text-control text-ink-muted mt-1.5">{t(`tutorial.step${n}.desc` as Parameters<typeof t>[0])}</p>
               </div>
             ))}
           </div>
@@ -241,7 +241,7 @@ export default function Tutorial() {
           {last ? (
             <button
               onClick={() => setOpen(false)}
-              className="text-xs bg-action hover:bg-action-strong text-white px-5 py-2 rounded-control transition-colors"
+              className="text-control bg-action hover:bg-action-strong text-white px-5 py-2 rounded-control transition-colors"
             >
               {t('tutorial.close')}
             </button>
@@ -255,7 +255,7 @@ export default function Tutorial() {
           )}
         </div>
 
-        <div className="px-7 py-2.5 border-t border-line/60 shrink-0 flex flex-wrap gap-x-4 gap-y-1 text-2xs text-ink-faint font-mono">
+        <div className="px-7 py-2.5 border-t border-line/60 shrink-0 flex flex-wrap gap-x-4 gap-y-1 text-control text-ink-faint font-mono">
           <span>{t('shortcut.panKeys')} {t('shortcut.pan')}</span>
           <span>{t('shortcut.marqueeKeys')} {t('shortcut.marquee')}</span>
           <span>{'\u2318'}F {t('shortcut.search')}</span>

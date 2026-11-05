@@ -1,11 +1,11 @@
-import { useRef, useState, type CSSProperties } from 'react';
+import { useRef, useState } from 'react';
 import { X } from 'lucide-react';
 import { useStore } from '../../store';
 import { useUiStore } from '../../lib/ui-store';
 import { partitionContext } from '../../lib/graph';
 import { buildContext, resolveRoleFor } from '../../store/context-builder';
 import { PANEL_WIDTH_KEY, PANEL_MIN_WIDTH, PANEL_DEFAULT_WIDTH, PANEL_INSET } from '../../lib/constants';
-import { awaitingInput } from '../../utils';
+import { activeSummary, awaitingInput } from '../../utils';
 import { useT } from '../../i18n';
 import { isViewerMode } from '../../lib/viewer';
 import RoleLine from './RoleLine';
@@ -21,29 +21,28 @@ import HighlightsSection from './HighlightsSection';
 import HeaderActions from './HeaderActions';
 import ContextChainSection from './ContextChainSection';
 import ContextOrderSection from './ContextOrderSection';
-import FollowUpInput from './FollowUpInput';
 import { useDismissableLayer } from '../../lib/use-dismissable-layer';
-import { useCanvasPanelPosition } from '../../lib/use-canvas-panel-position';
-import { getNodeDisplayName } from '../../lib/node-display-name';
+import { getNodeNameSource } from '../../lib/node-display-name';
+import NodeMetadataEditor from '../NodeMetadataEditor';
+import './FocusPanel.css';
+import { activeAgentActivity, originalQuestionBeforeInstructions } from '../../lib/agent-activity';
+import { createQuestionDraft } from '../../lib/question-draft';
 
-// The panel does three jobs: READ (question/response), ASK (the single
-// follow-up input at the bottom), INSPECT (context chain). Everything else
-// is one compact strip of actions or a collapsed section.
+// The panel reads one turn and its context. Further questions belong to a
+// new linked node, whose own question editor opens before any request runs.
 
-export default function FocusPanel({ nodeId, withFormat = false, onFocusNode }: { nodeId: string; withFormat?: boolean; onFocusNode?: (id: string) => void }) {
+export default function FocusPanel({ nodeId, onFocusNode }: { nodeId: string; onFocusNode?: (id: string) => void }) {
   const {
     nodes, edges,
     addAttachment, removeAttachment, toggleExcludeAttachment, setAttachmentRenderMode, getInheritedAttachments,
   } = useStore();
   const t = useT();
   const panelRef = useRef<HTMLDivElement>(null);
-  const dockPosition = useCanvasPanelPosition();
   // This working panel can outlive its opener; restoring stale canvas focus would reselect it.
   useDismissableLayer({ open: true, refs: [panelRef], dismissOnOutside: false, restoreFocus: false,
     onDismiss: () => useUiStore.getState().setPanelOpen(false) });
 
-  // Selected text from the response, staged as context for the follow-up
-  const [branchContext, setBranchContext] = useState('');
+  const [metadataOpen, setMetadataOpen] = useState(false);
 
   // Resizable width, persisted on drag end; double-click resets the default.
   // The width lives in ui-store so the canvas toolbar can offset itself.
@@ -74,14 +73,14 @@ export default function FocusPanel({ nodeId, withFormat = false, onFocusNode }: 
     localStorage.removeItem(PANEL_WIDTH_KEY);
   };
 
-  // Reset staged context when switching nodes (adjust-during-render).
+  // Close transient editors when switching nodes (adjust-during-render).
   const [prevNodeId, setPrevNodeId] = useState(nodeId);
   // the role editor's text while it is open (null = closed); it closes with the node
   const [roleEdit, setRoleEdit] = useState<string | null>(null);
   if (prevNodeId !== nodeId) {
     setPrevNodeId(nodeId);
-    setBranchContext('');
     setRoleEdit(null);
+    setMetadataOpen(false);
   }
 
   const node = nodes.find((n) => n.id === nodeId);
@@ -92,9 +91,16 @@ export default function FocusPanel({ nodeId, withFormat = false, onFocusNode }: 
 
   const data = node.data;
   const hasMultipleVersions = data.responses.length > 1;
-  // Waiting for its own question → the question box is open and the
-  // follow-up input steps aside (nothing to follow up on yet)
+  // A draft node uses its own question editor.
   const awaiting = awaitingInput(data);
+
+  const exploreSelection = (text: string) => {
+    if (!text.trim() || isViewerMode) return;
+    const childId = createQuestionDraft({ parentId: nodeId, branchContext: text, editor: 'panel' });
+    if (!childId) return;
+    useUiStore.getState().setPanelOpen(true, childId);
+    onFocusNode?.(childId);
+  };
 
   // Inherited role for the status line: the SAME resolution buildContext
   // injects (structural mainline, legacy roleMode honored) — what the panel
@@ -112,10 +118,10 @@ export default function FocusPanel({ nodeId, withFormat = false, onFocusNode }: 
 
   return (
     <div
-      ref={panelRef} data-focus-panel data-focus-node-id={nodeId} data-with-format={withFormat || undefined}
+      ref={panelRef} data-focus-panel data-focus-node-id={nodeId}
       role="complementary" aria-label={t('panel.reading')}
-      className={`absolute right-canvas-inset top-canvas-inset bottom-canvas-inset z-20 bg-card border border-line rounded-panel shadow-lg overflow-hidden flex flex-col max-w-[calc(100vw-32px)] md:max-w-[70vw] ${resizing ? 'select-none' : ''}`}
-      style={{ width: panelWidth, minWidth: `min(${PANEL_MIN_WIDTH}px, calc(100vw - ${PANEL_INSET * 2}px))`, '--canvas-tools-top': `${dockPosition.top}px` } as CSSProperties}
+      className={`focus-panel-shell absolute right-canvas-inset top-canvas-inset bottom-canvas-inset z-20 border rounded-panel overflow-hidden flex flex-col max-w-[calc(100vw-32px)] md:max-w-[70vw] ${resizing ? 'select-none' : ''}`}
+      style={{ width: panelWidth, minWidth: `min(${PANEL_MIN_WIDTH}px, calc(100vw - ${PANEL_INSET * 2}px))` }}
       onKeyDown={(event) => { if (event.key !== 'Escape' || event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) event.stopPropagation(); }}
     >
       {/* Resize handle on the left edge */}
@@ -125,20 +131,19 @@ export default function FocusPanel({ nodeId, withFormat = false, onFocusNode }: 
         onPointerUp={onResizePointerUp}
         onDoubleClick={onResizeDoubleClick}
         className={`absolute left-0 top-0 h-full w-[8px] -ml-[3px] z-20 cursor-col-resize hover:bg-accent/20 transition-colors flex items-center justify-center ${resizing ? 'bg-accent/30' : ''}`}
-        title={t('panel.resizeTitle')}
+        role="separator" aria-orientation="vertical" aria-label={t('panel.resizeTitle')}
         data-panel-resize
       >
         {/* a visible grip: the handle exists whether or not you hover it */}
         <div className={`w-[3px] h-9 rounded-control transition-colors ${resizing ? 'bg-accent' : 'bg-line-strong'}`} />
       </div>
-      {/* Header: role, context usage, and actions share a single aligned strip. */}
-      <div className="flex items-start gap-related px-surface-inset py-toolbar-inset border-b border-line/70 shrink-0">
+      {/* Reading identity stays quiet; operational details follow the conversation. */}
+      <div className="focus-panel-header flex items-center gap-related shrink-0">
         <div className="min-w-0 flex-1">
-          <h2 className="text-sm font-medium truncate leading-6" title={getNodeDisplayName(data, t('ctx.unnamedNode'))} data-reading-node-name>{getNodeDisplayName(data, t('ctx.unnamedNode'))}</h2>
-          <RoleLine data={data} inheritedRole={inheritedRole} onEdit={(initial) => setRoleEdit(initial)} />
+          <h2 className="focus-panel-title" title={getNodeNameSource(data, t('ctx.unnamedNode'))} data-reading-node-name>{getNodeNameSource(data, t('ctx.unnamedNode'))}</h2>
         </div>
         <div className="flex items-center gap-1 shrink-0">
-          {!isViewerMode && <HeaderActions nodeId={nodeId!} isLoading={data.isLoading} />}
+          {!isViewerMode && <HeaderActions key={nodeId} nodeId={nodeId!} isLoading={data.isLoading} />}
           <button
             onClick={() => useUiStore.getState().setPanelOpen(false)}
             aria-label={t('panel.close')} data-node-details-close
@@ -149,19 +154,20 @@ export default function FocusPanel({ nodeId, withFormat = false, onFocusNode }: 
           </button>
         </div>
       </div>
-      {/* the role editor: a full-width strip under the header, the whole panel's width for the text and the presets */}
-      {roleEdit !== null && !isViewerMode && (
-        <RoleEditor nodeId={nodeId!} initial={roleEdit} inherited={!data.rolePrompt && !!inheritedRole} hasOwn={!!data.rolePrompt} onClose={() => setRoleEdit(null)} />
-      )}
-
       {/* A continuous reading surface; section dividers provide hierarchy. */}
-      <div className="focus-panel-content flex-1 overflow-y-auto py-related">
+      <div className="focus-panel-content flex-1 min-h-0 overflow-y-auto">
+        <NodeMetadataEditor key={`metadata-${nodeId}`} id={nodeId} data={data}
+          name={getNodeNameSource(data, t('ctx.unnamedNode'))}
+          preview={data.displaySummary ?? activeSummary(data)} overview={false}
+          open={metadataOpen} onOpenChange={setMetadataOpen} variant="panel" />
         <AgentSessionLine data={data} />
         <HandoffLine nodeId={nodeId!} data={data} />
         <QuestionSection
           key={`q-${nodeId}-${data.isEditing ? 'edit' : 'view'}`}
           nodeId={nodeId!}
+          base={data.agentSession?.cwd ?? data.importSource?.cwd}
           question={data.question}
+          displayQuestion={originalQuestionBeforeInstructions(data.question, activeAgentActivity(data))}
           isEditing={data.isEditing && data.questionEditor === 'panel'}
           isHuman={data.stepKind === 'human'}
           awaiting={!!awaiting}
@@ -175,10 +181,17 @@ export default function FocusPanel({ nodeId, withFormat = false, onFocusNode }: 
           data={data}
           hasMultipleVersions={hasMultipleVersions}
           highlightedTexts={highlightedTexts}
-          onExploreSelection={setBranchContext}
+          onExploreSelection={exploreSelection}
           onFocusNode={onFocusNode}
         />
 
+        <div className="focus-panel-inspect">
+          <div className="focus-panel-role">
+            <RoleLine data={data} inheritedRole={inheritedRole} onEdit={(initial) => setRoleEdit(initial)} />
+          </div>
+          {roleEdit !== null && !isViewerMode && (
+            <RoleEditor nodeId={nodeId} initial={roleEdit} inherited={!data.rolePrompt && !!inheritedRole} hasOwn={!!data.rolePrompt} onClose={() => setRoleEdit(null)} />
+          )}
         <AttachmentsSection
           nodeId={nodeId!}
           attachments={data.attachments || []}
@@ -208,18 +221,8 @@ export default function FocusPanel({ nodeId, withFormat = false, onFocusNode }: 
           totalContextTokens={totalContextTokens}
           onFocusNode={onFocusNode}
         />
+        </div>
       </div>
-
-      {/* The ONE input — pinned at bottom; selected text stages into it.
-          Hidden while the node waits for its own question above. */}
-      {!awaiting && !isViewerMode && (
-        <FollowUpInput
-          key={nodeId}
-          nodeId={nodeId!}
-          branchContext={branchContext}
-          onClearBranchContext={() => setBranchContext('')}
-        />
-      )}
     </div>
   );
 }

@@ -16,7 +16,7 @@ export default function WaitingPill() {
     <CanvasToolbarOverflowAction label={fmt(t('approval.waitingPill'), { n: list.length })} icon={<MessageCircleQuestion size={14} className="text-amber-600" />}>
     <button
       onClick={(e) => { e.stopPropagation(); flyToWaiting(list[0]); }}
-      className="bg-amber-50 dark:bg-amber-500/15 border border-amber-400/70 rounded-control h-8 px-2.5 flex items-center gap-1.5 hover:bg-amber-100 dark:hover:bg-amber-500/25 transition-colors text-xs text-amber-800 dark:text-amber-300 animate-fade-in"
+      className="bg-amber-50 dark:bg-amber-500/15 border border-amber-400/70 rounded-control h-8 px-2.5 flex items-center gap-1.5 hover:bg-amber-100 dark:hover:bg-amber-500/25 transition-colors text-control text-amber-800 dark:text-amber-300 animate-fade-in"
       title={t('approval.waitingPillTitle')}
       data-waiting-pill={list.length}
     >

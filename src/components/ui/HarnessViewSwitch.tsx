@@ -25,7 +25,7 @@ export default function HarnessViewSwitch() {
       <button
         type="button"
         onClick={close}
-        className="h-full px-3 rounded-tag text-xs font-semibold text-ink-muted hover:bg-wash hover:text-ink transition-colors whitespace-nowrap"
+        className="h-full px-3 rounded-tag text-control font-semibold text-ink-muted hover:bg-wash hover:text-ink transition-colors whitespace-nowrap"
         data-view="dialog"
         aria-pressed={false}
       >
@@ -34,7 +34,7 @@ export default function HarnessViewSwitch() {
       </CanvasToolbarOverflowAction>
       <button
         type="button"
-        className="h-full px-3 rounded-tag text-xs font-semibold bg-ink text-card whitespace-nowrap cursor-default"
+        className="h-full px-3 rounded-tag text-control font-semibold bg-ink text-card whitespace-nowrap cursor-default"
         data-view="map"
         aria-pressed={true}
       >

@@ -5,7 +5,7 @@ import { sha256Hex, canonicalStringify } from '../lib/context-bundle';
 import { pruneHighlights } from '../lib/highlight-match';
 import { llmCallStream, declaresTools, type ContextMessage, type ImageAttachment } from '../lib/api';
 import { harnessOutbound, claimHarnessTurn, stampHarnessTurn, isHarnessAgentModel } from '../lib/atlas/dsh-bridge';
-import { agentOutbound, adoptAgentTurn, claimAgentTurn, isAgentModel } from '../lib/agents/agent-runtime';
+import { agentOutbound, adoptAgentTurn, claimAgentTurn, deriveFollowupModel, isAgentModel } from '../lib/agents/agent-runtime';
 import { countTokens, activeSummary } from '../utils';
 import { toast, useUiStore } from '../lib/ui-store';
 import { getModelsOnce, reconcileModelId, describeModel } from '../lib/use-models';
@@ -200,11 +200,11 @@ export async function runNodeGeneration(
   // revoked key) reconciles to the same family locally, or falls back to
   // the global pick — SAID OUT LOUD and recorded as what actually ran,
   // never silently mismatched between execution and provenance.
-  const pinnedRaw = get().nodes.find((n) => n.id === nodeId)?.data.model;
+  const pinnedRaw = deriveFollowupModel(get().nodes.find((n) => n.id === nodeId)?.data, useUiStore.getState().selectedModel);
   let pinnedModel = pinnedRaw;
   const modelData = await getModelsOnce();
   const serverDefaultModel: string | null = modelData?.default ?? null;
-  if (pinnedRaw && modelData && modelData.models.length > 0) {
+  if (pinnedRaw && !isAgentModel(pinnedRaw) && modelData && modelData.models.length > 0) {
     const r = reconcileModelId(pinnedRaw, modelData.models);
     if (r !== pinnedRaw) {
       pinnedModel = r ?? undefined;
@@ -232,7 +232,7 @@ export async function runNodeGeneration(
 
   const writeFinal = (response: string, failed = false, activityStatus: Exclude<AgentActivityEntry['status'], 'running'> = failed ? 'failed' : 'completed') => {
     if (!isCurrent()) return; // superseded: a newer generation owns this node
-    const tokenCount = countTokens(question + response);
+    const tokenCount = countTokens((get().nodes.find((n) => n.id === nodeId)?.data.question ?? question) + response);
     const modelUsed = actualModel ?? requestedModel;
     get().logEvent('generate', nodeId, { chars: response.length, ...(modelUsed ? { model: modelUsed } : {}), ...(failed ? { failed: true } : {}) });
     // Provenance: fingerprint what this answer depended on, AT completion —
@@ -542,8 +542,8 @@ export async function runNodeGeneration(
     // done: footprints, provenance and the ledger land in the same step as the
     // answer, so a follow-up asked right away already continues the session
     if (agentRoute) {
-      const session = get().nodes.find((n) => n.id === nodeId)?.data.agentSession;
-      if (session) await adoptAgentTurn(nodeId, session, question).catch(() => false);
+      const currentNode = get().nodes.find((n) => n.id === nodeId)?.data;
+      if (currentNode?.agentSession) await adoptAgentTurn(nodeId, currentNode.agentSession, currentNode.question).catch(() => false);
     }
     writeFinal(response);
     // this node is the mirror of the dsh turn it just ran: stamp provenance,

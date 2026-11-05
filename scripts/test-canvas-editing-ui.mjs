@@ -89,7 +89,7 @@ try {
   assert.equal(toolbarStyle.opacity, '1');
   assert.match(toolbarStyle.background, /^rgb\(/, 'Toolbar background has no transparency');
   assert.equal(await panel().locator('[data-response-expand]').count(), 0);
-  await node().locator('[data-node-name]').click({ button: 'right' });
+  await node().locator('.thought-node-header').click({ button: 'right' });
   assert.equal(await page.getByText('阅读视图', { exact: true }).count(), 0);
   await page.keyboard.press('Escape');
   await page.evaluate(() => {
@@ -99,15 +99,12 @@ try {
   await panel().waitFor({ state: 'visible' });
   check('toolbar is opaque and both redundant reading-view entries are absent');
 
-  const fullToggle = node().locator('[data-toggle-full-response]');
-  assert.equal(await fullToggle.getAttribute('aria-expanded'), 'false');
-  await fullToggle.click();
-  assert.equal(await fullToggle.getAttribute('aria-expanded'), 'true');
+  assert.equal(await node().locator('[data-toggle-full-response]').count(), 0);
+  assert.equal(await node().locator('[data-node-name]').count(), 0);
+  assert.equal(await node().locator('[data-node-metadata-editor]').count(), 0);
   assert.match(await node().textContent(), /完整回答末尾标记/);
-  await fullToggle.click();
-  assert.equal(await fullToggle.getAttribute('aria-expanded'), 'false');
   assert.equal((await currentNode()).data.response, originalResponse);
-  check('summary expands to the full response locally without changing stored content');
+  check('full cards show the complete response while title and summary stay collapsed');
 
   await node().locator('[data-edit-response]').click();
   const canvasResponse = node().locator('[data-canvas-response-editor]');
@@ -190,19 +187,22 @@ try {
   await panel().locator('[data-edit-cancel]').click();
   check('panel answer and question editors remain independent and never create duplicate canvas editors');
 
-  await node().locator('[data-canvas-rename-button]').click();
-  const rename = node().locator('[data-canvas-rename]');
+  await node().locator('[data-node-metadata-toggle]').click();
+  const rename = node().locator('[data-node-title-input]');
   await rename.fill('可编辑画布节点');
-  await rename.press('Enter');
+  await node().locator('[data-node-metadata-save]').click();
   assert.equal((await currentNode()).data.displayName, '可编辑画布节点');
-  assert.match(await node().locator('[data-node-name]').textContent(), /可编辑画布节点/);
-  check('canvas title can be renamed and saved');
+  assert.equal(await node().locator('[data-node-title-input]').count(), 0);
+  await node().locator('[data-node-metadata-toggle]').click();
+  assert.equal(await rename.inputValue(), '可编辑画布节点');
+  await node().locator('[data-node-metadata-cancel]').click();
+  check('canvas metadata title saves explicitly and restores when reopened');
 
   await closePanel();
-  // Restore the summary only as a fixture so resize tests start from a compact card.
+  // Restore the automatic summary fixture used by the overview after resizing.
   await page.evaluate(summary => window.__store.setState(s => ({ nodes: s.nodes.map(n => n.id === 'canvas-edit' ? { ...n, data: { ...n.data, summaries: [summary] } } : n) })), summary);
   await setViewport(1);
-  await node().locator('[data-toggle-full-response]').waitFor({ state: 'visible' });
+  await node().locator('[data-thought-body]').waitFor({ state: 'visible' });
   const initialBox = await node().boundingBox();
   const bottomGripBox = await node().locator('.thought-resize-bottom').boundingBox();
   assert.ok(bottomGripBox.x + bottomGripBox.width / 2 > initialBox.x + initialBox.width * 0.65, 'Bottom resize grip stays clear of the central connection handle');
@@ -275,7 +275,6 @@ try {
   const minimalBox = await node().boundingBox();
   closeTo(minimalBox.width, 360, 'Minimum width is respected');
   closeTo(minimalBox.height, 240, 'Minimum height is respected');
-  await node().locator('[data-toggle-full-response]').click();
   await node().locator('[data-edit-response]').click();
   await canvasResponse.waitFor({ state: 'visible' });
   const bodyOverflow = await node().locator('[data-thought-body]').evaluate(el => ({ height: el.clientHeight, scrollHeight: el.scrollHeight, overflowY: getComputedStyle(el).overflowY }));

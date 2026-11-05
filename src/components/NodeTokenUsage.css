@@ -1,0 +1,49 @@
+:root {
+  --node-usage-question: #8474b4;
+  --node-usage-answer: #7a8da5;
+  --node-usage-tool: #ad8251;
+  --node-usage-think: #548e83;
+}
+:root[data-theme='dark'] {
+  --node-usage-question: #b0a0d6;
+  --node-usage-answer: #9aafc5;
+  --node-usage-tool: #cfaa79;
+  --node-usage-think: #7db7a9;
+}
+
+.node-token-usage {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: stretch;
+  flex-shrink: 0;
+  gap: 4px;
+  min-width: 104px;
+  padding: 3px 0;
+  border-radius: var(--radius-tag);
+  color: var(--conversation-muted, var(--color-ink-muted));
+  cursor: inherit;
+  user-select: none;
+}
+.node-token-total {
+  font-size: var(--text-meta);
+  line-height: var(--text-meta--line-height);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.node-token-heading { display: flex; align-items: center; gap: 12px; }
+.node-tool-marks { display: inline-flex; align-items: center; gap: 5px; color: inherit; font-size: var(--text-meta); line-height: var(--text-meta--line-height); white-space: nowrap; user-select: none; }
+.node-token-usage:hover { color: var(--color-ink); }
+.node-token-usage:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 4px; }
+.node-token-bar {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  height: 6px;
+  /* Keep color transitions inside one continuous neutral perimeter, away from
+     the outside contour where resampling can emphasize their contrast. */
+  border: 1px solid color-mix(in srgb, var(--conversation-muted) 55%, var(--conversation-surface));
+  border-radius: var(--radius-tag);
+  background: var(--conversation-line, var(--color-line));
+  background-clip: padding-box;
+}

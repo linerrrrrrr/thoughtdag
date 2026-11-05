@@ -25,21 +25,21 @@ export default function ConfirmDialog() {
         onClick={(e) => e.stopPropagation()}
       >
         {request.title && (
-          <h3 id={titleId} className="text-sm font-semibold text-ink mb-1.5">{request.title}</h3>
+          <h3 id={titleId} className="text-title font-semibold text-ink mb-1.5">{request.title}</h3>
         )}
-        <p id={messageId} className="text-sm text-ink-muted leading-relaxed whitespace-pre-line [overflow-wrap:anywhere]">{request.message}</p>
+        <p id={messageId} className="text-body text-ink-muted whitespace-pre-line [overflow-wrap:anywhere]">{request.message}</p>
         <div className="flex justify-end gap-2 mt-5">
           <button
             onClick={() => resolveConfirm(false)}
             autoFocus={request.danger}
-            className="text-xs text-ink-muted hover:text-ink px-4 py-2 rounded-control hover:bg-wash transition-colors"
+            className="text-control text-ink-muted hover:text-ink px-4 py-2 rounded-control hover:bg-wash transition-colors"
           >
             {t('common.cancel')}
           </button>
           <button
             onClick={() => resolveConfirm(true)}
             autoFocus={!request.danger}
-            className={`text-xs text-white px-4 py-2 rounded-control transition-colors ${
+            className={`text-control text-white px-4 py-2 rounded-control transition-colors ${
               request.danger ? 'bg-red-500 hover:bg-red-600' : 'bg-action hover:bg-action-strong'
             }`}
           >

@@ -153,9 +153,9 @@ try {
   const beforeLayout = await storedGraph();
   const beforeViewport = await page.evaluate(() => window.__rf.getViewport());
   await openLayout();
-  await page.locator('[data-layout-direction]').selectOption('vertical');
-  await page.locator('[data-layout-method]').selectOption('layers');
-  await page.locator('[data-layout-route]').selectOption('orthogonal');
+  await page.locator('[data-layout-direction]').locator('label:has(input[value="vertical"])').click();
+  await page.locator('[data-layout-method]').locator('label:has(input[value="layers"])').click();
+  await page.locator('[data-layout-route]').locator('label:has(input[value="orthogonal"])').click();
   await page.locator('[data-layout-preview]').click();
   await page.waitForTimeout(450);
   assert.deepEqual(await storedGraph(), beforeLayout, 'preview must not mutate persisted graph or history');
@@ -176,9 +176,9 @@ try {
   check('layout preview changes rendered geometry only and cancel restores graph/camera');
 
   await openLayout();
-  await page.locator('[data-layout-direction]').selectOption('vertical');
-  await page.locator('[data-layout-method]').selectOption('chains');
-  await page.locator('[data-layout-route]').selectOption('orthogonal');
+  await page.locator('[data-layout-direction]').locator('label:has(input[value="vertical"])').click();
+  await page.locator('[data-layout-method]').locator('label:has(input[value="chains"])').click();
+  await page.locator('[data-layout-route]').locator('label:has(input[value="orthogonal"])').click();
   await page.locator('[data-layout-apply]').click();
   await page.waitForTimeout(450);
   const appliedLayout = await storedGraph();
@@ -191,17 +191,17 @@ try {
   check('layout apply saves preferences and positions as one undoable action');
 
   await openLayout();
-  await page.locator('[data-layout-method]').selectOption('layers');
-  await page.locator('[data-layout-density]').selectOption('relaxed');
+  await page.locator('[data-layout-method]').locator('label:has(input[value="layers"])').click();
+  await page.locator('[data-layout-density]').locator('label:has(input[value="relaxed"])').click();
   await page.locator('[data-canvas-layout-panel]').getByRole('button', { name: '关闭', exact: true }).click();
   await openLayout();
-  assert.equal(await page.locator('[data-layout-density]').inputValue(), 'relaxed');
+  assert.equal(await page.locator('[data-layout-density]').locator('input:checked').inputValue(), 'relaxed');
   await page.locator('[data-layout-density]').evaluate((input) => input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', isComposing: true, bubbles: true })));
   assert.equal(await page.locator('[data-canvas-layout-panel]').count(), 1);
   await page.keyboard.press('Escape');
   await page.locator('[data-canvas-layout-panel]').waitFor({ state: 'detached' });
   await openLayout();
-  assert.equal(await page.locator('[data-layout-density]').inputValue(), 'standard');
+  assert.equal(await page.locator('[data-layout-density]').locator('input:checked').inputValue(), 'standard');
   await page.locator('[data-layout-cancel]').click();
   check('layout close keeps session options, IME Escape is ignored and normal Escape cancels them');
 
@@ -376,8 +376,8 @@ try {
   await page.screenshot({ path: `${outputDir}/edge-inspector-narrow-locate.png` });
   await inspector.getByRole('button', { name: '关闭', exact: true }).click();
   await openLayout();
-  await page.locator('[data-layout-direction]').selectOption('horizontal');
-  await page.locator('[data-layout-method]').selectOption('chains');
+  await page.locator('[data-layout-direction]').locator('label:has(input[value="horizontal"])').click();
+  await page.locator('[data-layout-method]').locator('label:has(input[value="chains"])').click();
   await page.locator('[data-layout-preview]').click();
   await page.waitForTimeout(400);
   const narrowLayoutBox = await page.locator('[data-canvas-layout-panel]').boundingBox();

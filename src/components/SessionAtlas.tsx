@@ -60,10 +60,10 @@ function SourcesDialog({ roots, counts, onChanged, onClose }: {
         className="shrink-0"
       />
       <div className="flex-1 min-w-0">
-        <div className="text-sm text-ink">{builtinLabel[root.key] ?? root.path.split('/').filter(Boolean).pop()}</div>
-        <div className="text-2xs text-ink-faint truncate">{root.path}</div>
+        <div className="text-control text-ink">{builtinLabel[root.key] ?? root.path.split('/').filter(Boolean).pop()}</div>
+        <div className="text-meta text-ink-faint truncate">{root.path}</div>
       </div>
-      <span className="text-2xs text-ink-faint shrink-0">
+      <span className="text-meta text-ink-faint shrink-0">
         {root.exists ? (counts.get(root.key) ?? 0) : t('atlas.rootMissing')}
       </span>
       {!root.builtin && (
@@ -80,27 +80,27 @@ function SourcesDialog({ roots, counts, onChanged, onClose }: {
     <div className="absolute inset-0 z-10 bg-ink/20 flex items-center justify-center">
       <div ref={layerRef} role="dialog" aria-modal="true" aria-label={t('atlas.sourcesTitle')} tabIndex={-1} className="bg-surface border border-line rounded-panel shadow-lg w-[440px] max-h-[80%] overflow-y-auto" onClick={(e) => e.stopPropagation()} data-atlas-sources-dialog>
         <div className="px-4 pt-3.5 pb-2.5 border-b border-line">
-          <div className="text-sm font-semibold text-ink">{t('atlas.sourcesTitle')}</div>
-          <div className="text-2xs text-ink-muted mt-0.5">{t('atlas.sourcesHint')}</div>
+          <div className="text-title font-semibold text-ink">{t('atlas.sourcesTitle')}</div>
+          <div className="text-control text-ink-muted mt-0.5">{t('atlas.sourcesHint')}</div>
         </div>
         {roots.filter((r) => r.builtin).map(row)}
         {cmds && Object.values(cmds).some((c) => c.state !== 'unavailable') && (
           <>
-            <div className="px-4 pt-3 pb-1.5 text-2xs uppercase tracking-wide text-ink-faint">{t('atlas.handoffTitle')}</div>
+            <div className="px-4 pt-3 pb-1.5 text-control uppercase tracking-wide text-ink-faint">{t('atlas.handoffTitle')}</div>
             {Object.entries(cmds).filter(([, c]) => c.state !== 'unavailable').map(([runner, c]) => (
               <div key={runner} className="flex items-center gap-3 px-4 py-2.5 border-b border-line" data-atlas-handoff={runner} data-handoff-state={c.state}>
                 <div className="flex-1 min-w-0">
-                  <div className="text-sm text-ink flex items-center gap-2">
+                  <div className="text-control text-ink flex items-center gap-2">
                     {runnerLabel[runner] ?? runner}
-                    <code className="text-2xs bg-wash border border-line rounded-tag px-1.5 py-px font-mono">{c.invoke}</code>
+                    <code className="text-control bg-wash border border-line rounded-tag px-1.5 py-px font-mono">{c.invoke}</code>
                   </div>
-                  <div className="text-2xs text-ink-faint truncate">
+                  <div className="text-meta text-ink-faint truncate">
                     {t(c.state === 'installed' ? 'atlas.handoffOn' : c.state === 'outdated' ? 'atlas.handoffOutdated' : 'atlas.handoffOff')}
                   </div>
                 </div>
                 {c.state !== 'installed' && (
                   <button
-                    className="text-2xs bg-accent/10 text-accent hover:bg-accent/20 font-medium px-2.5 py-1 rounded-tag transition-colors shrink-0"
+                    className="text-control bg-accent/10 text-accent hover:bg-accent/20 font-medium px-2.5 py-1 rounded-tag transition-colors shrink-0"
                     data-handoff-install
                     onClick={() => void (async () => {
                       const { confirmDialog } = await import('../lib/ui-store');
@@ -137,13 +137,13 @@ function SourcesDialog({ roots, counts, onChanged, onClose }: {
         <div className="flex items-center gap-2 px-4 py-3">
           <button
             onClick={onChanged}
-            className="flex items-center gap-1.5 text-sm text-ink-muted hover:text-ink border border-line rounded-control px-2.5 py-1.5 hover:bg-wash transition-colors"
+            className="flex items-center gap-1.5 text-control text-ink-muted hover:text-ink border border-line rounded-control px-2.5 py-1.5 hover:bg-wash transition-colors"
           >
             <RefreshCw size={13} strokeWidth={1.75} /> {t('atlas.autoDetect')}
           </button>
           <button
             onClick={() => { void window.desktopSessions!.addRoot().then((r) => { if (r) onChanged(); }); }}
-            className="flex items-center gap-1.5 text-sm text-accent border border-line rounded-control px-2.5 py-1.5 hover:bg-wash transition-colors"
+            className="flex items-center gap-1.5 text-control text-accent border border-line rounded-control px-2.5 py-1.5 hover:bg-wash transition-colors"
             data-atlas-add-dir
           >
             <Plug size={13} strokeWidth={1.75} /> {t('atlas.addDir')}
@@ -385,10 +385,10 @@ export default function SessionAtlas({ onClose, onSwitched, focusSessionId, init
       <div ref={layerRef} role="dialog" aria-modal="true" aria-label={t(tab === 'memory' ? 'memory.managerTitle' : 'atlas.title')} tabIndex={-1} className="bg-surface border border-line rounded-panel shadow-lg w-full max-w-[980px] h-[min(680px,90vh)] flex flex-col overflow-hidden">
         <div className="flex items-start gap-3 px-5 pt-4 pb-3 border-b border-line">
           <div className="flex-1 min-w-0">
-            <div className="text-base font-semibold text-ink">{t(tab === 'memory' ? 'memory.managerTitle' : 'atlas.title')}</div>
-            <div className="text-xs text-ink-muted mt-0.5">{t(tab === 'memory' ? 'mp.subtitle' : 'atlas.subtitle')}</div>
+            <div className="text-page font-semibold text-ink">{t(tab === 'memory' ? 'memory.managerTitle' : 'atlas.title')}</div>
+            <div className="text-control text-ink-muted mt-0.5">{t(tab === 'memory' ? 'mp.subtitle' : 'atlas.subtitle')}</div>
             {changes.size > 0 && (
-              <div className="text-xs mt-1 flex items-center gap-2" data-atlas-changes>
+              <div className="text-control mt-1 flex items-center gap-2" data-atlas-changes>
                 <span className="text-accent">
                   {fmt(t('atlas.changesSummary'), {
                     n: [...changes.values()].filter((c) => c.kind === 'new').length,
@@ -406,7 +406,7 @@ export default function SessionAtlas({ onClose, onSwitched, focusSessionId, init
             )}
           </div>
           {isDesktop && targets && targets.terminals.length > 0 && (
-            <label className="flex items-center gap-1.5 text-sm text-ink-muted border border-line rounded-control px-2.5 py-1.5 cursor-pointer" title={t('atlas.terminalChoice')}>
+            <label className="flex items-center gap-1.5 text-control text-ink-muted border border-line rounded-control px-2.5 py-1.5 cursor-pointer" title={t('atlas.terminalChoice')}>
               <SquareTerminal size={14} strokeWidth={1.75} />
               <select
                 value={targets.prefs.terminal}
@@ -420,7 +420,7 @@ export default function SessionAtlas({ onClose, onSwitched, focusSessionId, init
                   }
                   void window.desktopSessions?.setOpenPrefs({ terminal }).then((p) => setTargets((tg) => (tg ? { ...tg, prefs: p } : tg)));
                 }}
-                className="bg-transparent focus:outline-none text-sm text-ink cursor-pointer"
+                className="bg-transparent focus:outline-none text-control text-ink cursor-pointer"
                 data-atlas-terminal-select
               >
                 {targets.terminals.map((term) => <option key={term.id} value={term.id}>{term.name}</option>)}
@@ -432,7 +432,7 @@ export default function SessionAtlas({ onClose, onSwitched, focusSessionId, init
           <button
             onClick={() => setSourcesOpen(true)}
             hidden={tab === 'memory'}
-            className="flex items-center gap-1.5 text-sm text-ink-muted hover:text-ink border border-line rounded-control px-2.5 py-1.5 hover:bg-wash transition-colors"
+            className="flex items-center gap-1.5 text-control text-ink-muted hover:text-ink border border-line rounded-control px-2.5 py-1.5 hover:bg-wash transition-colors"
             data-atlas-sources
           >
             <Plug size={14} strokeWidth={1.75} /> {t('atlas.sources')}
@@ -442,7 +442,7 @@ export default function SessionAtlas({ onClose, onSwitched, focusSessionId, init
           <button
             onClick={() => void refresh()}
             disabled={scanning}
-            className="flex items-center gap-1.5 text-sm text-ink-muted hover:text-ink border border-line rounded-control px-2.5 py-1.5 hover:bg-wash transition-colors disabled:opacity-60"
+            className="flex items-center gap-1.5 text-control text-ink-muted hover:text-ink border border-line rounded-control px-2.5 py-1.5 hover:bg-wash transition-colors disabled:opacity-60"
             data-atlas-refresh
           >
             {scanning ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} strokeWidth={1.75} />}
@@ -459,7 +459,7 @@ export default function SessionAtlas({ onClose, onSwitched, focusSessionId, init
               <button
                 key={k}
                 onClick={() => setTab(k)}
-                className={`text-xs px-3 py-1 rounded-control transition-colors ${tab === k ? 'bg-card text-ink font-medium' : 'text-ink-muted hover:text-ink'}`}
+                className={`text-control px-3 py-1 rounded-control transition-colors ${tab === k ? 'bg-card text-ink font-medium' : 'text-ink-muted hover:text-ink'}`}
                 data-atlas-tab={k}
                 aria-pressed={tab === k}
               >
@@ -474,7 +474,7 @@ export default function SessionAtlas({ onClose, onSwitched, focusSessionId, init
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder={t('atlas.searchPlaceholder')}
-                className="text-sm bg-transparent focus:outline-none w-full text-ink placeholder:text-ink-faint"
+                className="text-control bg-transparent focus:outline-none w-full text-ink placeholder:text-ink-faint"
                 data-atlas-search
               />
             </div>
@@ -490,7 +490,7 @@ export default function SessionAtlas({ onClose, onSwitched, focusSessionId, init
           {/* left: recent work first (the "where was I" answer), then the
               external world's folders, then the native region */}
           <div className="w-[260px] border-r border-line overflow-y-auto py-2 shrink-0">
-            <div className="px-4 py-1 text-2xs uppercase tracking-wide text-ink-faint">{t('atlas.recent')}</div>
+            <div className="px-4 py-1 text-control uppercase tracking-wide text-ink-faint">{t('atlas.recent')}</div>
             {projects.filter((p) => !p.archived).sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 6).map((p) => (
               <button
                 key={p.id}
@@ -499,20 +499,20 @@ export default function SessionAtlas({ onClose, onSwitched, focusSessionId, init
                 data-atlas-recent={p.id}
               >
                 {p.sourceSession?.sessionId
-                  ? <span className="text-2xs font-mono border border-line rounded-tag px-1 py-px shrink-0 text-ink-faint">{p.sourceSession.runner}</span>
+                  ? <span className="text-meta font-mono border border-line rounded-tag px-1 py-px shrink-0 text-ink-faint">{p.sourceSession.runner}</span>
                   : <Inbox size={13} strokeWidth={1.75} className="shrink-0 text-ink-faint" />}
-                <span className="flex-1 truncate text-sm">{p.name}</span>
+                <span className="flex-1 truncate text-control">{p.name}</span>
               </button>
             ))}
-            <div className="border-t border-line mt-2 pt-2 px-4 py-1 text-2xs uppercase tracking-wide text-ink-faint">{t('atlas.folders')}</div>
+            <div className="border-t border-line mt-2 pt-2 px-4 py-1 text-control uppercase tracking-wide text-ink-faint">{t('atlas.folders')}</div>
             {!isDesktop && (
-              <div className="px-4 py-2 text-xs text-ink-faint">{t('atlas.webNoScan')}</div>
+              <div className="px-4 py-2 text-control text-ink-faint">{t('atlas.webNoScan')}</div>
             )}
             {isDesktop && cards === null && (
-              <div className="px-4 py-2 text-sm text-ink-faint flex items-center gap-2"><Loader2 size={14} className="animate-spin" /> {t('atlas.scanning')}</div>
+              <div className="px-4 py-2 text-control text-ink-faint flex items-center gap-2"><Loader2 size={14} className="animate-spin" /> {t('atlas.scanning')}</div>
             )}
             {isDesktop && cards !== null && groups.length === 0 && (
-              <div className="px-4 py-2 text-xs text-ink-faint">{t('atlas.empty')}</div>
+              <div className="px-4 py-2 text-control text-ink-faint">{t('atlas.empty')}</div>
             )}
             {groups.map((g) => {
               const key = g.cwd ?? '';
@@ -525,12 +525,12 @@ export default function SessionAtlas({ onClose, onSwitched, focusSessionId, init
                   data-atlas-folder={g.name || 'unfiled'}
                 >
                   {isActive ? <FolderOpen size={15} strokeWidth={1.75} className="shrink-0" /> : <Folder size={15} strokeWidth={1.75} className="shrink-0 text-ink-faint" />}
-                  <span className="flex-1 truncate text-sm">{g.name || t('atlas.unfiled')}</span>
+                  <span className="flex-1 truncate text-control">{g.name || t('atlas.unfiled')}</span>
                   {(() => {
                     const n = g.cards.filter((c) => changes.has(changeKeyOf(c))).length;
-                    return n > 0 ? <span className="text-2xs text-accent shrink-0" data-atlas-folder-changes>+{n}</span> : null;
+                    return n > 0 ? <span className="text-meta text-accent shrink-0" data-atlas-folder-changes>+{n}</span> : null;
                   })()}
-                  <span className="text-2xs text-ink-faint shrink-0">{g.cards.length}</span>
+                  <span className="text-meta text-ink-faint shrink-0">{g.cards.length}</span>
                 </button>
               );
             })}
@@ -541,8 +541,8 @@ export default function SessionAtlas({ onClose, onSwitched, focusSessionId, init
                 data-atlas-canvases
               >
                 <Inbox size={15} strokeWidth={1.75} className="shrink-0" />
-                <span className="flex-1 truncate text-sm">{t('atlas.myCanvases')}</span>
-                <span className="text-2xs text-ink-faint shrink-0">{projects.length}</span>
+                <span className="flex-1 truncate text-control">{t('atlas.myCanvases')}</span>
+                <span className="text-meta text-ink-faint shrink-0">{projects.length}</span>
               </button>
             </div>
           </div>
@@ -556,8 +556,8 @@ export default function SessionAtlas({ onClose, onSwitched, focusSessionId, init
                   <div key={p.id} className="group flex items-center flex-wrap gap-2 border border-line rounded-content px-4 py-3 hover:bg-wash transition-colors cursor-pointer"
                     onClick={() => { onClose(); void switchProject(p.id).then(onSwitched); }}>
                     <div className="flex-1 min-w-0">
-                      <div className="text-sm text-ink font-medium truncate">{p.name}</div>
-                      <div className="text-2xs text-ink-faint mt-0.5 flex items-center gap-1.5">
+                      <div className="text-control text-ink font-medium truncate">{p.name}</div>
+                      <div className="text-meta text-ink-faint mt-0.5 flex items-center gap-1.5">
                         <span>{dateLabel(p.updatedAt)}</span>
                         {!!p.sourceSession?.sessionId && <span className="font-mono border border-line rounded-tag px-1 py-px">{p.sourceSession.runner}</span>}
                       </div>
@@ -573,7 +573,7 @@ export default function SessionAtlas({ onClose, onSwitched, focusSessionId, init
                     {/* the listening cluster: every session this canvas
                         subscribes to, with its role and progress */}
                     {!!p.sourceSession && subscribedSessionIds(p).length > 0 && (
-                      <div className="w-full basis-full text-2xs text-ink-faint font-mono flex flex-wrap gap-x-3 gap-y-0.5 pt-1" data-atlas-cluster>
+                      <div className="w-full basis-full text-meta text-ink-faint font-mono flex flex-wrap gap-x-3 gap-y-0.5 pt-1" data-atlas-cluster>
                         {p.sourceSession.sessionId && (
                           <span>◉ {p.sourceSession.runner} {p.sourceSession.sessionId.slice(0, 8)} · {fmt(t('atlas.turnsN'), { n: p.sourceSession.importedCount })}</span>
                         )}
@@ -589,7 +589,7 @@ export default function SessionAtlas({ onClose, onSwitched, focusSessionId, init
                 ))}
                 {projects.some((p) => p.archived) && (
                   <details className="pt-2" data-atlas-archived-group>
-                    <summary className="text-2xs uppercase tracking-wide text-ink-faint cursor-pointer px-1 py-1">
+                    <summary className="text-control uppercase tracking-wide text-ink-faint cursor-pointer px-1 py-1">
                       {fmt(t('atlas.archivedGroup'), { n: projects.filter((p) => p.archived).length })}
                     </summary>
                     <div className="space-y-1.5 mt-1.5">
@@ -601,11 +601,11 @@ export default function SessionAtlas({ onClose, onSwitched, focusSessionId, init
                           className="w-full text-left border border-dashed border-line rounded-content px-4 py-2.5 hover:bg-wash transition-colors opacity-70 hover:opacity-100"
                           data-atlas-archived-item
                         >
-                          <div className="text-sm text-ink truncate flex items-center gap-1.5">
+                          <div className="text-control text-ink truncate flex items-center gap-1.5">
                             <span className="truncate">{p.name}</span>
-                            {!!p.sourceSession?.sessionId && <span className="text-2xs font-mono border border-line rounded-tag px-1 py-px shrink-0 text-ink-faint">{p.sourceSession.runner}</span>}
+                            {!!p.sourceSession?.sessionId && <span className="text-meta font-mono border border-line rounded-tag px-1 py-px shrink-0 text-ink-faint">{p.sourceSession.runner}</span>}
                           </div>
-                          <div className="text-2xs text-ink-faint mt-0.5">{dateLabel(p.updatedAt)}</div>
+                          <div className="text-meta text-ink-faint mt-0.5">{dateLabel(p.updatedAt)}</div>
                         </button>
                       ))}
                     </div>
@@ -625,7 +625,7 @@ export default function SessionAtlas({ onClose, onSwitched, focusSessionId, init
                       value={query}
                       onChange={(e) => setQuery(e.target.value)}
                       placeholder={t('atlas.filterTitle')}
-                      className="text-sm bg-transparent focus:outline-none w-[150px] text-ink placeholder:text-ink-faint"
+                      className="text-control bg-transparent focus:outline-none w-[150px] text-ink placeholder:text-ink-faint"
                       data-atlas-filter
                     />
                   </div>
@@ -634,7 +634,7 @@ export default function SessionAtlas({ onClose, onSwitched, focusSessionId, init
                     <button
                       key={r}
                       onClick={() => setRunnerOff((s) => { const n = new Set(s); if (n.has(r)) n.delete(r); else n.add(r); return n; })}
-                      className={`text-2xs font-mono border rounded-tag px-2 py-1 transition-colors ${runnerOff.has(r) ? 'border-line text-ink-faint line-through' : 'border-accent/40 text-accent bg-accent/5'}`}
+                      className={`text-control font-mono border rounded-tag px-2 py-1 transition-colors ${runnerOff.has(r) ? 'border-line text-ink-faint line-through' : 'border-accent/40 text-accent bg-accent/5'}`}
                       data-atlas-runner-toggle={r}
                     >
                       {r}
@@ -643,7 +643,7 @@ export default function SessionAtlas({ onClose, onSwitched, focusSessionId, init
                   {changes.size > 0 && (
                     <button
                       onClick={() => setOnlyChanged((v) => !v)}
-                      className={`text-2xs border rounded-tag px-2 py-1 transition-colors ${onlyChanged ? 'border-accent text-white bg-action' : 'border-line text-ink-muted hover:text-ink'}`}
+                      className={`text-control border rounded-tag px-2 py-1 transition-colors ${onlyChanged ? 'border-accent text-white bg-action' : 'border-line text-ink-muted hover:text-ink'}`}
                       data-atlas-only-changed
                     >
                       {t('atlas.onlyChanged')}
@@ -652,7 +652,7 @@ export default function SessionAtlas({ onClose, onSwitched, focusSessionId, init
                   {(cards ?? []).some((c) => c.subagent) && (
                     <button
                       onClick={() => setShowSubagents((v) => !v)}
-                      className={`text-2xs border rounded-tag px-2 py-1 transition-colors ${showSubagents ? 'border-accent text-accent bg-accent/5' : 'border-line text-ink-faint hover:text-ink'}`}
+                      className={`text-control border rounded-tag px-2 py-1 transition-colors ${showSubagents ? 'border-accent text-accent bg-accent/5' : 'border-line text-ink-faint hover:text-ink'}`}
                       data-atlas-show-sub
                     >
                       {t('atlas.showSub')}
@@ -660,7 +660,7 @@ export default function SessionAtlas({ onClose, onSwitched, focusSessionId, init
                   )}
                   <button
                     onClick={() => setSortKey((k) => (({ time: 'name', name: 'size', size: 'runner', runner: 'time' } as const)[k]))}
-                    className="ml-auto flex items-center gap-1.5 text-2xs text-ink-muted hover:text-ink border border-line rounded-tag px-2 py-1 hover:bg-wash transition-colors"
+                    className="ml-auto flex items-center gap-1.5 text-control text-ink-muted hover:text-ink border border-line rounded-tag px-2 py-1 hover:bg-wash transition-colors"
                     data-atlas-sort
                   >
                     <ArrowDownUp size={12} strokeWidth={1.75} />
@@ -669,12 +669,12 @@ export default function SessionAtlas({ onClose, onSwitched, focusSessionId, init
                 </div>
                 )}
                 {!activeGroup ? (
-                  <div className="py-16 text-center text-sm text-ink-faint">
+                  <div className="py-16 text-center text-control text-ink-faint">
                     {cards === null ? t('atlas.scanning') : (cards.length > 0 ? t('atlas.filteredOut') : t('atlas.empty'))}
                   </div>
                 ) : (
                 <>
-                {activeGroup.cwd && <div className="text-2xs text-ink-faint mb-3 truncate">{activeGroup.cwd} · {fmt(t('atlas.sessions'), { n: activeGroup.cards.length })}</div>}
+                {activeGroup.cwd && <div className="text-meta text-ink-faint mb-3 truncate">{activeGroup.cwd} · {fmt(t('atlas.sessions'), { n: activeGroup.cards.length })}</div>}
                 <div className="space-y-1.5">
                   {shownCards.map((card) => (
                     <div
@@ -684,29 +684,29 @@ export default function SessionAtlas({ onClose, onSwitched, focusSessionId, init
                       data-atlas-session={card.sessionId}
                     >
                       <div className="flex-1 min-w-0">
-                        <div className="text-sm text-ink truncate flex items-center gap-1.5">
+                        <div className="text-control text-ink truncate flex items-center gap-1.5">
                           <span className="truncate">{displayTitle(card)}</span>
                           {threadForks.has(card.sessionId) && (
-                            <span className="text-2xs text-ink-faint border border-line rounded-tag px-1 py-px shrink-0 font-mono" title={`⑂ ${threadForks.get(card.sessionId)}`} data-atlas-fork>⑂</span>
+                            <span className="text-meta text-ink-faint border border-line rounded-tag px-1 py-px shrink-0 font-mono" title={`⑂ ${threadForks.get(card.sessionId)}`} data-atlas-fork>⑂</span>
                           )}
                           {changes.get(changeKeyOf(card))?.kind === 'new' && (
-                            <span className="text-2xs text-white bg-action rounded-tag px-1 py-px shrink-0" data-atlas-badge="new">{t('atlas.badgeNew')}</span>
+                            <span className="text-meta text-white bg-action rounded-tag px-1 py-px shrink-0" data-atlas-badge="new">{t('atlas.badgeNew')}</span>
                           )}
                           {changes.get(changeKeyOf(card))?.kind === 'updated' && (
-                            <span className="text-2xs text-accent border border-accent/40 rounded-tag px-1 py-px shrink-0" data-atlas-badge="updated">
+                            <span className="text-meta text-accent border border-accent/40 rounded-tag px-1 py-px shrink-0" data-atlas-badge="updated">
                               +{sizeLabel(changes.get(changeKeyOf(card))!.deltaSize)}
                             </span>
                           )}
                           {card.sessionId === activeSessionId ? (
-                            <span className="text-2xs text-card bg-ink rounded-tag px-1 py-px shrink-0" data-atlas-badge="current">{t('atlas.currentOpen')}</span>
+                            <span className="text-meta text-card bg-ink rounded-tag px-1 py-px shrink-0" data-atlas-badge="current">{t('atlas.currentOpen')}</span>
                           ) : (() => {
                             const home = canvasOf(card.sessionId);
                             return home ? (
-                              <span className="text-2xs text-ink-faint border border-line rounded-tag px-1 py-px shrink-0" title={home.name} data-atlas-badge="canvas">{t('atlas.onCanvas')}</span>
+                              <span className="text-meta text-ink-faint border border-line rounded-tag px-1 py-px shrink-0" title={home.name} data-atlas-badge="canvas">{t('atlas.onCanvas')}</span>
                             ) : null;
                           })()}
                         </div>
-                        <div className="text-2xs text-ink-faint mt-0.5 flex items-center gap-2">
+                        <div className="text-meta text-ink-faint mt-0.5 flex items-center gap-2">
                           {/* runner identity is functional provenance, not promotion */}
                           <span className="border border-line rounded-tag px-1 py-px font-mono">{card.runner}</span>
                           <span>{dateLabel(card.mtime)}</span>
@@ -782,20 +782,20 @@ export default function SessionAtlas({ onClose, onSwitched, focusSessionId, init
         )}
         {picked.size >= 2 && !mergePick && (
           <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-10 bg-surface border border-line rounded-overlay shadow-lg px-4 py-2.5 flex items-center gap-3" data-atlas-merge-bar>
-            <span className="text-xs text-ink-muted whitespace-nowrap">{fmt(t('atlas.mergeSelected'), { n: picked.size })}</span>
+            <span className="text-control text-ink-muted whitespace-nowrap">{fmt(t('atlas.mergeSelected'), { n: picked.size })}</span>
             {busyRel === '__merge__'
               ? <Loader2 size={15} className="animate-spin text-accent" />
               : (
                 <>
                   <button
-                    className="text-xs bg-action hover:bg-action-strong text-white font-medium px-3 py-1.5 rounded-control transition-colors whitespace-nowrap"
+                    className="text-control bg-action hover:bg-action-strong text-white font-medium px-3 py-1.5 rounded-control transition-colors whitespace-nowrap"
                     onClick={() => void mergeRun()}
                     data-atlas-merge-new
                   >
                     {t('atlas.mergeNew')}
                   </button>
                   <button
-                    className="text-xs text-ink-muted hover:text-ink hover:bg-wash font-medium px-3 py-1.5 rounded-control transition-colors whitespace-nowrap"
+                    className="text-control text-ink-muted hover:text-ink hover:bg-wash font-medium px-3 py-1.5 rounded-control transition-colors whitespace-nowrap"
                     onClick={() => setMergePick(true)}
                     data-atlas-merge-into
                   >
@@ -812,13 +812,13 @@ export default function SessionAtlas({ onClose, onSwitched, focusSessionId, init
           <div className="absolute inset-0 z-10 bg-ink/20 flex items-center justify-center">
             <div ref={pickerRef} role="dialog" aria-modal="true" aria-label={t(mergePick ? 'atlas.mergeInto' : 'atlas.mountTo')} tabIndex={-1} className="bg-surface border border-line rounded-panel shadow-lg w-[400px] max-h-[70%] overflow-y-auto" onClick={(e) => e.stopPropagation()} data-atlas-mount-picker>
               <div className="px-4 pt-3.5 pb-2.5 border-b border-line">
-                <div className="text-sm font-semibold text-ink">{t(mergePick ? 'atlas.mergeInto' : 'atlas.mountTo')}</div>
-                <div className="text-2xs text-ink-muted mt-0.5">{t(mergePick ? 'atlas.mergeSelected' : 'atlas.mountHint').replace('{n}', String(picked.size))}</div>
+                <div className="text-title font-semibold text-ink">{t(mergePick ? 'atlas.mergeInto' : 'atlas.mountTo')}</div>
+                <div className="text-control text-ink-muted mt-0.5">{t(mergePick ? 'atlas.mergeSelected' : 'atlas.mountHint').replace('{n}', String(picked.size))}</div>
               </div>
               {projects.filter((p) => !p.archived && p.kind !== 'paradigm').sort((a, b) => b.updatedAt - a.updatedAt).map((p) => (
                 <button
                   key={p.id}
-                  className="w-full text-left px-4 py-2.5 text-sm text-ink hover:bg-wash transition-colors border-b border-line last:border-b-0"
+                  className="w-full text-left px-4 py-2.5 text-control text-ink hover:bg-wash transition-colors border-b border-line last:border-b-0"
                   onClick={() => {
                     if (mergePick) { setMergePick(false); void mergeRun(p.id); return; }
                     const card = mountPick!;

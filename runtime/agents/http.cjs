@@ -73,6 +73,13 @@ function createAgentsHttp({ workspaceRoot = path.join(os.homedir(), '.thoughtdag
         const id = String(body?.runId ?? '');
         return json(res, 200, { ok: runtime(owners.get(id)).abort(id) }), true;
       }
+      if (p === '/agents/steer' && method === 'POST') {
+        const id = String(body?.runId ?? '');
+        if (!owners.has(id)) throw new Error('This agent run is no longer active.');
+        const agent = runtime(owners.get(id));
+        if (!agent.steer) throw new Error('This agent does not support additional instructions while running.');
+        return json(res, 200, { ok: await agent.steer(id, String(body?.prompt ?? '')) }), true;
+      }
       if (p === '/agents/answer' && method === 'POST') {
         const id = String(body?.runId ?? '');
         return json(res, 200, { ok: runtime(owners.get(id)).answer(id, String(body?.requestId ?? ''), body?.response) }), true;

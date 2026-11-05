@@ -1,15 +1,14 @@
-import { useContext, useEffect, useId, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useDismissableLayer } from '../lib/use-dismissable-layer';
 import { create } from 'zustand';
 import {
   AlignHorizontalJustifyStart, AlignHorizontalJustifyCenter, AlignHorizontalJustifyEnd,
   AlignVerticalJustifyStart, AlignVerticalJustifyCenter, AlignVerticalJustifyEnd,
-  AlignHorizontalDistributeCenter, AlignVerticalDistributeCenter, ArrowDownWideNarrow,
+  AlignHorizontalDistributeCenter, AlignVerticalDistributeCenter,
   Check, ChevronDown, Frame,
 } from 'lucide-react';
 import { useStore } from '../store';
-import { CanvasQuickLayoutContext } from '../lib/canvas-layout-preferences';
 import { useT, fmt, type MessageKey } from '../i18n';
 import type { ArrangeAction, ArrangeReference, ArrangeRect } from '../lib/arrange-selection';
 import { arrangementUnitCount } from '../lib/arrange-selection';
@@ -19,7 +18,7 @@ export type ViewportRectGetter = () => ArrangeRect | undefined;
 const useArrangeReference = create<{ reference: ArrangeReference; setReference: (reference: ArrangeReference) => void }>((set) => ({
   reference: 'selection', setReference: (reference) => set({ reference }),
 }));
-const itemClass = 'w-full flex items-center gap-2.5 rounded-control px-3 py-2 text-left text-xs text-ink hover:bg-wash focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent';
+const itemClass = 'w-full flex items-center gap-2.5 rounded-control px-3 py-2 text-left text-control text-ink hover:bg-wash focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent';
 const actions: { action: ArrangeAction; label: MessageKey; icon: typeof Check }[] = [
   { action: 'left', label: 'arrange.left', icon: AlignHorizontalJustifyStart },
   { action: 'center', label: 'arrange.center', icon: AlignHorizontalJustifyCenter },
@@ -34,7 +33,6 @@ const actions: { action: ArrangeAction; label: MessageKey; icon: typeof Check }[
 /** Spatial commands use the selection without creating context relationships. */
 export function ArrangeItems({ ids, getViewportRect, onClose }: { ids: string[]; getViewportRect: ViewportRectGetter; onClose: () => void }) {
   const t = useT();
-  const quickLayout = useContext(CanvasQuickLayoutContext);
   const nodes = useStore((s) => s.nodes);
   const { reference, setReference } = useArrangeReference();
   const selectedIds = new Set(ids);
@@ -64,14 +62,6 @@ export function ArrangeItems({ ids, getViewportRect, onClose }: { ids: string[];
       <Check size={15} strokeWidth={1.75} aria-hidden="true" className={`shrink-0 ${reference === value ? 'text-accent' : 'invisible'}`} />
       {t(value === 'selection' ? 'arrange.relativeSelection' : 'arrange.relativeViewport')}
     </button>)}
-    <div className="my-1 border-t border-line" role="separator" />
-    <button type="button" role="menuitem" className={itemClass} disabled={!selected.length}
-      onClick={() => {
-        onClose();
-        quickLayout(selected.map(node => node.id));
-      }} data-arrange-chain>
-      <ArrowDownWideNarrow size={15} strokeWidth={1.75} className="text-ink-muted shrink-0" aria-hidden="true" />{t('canvasLayout.quick')}
-    </button>
   </>;
 }
 
@@ -97,7 +87,7 @@ function AlignPopover({ ids, getViewportRect, open, onOpenChange }: {
   return <>
     <button type="button" ref={button} aria-haspopup="menu" aria-expanded={open} aria-controls={open ? menuId : undefined} aria-label={label}
       data-selection-align
-      className={`h-8 px-2.5 rounded-control transition-colors flex items-center gap-1.5 text-xs whitespace-nowrap shrink-0 focus-visible:outline-2 focus-visible:outline-accent ${open ? 'bg-accent/10 text-accent' : 'bg-wash hover:bg-line text-ink-muted'}`}
+      className={`h-8 px-2.5 rounded-control transition-colors flex items-center gap-1.5 text-control whitespace-nowrap shrink-0 focus-visible:outline-2 focus-visible:outline-accent ${open ? 'bg-accent/10 text-accent' : 'bg-wash hover:bg-line text-ink-muted'}`}
       onClick={() => {
         if (open) { close(); return; }
         const rect = button.current!.getBoundingClientRect();
@@ -117,7 +107,6 @@ function AlignPopover({ ids, getViewportRect, open, onOpenChange }: {
       className="fixed z-[70] w-[280px] max-w-[calc(100vw-16px)] rounded-overlay border border-line bg-card shadow-lg p-1 overflow-y-auto"
       style={position}>
       <ArrangeItems ids={ids} getViewportRect={getViewportRect} onClose={close} />
-      <p className="px-3 pt-2 pb-1 text-xs leading-relaxed text-ink-muted max-w-64">{t('arrange.hint')}</p>
     </div>, document.body)}
   </>;
 }
@@ -133,7 +122,7 @@ export default function SelectionArrangeMenu({ ids, getViewportRect }: { ids: st
     <AlignPopover ids={ids} getViewportRect={getViewportRect} open={open} onOpenChange={setOpen} />
     <button type="button" data-create-selection-frame disabled={!selectedNodes.length || hasFrame}
       aria-label={t('frame.createFromSelection')} title={t(hasFrame ? 'frame.selectionContainsFrame' : 'frame.createFromSelectionHint')}
-      className="h-8 px-2.5 rounded-control transition-colors flex items-center gap-1.5 text-xs whitespace-nowrap shrink-0 bg-wash hover:bg-line text-ink-muted focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-40 disabled:cursor-not-allowed"
+      className="h-8 px-2.5 rounded-control transition-colors flex items-center gap-1.5 text-control whitespace-nowrap shrink-0 bg-wash hover:bg-line text-ink-muted focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-40 disabled:cursor-not-allowed"
       onClick={() => { setOpen(false); useStore.getState().createFrameFromSelection(ids); }}>
       <Frame size={14} strokeWidth={1.75} aria-hidden="true" />{t('frame.create')}
     </button>

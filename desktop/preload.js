@@ -52,6 +52,7 @@ contextBridge.exposeInMainWorld('desktopAgents', {
   models: (runtime) => ipcRenderer.invoke('agents:models', runtime),
   run: (request) => ipcRenderer.invoke('agents:run', request),
   abort: (runId) => ipcRenderer.invoke('agents:abort', runId),
+  steer: (runId, prompt) => ipcRenderer.invoke('agents:steer', runId, prompt),
   workspace: (canvasId) => ipcRenderer.invoke('agents:workspace', canvasId),
   answer: (runId, requestId, response) => ipcRenderer.invoke('agents:answer', runId, requestId, response),
   guardWrite: (cwd, config) => ipcRenderer.invoke('agents:guard-write', cwd, config),
@@ -85,6 +86,8 @@ contextBridge.exposeInMainWorld('desktopWhy', {
 
 contextBridge.exposeInMainWorld('desktopLocal', {
   open: (p) => ipcRenderer.invoke('local:open', p),
+  reveal: (p) => ipcRenderer.invoke('local:reveal', p),
+  read: (p) => ipcRenderer.invoke('local:read', p),
   image: (p) => ipcRenderer.invoke('local:image', p),
 });
 

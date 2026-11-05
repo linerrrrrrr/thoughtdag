@@ -103,19 +103,19 @@ export default function RelatedSection({ question, answer }: { question: string;
       <button onClick={() => setOpen((v) => !v)} className="w-full flex items-center gap-2 text-left" data-related-toggle>
         {open ? <ChevronDown size={14} strokeWidth={1.75} className="text-ink-faint" /> : <ChevronRight size={14} strokeWidth={1.75} className="text-ink-faint" />}
         <Link2 size={14} strokeWidth={1.75} className="text-accent" />
-        <span className="text-xs font-medium text-ink flex-1">{t('panel.related')}</span>
-        {open && hits && <span className="text-2xs text-ink-faint font-mono" data-related-count>{fmt(t('panel.relatedCount'), { n: hits.length })}</span>}
+        <span className="text-control font-medium text-ink flex-1">{t('panel.related')}</span>
+        {open && hits && <span className="text-meta text-ink-faint font-mono" data-related-count>{fmt(t('panel.relatedCount'), { n: hits.length })}</span>}
       </button>
       {open && (
         <div className="mt-2 space-y-2">
           <div ref={addRef} onBlur={termEdit.onBlur} className="flex flex-wrap items-center gap-1" data-related-chips>
             {terms.map((term) => (
-              <span key={term} className="inline-flex items-center gap-1 text-2xs px-2 py-0.5 rounded-tag border border-line bg-wash text-ink" data-related-term={term}>
+              <span key={term} className="inline-flex items-center gap-1 text-control px-2 py-0.5 rounded-tag border border-line bg-wash text-ink" data-related-term={term}>
                 {term}<button onClick={() => setTerms(terms.filter((x) => x !== term))} className="text-ink-faint hover:text-ink"><X size={10} /></button>
               </span>
             ))}
             {picked.map((id) => (
-              <span key={id} className="inline-flex items-center gap-1 text-2xs px-2 py-0.5 rounded-tag border border-accent/40 bg-accent/10 text-accent" data-related-topic={id} aria-pressed="true">
+              <span key={id} className="inline-flex items-center gap-1 text-control px-2 py-0.5 rounded-tag border border-accent/40 bg-accent/10 text-accent" data-related-topic={id} aria-pressed="true">
                 {nameOf(id)}<button onClick={() => togglePick(id)} className="hover:text-ink"><X size={10} /></button>
               </span>
             ))}
@@ -126,39 +126,39 @@ export default function RelatedSection({ question, answer }: { question: string;
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={(e) => { if (e.key === 'Enter' && !isImeComposing(e)) { e.preventDefault(); e.stopPropagation(); finishAdding(); } }}
                 placeholder={t('panel.relatedTermPlaceholder')}
-                className="text-2xs bg-transparent border-b border-accent focus:outline-none px-1 py-0.5 w-[90px] text-ink placeholder:text-ink-faint"
+                className="text-control bg-transparent border-b border-accent focus:outline-none px-1 py-0.5 w-[90px] text-ink placeholder:text-ink-faint"
                 data-related-input
               />
             ) : (
-              <button onClick={() => setAdding(true)} className="inline-flex items-center gap-0.5 text-2xs px-2 py-0.5 rounded-tag border border-dashed border-line text-ink-faint hover:text-ink hover:border-line-strong" data-related-add><Plus size={10} /> {t('panel.relatedAddChip')}</button>
+              <button onClick={() => setAdding(true)} className="inline-flex items-center gap-0.5 text-control px-2 py-0.5 rounded-tag border border-dashed border-line text-ink-faint hover:text-ink hover:border-line-strong" data-related-add><Plus size={10} /> {t('panel.relatedAddChip')}</button>
             )}
-            <button onClick={() => void expand()} disabled={expanding} className="ml-auto text-2xs text-accent hover:bg-accent/10 px-1.5 py-0.5 rounded-tag disabled:opacity-50 flex items-center gap-1" data-related-expand>
+            <button onClick={() => void expand()} disabled={expanding} className="ml-auto text-control text-accent hover:bg-accent/10 px-1.5 py-0.5 rounded-tag disabled:opacity-50 flex items-center gap-1" data-related-expand>
               {expanding ? <Loader2 size={10} className="animate-spin" /> : <Sparkles size={10} strokeWidth={1.75} />} {expanding ? t('panel.relatedExpanding') : t('panel.relatedExpandBtn')}
             </button>
             {adding && (
               <div className="flex w-full flex-wrap items-center gap-1 pt-1" data-related-topic-picker>
-                <span className="text-2xs text-ink-faint">{t('panel.relatedPickTopic')}</span>
+                <span className="text-control text-ink-faint">{t('panel.relatedPickTopic')}</span>
                 {(table ?? []).filter((x) => !picked.includes(x.id)).map((x) => (
-                  <button key={x.id} onMouseDown={(e) => e.preventDefault()} onClick={() => { togglePick(x.id); finishAdding(); }} title={x.description} className="text-2xs px-2 py-0.5 rounded-tag border border-line text-ink-muted hover:bg-wash" data-related-topic-option={x.id}>{x.name}</button>
+                  <button key={x.id} onMouseDown={(e) => e.preventDefault()} onClick={() => { togglePick(x.id); finishAdding(); }} title={x.description} className="text-control px-2 py-0.5 rounded-tag border border-line text-ink-muted hover:bg-wash" data-related-topic-option={x.id}>{x.name}</button>
                 ))}
               </div>
             )}
           </div>
           {suggested && (
             <div className="flex flex-wrap items-center gap-1" data-related-suggested>
-              {suggested.length === 0 && <span className="text-2xs text-ink-faint">{t('panel.relatedNoSuggest')}</span>}
+              {suggested.length === 0 && <span className="text-control text-ink-faint">{t('panel.relatedNoSuggest')}</span>}
               {suggested.map((s) => (
-                <button key={s.term} onClick={() => addTerm(s.term)} title={`${s.count}`} className="text-2xs px-2 py-0.5 rounded-tag border border-dashed border-accent/50 text-accent hover:bg-accent/10" data-related-suggest={s.term}>+ {s.term}</button>
+                <button key={s.term} onClick={() => addTerm(s.term)} title={`${s.count}`} className="text-control px-2 py-0.5 rounded-tag border border-dashed border-accent/50 text-accent hover:bg-accent/10" data-related-suggest={s.term}>+ {s.term}</button>
               ))}
             </div>
           )}
-          {error && <p className="text-2xs text-red-500">{error}</p>}
+          {error && <p className="text-control text-red-500">{error}</p>}
           <div className="nowheel">
-            {busy && <div className="text-2xs text-ink-faint flex items-center gap-1 px-1"><Loader2 size={10} className="animate-spin" /> {t('recall.searching')}</div>}
-            {!busy && hits && hits.length === 0 && (terms.length > 0 || picked.length > 0) && <p className="text-2xs text-ink-faint italic px-1" data-related-none>{t('panel.relatedNone')}</p>}
+            {busy && <div className="text-control text-ink-faint flex items-center gap-1 px-1"><Loader2 size={10} className="animate-spin" /> {t('recall.searching')}</div>}
+            {!busy && hits && hits.length === 0 && (terms.length > 0 || picked.length > 0) && <p className="text-control text-ink-faint italic px-1" data-related-none>{t('panel.relatedNone')}</p>}
             {hits && hits.length > 0 && <HitCards hits={shown} />}
             {hits && hits.length > SHOWN && (
-              <p className="text-2xs text-ink-faint px-1 mt-1">{all ? '' : `${fmt(t('panel.relatedMore'), { n: hits.length - SHOWN })} · `}<button onClick={() => setAll((v) => !v)} className="text-accent hover:underline" data-related-all>{all ? t('panel.relatedFewer') : t('panel.relatedAll')}</button></p>
+              <p className="text-control text-ink-faint px-1 mt-1">{all ? '' : `${fmt(t('panel.relatedMore'), { n: hits.length - SHOWN })} · `}<button onClick={() => setAll((v) => !v)} className="text-accent hover:underline" data-related-all>{all ? t('panel.relatedFewer') : t('panel.relatedAll')}</button></p>
             )}
           </div>
         </div>

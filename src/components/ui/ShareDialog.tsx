@@ -34,7 +34,7 @@ export default function ShareDialog() {
     <div className="fixed inset-0 z-[80] bg-ink/25 flex items-center justify-center animate-fade-in" data-share-dialog>
       <div ref={layerRef} role="dialog" aria-modal="true" aria-label={t('viewer.shareDialogTitle')} tabIndex={-1} className="bg-surface rounded-panel shadow-lg border border-line w-[min(480px,92vw)] p-5" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-start justify-between mb-3">
-          <div className="text-sm font-semibold text-ink flex items-center gap-2">
+          <div className="text-title font-semibold text-ink flex items-center gap-2">
             <Eye size={15} strokeWidth={1.75} className="text-accent" /> {t('viewer.shareDialogTitle')}
           </div>
           <button onClick={close} className="w-7 h-7 rounded-control text-ink-faint hover:bg-wash hover:text-ink flex items-center justify-center transition-colors">
@@ -43,18 +43,18 @@ export default function ShareDialog() {
         </div>
 
         {/* Lane 1: hand the graph to someone who will open it */}
-        <div className="text-2xs font-semibold text-accent mb-1">{t('share.directLane')}</div>
-        <p className="text-xs text-ink-muted mb-2">{t('share.directNote')}</p>
+        <div className="text-control font-semibold text-accent mb-1">{t('share.directLane')}</div>
+        <p className="text-control text-ink-muted mb-2">{t('share.directNote')}</p>
         <div className="flex gap-1.5 mb-4">
           <input
             readOnly
             value={url}
             onFocus={(e) => e.target.select()}
-            className="flex-1 min-w-0 text-xs font-mono text-ink-muted bg-wash border border-line rounded-control px-3 py-2 focus:outline-none focus:ring-1 focus:ring-accent/40 truncate"
+            className="flex-1 min-w-0 text-control font-mono text-ink-muted bg-wash border border-line rounded-control px-3 py-2 focus:outline-none focus:ring-1 focus:ring-accent/40 truncate"
           />
           <button
             onClick={() => void copy()}
-            className={`shrink-0 text-xs px-3 py-2 rounded-control flex items-center gap-1.5 transition-colors ${
+            className={`shrink-0 text-control px-3 py-2 rounded-control flex items-center gap-1.5 transition-colors ${
               copied ? 'bg-green-600 text-white' : 'bg-action text-white hover:bg-action-strong'
             }`}
             data-share-copy
@@ -64,7 +64,7 @@ export default function ShareDialog() {
           </button>
         </div>
         {url.length > 30000 && (
-          <p className="text-2xs text-amber-700 bg-amber-50 border border-amber-200 rounded-content px-3 py-2 leading-relaxed mb-3" data-share-toolong>
+          <p className="text-control text-amber-700 bg-amber-50 border border-amber-200 rounded-content px-3 py-2 mb-3" data-share-toolong>
             {t('share.linkTooLong')}
           </p>
         )}
@@ -72,12 +72,12 @@ export default function ShareDialog() {
           <button
             onClick={() => void exportActiveProjectJson({ sharedReadonly: readonlyMark })}
             data-share-fullfile
-            className="text-xs px-3 py-1.5 rounded-control border border-line text-ink-muted hover:bg-wash hover:text-ink transition-colors flex items-center gap-1.5"
+            className="text-control px-3 py-1.5 rounded-control border border-line text-ink-muted hover:bg-wash hover:text-ink transition-colors flex items-center gap-1.5"
           >
             <FileJson size={13} strokeWidth={1.75} />
             {t('share.fullFile')}
           </button>
-          <label className="flex items-center gap-1.5 text-2xs text-ink-muted cursor-pointer select-none">
+          <label className="flex items-center gap-1.5 text-control text-ink-muted cursor-pointer select-none">
             <input type="checkbox" checked={readonlyMark} onChange={(e) => setReadonlyMark(e.target.checked)}
               className="accent-[color:var(--color-accent)]" />
             {t('share.readonlyMark')}
@@ -90,7 +90,7 @@ export default function ShareDialog() {
             <button
               onClick={() => { close(); useUiStore.getState().setThoughtMapOpen(true); }}
               data-share-thought-map
-              className="text-xs px-3 py-1.5 rounded-control bg-accent/10 text-accent hover:bg-accent/20 transition-colors flex items-center gap-1.5 font-medium"
+              className="text-control px-3 py-1.5 rounded-control bg-accent/10 text-accent hover:bg-accent/20 transition-colors flex items-center gap-1.5 font-medium"
             >
               <ImageDown size={13} strokeWidth={1.75} />
               {t('tmap.export')}

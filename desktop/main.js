@@ -471,31 +471,10 @@ function setupSessionAtlas() {
   // shows in Finder, an image or PDF opens in its viewer. Nothing that
   // could execute is ever handed to the OS — a script link reveals, it
   // does not run.
-  const expandHome = (p) => (p.startsWith('~/') ? path.join(os.homedir(), p.slice(2)) : p);
-  const VIEWABLE = /\.(png|jpe?g|gif|webp|svg|pdf)$/i;
-  const IMAGE_MIME = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', svg: 'image/svg+xml' };
-  ipcMain.handle('local:open', async (_e, raw) => {
-    if (typeof raw !== 'string') return { ok: false, reason: 'invalid' };
-    const p = expandHome(raw);
-    if (!path.isAbsolute(p)) return { ok: false, reason: 'invalid' };
-    let st;
-    try { st = await fsp.stat(p); } catch { return { ok: false, reason: 'missing' }; }
-    if (st.isDirectory()) { const err = await shell.openPath(p); return { ok: !err, kind: 'dir' }; }
-    if (VIEWABLE.test(p)) { const err = await shell.openPath(p); return { ok: !err, kind: 'file', opened: 'viewer' }; }
-    shell.showItemInFolder(p);
-    return { ok: true, kind: 'file', opened: 'finder' };
-  });
-  ipcMain.handle('local:image', async (_e, raw) => {
-    if (typeof raw !== 'string') return null;
-    const p = expandHome(raw);
-    const ext = (p.match(/\.(png|jpe?g|gif|webp|svg)$/i)?.[1] ?? '').toLowerCase();
-    if (!path.isAbsolute(p) || !ext) return null;
-    let st;
-    try { st = await fsp.stat(p); } catch { return null; }
-    if (!st.isFile() || st.size > 20 * 1024 * 1024) return null;
-    const buf = await fsp.readFile(p);
-    return `data:${IMAGE_MIME[ext]};base64,${buf.toString('base64')}`;
-  });
+  const localFiles = require(path.join(ROOT, 'runtime', 'local-files.cjs')).createLocalFiles({ shell });
+  for (const action of ['open', 'reveal', 'read', 'image']) {
+    ipcMain.handle(`local:${action}`, (_e, raw) => localFiles[action](raw));
+  }
 
   // The canvas's own source record for the why layer: one slim JSON per
   // project under <thoughtdag home>/canvases/, private (0700/0600), written
@@ -842,6 +821,13 @@ function setupAgents() {
     return runId;
   });
   ipcMain.handle('agents:abort', async (_e, runId) => agentsRuntime(runOwners.get(String(runId))).abort(String(runId)));
+  ipcMain.handle('agents:steer', async (_e, runId, prompt) => {
+    const id = String(runId);
+    if (!runOwners.has(id)) throw new Error('This agent run is no longer active.');
+    const agent = agentsRuntime(runOwners.get(id));
+    if (!agent.steer) throw new Error('This agent does not support additional instructions while running.');
+    return agent.steer(id, String(prompt ?? ''));
+  });
   ipcMain.handle('agents:workspace', async (_e, canvasId) => workspaceFor(canvasId));
   ipcMain.handle('agents:answer', async (_e, runId, requestId, response) => agentsRuntime(runOwners.get(String(runId))).answer(String(runId), String(requestId), response));
   ipcMain.handle('agents:guard-write', async (_e, cwd, config) => agentOps.writeGuard(cwd, config));

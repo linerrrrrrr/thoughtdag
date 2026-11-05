@@ -1,7 +1,6 @@
 import { useRef, useState, type MouseEvent, type PointerEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { useViewport, useStore as useFlowStore } from '@xyflow/react';
-import { MoveDiagonal2 } from 'lucide-react';
 import { useStore } from '../store';
 import { nodesRect, resolveCarriedNodeIds } from '../lib/frames';
 import { resizeSelectionBy } from '../lib/node-geometry';
@@ -11,6 +10,7 @@ import { useCanvasEditing } from '../lib/canvas-editing';
 import type { SelectionRegion } from '../lib/canvas-selection';
 import { useT } from '../i18n';
 import type { ThoughtNode } from '../types';
+import ResizeGrip from './ResizeGrip';
 import './SelectionResizeControls.css';
 
 type Direction = 'move' | 'width' | 'height' | 'both';
@@ -23,6 +23,7 @@ export default function SelectionResizeControls({ onNodeContextMenu }: { onNodeC
   const { x, y, zoom } = useViewport();
   const snapToGrid = useFlowStore(state => state.snapToGrid);
   const snapGrid = useFlowStore(state => state.snapGrid);
+  const connecting = useFlowStore(state => state.connection.inProgress);
   const renderer = useFlowStore(state => state.domNode?.querySelector<HTMLElement>('.react-flow__renderer'));
   const ref = useRef<HTMLDivElement>(null);
   const gesture = useRef<Gesture | null>(null);
@@ -149,6 +150,7 @@ export default function SelectionResizeControls({ onNodeContextMenu }: { onNodeC
         state.pushHistory();
       }} />
     {(['width', 'height', 'both'] as const).map(direction => <button key={direction} type="button"
+      hidden={connecting} data-resize-active={active === direction || undefined}
       data-selection-resize={direction} className={`selection-resize-handle selection-resize-${direction} nodrag nopan`}
       title={t(direction === 'width' ? 'selection.resizeWidth' : direction === 'height' ? 'selection.resizeHeight' : 'selection.resizeBoth')}
       aria-label={t(direction === 'width' ? 'selection.resizeWidth' : direction === 'height' ? 'selection.resizeHeight' : 'selection.resizeBoth')}
@@ -168,6 +170,6 @@ export default function SelectionResizeControls({ onNodeContextMenu }: { onNodeC
         state.pushHistory();
         state.setNodes(resizeSelectionBy(state.nodes, selected, horizontal && direction !== 'height' ? horizontal * step : undefined, vertical && direction !== 'width' ? vertical * step : undefined));
         state.pushHistory();
-      }}>{direction === 'both' ? <MoveDiagonal2 size={14} /> : <span aria-hidden="true" />}</button>)}
+      }}><ResizeGrip direction={direction} /></button>)}
   </div>, renderer);
 }

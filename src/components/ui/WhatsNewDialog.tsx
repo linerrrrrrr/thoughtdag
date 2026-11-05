@@ -62,17 +62,17 @@ export function WhatsNewItems({ items, lang }: { items: WhatsNewItem[]; lang: La
     <ol className="divide-y divide-line">
       {items.map((it, i) => (
         <li key={i} className="py-3 flex gap-3.5">
-          <span className="shrink-0 w-6 h-6 rounded-tag bg-accent/10 text-accent text-xs font-semibold flex items-center justify-center mt-0.5">{i + 1}</span>
+          <span className="shrink-0 w-6 h-6 rounded-tag bg-accent/10 text-accent text-control font-semibold flex items-center justify-center mt-0.5">{i + 1}</span>
           <div className="min-w-0">
-            <div className="text-sm font-medium text-ink">{it.title[lang]}</div>
-            <p className="text-sm text-ink-muted leading-relaxed mt-1 [overflow-wrap:anywhere]">{it.body[lang]}</p>
+            <div className="text-control font-medium text-ink">{it.title[lang]}</div>
+            <p className="text-body text-ink-muted mt-1 [overflow-wrap:anywhere]">{it.body[lang]}</p>
             {it.media && <WhatsNewMediaView media={it.media} lang={lang} />}
             {it.link && (
               <a
                 href={it.link.href}
                 target="_blank"
                 rel="noreferrer"
-                className="inline-block mt-1.5 text-xs font-medium text-accent hover:underline"
+                className="inline-block mt-1.5 text-control font-medium text-accent hover:underline"
               >
                 {it.link.label[lang]} →
               </a>
@@ -113,27 +113,27 @@ export default function WhatsNewDialog() {
         data-whats-new
       >
         <div className="px-6 pt-5 pb-4 border-b border-line">
-          <div className="text-2xs uppercase tracking-wide text-ink-faint">ThoughtDAG</div>
-          <h2 id="whats-new-title" className="text-base font-semibold text-ink mt-0.5">{fmt(t('whatsNew.title'), { v: appVersion ?? '' })}</h2>
-          {entries.length > 1 && <p className="text-xs text-ink-faint mt-1">{t('whatsNew.multi')}</p>}
+          <div className="text-control uppercase tracking-wide text-ink-faint">ThoughtDAG</div>
+          <h2 id="whats-new-title" className="text-section font-semibold text-ink mt-0.5">{fmt(t('whatsNew.title'), { v: appVersion ?? '' })}</h2>
+          {entries.length > 1 && <p className="text-control text-ink-faint mt-1">{t('whatsNew.multi')}</p>}
         </div>
         <ol className="px-6 divide-y divide-line">
           {entries.map((entry) => (
             <li key={entry.version} className="py-4" data-release={entry.version}>
               {entries.length > 1 && (
                 <div className="flex items-baseline gap-2.5 mb-1.5">
-                  <span className="text-sm font-semibold text-ink tabular-nums">v{entry.version}</span>
-                  <span className="text-xs text-ink-faint tabular-nums">{entry.date}</span>
+                  <span className="text-title font-semibold text-ink tabular-nums">v{entry.version}</span>
+                  <span className="text-meta text-ink-faint tabular-nums">{entry.date}</span>
                 </div>
               )}
-              <p className="text-sm text-ink-muted leading-relaxed [overflow-wrap:anywhere]">{entry.lead[lang]}</p>
+              <p className="text-body text-ink-muted [overflow-wrap:anywhere]">{entry.lead[lang]}</p>
               {entry.media && <WhatsNewMediaView media={entry.media} lang={lang} />}
               <WhatsNewItems items={entry.items} lang={lang} />
             </li>
           ))}
         </ol>
         <div className="sticky bottom-0 bg-card px-6 py-4 border-t border-line flex items-center justify-between gap-4">
-          <div className="min-w-0 text-xs text-ink-muted flex items-center gap-2 flex-wrap">
+          <div className="min-w-0 text-control text-ink-muted flex items-center gap-2 flex-wrap">
             <button
               onClick={() => { close(); useUiStore.getState().setReleaseNotesOpen(true); }}
               className="text-ink-muted hover:text-ink hover:underline transition-colors"
@@ -150,7 +150,7 @@ export default function WhatsNewDialog() {
           <button
             ref={okRef}
             onClick={close}
-            className="text-xs text-white px-4 py-2 rounded-control bg-action hover:bg-action-strong transition-colors"
+            className="text-control text-white px-4 py-2 rounded-control bg-action hover:bg-action-strong transition-colors"
           >
             {t('whatsNew.ok')}
           </button>

@@ -41,7 +41,7 @@ export default function JudgeSettings() {
 
   const field = (label: string, value: string, onChange: (v: string) => void, extra: { placeholder?: string; secret?: boolean; hint?: string } = {}) => (
     <label className="block">
-      <span className="block text-2xs text-ink-faint mb-0.5">{label}</span>
+      <span className="block text-control text-ink-faint mb-0.5">{label}</span>
       <input
         type={extra.secret ? 'password' : 'text'}
         value={value}
@@ -49,9 +49,9 @@ export default function JudgeSettings() {
         placeholder={extra.placeholder}
         spellCheck={false}
         autoComplete="off"
-        className="w-full text-xs font-mono bg-wash border border-line rounded-control px-2 py-1 focus:outline-none focus:border-accent/60"
+        className="w-full text-control font-mono bg-wash border border-line rounded-control px-2 py-1 focus:outline-none focus:border-accent/60"
       />
-      {extra.hint && <span className="block text-2xs text-ink-faint mt-0.5">{extra.hint}</span>}
+      {extra.hint && <span className="block text-control text-ink-faint mt-0.5">{extra.hint}</span>}
     </label>
   );
   const providerLabel = (p: JudgeProviderId) => t(`judge.provider.${p}` as 'judge.provider.none');
@@ -61,22 +61,22 @@ export default function JudgeSettings() {
     <div className="border border-line rounded-content px-3 py-2.5 bg-surface" data-judge-settings data-judge-on={on ? 'on' : 'off'}>
       <div className="flex items-center gap-2">
         <Scale size={14} strokeWidth={1.75} className="text-accent" />
-        <span className="text-sm font-medium text-ink flex-1">{t('judge.title')}</span>
+        <span className="text-title font-semibold text-ink flex-1">{t('judge.title')}</span>
         <span className="text-ink-faint cursor-help" title={t('judge.does')} data-judge-info><Info size={13} strokeWidth={1.75} /></span>
       </div>
-      <p className="text-2xs text-ink-faint mt-1 leading-relaxed">{t('judge.oneLine')}</p>
+      <p className="text-control text-ink-faint mt-1">{t('judge.oneLine')}</p>
 
       {(
         <div className="mt-2 space-y-2" data-judge-body>
           {/* what is in use, and whether it answers */}
-          <div className="flex items-center gap-2 flex-wrap text-2xs">
+          <div className="flex items-center gap-2 flex-wrap text-control">
             <span className="text-ink-muted" data-judge-effective={effective}>{usingStored ? t('judge.detected') : configured ? providerLabel(effective) : on ? t('judge.stateNoApi') : t('judge.stateOff')}</span>
             {!choosing && <button onClick={() => setChoosing(true)} className="text-accent hover:underline" data-judge-other>{t('judge.otherProvider')}</button>}
           </div>
           {(choosing || !configured) && (
             <label className="block">
-              <span className="block text-2xs text-ink-faint mb-0.5">{t('judge.providerLabel')}</span>
-              <select value={judgeCfg.provider === 'none' ? 'openrouter' : judgeCfg.provider} onChange={(e) => { setJudge({ provider: e.target.value as JudgeProviderId }); setTest(null); }} className="w-full bg-wash border border-line rounded-control px-2 py-1 text-xs" data-judge-provider>
+              <span className="block text-control text-ink-faint mb-0.5">{t('judge.providerLabel')}</span>
+              <select value={judgeCfg.provider === 'none' ? 'openrouter' : judgeCfg.provider} onChange={(e) => { setJudge({ provider: e.target.value as JudgeProviderId }); setTest(null); }} className="w-full bg-wash border border-line rounded-control px-2 py-1 text-control" data-judge-provider>
                 {PROVIDERS.map((p) => <option key={p} value={p}>{providerLabel(p)}</option>)}
               </select>
             </label>
@@ -93,18 +93,18 @@ export default function JudgeSettings() {
                 {field(t('judge.url'), judgeCfg.customUrl, (v) => setJudge({ customUrl: v }), { placeholder: 'http://127.0.0.1:8000/v1/systemone', hint: t('judge.urlHint') })}
                 {field(t('judge.keyOptional'), judgeCfg.customKey, (v) => setJudge({ customKey: v }), { secret: true })}
               </>)}
-              {judgeCfg.provider === 'llm' && <p className="text-2xs text-ink-faint leading-relaxed">{t('judge.llmHint')}</p>}
+              {judgeCfg.provider === 'llm' && <p className="text-control text-ink-faint">{t('judge.llmHint')}</p>}
             </div>
           )}
           <div className="flex items-center gap-3 flex-wrap">
-            <button onClick={() => void runTest()} disabled={testing || !configured} className="text-xs px-3 py-1 rounded-control bg-accent/10 text-accent hover:bg-accent/20 disabled:opacity-50 flex items-center gap-1.5" data-judge-test>
+            <button onClick={() => void runTest()} disabled={testing || !configured} className="text-control px-3 py-1 rounded-control bg-accent/10 text-accent hover:bg-accent/20 disabled:opacity-50 flex items-center gap-1.5" data-judge-test>
               {testing && <Loader2 size={12} className="animate-spin" />} {t('judge.test')}
             </button>
-            {testing && !test && <span className="text-2xs text-ink-faint">{t('judge.checking')}</span>}
+            {testing && !test && <span className="text-control text-ink-faint">{t('judge.checking')}</span>}
             {test && (test.ok
-              ? <span className="text-2xs text-ink-muted font-mono" data-judge-test-result>{fmt(t('judge.available'), { model: test.r.model || providerLabel(test.r.provider), ms: test.r.ms, c: t(test.r.calibrated ? 'judge.calibrated' : 'judge.uncalibrated') })}</span>
-              : <span className="text-2xs text-red-500" data-judge-test-result>{fmt(t('judge.unavailable'), { e: test.error })}</span>)}
-            {tripped && <span className="text-2xs text-amber-600" data-judge-tripped>{fmt(t('judge.trippedNow'), { s: Math.max(1, Math.round((tripped.until - Date.now()) / 1000)) })}</span>}
+              ? <span className="text-control text-ink-muted font-mono" data-judge-test-result>{fmt(t('judge.available'), { model: test.r.model || providerLabel(test.r.provider), ms: test.r.ms, c: t(test.r.calibrated ? 'judge.calibrated' : 'judge.uncalibrated') })}</span>
+              : <span className="text-control text-red-500" data-judge-test-result>{fmt(t('judge.unavailable'), { e: test.error })}</span>)}
+            {tripped && <span className="text-control text-amber-600" data-judge-tripped>{fmt(t('judge.trippedNow'), { s: Math.max(1, Math.round((tripped.until - Date.now()) / 1000)) })}</span>}
           </div>
         </div>
       )}

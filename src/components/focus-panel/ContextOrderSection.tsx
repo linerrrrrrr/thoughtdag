@@ -41,11 +41,11 @@ export default function ContextOrderSection({ nodeId }: { nodeId: string }) {
 
   return (
     <div className="px-4 py-3 border-b border-line" data-context-order>
-      <div className="text-2xs uppercase tracking-wide text-ink-faint mb-1.5">{t('panel.ctxOrder')}</div>
+      <div className="text-control uppercase tracking-wide text-ink-faint mb-1.5">{t('panel.ctxOrder')}</div>
       <div className="flex flex-col gap-1">
         {incoming.map((e, i) => (
-          <div key={e.id} className="flex items-center gap-1.5 text-xs text-ink" data-context-order-item={e.source}>
-            <span className="text-2xs font-mono text-ink-faint w-4 shrink-0">{i + 1}</span>
+          <div key={e.id} className="flex items-center gap-1.5 text-control text-ink" data-context-order-item={e.source}>
+            <span className="text-meta font-mono text-ink-faint w-4 shrink-0">{i + 1}</span>
             <span className="flex-1 truncate">{labelOf(e.source)}</span>
             <button
               className="text-ink-faint hover:text-ink disabled:opacity-25 p-0.5"

@@ -8,6 +8,7 @@ export interface NodeGeometryPatch {
   x?: number;
   y?: number;
   lockAspectRatio?: boolean;
+  autoHeight?: boolean;
 }
 
 const isMaterial = (node: ThoughtNode) => ['note', 'file', 'link'].includes(node.data.stepKind ?? '');
@@ -65,6 +66,7 @@ export function applySelectionGeometry(nodes: ThoughtNode[], nodeIds: string[], 
   if (fields.some(key => patch[key] !== undefined && !Number.isFinite(patch[key]))) return nodes;
   if ((patch.width !== undefined && patch.width <= 0) || (patch.height !== undefined && patch.height <= 0)) return nodes;
   if (patch.lockAspectRatio !== undefined && typeof patch.lockAspectRatio !== 'boolean') return nodes;
+  if (patch.autoHeight !== undefined && typeof patch.autoHeight !== 'boolean') return nodes;
   const ids = new Set(nodeIds);
   const selected = nodes.filter(node => ids.has(node.id));
   if (!selected.length) return nodes;
@@ -80,9 +82,11 @@ export function applySelectionGeometry(nodes: ThoughtNode[], nodeIds: string[], 
       const current = effectiveNodeGeometry(node);
       const min = nodeGeometryMinimum(node);
       const max = nodeGeometryMaximum(node);
-      const locked = patch.lockAspectRatio ?? !!node.data.lockAspectRatio;
+      // Natural content height cannot maintain a fixed geometric ratio.
+      const autoHeight = patch.autoHeight === true && !isFrameNode(node);
+      const locked = autoHeight ? false : patch.lockAspectRatio ?? !!node.data.lockAspectRatio;
       let width = patch.width === undefined ? undefined : Math.min(max.width, Math.max(min.width, patch.width));
-      let height = patch.height === undefined ? undefined : Math.max(min.height, patch.height);
+      let height = autoHeight || patch.height === undefined ? undefined : Math.max(min.height, patch.height);
       if (locked && (width !== undefined || height !== undefined)) {
         // If a caller supplies both axes, width is the source. The editor can
         // send only its last edited axis to make that choice explicit.
@@ -97,7 +101,10 @@ export function applySelectionGeometry(nodes: ThoughtNode[], nodeIds: string[], 
       if ((width !== undefined && width !== node.width) || (height !== undefined && height !== node.height)) {
         next = { ...next, ...(width !== undefined ? { width } : {}), ...(height !== undefined ? { height } : {}) };
       }
-      if (patch.lockAspectRatio !== undefined && patch.lockAspectRatio !== !!node.data.lockAspectRatio) {
+      if (autoHeight && (node.height !== undefined || node.data.keepOverviewHeight || node.data.lockAspectRatio)) {
+        next = { ...next, height: undefined,
+          data: { ...next.data, keepOverviewHeight: undefined, lockAspectRatio: false } };
+      } else if (!autoHeight && patch.lockAspectRatio !== undefined && patch.lockAspectRatio !== !!node.data.lockAspectRatio) {
         next = { ...next, data: { ...next.data, lockAspectRatio: patch.lockAspectRatio } };
       }
     }

@@ -54,7 +54,7 @@ try {
         isCollapsed: false, isEditing: false, isLoading: false, tokenCount: 10, highlights: [], attachments: [],
       } }));
     nodes.push({ id: 'frame', type: 'frame', position: { x: 80, y: 600 }, width: 600, height: 200,
-      data: { stepKind: 'frame', frameTitle: '研究区域', question: '', response: '' } });
+      data: { stepKind: 'frame', frameTitle: '研究区域', question: '', response: '', responses: [] } });
     const edges = [{ id: 'ab', source: 'a', target: 'b', type: 'thought', data: {} }];
     window.__store.setState({ nodes, edges, selectedNodeIds: [], selectedNodeId: null, history: [{ nodes, edges }], historyIndex: 0 });
     window.__maxVisibleCards = 0;
@@ -106,10 +106,10 @@ try {
 
   await card('toolbar-more').click();
   await card('layout-entry').click(); await one('canvas-layout-panel');
-  await card('layout-direction').selectOption('horizontal');
+  await card('layout-direction').locator('label:has(input[value="horizontal"])').click();
   await card('canvas-detail-trigger').click(); await one('canvas-detail-panel');
   await page.keyboard.press('Escape'); await one('canvas-layout-panel');
-  assert.equal(await card('layout-direction').inputValue(), 'horizontal');
+  assert.equal(await card('layout-direction').locator('input:checked').inputValue(), 'horizontal');
   await page.keyboard.press('Escape');
   await card('canvas-layout-panel').waitFor({ state: 'detached' });
   assert.equal(await card('toolbar-more').evaluate(el => el === document.activeElement), true);
@@ -147,10 +147,15 @@ try {
     await one('canvas-detail-panel');
     await page.waitForTimeout(400);
     const panel = await card('canvas-detail-panel').boundingBox();
-    const reader = await card('focus-panel').boundingBox();
     assert.ok(panel.x >= 0 && panel.x + panel.width <= width + 1);
-    assert.ok(panel.x + panel.width <= reader.x + 1 || panel.y + panel.height <= reader.y + 1, JSON.stringify({ panel, reader }));
-    assert.equal(await page.evaluate(() => window.__ui.getState().panelNodeId), 'a');
+    if (width >= 960) {
+      const reader = await card('focus-panel').boundingBox();
+      assert.ok(panel.x + panel.width <= reader.x + 1 || panel.y + panel.height <= reader.y + 1, JSON.stringify({ panel, reader }));
+      assert.equal(await page.evaluate(() => window.__ui.getState().panelNodeId), 'a');
+    } else {
+      assert.equal(await card('focus-panel').count(), 0);
+      assert.equal(await page.evaluate(() => window.__ui.getState().panelOpen), false);
+    }
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
     await page.screenshot({ path: `${output}/detail-reader-${width}.png` });
     if (width === 1760) {
@@ -161,7 +166,7 @@ try {
     }
     await page.keyboard.press('Escape'); await one('node-format-panel');
   }
-  check('desktop and narrow layouts retain the independent reader without overlap');
+  check('desktop retains the independent reader; narrow windows collapse it and keep tool cards accessible');
   assert.deepEqual(errors, []);
   assert.deepEqual(writes, []);
   assert.equal(await page.evaluate(() => window.__maxVisibleCards), 1);

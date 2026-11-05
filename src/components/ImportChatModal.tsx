@@ -51,8 +51,8 @@ export default function ImportChatModal({
       >
         <div className="px-6 py-4 border-b border-line flex items-start justify-between gap-4">
           <div>
-            <h2 className="text-base font-semibold text-ink">{t('import.title')}</h2>
-            <p className="text-xs text-ink-muted mt-1 leading-relaxed">{t('import.subtitle')}</p>
+            <h2 className="text-section font-semibold text-ink">{t('import.title')}</h2>
+            <p className="text-control text-ink-muted mt-1">{t('import.subtitle')}</p>
           </div>
           <button disabled={busy} onClick={onClose} className="text-ink-faint hover:text-ink transition-colors shrink-0 mt-0.5">
             <X size={16} strokeWidth={1.75} />
@@ -60,7 +60,7 @@ export default function ImportChatModal({
         </div>
 
         <div className="px-6 py-2 border-b border-line/60">
-          <label className="flex items-center gap-2 text-xs text-ink-muted cursor-pointer select-none py-1">
+          <label className="flex items-center gap-2 text-control text-ink-muted cursor-pointer select-none py-1">
             <input
               type="checkbox"
               checked={allSelected}
@@ -68,7 +68,7 @@ export default function ImportChatModal({
               className="rounded-control border-line text-accent focus:ring-accent w-3.5 h-3.5"
             />
             {t('import.selectAll')}
-            <span className="ml-auto text-2xs text-ink-faint uppercase tracking-wider">{conversations[0]?.source}</span>
+            <span className="ml-auto text-meta text-ink-faint uppercase tracking-wider">{conversations[0]?.source}</span>
           </label>
         </div>
 
@@ -83,21 +83,21 @@ export default function ImportChatModal({
                   className="rounded-control border-line text-accent focus:ring-accent w-3.5 h-3.5 shrink-0"
                 />
                 <MessageSquare size={14} strokeWidth={1.75} className="text-ink-faint shrink-0" />
-                <span className="text-sm text-ink truncate flex-1">{c.title}</span>
-                <span className="text-2xs text-ink-faint shrink-0">{fmt(t('import.messages'), { n: c.messageCount })}</span>
+                <span className="text-control text-ink truncate flex-1">{c.title}</span>
+                <span className="text-meta text-ink-faint shrink-0">{fmt(t('import.messages'), { n: c.messageCount })}</span>
               </label>
             </li>
           ))}
         </ul>
 
         <div className="px-6 py-4 border-t border-line flex justify-end gap-2">
-          <button disabled={busy} onClick={onClose} className="text-xs text-ink-muted hover:text-ink px-4 py-2 rounded-control hover:bg-wash transition-colors">
+          <button disabled={busy} onClick={onClose} className="text-control text-ink-muted hover:text-ink px-4 py-2 rounded-control hover:bg-wash transition-colors">
             {t('common.cancel')}
           </button>
           <button
             onClick={() => void doImport()}
             disabled={checked.size === 0 || busy}
-            className="text-xs bg-action hover:bg-action-strong text-white px-5 py-2 rounded-control transition-colors disabled:opacity-30"
+            className="text-control bg-action hover:bg-action-strong text-white px-5 py-2 rounded-control transition-colors disabled:opacity-30"
           >
             {busy ? '…' : fmt(t('import.confirm'), { n: checked.size })}
           </button>

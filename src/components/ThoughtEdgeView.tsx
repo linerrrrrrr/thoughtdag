@@ -29,7 +29,7 @@ export default function ThoughtEdgeView({
   const isRef = !!data?.isCrossLink;
   const routeMode = data?.route ?? visibleNodes.find((node) => node.id === source)?.data.edgeRouteDefault ?? 'auto';
   const label = data?.label?.trim();
-  const annotationClass = 'max-w-[240px] rounded-tag border border-line bg-card px-2 py-1 text-xs text-ink break-words';
+  const annotationClass = 'max-w-[240px] rounded-tag border border-line bg-card px-2 py-1 text-control text-ink break-words';
   const { path, labelX, labelY } = useMemo(
     () => routeEdge(sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition, source, target, visibleNodes, routeMode,
       { edgeId: id, context: routingContext, ...(!routingContext ? { edges } : {}) }),
@@ -74,7 +74,7 @@ export default function ThoughtEdgeView({
             }}
             data-merge-order={mergeIndex + 1}
           >
-            <div className="w-4.5 h-4.5 min-w-[18px] px-0.5 rounded-tag bg-card border border-line flex items-center justify-center text-2xs font-mono text-ink-muted" style={{ fontSize: 10 }}>
+            <div className="w-4.5 h-4.5 min-w-[18px] px-0.5 rounded-tag bg-card border border-line flex items-center justify-center text-meta font-mono text-ink-muted">
               {mergeIndex + 1}
             </div>
           </div>

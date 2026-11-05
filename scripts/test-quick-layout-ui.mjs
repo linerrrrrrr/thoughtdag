@@ -1,4 +1,4 @@
-// One-click layout in an isolated browser profile; model/API writes are blocked.
+// Explicit layout application in an isolated browser profile; model/API writes are blocked.
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
@@ -128,10 +128,10 @@ const openSettings = async () => {
   await page.locator('[data-layout-entry]').click();
   await page.locator('[data-canvas-layout-panel]').waitFor();
 };
-const quick = async () => { await openSettings(); await page.locator('[data-layout-quick]').click(); await settled(); };
+const applyLayout = async () => { await openSettings(); await page.locator('[data-layout-apply]').click(); await settled(); };
 const hold = async (selector) => {
   await page.evaluate(() => { window.__holdLayoutReplies = true; });
-  if (selector === '[data-layout-quick]') await openSettings();
+  if (selector === '[data-layout-apply]') await openSettings();
   await page.locator(selector).click();
   await page.waitForFunction(() => window.__heldLayoutReplies.length > 0);
   assert.equal(await page.evaluate(() => window.__canvasEditing.getState().layoutBusy), true);
@@ -209,10 +209,10 @@ try {
   await page.keyboard.press('Control+a');
   const selected = (await graph()).selected;
   assert.equal(selected.length, 6, 'Ctrl+A selects all graph cards');
-  await quick();
+  await applyLayout();
   const first = await graph();
-  assert.deepEqual(first.selected.slice().sort(), selected.slice().sort(), 'clicking quick layout must retain the selection');
-  assert.equal(await page.locator('[data-canvas-layout-panel]').count(), 0, 'quick layout closes the design panel after applying');
+  assert.deepEqual(first.selected.slice().sort(), selected.slice().sort(), 'applying layout must retain the selection');
+  assert.equal(await page.locator('[data-canvas-layout-panel]').count(), 0, 'applying layout closes the design panel');
   assertClear(first.nodes); assertOrder(first);
   for (const id of ['a', 'b']) assert.equal(first.nodes.find((n) => n.id === id).group, 'g');
   for (const id of ['a', 'b', 'merge']) assert.equal(first.nodes.find((n) => n.id === id).position.x, first.nodes.find((n) => n.id === 'file').position.x);
@@ -222,7 +222,7 @@ try {
       window.__store.setState((s) => ({ nodes: s.nodes.map((n, i) => ({ ...n,
         position: { x: ((i * 977 + iteration * 331) % 1900) - 900, y: ((i * 613 + iteration * 719) % 1800) - 800 } })).reverse() }));
     }, iteration);
-    await quick();
+    await applyLayout();
     const current = await graph();
     assert.deepEqual(normalized(current.nodes), normalized(first.nodes));
     assertClear(current.nodes); assertOrder(current);
@@ -230,7 +230,7 @@ try {
   await page.screenshot({ path: `${outputDir}/repeated-layout.png` });
   check('repeated arbitrary dragging restores the same relative graph arrangement');
   const beforeRepeat = await graph();
-  await quick();
+  await applyLayout();
   const afterRepeat = await graph();
   assert.deepEqual(afterRepeat.nodes, beforeRepeat.nodes);
   assert.equal(afterRepeat.historyLength, beforeRepeat.historyLength, 'a repeated no-op must not add undo history');
@@ -242,7 +242,7 @@ try {
       ? { ...n, position: { ...n.position, x: n.position.x + 57 } } : n) }));
   });
   const partialBefore = await graph();
-  await quick();
+  await applyLayout();
   const partialAfter = await graph();
   assert.deepEqual(partialAfter.selected.slice().sort(), ['a', 'b']);
   assert.deepEqual(partialAfter.nodes.filter((n) => !['a', 'b'].includes(n.id)), partialBefore.nodes.filter((n) => !['a', 'b'].includes(n.id)));
@@ -256,7 +256,7 @@ try {
     window.__store.getState().pushHistory();
   });
   const memberBefore = await graph();
-  await quick();
+  await applyLayout();
   const memberAfter = await graph();
   assert.deepEqual(memberAfter.selected, ['a']);
   assert.deepEqual(memberAfter.nodes.filter(n => n.id !== 'a'), memberBefore.nodes.filter(n => n.id !== 'a'));
@@ -271,7 +271,7 @@ try {
   await fixture(true);
   await page.evaluate(() => window.__store.getState().setSelectedNodeIds(['region']));
   const frameBefore = await graph();
-  await quick();
+  await applyLayout();
   const frameAfter = await graph();
   const frame = frameAfter.nodes.find((n) => n.id === 'region');
   for (const id of ['file', 'a', 'b']) contains(frame, frameAfter.nodes.find((n) => n.id === id));
@@ -293,7 +293,7 @@ try {
     return { width: n.width, height: n.height, measured: n.measured };
   });
   await openSettings();
-  assert.equal(await page.locator('[data-layout-scope]').inputValue(), 'selection');
+  assert.equal(await page.locator('[data-layout-scope]').locator('input:checked').inputValue(), 'selection');
   await page.locator('[data-layout-preview]').click();
   await settled();
   assert.deepEqual(await graph(), previewBefore, 'preview does not commit geometry or history');
@@ -329,7 +329,7 @@ try {
   const longTitle = '这是一个非常长的分区标题，用于验证标题长度不会撑大分区框而是适应现有内容宽度';
   await page.evaluate((title) => window.__store.getState().setFrameProperties(['region'], { title }), longTitle);
   const beforeLongTitle = await graph();
-  await quick();
+  await applyLayout();
   const afterLongTitle = await graph();
   assert.deepEqual(afterLongTitle.nodes, beforeLongTitle.nodes, 'renaming a region must not change its layout footprint');
   const longHeader = await page.locator('.react-flow__node[data-id="region"] [data-frame-header]').evaluate((header) => {
@@ -389,14 +389,14 @@ try {
 
   await openSettings();
   await hold('[data-layout-preview]');
-  await page.locator('[data-layout-scope]').selectOption('all');
+  await page.locator('[data-layout-scope]').locator('label:has(input[value="all"])').click();
   await release();
   assert.equal(await page.evaluate(() => window.__canvasEditing.getState().layoutPreview), null);
   assert.deepEqual(await graph(), cancelledBefore, 'old selection preview must not be installed for the new scope');
   await page.locator('[data-layout-cancel]').click();
   check('changing scope discards the pending preview');
 
-  await hold('[data-layout-quick]');
+  await hold('[data-layout-apply]');
   await page.evaluate(() => {
     window.__store.setState((s) => ({ nodes: s.nodes.map((n) => n.id === 'file'
       ? { ...n, position: { x: n.position.x + 173, y: n.position.y + 89 } } : n) }));
@@ -412,7 +412,7 @@ try {
       ? { ...n, position: { x: n.position.x - 200, y: n.position.y + 400 } } : n) }));
     window.__store.getState().pushHistory();
   });
-  await hold('[data-layout-quick]');
+  await hold('[data-layout-apply]');
   await page.evaluate(() => window.__store.getState().undo());
   const undoneWhilePending = await graph();
   await release();
@@ -421,7 +421,7 @@ try {
 
   await openSettings();
   await hold('[data-layout-apply]');
-  await page.locator('[data-layout-direction]').selectOption('horizontal');
+  await page.locator('[data-layout-direction]').locator('label:has(input[value="horizontal"])').click();
   await release();
   assert.deepEqual(await graph(), undoneWhilePending, 'changing settings cancels an in-flight apply');
   await page.locator('[data-layout-cancel]').click();
@@ -455,7 +455,7 @@ try {
   await page.evaluate(() => window.__rf.fitView({ duration: 0, padding: 0.14 }));
   await page.keyboard.press('Control+a');
   assert.equal((await graph()).selected.length, (await graph()).nodes.length);
-  await quick();
+  await applyLayout();
   await page.waitForTimeout(650);
   const exampleFirst = await graph();
   const exampleGeometry = await renderedGeometry();
@@ -465,7 +465,7 @@ try {
   const verticalHeaders = await frameHeaderBounds();
   await writeFile(`${outputDir}/frame-headers-vertical.json`, JSON.stringify(verticalHeaders, null, 2));
   assertFrameHeaders(verticalHeaders);
-  await quick();
+  await applyLayout();
   await page.waitForTimeout(650);
   const exampleAgain = await graph();
   assert.deepEqual(exampleAgain.nodes, exampleFirst.nodes, 'example layout must stay stable after measured DOM refresh');
@@ -478,7 +478,7 @@ try {
 
   await page.keyboard.press('Control+a');
   await openSettings();
-  await page.locator('[data-layout-direction]').selectOption('horizontal');
+  await page.locator('[data-layout-direction]').locator('label:has(input[value="horizontal"])').click();
   await page.locator('[data-layout-apply]').click();
   await settled();
   const horizontalGeometry = await renderedGeometry();
@@ -497,7 +497,7 @@ try {
   assert.deepEqual(errors, [], 'no browser runtime exceptions');
   assert.deepEqual(blockedWrites, [], 'layout must not issue model/API writes');
   await writeFile(`${outputDir}/report.json`, JSON.stringify({ checks, errors, blockedWrites }, null, 2));
-  console.log(`\n${checks.length} quick-layout UI checks passed`);
+  console.log(`\n${checks.length} layout application UI checks passed`);
 } catch (error) {
   await page.screenshot({ path: `${outputDir}/failure.png` });
   await writeFile(`${outputDir}/report.json`, JSON.stringify({ checks, errors, blockedWrites, failure: error.stack }, null, 2));

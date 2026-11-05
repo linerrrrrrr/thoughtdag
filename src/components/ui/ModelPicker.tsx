@@ -126,7 +126,7 @@ export default function ModelPicker({ value, onChange, compact }: PickerProps) {
   // names that model in full (agent · model · effort), the tint says it is inherited
   const globalActive = globalId ? models.find((m) => m.id === globalId) : null;
   const label = nodeMode
-    ? (active ? withEffort(active) : (globalActive ? withEffort(globalActive) : t('model.inherit')))
+    ? (active ? withEffort(active) : value ? (value.endsWith('/default') ? `${runtimeLabelOf(value)} · ${t('agent.defaultModel')}` : value) : (globalActive ? withEffort(globalActive) : t('model.inherit')))
     : (active ? withEffort(active) : (activeId ?? (models.length === 0 ? t('model.none') : null)));
 
   return (
@@ -141,7 +141,7 @@ export default function ModelPicker({ value, onChange, compact }: PickerProps) {
           else { setEffortStepFor(null); setOpen((v) => !v); }
         }}
         className={compact
-          ? `text-xs px-3 py-2 rounded-control transition-colors flex items-center gap-1.5 max-w-[200px] ${value ? 'bg-accent/10 text-accent' : 'bg-wash hover:bg-line text-ink-muted'}`
+          ? `text-control px-3 py-2 rounded-control transition-colors flex items-center gap-1.5 max-w-[200px] ${value ? 'bg-accent/10 text-accent' : 'bg-wash hover:bg-line text-ink-muted'}`
           : noModels
             ? 'bg-accent/10 border border-accent/40 rounded-control h-8 px-2.5 flex items-center gap-1.5 hover:bg-accent/20 transition-colors text-accent max-w-[190px]'
             : 'bg-card border border-line rounded-control h-8 px-2.5 flex items-center gap-1.5 hover:bg-wash transition-colors text-ink-muted max-w-[190px]'}
@@ -154,34 +154,32 @@ export default function ModelPicker({ value, onChange, compact }: PickerProps) {
         {noModels
           ? (data?.agentsPending ? <Loader2 size={14} strokeWidth={1.75} className="shrink-0 animate-spin" /> : <KeyRound size={14} strokeWidth={1.75} className="shrink-0" />)
           : <Cpu size={14} strokeWidth={1.75} className={`shrink-0 ${compact && !value ? '' : 'text-accent'}`} />}
-        <span className="text-xs truncate font-medium">{noModels ? t('model.connectCta') : label}</span>
+        <span className="text-control truncate font-medium">{noModels ? t('model.connectCta') : label}</span>
         {!noModels && <ChevronDown size={12} strokeWidth={1.75} className="shrink-0" />}
       </button>
 
       {open && (
-        // Both placements drop DOWN: the compact picker lives in the panel
-        // header now (an upward menu would fly off the viewport top)
-        <div className={nodeMode ? 'absolute top-9 right-0 bg-card border border-line rounded-overlay shadow-lg py-1.5 w-80 max-h-[60vh] overflow-y-auto z-30' : 'canvas-tool-panel canvas-tool-menu py-1.5'}
+        <div className={nodeMode ? 'absolute top-9 right-0 z-30 bg-card border border-line rounded-overlay shadow-lg py-1.5 w-80 max-w-[calc(100vw-24px)] max-h-[60vh] overflow-y-auto nodrag nopan' : 'canvas-tool-panel canvas-tool-menu py-1.5'}
           style={nodeMode ? undefined : panelPosition} data-model-picker-panel>
           {nodeMode && (
             <button
               onClick={() => pick(null)}
-              className={`w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 transition-colors hover:bg-wash ${!value ? 'text-accent font-medium' : 'text-ink'}`}
+              className={`w-full text-left px-3 py-1.5 text-control flex items-center gap-2 transition-colors hover:bg-wash ${!value ? 'text-accent font-medium' : 'text-ink'}`}
             >
               <span className="truncate flex-1">{t('model.inherit')}</span>
               {!value && <Check size={13} strokeWidth={2} className="shrink-0" />}
             </button>
           )}
-          {!nodeMode && <p className="text-2xs text-ink-faint uppercase tracking-wider font-medium px-3 pt-2 pb-0.5" data-picker-answer-header>{t('model.answerGroup')}</p>}
+          {!nodeMode && <p className="text-control text-ink-faint uppercase tracking-wider font-medium px-3 pt-2 pb-0.5" data-picker-answer-header>{t('model.answerGroup')}</p>}
           {providers.map((provider) => (
             <div key={provider}>
-              <p className="text-2xs text-ink-faint uppercase tracking-wider font-medium px-3 pt-2 pb-1 flex items-center gap-1.5" title={provider === AGENT_PROVIDER ? t('model.agentGroupHint') : undefined}>
+              <p className="text-control text-ink-faint uppercase tracking-wider font-medium px-3 pt-2 pb-1 flex items-center gap-1.5" title={provider === AGENT_PROVIDER ? t('model.agentGroupHint') : undefined}>
                 {provider === AGENT_PROVIDER ? t('model.agentGroup') : provider}
                 {provider === AGENT_PROVIDER && <Info size={11} strokeWidth={1.75} className="text-ink-faint/70" data-agent-group-hint />}
                 {provider === AGENT_PROVIDER && data?.agentsPending && <Loader2 size={11} className="animate-spin text-ink-faint" data-agent-group-pending />}
               </p>
               {provider === AGENT_PROVIDER && data?.agentsPending && models.filter((m) => m.provider === AGENT_PROVIDER).length === 0 && (
-                <p className="text-2xs text-ink-faint px-3 pb-1.5">{t('model.agentGroupLoading')}</p>
+                <p className="text-control text-ink-faint px-3 pb-1.5">{t('model.agentGroupLoading')}</p>
               )}
               {provider === AGENT_PROVIDER ? (() => {
                 const agentModels = models.filter((m) => m.provider === AGENT_PROVIDER);
@@ -194,11 +192,11 @@ export default function ModelPicker({ value, onChange, compact }: PickerProps) {
                   const st = data!.runtimes![rt]!; const def = AGENT_RUNTIMES[rt]; const bin = def.prefix.replace(/\/$/, '');
                   const hint = fmt(t('model.runtimeMissingHint'), { bin, dirs: (st.searched ?? []).join('\n') || '—' });
                   return (
-                    <div key={`missing-${rt}`} className="px-3 py-1.5 text-xs flex items-center gap-2 text-ink-faint" title={st.error ? `${hint}\n${st.error}` : hint} data-runtime-missing={rt}>
+                    <div key={`missing-${rt}`} className="px-3 py-1.5 text-control flex items-center gap-2 text-ink-faint" title={st.error ? `${hint}\n${st.error}` : hint} data-runtime-missing={rt}>
                       <span className="w-3 shrink-0" />
                       <span className="truncate">{fmt(t('model.runtimeMissing'), { name: def.label })}</span>
                       <Info size={11} strokeWidth={1.75} className="shrink-0 text-ink-faint/70" />
-                      <button onClick={(e) => { e.stopPropagation(); void recheckAgents(); }} className="ml-auto text-2xs text-accent hover:underline shrink-0" data-runtime-recheck={rt}>{t('model.recheck')}</button>
+                      <button onClick={(e) => { e.stopPropagation(); void recheckAgents(); }} className="ml-auto text-control text-accent hover:underline shrink-0" data-runtime-recheck={rt}>{t('model.recheck')}</button>
                     </div>
                   );
                 });
@@ -207,21 +205,21 @@ export default function ModelPicker({ value, onChange, compact }: PickerProps) {
                   const current = list.find((m) => m.id === activeId);
                   return (
                     <div key={label} data-runtime-group={label} data-runtime-open={isOpen ? 'open' : 'closed'}>
-                      <button onClick={() => toggleRuntime(label)} className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 hover:bg-wash transition-colors text-ink-muted" data-runtime-toggle={label}>
+                      <button onClick={() => toggleRuntime(label)} className="w-full text-left px-3 py-1.5 text-control flex items-center gap-2 hover:bg-wash transition-colors text-ink-muted" data-runtime-toggle={label}>
                         {isOpen ? <ChevronDown size={12} strokeWidth={1.75} className="text-ink-faint shrink-0" /> : <ChevronRight size={12} strokeWidth={1.75} className="text-ink-faint shrink-0" />}
                         <span className="font-medium text-ink">{label}</span>
-                        <span className="text-2xs text-ink-faint">{list.length}</span>
-                        {!isOpen && current && <span className="text-2xs text-accent truncate ml-auto max-w-[55%]">{current.name.replace(`${label} · `, '')}</span>}
+                        <span className="text-meta text-ink-faint">{list.length}</span>
+                        {!isOpen && current && <span className="text-control text-accent truncate ml-auto max-w-[55%]">{current.name.replace(`${label} · `, '')}</span>}
                       </button>
                       {isOpen && list.map((m) => (
                         <div key={m.id}>
                           <button
                             onClick={() => pick(m.id)}
                             title={m.name}
-                            className={`w-full text-left pl-8 pr-3 py-1.5 text-xs flex items-center gap-2 transition-colors hover:bg-wash ${m.id === activeId ? 'text-accent font-medium' : 'text-ink'}`}
+                            className={`w-full text-left pl-8 pr-3 py-1.5 text-control flex items-center gap-2 transition-colors hover:bg-wash ${m.id === activeId ? 'text-accent font-medium' : 'text-ink'}`}
                           >
                             <span className="flex-1 break-words leading-snug">{m.name.replace(` (${m.provider})`, '').replace(`${label} · `, '')}</span>
-                            {m.vision && <span className="text-2xs text-ink-faint shrink-0">{t('model.vision')}</span>}
+                            {m.vision && <span className="text-control text-ink-faint shrink-0">{t('model.vision')}</span>}
                             {m.id === activeId && <Check size={13} strokeWidth={2} className="shrink-0" />}
                           </button>
                           {effortStepFor === m.id && <EffortStep model={m} onDone={() => { setEffortStepFor(null); setOpen(false); }} />}
@@ -235,14 +233,14 @@ export default function ModelPicker({ value, onChange, compact }: PickerProps) {
                 <button
                   onClick={() => pick(m.id)}
                   title={m.name}
-                  className={`w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 transition-colors hover:bg-wash ${
+                  className={`w-full text-left px-3 py-1.5 text-control flex items-center gap-2 transition-colors hover:bg-wash ${
                     m.id === activeId ? 'text-accent font-medium' : 'text-ink'
                   }`}
                 >
                   {/* agent entries carry runtime · model · variant and tell apart only by
                       their tail, so they wrap instead of losing it to an ellipsis (#43) */}
                   <span className={provider === AGENT_PROVIDER ? 'flex-1 break-words leading-snug' : 'truncate flex-1'}>{m.name.replace(` (${m.provider})`, '')}</span>
-                  {m.vision && <span className="text-2xs text-ink-faint shrink-0">{t('model.vision')}</span>}
+                  {m.vision && <span className="text-control text-ink-faint shrink-0">{t('model.vision')}</span>}
                   {m.id === activeId && <Check size={13} strokeWidth={2} className="shrink-0" />}
                 </button>
                 {effortStepFor === m.id && <EffortStep model={m} onDone={() => { setEffortStepFor(null); setOpen(false); }} />}
@@ -253,10 +251,10 @@ export default function ModelPicker({ value, onChange, compact }: PickerProps) {
           {!nodeMode && <JudgeRow onOpen={() => { setOpen(false); useUiStore.getState().setApiKeyModalOpen(true, 'judge'); }} />}
           {!nodeMode && (
             <div className="flex items-center pr-1 border-t border-line mt-1 pt-1">
-            <span className="text-2xs text-ink-faint uppercase tracking-wider font-medium px-3 py-1.5 shrink-0">{t('model.interfaces')}</span>
+            <span className="text-control text-ink-faint uppercase tracking-wider font-medium px-3 py-1.5 shrink-0">{t('model.interfaces')}</span>
             {<button
               onClick={() => { setOpen(false); useUiStore.getState().setApiKeyModalOpen(true); }}
-              className={`flex-1 text-left px-3 py-1.5 text-xs flex items-center gap-2 transition-colors hover:bg-wash ${
+              className={`flex-1 text-left px-3 py-1.5 text-control flex items-center gap-2 transition-colors hover:bg-wash ${
                 models.length === 0 ? 'text-accent font-medium' : 'text-ink-muted'
               }`}
               data-picker-apikey
@@ -301,8 +299,8 @@ function JudgeRow({ onOpen }: { onOpen: () => void }) {
         <button onClick={onOpen} className="flex-1 min-w-0 text-left flex items-center gap-2 group" title={t('judge.does')} data-picker-judge>
           <Scale size={13} strokeWidth={1.75} className="shrink-0 text-accent" />
           <span className="min-w-0">
-            <span className="block text-xs text-ink font-medium group-hover:text-accent">{t('judge.rowTitle')}</span>
-            <span className="block text-2xs text-ink-faint truncate">{state}{on && !configured ? <span className="text-accent ml-1">{t('judge.goConfigure')}</span> : null}</span>
+            <span className="block text-control text-ink font-medium group-hover:text-accent">{t('judge.rowTitle')}</span>
+            <span className="block text-control text-ink-faint truncate">{state}{on && !configured ? <span className="text-accent ml-1">{t('judge.goConfigure')}</span> : null}</span>
           </span>
         </button>
         <button role="switch" aria-checked={on} onClick={(e) => { e.stopPropagation(); setJudge({ provider: on ? 'off' : 'none' }); }} className={`relative w-8 h-[18px] rounded-control transition-colors shrink-0 ${on ? 'bg-accent' : 'bg-line-strong'}`} data-picker-judge-toggle>
@@ -325,19 +323,19 @@ function EffortStep({ model, onDone }: { model: ModelInfo; onDone: () => void })
   const value = levels.includes(effort) ? effort : '';
   return (
     <div className="mx-3 mb-1.5 mt-0.5 rounded-content bg-wash/70 border border-line px-2 py-1.5 flex items-center gap-2" title={t('model.effortHint')} data-agent-effort>
-      <span className="text-2xs text-ink-faint uppercase tracking-wider font-medium shrink-0">{t('model.effort')}</span>
+      <span className="text-control text-ink-faint uppercase tracking-wider font-medium shrink-0">{t('model.effort')}</span>
       <select
         value={value}
         onChange={(e) => setEffort(e.target.value)}
         onClick={(e) => e.stopPropagation()}
         autoFocus
-        className="flex-1 min-w-0 text-2xs text-ink bg-card border border-line rounded-control px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-accent/40"
+        className="flex-1 min-w-0 text-control text-ink bg-card border border-line rounded-control px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-accent/40"
         data-agent-effort-select
       >
         <option value="">{model.defaultEffort ? fmt(t('model.effortDefaultKnown'), { level: model.defaultEffort }) : t('model.effortDefault')}</option>
         {levels.map((l) => <option key={l} value={l}>{l}</option>)}
       </select>
-      <button onClick={(e) => { e.stopPropagation(); onDone(); }} className="text-2xs px-2 py-1 rounded-tag bg-action text-white hover:bg-action-strong transition-colors shrink-0" data-agent-effort-ok>{t('model.effortConfirm')}</button>
+      <button onClick={(e) => { e.stopPropagation(); onDone(); }} className="text-control px-2 py-1 rounded-tag bg-action text-white hover:bg-action-strong transition-colors shrink-0" data-agent-effort-ok>{t('model.effortConfirm')}</button>
     </div>
   );
 }
@@ -389,11 +387,11 @@ function GlobalCapabilities({ anysearchDraft, setAnysearchDraft }: { anysearchDr
         onClick={(e) => e.stopPropagation()}
         placeholder={t('caps.anysearchKeyPlaceholder')}
         data-anysearch-key
-        className="w-full text-2xs text-ink-muted bg-wash border border-line rounded-control px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-accent/40 placeholder-ink-faint font-mono"
+        className="w-full text-control text-ink-muted bg-wash border border-line rounded-control px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-accent/40 placeholder-ink-faint font-mono"
       />
       <button type="button" onClick={() => void saveAnysearchKey()} disabled={anysearchDraft.trim() === anysearchKey}
-        className="mt-1 text-xs text-accent px-2 py-1 rounded-control hover:bg-wash disabled:opacity-40" data-anysearch-save>{t('common.save')}</button>
-      <p className="text-2xs text-ink-faint leading-relaxed mt-0.5">
+        className="mt-1 text-control text-accent px-2 py-1 rounded-control hover:bg-wash disabled:opacity-40" data-anysearch-save>{t('common.save')}</button>
+      <p className="text-control text-ink-faint mt-0.5">
         {t(hintKey)}{' '}
         <a href="https://www.anysearch.com" target="_blank" rel="noreferrer" className="text-accent hover:underline" onClick={(e) => e.stopPropagation()}>anysearch.com</a>
       </p>
@@ -403,27 +401,27 @@ function GlobalCapabilities({ anysearchDraft, setAnysearchDraft }: { anysearchDr
     <div className="border-t border-line mt-1.5 pt-1 pb-1" data-picker-caps data-picker-caps-open={capsOpen ? 'open' : 'closed'}>
       <button onClick={() => setCapsOpen((v) => { try { localStorage.setItem(CAPS_OPEN_KEY, v ? 'closed' : 'open'); } catch { /* per-session */ } return !v; })} className="w-full text-left px-3 pt-1 pb-1 flex items-center gap-1.5 hover:bg-wash transition-colors" data-picker-caps-toggle>
         {capsOpen ? <ChevronDown size={12} strokeWidth={1.75} className="text-ink-faint" /> : <ChevronRight size={12} strokeWidth={1.75} className="text-ink-faint" />}
-        <span className="text-2xs text-ink-faint uppercase tracking-wider font-medium">{t('caps.title')}</span>
-        {!capsOpen && <span className="ml-auto flex items-center gap-1.5">{dot(!!caps?.webSearch)}<span className="text-2xs text-ink-faint">{t('caps.webSearch')}</span>{dot(memoryEnabled)}<span className="text-2xs text-ink-faint">{t('caps.memory')}</span></span>}
+        <span className="text-control text-ink-faint uppercase tracking-wider font-medium">{t('caps.title')}</span>
+        {!capsOpen && <span className="ml-auto flex items-center gap-1.5">{dot(!!caps?.webSearch)}<span className="text-control text-ink-faint">{t('caps.webSearch')}</span>{dot(memoryEnabled)}<span className="text-control text-ink-faint">{t('caps.memory')}</span></span>}
       </button>
       {capsOpen && <>
       <div className="px-3 py-1 flex items-start gap-2">
         {dot(!!caps?.webSearch)}
         <div className="flex-1 min-w-0">
-          <p className="text-2xs text-ink-muted font-medium">{t('caps.webSearch')}</p>
+          <p className="text-control text-ink-muted font-medium">{t('caps.webSearch')}</p>
           {/* inside the harness the host's own web search serves its models
               (its service is set in the harness), an own OpenRouter interface
               searches as :online; the engine picker and the AnySearch key
               would be dead controls there (#72) */}
           {caps?.webSearch && IN_HARNESS ? (
-            <p className="text-2xs text-ink-faint leading-relaxed mt-0.5">{t('caps.webSearchViaInterface')}</p>
+            <p className="text-control text-ink-faint mt-0.5">{t('caps.webSearchViaInterface')}</p>
           ) : caps?.webSearch ? (
             <select
               value={searchEnginePref}
               onChange={(e) => setSearchEnginePref(e.target.value)}
               onClick={(e) => e.stopPropagation()}
               title={t('caps.enginePickTitle')}
-              className="mt-1 w-full text-2xs text-ink-muted bg-wash border border-line rounded-control px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-accent/40"
+              className="mt-1 w-full text-control text-ink-muted bg-wash border border-line rounded-control px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-accent/40"
             >
               <option value="server">{fmt(t('caps.engineServer'), { engine: caps.searchEngine })}</option>
               <option value="search_std">{t('caps.engineStd')}</option>
@@ -432,38 +430,38 @@ function GlobalCapabilities({ anysearchDraft, setAnysearchDraft }: { anysearchDr
               {(caps.deepseekSearch || searchEnginePref === 'deepseek') && <option value="deepseek">{t('caps.engineDeepseek')}</option>}
             </select>
           ) : (
-            <p className="text-2xs text-ink-faint leading-relaxed mt-0.5">{t(IN_HARNESS ? 'caps.webSearchOffHost' : 'caps.webSearchOff')}</p>
+            <p className="text-control text-ink-faint mt-0.5">{t(IN_HARNESS ? 'caps.webSearchOffHost' : 'caps.webSearchOff')}</p>
           )}
           {!IN_HARNESS && caps?.webSearch && searchEnginePref === 'anysearch' && anysearchKeyRow('caps.anysearchHintQuota')}
           {!IN_HARNESS && caps?.webSearch && searchEnginePref === 'deepseek' && (
-            <p className="text-2xs text-ink-faint leading-relaxed mt-0.5" data-deepseek-search-hint>{t(caps.deepseekSearch ? 'caps.deepseekHintBilled' : 'caps.deepseekHintNoKey')}</p>
+            <p className="text-control text-ink-faint mt-0.5" data-deepseek-search-hint>{t(caps.deepseekSearch ? 'caps.deepseekHintBilled' : 'caps.deepseekHintNoKey')}</p>
           )}
           {!IN_HARNESS && !caps?.webSearch && anysearchKeyRow('caps.anysearchHintEnable')}
         </div>
       </div>
       <div className="px-3 py-1 flex items-start gap-2">
         {dot(true)}
-        <p className="text-2xs text-ink-faint leading-relaxed flex-1">
+        <p className="text-control text-ink-faint flex-1">
           <span className="text-ink-muted font-medium">{t('caps.scholar')}</span>{' · '}{t('caps.scholarDesc')}
         </p>
       </div>
       <div className="px-3 py-1 flex items-start gap-2">
         {dot(memoryEnabled)}
         <div className="flex-1 min-w-0 flex items-center gap-2">
-          <p className="text-2xs text-ink-muted font-medium flex-1">
+          <p className="text-control text-ink-muted font-medium flex-1">
             {t('caps.memory')}
             <span className="text-ink-faint font-normal"> · {memoryCount}</span>
           </p>
           <button
             onClick={(e) => { e.stopPropagation(); setMemoryManagerOpen(true); }}
-            className="text-2xs text-ink-faint hover:text-accent underline decoration-dotted transition-colors shrink-0"
+            className="text-control text-ink-faint hover:text-accent underline decoration-dotted transition-colors shrink-0"
           >
             {t('memory.manage')}
           </button>
           <button
             onClick={(e) => { e.stopPropagation(); setMemoryEnabled(!memoryEnabled); }}
             title={t('caps.memoryTitle')}
-            className={`text-2xs px-2 py-0.5 rounded-tag transition-colors shrink-0 ${memoryEnabled ? 'bg-accent/10 text-accent' : 'bg-wash text-ink-faint'}`}
+            className={`text-control px-2 py-0.5 rounded-tag transition-colors shrink-0 ${memoryEnabled ? 'bg-accent/10 text-accent' : 'bg-wash text-ink-faint'}`}
           >
             {memoryEnabled ? t('caps.on') : t('caps.off')}
           </button>
@@ -472,14 +470,14 @@ function GlobalCapabilities({ anysearchDraft, setAnysearchDraft }: { anysearchDr
       <div className="px-3 py-1 flex items-start gap-2">
         {dot(hasVision)}
         <div className="flex-1 min-w-0">
-          <p className="text-2xs text-ink-muted font-medium">{t('caps.vision')}</p>
+          <p className="text-control text-ink-muted font-medium">{t('caps.vision')}</p>
           {hasVision ? (
             <select
               value={visionModels.some((m) => m.id === visionModelPref) ? visionModelPref : 'auto'}
               onChange={(e) => setVisionModelPref(e.target.value)}
               onClick={(e) => e.stopPropagation()}
               title={t('caps.visionPickTitle')}
-              className="mt-1 w-full text-2xs text-ink-muted bg-wash border border-line rounded-control px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-accent/40"
+              className="mt-1 w-full text-control text-ink-muted bg-wash border border-line rounded-control px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-accent/40"
             >
               <option value="auto">{t('caps.visionAuto')}</option>
               {visionModels.map((m) => (
@@ -487,7 +485,7 @@ function GlobalCapabilities({ anysearchDraft, setAnysearchDraft }: { anysearchDr
               ))}
             </select>
           ) : (
-            <p className="text-2xs text-ink-faint leading-relaxed mt-0.5">{t('caps.visionOff')}</p>
+            <p className="text-control text-ink-faint mt-0.5">{t('caps.visionOff')}</p>
           )}
         </div>
       </div>

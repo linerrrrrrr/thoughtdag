@@ -264,7 +264,7 @@ export function nodesToMarkdown(ordered: ThoughtNode[], subtitle: string): strin
   return [
     `# ${activeProjectName()}`,
     '',
-    `> ${subtitle} · exported ${new Date().toISOString().slice(0, 10)} · ${ordered.length} nodes · ~${totalTok} tok`,
+    `> ${subtitle} · exported ${new Date().toISOString().slice(0, 10)} · ${ordered.length} nodes · ~${totalTok} tokens`,
     '',
     ordered.map(nodeToMd).join('\n---\n\n'),
   ].join('\n');

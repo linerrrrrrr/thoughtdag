@@ -1,0 +1,21 @@
+.tdag-tooltip.tdag-tooltip-details {
+  width: 304px;
+  max-width: calc(100vw - 24px);
+  padding: 12px 14px;
+  border: 0;
+  border-radius: 10px;
+  box-shadow: var(--shadow-lg);
+  font-size: var(--text-control);
+  line-height: var(--text-control--line-height);
+  white-space: normal;
+  pointer-events: none;
+}
+.tooltip-details-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 12px; color: var(--color-ink); }
+.tooltip-details-heading strong { font-size: var(--text-title); line-height: var(--text-title--line-height); font-weight: 600; }
+.tooltip-details-heading > span { flex-shrink: 0; font-size: var(--text-meta); line-height: var(--text-meta--line-height); font-variant-numeric: tabular-nums; }
+.tooltip-details-rows { display: grid; gap: 7px; }
+.tooltip-details-row { display: grid; grid-template-columns: 7px minmax(0, 1fr) auto 48px; align-items: center; gap: 8px; }
+.tooltip-details-dot { width: 7px; height: 7px; border-radius: 2px; }
+.tooltip-details-value, .tooltip-details-share { font-size: var(--text-meta); line-height: var(--text-meta--line-height); text-align: right; font-variant-numeric: tabular-nums; }
+.tooltip-details-value { color: var(--color-ink); }
+.tooltip-details-note { margin: 12px 0 0; padding-top: 10px; border-top: 1px solid var(--color-line); font-size: var(--text-control); line-height: var(--text-control--line-height); white-space: pre-line; }

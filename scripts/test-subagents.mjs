@@ -9,18 +9,20 @@ import { build } from 'esbuild';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import assert from 'node:assert/strict';
 
 const dir = mkdtempSync(join(tmpdir(), 'td-subagents-'));
 const entry = join(dir, 'entry.mjs');
+const root = process.cwd().replace(/\\/g, '/');
 writeFileSync(entry, `
-  export { PiSessionCollector } from '${process.cwd()}/src/lib/adapters/pi-session.ts';
-  export { ClaudeSessionCollector } from '${process.cwd()}/src/lib/adapters/claude-code-session.ts';
-  export { adoptSubagentSessions } from '${process.cwd()}/src/lib/adapters/shared.ts';
+  export { PiSessionCollector } from '${root}/src/lib/adapters/pi-session.ts';
+  export { ClaudeSessionCollector } from '${root}/src/lib/adapters/claude-code-session.ts';
+  export { adoptSubagentSessions } from '${root}/src/lib/adapters/shared.ts';
 `);
 const out = join(dir, 'bundle.mjs');
 await build({ entryPoints: [entry], bundle: true, format: 'esm', platform: 'node', outfile: out, logLevel: 'silent', define: { 'import.meta.env.DEV': 'false', 'import.meta.env': '{}' } });
-const { PiSessionCollector, ClaudeSessionCollector, adoptSubagentSessions } = await import(out);
+const { PiSessionCollector, ClaudeSessionCollector, adoptSubagentSessions } = await import(pathToFileURL(out).href);
 
 // ── Pi: three parallel runs in one tool result, details carried whole ──
 const pi = new PiSessionCollector();

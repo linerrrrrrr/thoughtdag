@@ -85,7 +85,7 @@ export default function AgentCwdChip() {
       <CanvasToolbarOverflowAction label={`${t('agent.cwd')} · ${choice.kind === 'workspace' ? t('agent.cwdWorkspace') : tail(choice.cwd)}`} icon={<FolderOpen size={14} />}>
       <button
         onClick={(e) => { e.stopPropagation(); setOpen((v) => !v); }}
-        className="bg-card border border-line rounded-control h-8 px-2.5 flex items-center gap-1.5 hover:bg-wash transition-colors text-xs text-ink max-w-[220px]"
+        className="bg-card border border-line rounded-control h-8 px-2.5 flex items-center gap-1.5 hover:bg-wash transition-colors text-control text-ink max-w-[220px]"
         title={`${t('agent.cwd')} · ${choice.cwd}`}
         data-agent-cwd={choice.kind}
         aria-expanded={open}
@@ -97,29 +97,29 @@ export default function AgentCwdChip() {
       </CanvasToolbarOverflowAction>
       {open && (
         <div ref={panelRef} tabIndex={-1} className="canvas-tool-panel canvas-tool-menu py-1.5" style={panelPosition} onClick={(e) => e.stopPropagation()} data-agent-cwd-menu>
-          <p className="text-2xs text-ink-faint uppercase tracking-wider font-medium px-3 pt-1 pb-1">{t('agent.cwd')}</p>
-          <button onClick={() => void choose(undefined)} className="w-full text-left px-3 py-2 text-xs hover:bg-wash flex items-center gap-2">
+          <p className="text-control text-ink-faint uppercase tracking-wider font-medium px-3 pt-1 pb-1">{t('agent.cwd')}</p>
+          <button onClick={() => void choose(undefined)} className="w-full text-left px-3 py-2 text-control hover:bg-wash flex items-center gap-2">
             <span className="flex-1 min-w-0">
               <span className="block text-ink">{mirrored ? t('agent.cwdMirrored') : choice.kind === 'session' ? t('agent.cwdSession') : t('agent.cwdWorkspace')}</span>
-              <span className="block text-2xs text-ink-faint truncate">{mirrored ?? (choice.kind === 'session' ? choice.cwd : t('agent.cwdWorkspaceHint'))}</span>
+              <span className="block text-control text-ink-faint truncate">{mirrored ?? (choice.kind === 'session' ? choice.cwd : t('agent.cwdWorkspaceHint'))}</span>
             </span>
             {!meta?.agentCwd && <Check size={13} strokeWidth={2} className="shrink-0 text-accent" />}
           </button>
           {meta?.agentCwd && (
-            <button onClick={() => void choose(meta.agentCwd)} className="w-full text-left px-3 py-2 text-xs hover:bg-wash flex items-center gap-2">
-              <span className="flex-1 min-w-0"><span className="block text-ink">{tail(meta.agentCwd)}</span><span className="block text-2xs text-ink-faint truncate">{meta.agentCwd}</span></span>
+            <button onClick={() => void choose(meta.agentCwd)} className="w-full text-left px-3 py-2 text-control hover:bg-wash flex items-center gap-2">
+              <span className="flex-1 min-w-0"><span className="block text-ink">{tail(meta.agentCwd)}</span><span className="block text-control text-ink-faint truncate">{meta.agentCwd}</span></span>
               <Check size={13} strokeWidth={2} className="shrink-0 text-accent" />
             </button>
           )}
-          {recent.length > 0 && <p className="text-2xs text-ink-faint uppercase tracking-wider font-medium px-3 pt-2 pb-1">{t('agent.cwdRecent')}</p>}
+          {recent.length > 0 && <p className="text-control text-ink-faint uppercase tracking-wider font-medium px-3 pt-2 pb-1">{t('agent.cwdRecent')}</p>}
           {recent.map((c) => (
-            <button key={c} onClick={() => void choose(c)} className="w-full text-left px-3 py-1.5 text-xs hover:bg-wash flex items-center gap-2">
-              <span className="flex-1 min-w-0"><span className="block text-ink">{tail(c)}</span><span className="block text-2xs text-ink-faint truncate">{c}</span></span>
+            <button key={c} onClick={() => void choose(c)} className="w-full text-left px-3 py-1.5 text-control hover:bg-wash flex items-center gap-2">
+              <span className="flex-1 min-w-0"><span className="block text-ink">{tail(c)}</span><span className="block text-control text-ink-faint truncate">{c}</span></span>
             </button>
           ))}
           <div className="border-t border-line/60 my-1" />
           {nativePicker ? (
-            <button onClick={() => void pick()} className="w-full text-left px-3 py-2 text-xs text-ink hover:bg-wash flex items-center gap-2" data-agent-cwd-pick>
+            <button onClick={() => void pick()} className="w-full text-left px-3 py-2 text-control text-ink hover:bg-wash flex items-center gap-2" data-agent-cwd-pick>
               <FolderOpen size={14} strokeWidth={1.75} className="text-ink-faint shrink-0" /> {t('agent.cwdPick')}
             </button>
           ) : (
@@ -133,12 +133,12 @@ export default function AgentCwdChip() {
                   aria-label={t('agent.cwdType')}
                   aria-invalid={invalidPath || undefined}
                   aria-describedby={invalidPath ? pathErrorId : undefined}
-                  className="flex-1 min-w-0 text-xs font-mono bg-wash border border-line rounded-control px-2 py-1 focus:outline-none focus:border-accent/60"
+                  className="flex-1 min-w-0 text-control font-mono bg-wash border border-line rounded-control px-2 py-1 focus:outline-none focus:border-accent/60"
                   data-agent-cwd-input
                 />
-                <button onClick={() => void submitTyped()} className="text-xs text-accent hover:underline shrink-0">{t('agent.cwdUse')}</button>
+                <button onClick={() => void submitTyped()} className="text-control text-accent hover:underline shrink-0">{t('agent.cwdUse')}</button>
               </div>
-              {invalidPath && <p id={pathErrorId} role="alert" className="mt-1.5 text-2xs text-red-600 break-words">{t('agent.cwdInvalid')}</p>}
+              {invalidPath && <p id={pathErrorId} role="alert" className="mt-1.5 text-control text-red-600 break-words">{t('agent.cwdInvalid')}</p>}
             </div>
           )}
         </div>

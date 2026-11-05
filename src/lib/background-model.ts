@@ -83,17 +83,22 @@ export class BackgroundCallError extends Error {
 /** One background call: the first model in the order that answers, and which one it was. */
 export async function backgroundCall(
   messages: ContextMessage[],
-  opts: { prefer?: (string | null | undefined)[]; fast?: boolean; images?: ImageAttachment[]; /** per model tried */ timeoutMs?: number } = {},
+  opts: { prefer?: (string | null | undefined)[]; fast?: boolean; images?: ImageAttachment[]; /** per model tried */ timeoutMs?: number; signal?: AbortSignal } = {},
 ): Promise<{ text: string; model: string }> {
+  opts.signal?.throwIfAborted();
   const models = (await backgroundModels(opts.prefer)).slice(0, MAX_MODELS_PER_CALL);
+  opts.signal?.throwIfAborted();
   const tried: { model: string; error: string }[] = [];
   for (const model of models) {
     try {
-      const r = await llmCallAnswered(messages, opts.images, model, { fast: opts.fast, timeoutMs: opts.timeoutMs ?? BACKGROUND_TIMEOUT_MS });
+      const r = await llmCallAnswered(messages, opts.images, model, { fast: opts.fast, timeoutMs: opts.timeoutMs ?? BACKGROUND_TIMEOUT_MS, signal: opts.signal });
+      opts.signal?.throwIfAborted();
       if (!r.text?.trim()) throw new Error('empty answer');
       failedAt.delete(model);
       return { text: r.text, model: r.model ?? model };
     } catch (e) {
+      // A dismissed editor must not retry another model or penalize the one it cancelled.
+      opts.signal?.throwIfAborted();
       failedAt.set(model, Date.now());
       tried.push({ model, error: (e instanceof Error ? e.message : String(e)).slice(0, 200) });
     }

@@ -107,8 +107,12 @@ try {
   await screenshot('live-focus-panel');
   check('focus panel shows the same activity alongside the answer');
 
-  await page.setViewportSize({ width: 390, height: 844 });
-  await page.evaluate(async () => (await import('/src/lib/appearance.ts')).useAppearance.getState().setLighting('dark'));
+  // The work panel intentionally closes when the entire viewport is too
+  // narrow to coexist with the canvas. Exercise its supported minimum width.
+  await page.evaluate(async () => {
+    (await import('/src/lib/ui-store.ts')).useUiStore.getState().setPanelWidth(380);
+    (await import('/src/lib/appearance.ts')).useAppearance.getState().setLighting('dark');
+  });
   await row(panel, 'command-1').waitFor({ state: 'visible' });
   await screenshot('live-focus-panel-narrow-dark');
   const overflow = await panel.evaluate(el => {
@@ -121,6 +125,7 @@ try {
   await page.setViewportSize({ width: 1450, height: 1050 });
   await page.evaluate(async () => {
     (await import('/src/lib/appearance.ts')).useAppearance.getState().setLighting('light');
+    (await import('/src/lib/ui-store.ts')).useUiStore.getState().setPanelWidth(620);
     (await import('/src/lib/ui-store.ts')).useUiStore.getState().setPanelOpen(false);
   });
 
@@ -170,7 +175,7 @@ try {
   const steps = await row(node(), 'plan-1').locator('.activity-plan li').allTextContents();
   assert.deepEqual(steps, ['检查构建日志已完成', '修复类型定义进行中', '运行验证待执行']);
   check('plan steps render their completed, running, and pending states');
-  await row(node(), 'file-1').locator('.activity-files summary').click();
+  await row(node(), 'file-1').locator('.activity-files summary').press('Enter');
   assert.match(await row(node(), 'file-1').locator('.activity-diff-remove').textContent(), /const count = "1"/);
   assert.match(await row(node(), 'file-1').locator('.activity-diff-add').textContent(), /const count = 1/);
   check('file changes reveal a readable diff with separate added and removed lines');
@@ -178,7 +183,7 @@ try {
     window.__store.getState().setSelectedNodeId('agent-ui');
     (await import('/src/lib/ui-store.ts')).useUiStore.getState().setPanelOpen(true, 'agent-ui');
   });
-  await row(panel, 'file-1').locator('.activity-files summary').click();
+  await row(panel, 'file-1').locator('.activity-files summary').press('Enter');
   assert.match(await row(panel, 'file-1').locator('.activity-diff-add').textContent(), /const count = 1/);
   await screenshot('structured-plan-file');
   await page.evaluate(async () => (await import('/src/lib/ui-store.ts')).useUiStore.getState().setPanelOpen(false));
@@ -251,6 +256,31 @@ try {
   const versionCount = await page.evaluate(() => window.__store.getState().nodes.find(n => n.id === 'agent-ui').data.responses.length);
   assert.equal(versionCount, 2);
   check('refresh before rerun answer text archives a separate interrupted version without mixing or duplicating old history');
+  const imported = [
+    { id: 'import-comment', kind: 'commentary', status: 'completed', text: '**正在检查** [parser.ts](src/parser.ts:42)\n\n- 保留原有接口\n- 修复边界条件', startedAt: now, endedAt: now + 100 },
+    { id: 'import-user', kind: 'user', sourceType: 'userMessage', status: 'completed', text: '请保持 **兼容性**。', startedAt: now + 200 },
+    { id: 'recovered-command', kind: 'command', status: 'failed', command: 'npm test', output: 'First attempt failed', exitCode: 1, startedAt: now + 300 },
+    { id: 'import-final', kind: 'message', phase: 'final_answer', status: 'completed', text: '修复完成。', startedAt: now + 600, endedAt: now + 900 },
+  ];
+  await patch({ isLoading: false, generationFailed: false, agentActivity: undefined, agentActivities: [imported], response: '修复完成。', responses: ['修复完成。'], responseIndex: 0, importSource: { runner: 'codex', sessionId: 'fixture', itemIds: ['turn'], cwd: 'D:/work' } });
+  await openHistory(node());
+  assert.equal(await row(node(), 'import-comment').locator('strong').textContent(), '正在检查');
+  assert.equal(await row(node(), 'import-comment').locator('li').count(), 2);
+  assert.match(await row(node(), 'import-comment').locator('a').getAttribute('data-local-path'), /parser\.ts/);
+  assert.equal(await row(node(), 'import-user').locator('.activity-user-message strong').textContent(), '兼容性');
+  assert.doesNotMatch(await node().locator('[data-activity-history]').textContent(), /执行失败/);
+  await screenshot('imported-commentary-and-steering');
+  check('imported commentary renders original Markdown and file links; steering appears in order and recovered command failure does not mislabel the turn');
+  await node().locator('[data-activity-history]').click();
+  await node().locator('[data-activity-user-summary]').waitFor();
+  assert.equal(await row(node(), 'import-user').count(), 1);
+  assert.equal(await row(node(), 'import-comment').count(), 0);
+  assert.equal(await row(node(), 'import-user').locator('.activity-user-message strong').textContent(), '兼容性');
+  await screenshot('completed-steering-collapsed');
+  await openHistory(node());
+  assert.equal(await node().locator('[data-activity-user-summary]').count(), 0);
+  assert.equal(await row(node(), 'import-user').count(), 1);
+  check('folding completed work keeps supplementary user input visible without duplicating it on expansion');
   assert.deepEqual(errors, [], 'No browser runtime errors');
   await writeFile(`${outputDir}/results.json`, JSON.stringify({ appUrl, checks, errors }, null, 2));
   console.log(`ACTIVITY UI PASS (${checks.length} checks)`);

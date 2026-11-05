@@ -9,7 +9,7 @@ import { COLLAPSED_LAYOUT_HEIGHT, LAYOUT_COL_WIDTH, LAYOUT_H_GAP, LAYOUT_V_GAP }
 // — an uncapped formula here would keep spreading nodes for content the
 // card no longer grows for.
 export function estimateNodeHeight(node: ThoughtNode): number {
-  if (node.data.isCollapsed) return COLLAPSED_LAYOUT_HEIGHT;
+  if (node.data.isCollapsed && node.data.detailLevel !== 'full') return COLLAPSED_LAYOUT_HEIGHT;
   // Calibrated against measured DOM heights (2026-08): CJK markdown renders
   // ~1px per char at card width before the 400px CSS cap, chrome (header +
   // takeaway line + follow-up input + paddings) runs ~215px, and each
@@ -34,7 +34,7 @@ export function estimateNodeHeight(node: ThoughtNode): number {
 export function nodeHeight(node: ThoughtNode): number {
   // A manually resized card scrolls inside its chosen height. Thumbnail
   // measurements and the content estimate must not replace that footprint.
-  if (!node.data.isCollapsed && node.height != null) return node.height;
+  if ((!node.data.isCollapsed || node.data.detailLevel === 'full') && node.height != null) return node.height;
   return Math.max(node.measured?.height ?? 0, estimateNodeHeight(node));
 }
 
@@ -604,7 +604,7 @@ export function placeNewNodes(allNodes: ThoughtNode[], allEdges: ThoughtEdge[], 
   const isContent = (n: ThoughtNode) => ['note', 'file', 'link', 'frame'].includes(n.data.stepKind ?? '');
   const pos = (n: ThoughtNode) => placed.get(n.id) ?? n.position;
   // A parent this very action folded still carries its expanded measurement.
-  const footprint = (n: ThoughtNode) => (n.data.isCollapsed ? estimateNodeHeight(n) : nodeHeight(n));
+  const footprint = (n: ThoughtNode) => (n.data.isCollapsed && n.data.detailLevel !== 'full' ? estimateNodeHeight(n) : nodeHeight(n));
   const STEP = allNodes.reduce((width, node) => node.data.stepKind === 'frame'
     ? width : Math.max(width, nodeWidth(node)), LAYOUT_COL_WIDTH) + LAYOUT_H_GAP;
   const ROW_STEP = allNodes.reduce((height, node) => node.data.stepKind === 'frame'

@@ -7,14 +7,16 @@ import rehypeKatex from 'rehype-katex';
 import rehypeRaw from 'rehype-raw';
 import rehypeSanitize, { defaultSchema } from 'rehype-sanitize';
 import type { Schema } from 'hast-util-sanitize';
-import type { Element, ElementContent } from 'hast';
+import type { Element, ElementContent, Root, RootContent } from 'hast';
 import type { PluggableList } from 'unified';
 import { Check, Code2, Copy, Workflow } from 'lucide-react';
 import { fuzzyHighlightRegex, proseClipper } from '../lib/highlight-match';
 import { useT, fmt } from '../i18n';
-import { localPathOf, openLocalPath, basenameOf } from '../lib/local-path';
+import { localPathOf, basenameOf } from '../lib/local-path';
 import { foldToolCalls } from '../lib/tool-markup';
 import { useAppearance } from '../lib/appearance';
+import { localTargetOf, safeMarkdownUrl } from '../lib/local-target';
+import { ConversationLink } from './ConversationLink';
 
 const REMARK_PLUGINS = [remarkGfm, remarkMath];
 
@@ -50,7 +52,22 @@ const SANITIZE_SCHEMA: Schema = {
     mark: [['className', 'highlight-mark', 'explore-mark'], 'dataExploreTarget'],
   },
 };
-const REHYPE_PLUGINS: PluggableList = [rehypeRaw, [rehypeSanitize, SANITIZE_SCHEMA], rehypeHighlight, rehypeKatex];
+// Rewrite recognized local references before sanitization. This preserves drive
+// and file URLs without allowing arbitrary protocols through the sanitizer.
+function rehypeLocalFiles() {
+  return (tree: Root) => {
+    const walk = (node: Root | RootContent) => {
+      if (node.type === 'element' && (node.tagName === 'a' || node.tagName === 'img')) {
+        const key = node.tagName === 'a' ? 'href' : 'src';
+        const target = localTargetOf(typeof node.properties[key] === 'string' ? node.properties[key] as string : undefined);
+        if (target) node.properties[key] = `${/^[a-z]:/i.test(target.path) ? '/' : ''}${target.path}${target.line ? `:${target.line}${target.column ? `:${target.column}` : ''}` : ''}`;
+      }
+      if ('children' in node) node.children.forEach(walk);
+    };
+    walk(tree);
+  };
+}
+const REHYPE_PLUGINS: PluggableList = [rehypeRaw, rehypeLocalFiles, [rehypeSanitize, SANITIZE_SCHEMA], rehypeHighlight, rehypeKatex];
 
 // Code blocks get a hover copy button (no toast: too frequent an action —
 // the icon flashes a check instead).
@@ -143,7 +160,7 @@ function MermaidBlock({ code, source }: { code: string; source: ReactNode }) {
 function DiagramPlaceholder() {
   const t = useT();
   return (
-    <div className="h-12 my-2 flex items-center justify-center gap-1.5 rounded-content border border-dashed border-line text-xs text-ink-faint select-none" data-diagram-placeholder>
+    <div className="h-12 my-2 flex items-center justify-center gap-1.5 rounded-content border border-dashed border-line text-control text-ink-faint select-none" data-diagram-placeholder>
       <Workflow size={13} strokeWidth={1.75} /> {t('md.diagramPlaceholder')}
     </div>
   );
@@ -176,18 +193,7 @@ function Table(props: React.HTMLAttributes<HTMLTableElement>) {
 const BaseContext = createContext<string | undefined>(undefined);
 
 function Anchor(props: React.AnchorHTMLAttributes<HTMLAnchorElement>) {
-  const local = localPathOf(props.href, useContext(BaseContext));
-  if (local) {
-    return (
-      <a
-        {...props}
-        title={local}
-        data-local-path={local}
-        onClick={(e) => { e.preventDefault(); e.stopPropagation(); void openLocalPath(local); }}
-      />
-    );
-  }
-  return <a {...props} target="_blank" rel="noreferrer noopener" onClick={(e) => e.stopPropagation()} />;
+  return <ConversationLink {...props} base={useContext(BaseContext)} />;
 }
 
 // An image the agent produced shows inline, read from disk through the
@@ -204,17 +210,16 @@ function LocalImage({ path, alt }: { path: string; alt?: string }) {
     return () => { live = false; };
   }, [path]);
   if (src) {
-    return <img src={src} alt={alt ?? basenameOf(path)} title={path} className="cursor-zoom-in nopan" onClick={(e) => { e.stopPropagation(); void openLocalPath(path); }} />;
+    return <ConversationLink href={path}><img src={src} alt={alt ?? basenameOf(path)} title={path} className="cursor-zoom-in nopan" /></ConversationLink>;
   }
   return (
-    <span
-      className={`inline-flex items-center gap-1 text-xs border border-line rounded-tag px-1.5 py-0.5 font-mono nopan cursor-pointer ${failed ? 'text-ink-faint' : 'text-ink-muted'}`}
+    <ConversationLink href={path}
+      className={`inline-flex items-center gap-1 text-control border border-line rounded-tag px-1.5 py-0.5 font-mono nopan cursor-pointer ${failed ? 'text-ink-faint' : 'text-ink-muted'}`}
       title={path}
       data-local-image={path}
-      onClick={(e) => { e.stopPropagation(); void openLocalPath(path); }}
     >
       🖼 {basenameOf(path)}
-    </span>
+    </ConversationLink>
   );
 }
 
@@ -237,7 +242,7 @@ export const Markdown = memo(function Markdown({ children, base, diagrams = 'ren
   return (
     <BaseContext.Provider value={base}>
       <DiagramContext.Provider value={diagrams}>
-        <ReactMarkdown remarkPlugins={REMARK_PLUGINS} rehypePlugins={REHYPE_PLUGINS} components={COMPONENTS}>
+        <ReactMarkdown remarkPlugins={REMARK_PLUGINS} rehypePlugins={REHYPE_PLUGINS} components={COMPONENTS} urlTransform={safeMarkdownUrl}>
           {text}
         </ReactMarkdown>
       </DiagramContext.Provider>
@@ -286,7 +291,7 @@ export interface ExploreMarkSpec { text: string; nodeId: string; title: string }
 // Markdown with user highlights (and explore traces) wrapped in <mark>
 // before rendering. Callers rebuild the Set/array props every render, so
 // memo compares by CONTENT (see areMarkPropsEqual below).
-export const HighlightedMarkdown = memo(function HighlightedMarkdown({ content, highlights, exploreMarks, diagrams }: HMProps) {
+export const HighlightedMarkdown = memo(function HighlightedMarkdown({ content, highlights, exploreMarks, diagrams, base }: HMProps) {
   // Fuzzy-locate every span in the CLEAN markdown source first, then splice
   // tags in back-to-front. A second replace pass over already-tagged text
   // would let the fuzzy noise classes swallow pieces of the inserted tags
@@ -322,12 +327,12 @@ export const HighlightedMarkdown = memo(function HighlightedMarkdown({ content, 
   for (const s of kept) {
     processed = processed.slice(0, s.start) + wrapMatch(processed.slice(s.start, s.end), s.open) + processed.slice(s.end);
   }
-  return <Markdown diagrams={diagrams}>{processed}</Markdown>;
+  return <Markdown diagrams={diagrams} base={base}>{processed}</Markdown>;
 }, areMarkPropsEqual);
 
-type HMProps = { content: string; highlights: Set<string>; exploreMarks?: ExploreMarkSpec[]; diagrams?: DiagramMode };
+type HMProps = { content: string; highlights: Set<string>; exploreMarks?: ExploreMarkSpec[]; diagrams?: DiagramMode; base?: string };
 function areMarkPropsEqual(prev: HMProps, next: HMProps): boolean {
-  if (prev.content !== next.content || prev.diagrams !== next.diagrams) return false;
+  if (prev.content !== next.content || prev.diagrams !== next.diagrams || prev.base !== next.base) return false;
   if (prev.highlights.size !== next.highlights.size) return false;
   for (const h of prev.highlights) if (!next.highlights.has(h)) return false;
   const a = prev.exploreMarks ?? [];

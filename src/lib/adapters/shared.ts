@@ -1,4 +1,4 @@
-import type { ThoughtNode, ThoughtEdge, Attachment, ToolOp } from '../../types';
+import type { ThoughtNode, ThoughtEdge, Attachment, ToolOp, AgentActivityEntry } from '../../types';
 import { makeNode } from '../import-chat';
 import { autoLayout } from '../layout';
 import { generateId } from '../../utils';
@@ -65,6 +65,8 @@ export interface RunnerTurn {
   /** the thinking the turn spent, counted (estimated from its text, or the
       runner's own count where the text is encrypted); the text is not kept */
   reasoningTokens?: number;
+  /** Public progress and work transcript, distinct from answer context. */
+  activity?: AgentActivityEntry[];
 }
 
 // Tool names → what they DID. Deterministic, runner-neutral: the same
@@ -136,10 +138,11 @@ export function toolAttachments(turn: Pick<RunnerTurn, 'tools'>): Attachment[] {
  *  downstream context until the person turns them on (an agent's tool
  *  traffic runs many times its answer; the files it touched still travel
  *  as one pointer line), and the thinking it spent, as a count. */
-export function seatTurnWork(node: ThoughtNode, turn: Pick<RunnerTurn, 'tools' | 'reasoningTokens'>): void {
+export function seatTurnWork(node: ThoughtNode, turn: Pick<RunnerTurn, 'tools' | 'reasoningTokens' | 'activity'>): void {
   node.data.attachments = toolAttachments(turn);
   node.data.excludedAttachmentIds = node.data.attachments.map((a) => a.id);
   if (turn.reasoningTokens) node.data.reasoningTokens = [turn.reasoningTokens];
+  if (turn.activity?.length) node.data.agentActivities = [turn.activity];
 }
 
 /** The harvest half, runner-agnostic: a SHORT experiment session becomes a

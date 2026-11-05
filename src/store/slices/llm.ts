@@ -14,6 +14,7 @@ import { t, fmt } from '../../i18n';
 import type { StoreState, LlmSlice, AddQuestionOptions } from '../types';
 import { condenseGuard } from '../../lib/condense-guard';
 import { isNotebook, notebookContext } from '../../lib/notebook';
+import { deriveFollowupModel, requestAgentStop } from '../../lib/agents/agent-runtime';
 
 export const createLlmSlice: StateCreator<StoreState, [], [], LlmSlice> = (set, get) => ({
   addQuestion: async (question: string, opts: AddQuestionOptions = {}) => {
@@ -28,7 +29,7 @@ export const createLlmSlice: StateCreator<StoreState, [], [], LlmSlice> = (set, 
     // pinned model, so a deepseek thread stays deepseek even while the
     // global picker sits on something else. No pin on the parent = keep
     // following the global pick (undefined), as before.
-    const inheritedModel = parentId ? get().nodes.find((n) => n.id === parentId)?.data.model : undefined;
+    const inheritedModel = parentId ? deriveFollowupModel(get().nodes.find((n) => n.id === parentId)?.data, useUiStore.getState().selectedModel) : undefined;
     const newNode: ThoughtNode = {
       id,
       type: 'thought',
@@ -118,7 +119,9 @@ export const createLlmSlice: StateCreator<StoreState, [], [], LlmSlice> = (set, 
     }
     // Auto-collapse parent node when creating a child
     const updatedNodes = parentId
-      ? get().nodes.map((n) => n.id === parentId ? { ...n, data: { ...n.data, isCollapsed: true } } : n)
+      ? get().nodes.map((n) => n.id === parentId ? { ...n, data: { ...n.data,
+          isCollapsed: (n.data.detailLevel ?? useUiStore.getState().canvasDetail) !== 'full',
+        } } : n)
       : get().nodes;
     const newNodes = placeNewNodes([...updatedNodes, newNode], newEdges, [id]);
     set({ nodes: newNodes, edges: newEdges, selectedNodeId: id });
@@ -301,7 +304,7 @@ export const createLlmSlice: StateCreator<StoreState, [], [], LlmSlice> = (set, 
     get().logEvent('explore', id, { sources: parents.length });
     // Single-parent explore stays on that line's model; multi-parent is
     // ambiguous — follow the global pick.
-    const exploreModel = parents.length === 1 ? nodes.find((n) => n.id === parents[0])?.data.model : undefined;
+    const exploreModel = parents.length === 1 ? deriveFollowupModel(nodes.find((n) => n.id === parents[0])?.data, useUiStore.getState().selectedModel) : undefined;
     const newNode: ThoughtNode = {
       id, type: 'thought', position: { x: 0, y: 0 }, dragHandle: '.drag-handle',
       data: {
@@ -408,7 +411,7 @@ export const createLlmSlice: StateCreator<StoreState, [], [], LlmSlice> = (set, 
     const editNode = get().nodes.find((n) => n.id === nodeId);
     const editCtx = buildContext(nodeId, get().nodes.map(n =>
       n.id === nodeId ? { ...n, data: { ...n.data, question: '', response: '' } } : n
-    ), get().edges, undefined, editNode?.data.excludedAttachmentIds, editNode?.data.includedAttachmentIds, shownStaleIds(get()));
+    ), get().edges, editNode?.data.branchContext, editNode?.data.excludedAttachmentIds, editNode?.data.includedAttachmentIds, shownStaleIds(get()));
     const contextMessages = editCtx.messages;
     const appliedRole = contextMessages.find((m) => m.role === 'system')?.content || undefined;
     contextMessages.push({ role: 'user', content: question });
@@ -699,6 +702,7 @@ ${intent.trim()}` : ''}` },
   },
 
   stopGeneration: (nodeId: string) => {
+    if (requestAgentStop(nodeId)) return;
     const controller = activeAbortControllers.get(nodeId);
     if (controller) {
       controller.abort();

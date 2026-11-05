@@ -68,7 +68,7 @@ export default function DiagnosticsPanel({ onLocate, openPing = 0, showTrigger =
   const row = (f: Finding, i: number) => (
     <div key={`${f.kind}-${i}`} className="px-3 py-2 border-b border-line/50 last:border-0 flex items-start gap-2">
       <span className={`w-1.5 h-1.5 shape-circle mt-1.5 shrink-0 ${f.tier === 1 ? 'bg-red-400' : 'bg-amber-400'}`} />
-      <span className="text-xs text-ink-muted leading-relaxed flex-1 min-w-0">
+      <span className="text-control text-ink-muted flex-1 min-w-0">
         {fmt(t(KIND_KEY[f.kind] as Parameters<typeof t>[0]), f.params)}
       </span>
       <div className="flex items-center gap-1 shrink-0">
@@ -109,24 +109,24 @@ export default function DiagnosticsPanel({ onLocate, openPing = 0, showTrigger =
       )}
       {open && (
         <div ref={panelRef} tabIndex={-1} className="canvas-tool-panel canvas-tool-menu py-1" style={panelPosition} data-diagnostics-panel>
-          <div className="px-3 py-1.5 text-2xs font-semibold text-ink-muted border-b border-line">
+          <div className="px-3 py-1.5 text-title font-semibold text-ink-muted border-b border-line">
             {t('diag.title')}
-            <span className="text-ink-faint font-normal ml-2">
+            <span className="text-meta text-ink-faint font-normal ml-2">
               {findings.length === 0 ? '' : fmt(t('diag.summary'), { a: tier1.length, b: tier2.length })}
             </span>
           </div>
           {findings.length === 0 && (
-            <p className="px-3 py-3 text-xs text-ink-faint italic">{t('diag.clean')}</p>
+            <p className="px-3 py-3 text-control text-ink-faint italic">{t('diag.clean')}</p>
           )}
           {tier1.length > 0 && (
             <>
-              <p className="px-3 pt-2 pb-1 text-2xs font-semibold text-red-500">{t('diag.tier1')}</p>
+              <p className="px-3 pt-2 pb-1 text-control font-semibold text-red-500">{t('diag.tier1')}</p>
               {tier1.map(row)}
             </>
           )}
           {tier2.length > 0 && (
             <>
-              <p className="px-3 pt-2 pb-1 text-2xs font-semibold text-amber-600">{t('diag.tier2')}</p>
+              <p className="px-3 pt-2 pb-1 text-control font-semibold text-amber-600">{t('diag.tier2')}</p>
               {tier2.map(row)}
             </>
           )}

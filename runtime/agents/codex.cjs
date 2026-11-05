@@ -175,7 +175,8 @@ function createCodexEventProjector(run) {
         return put(`event:${++serial}`, { kind: 'unknown', sourceType: method, title: method, status: 'completed', details: params, ...(typeof emittedAtMs === 'number' ? { startedAt: emittedAtMs } : {}) });
     }
   }
-  return { notification, finish };
+  const userInput = (text) => put(`steer:${randomUUID()}`, { kind: 'user', sourceType: 'userMessage', phase: 'user', text, status: 'completed' });
+  return { notification, finish, userInput };
 }
 
 function createCodexRuntime({ log } = {}) {
@@ -516,6 +517,16 @@ function createCodexRuntime({ log } = {}) {
         }
       })();
       return runId;
+    },
+
+    async steer(runId, prompt) {
+      const text = typeof prompt === 'string' ? prompt : '';
+      if (!text.trim()) throw new Error('A steering message cannot be empty');
+      const run = runs.get(runId);
+      if (!run || run.ended || run.abortRequested || !run.threadId || !run.turnId) throw new Error('The agent turn is no longer accepting messages');
+      await send('turn/steer', { threadId: run.threadId, expectedTurnId: run.turnId, input: [{ type: 'text', text, text_elements: [] }] });
+      run.projector.userInput(text);
+      return true;
     },
 
     abort(runId) {

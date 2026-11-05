@@ -7,7 +7,7 @@
   color: var(--color-ink);
   min-width: 0;
 }
-.node-overview-identity { display: flex; align-items: center; flex-wrap: wrap; gap: calc(var(--spacing-control-gap) / var(--overview-scale)); margin-bottom: calc(var(--spacing-related) / var(--overview-scale)); color: var(--color-ink-muted); font-size: calc(10px / var(--overview-scale)); line-height: 1.3; }
+.node-overview-identity { display: flex; align-items: center; flex-wrap: wrap; gap: calc(var(--spacing-control-gap) / var(--overview-scale)); margin-bottom: calc(var(--spacing-related) / var(--overview-scale)); color: var(--color-ink-muted); font-size: calc(var(--text-meta) / var(--overview-scale)); line-height: var(--text-meta--line-height); }
 .node-overview--start .node-overview-identity { color: var(--color-accent-strong); }
 .node-overview--note .node-overview-identity { color: var(--color-material-note-ink); }
 .node-overview--file .node-overview-identity { color: var(--color-material-file-ink); }
@@ -18,22 +18,22 @@
 .node-overview-action svg { width: calc(14px / var(--overview-scale)); height: calc(14px / var(--overview-scale)); }
 .node-overview-name {
   min-width: 0;
-  font-size: calc(16px / var(--overview-scale));
-  font-weight: 500;
-  line-height: 1.4;
+  font-size: calc(var(--text-title) / var(--overview-scale));
+  font-weight: 600;
+  line-height: var(--text-title--line-height);
   overflow-wrap: anywhere;
   display: -webkit-box;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
   overflow: hidden;
 }
-.node-overview-icon { flex-shrink: 0; font-size: calc(14px / var(--overview-scale)); line-height: 1.6; color: var(--color-ink-muted); }
+.node-overview-icon { flex-shrink: 0; font-size: calc(var(--text-control) / var(--overview-scale)); line-height: var(--text-control--line-height); color: var(--color-ink-muted); }
 .node-overview-icon svg { width: 1em; height: 1em; }
 .node-overview-preview {
   margin: calc(var(--spacing-related) / var(--overview-scale)) 0 0;
-  font-size: calc(14px / var(--overview-scale));
+  font-size: calc(var(--text-control) / var(--overview-scale));
   font-weight: 400;
-  line-height: 1.55;
+  line-height: var(--text-control--line-height);
   color: var(--color-ink-muted);
   overflow-wrap: anywhere;
   display: -webkit-box;
@@ -41,7 +41,7 @@
   -webkit-line-clamp: 2;
   overflow: hidden;
 }
-.node-overview-meta { margin-top: calc(var(--spacing-related) / var(--overview-scale)); font-size: calc(12px / var(--overview-scale)); line-height: 1.4; color: var(--color-ink-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.node-overview-meta { margin-top: calc(var(--spacing-related) / var(--overview-scale)); font-size: calc(var(--text-meta) / var(--overview-scale)); line-height: var(--text-meta--line-height); color: var(--color-ink-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .node-overview--compact {
   --overview-scale: max(0.22, var(--tdag-zoom, 1));
   width: 100%;
@@ -51,13 +51,13 @@
   background: var(--color-card);
 }
 .node-overview--compact .node-overview-icon { display: none; }
-.node-overview--compact .node-overview-identity { margin-bottom: calc(4px / var(--overview-scale)); font-size: calc(9px / var(--overview-scale)); }
+.node-overview--compact .node-overview-identity { margin-bottom: calc(4px / var(--overview-scale)); font-size: calc(var(--text-meta) / var(--overview-scale)); }
 .node-overview--compact .node-file-type { padding: 0; background: transparent; }
 .node-overview--start.node-overview--compact { border-color: color-mix(in srgb, var(--color-accent) 40%, var(--color-line)); border-left: calc(2px / var(--overview-scale)) solid var(--color-accent); }
 .node-overview--note.node-overview--compact { background: var(--color-material-note); border-color: var(--color-material-note-line); }
 .node-overview--file.node-overview--compact { border-color: var(--color-material-file-line); }
-.node-overview--compact .node-overview-name { font-size: calc(12px / var(--overview-scale)); }
-.node-overview--compact .node-overview-icon { font-size: calc(12px / var(--overview-scale)); }
+.node-overview--compact .node-overview-name { font-size: calc(var(--text-meta) / var(--overview-scale)); }
+.node-overview--compact .node-overview-icon { font-size: calc(var(--text-meta) / var(--overview-scale)); }
 .glyph-selected .node-overview--compact { outline: 2px solid var(--color-accent); }
 .beacon-node .node-overview--compact { outline: 2px solid var(--color-accent); outline-offset: 3px; }
 [data-node-stale] .node-overview--compact { border-color: var(--color-warm); }

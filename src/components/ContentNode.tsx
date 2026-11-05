@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { NodeResizeControl, useReactFlow, useUpdateNodeInternals, type NodeProps } from '@xyflow/react';
-import { BookOpen, ExternalLink, FileText, Link2, Link2Off, Loader2, MoveDiagonal2, Paperclip, RefreshCw, StickyNote, Trash2, X } from 'lucide-react';
+import { useReactFlow, useUpdateNodeInternals, type NodeProps } from '@xyflow/react';
+import { BookOpen, ExternalLink, FileText, Link2, Link2Off, Loader2, Paperclip, RefreshCw, StickyNote, Trash2, X } from 'lucide-react';
 import type { Attachment, ThoughtNode as ThoughtNodeType } from '../types';
 import { useStore } from '../store';
 import { useNodeDetail } from '../lib/node-detail';
@@ -11,6 +11,7 @@ import { FILE_INPUT_ACCEPT } from '../lib/attachments';
 import { Markdown } from './Markdown';
 import NodeOverview from './NodeOverview';
 import NodeConnectionHandles from './NodeConnectionHandles';
+import NodeResizeControls from './NodeResizeControls';
 import FileIdentity from './FileIdentity';
 import { fileIdentity, fileSizeLabel } from '../lib/file-identity';
 import { getNodeDisplayName, getNodeNameSource } from '../lib/node-display-name';
@@ -29,8 +30,8 @@ import { useInlineEditDismiss } from '../lib/use-inline-edit-dismiss';
 
 /** Where an unresized note stops growing: the answer box's cap. */
 const NOTE_BODY_MAX = 400;
-/** Resizing is a step of its own: settle before, record after. */
-const recordStep = () => useStore.getState().pushHistory();
+const isGeometryControl = (target: EventTarget | null) => target instanceof Element
+  && !!target.closest('.react-flow__resize-control, .react-flow__controls');
 
 function ExtractionEditor({ nodeId, attachment, onClose }: { nodeId: string; attachment: Attachment; onClose: () => void }) {
   const t = useT();
@@ -41,8 +42,8 @@ function ExtractionEditor({ nodeId, attachment, onClose }: { nodeId: string; att
   const isExtractToggle = (target: EventTarget | null) => target instanceof Element && target.closest('[data-extract-toggle]')?.getAttribute('data-extract-toggle') === attachment.id;
   const edit = useInlineEditDismiss({
     active: true, ref: editRef, onOutside: onClose, onCancel: discard,
-    ignoreOutside: event => isExtractToggle(event.target),
-    ignoreFocusOutside: isExtractToggle,
+    ignoreOutside: event => isExtractToggle(event.target) || isGeometryControl(event.target),
+    ignoreFocusOutside: target => isExtractToggle(target) || isGeometryControl(target),
   });
   const save = () => {
     if (draft !== (attachment.extractedText ?? '')) {
@@ -59,17 +60,17 @@ function ExtractionEditor({ nodeId, attachment, onClose }: { nodeId: string; att
         onChange={event => { setDraft(event.target.value); useUiStore.getState().setDraft(draftKey, event.target.value, true); }}
         rows={7}
         autoFocus
-        className="w-full text-xs text-ink bg-surface border border-line rounded-control px-3 py-2 focus:outline-none focus:ring-1 focus:ring-accent/40 resize-y leading-relaxed nopan nowheel"
+        className="w-full text-body text-ink bg-surface border border-line rounded-control px-3 py-2 focus:outline-none focus:ring-1 focus:ring-accent/40 resize-y nopan nowheel"
       />
       <div className="flex items-center gap-2 flex-wrap">
-        <button onClick={() => { discard(); void extractImage(nodeId, attachment.id); }} className="text-xs text-ink-muted hover:text-ink px-2 py-1.5 rounded-control flex items-center gap-1">
+        <button onClick={() => { discard(); void extractImage(nodeId, attachment.id); }} className="text-control text-ink-muted hover:text-ink px-2 py-1.5 rounded-control flex items-center gap-1">
           <RefreshCw size={12} strokeWidth={1.75} /> {t('content.reExtractAgain')}
         </button>
         <div className="flex-1" />
-        <button onClick={discard} className="text-xs text-ink-muted hover:bg-wash px-3 py-1.5 rounded-control">{t('common.cancel')}</button>
-        <button onClick={save} className="text-xs bg-accent text-white hover:bg-accent/90 px-3 py-1.5 rounded-control">{t('common.save')}</button>
+        <button onClick={discard} className="text-control text-ink-muted hover:bg-wash px-3 py-1.5 rounded-control">{t('common.cancel')}</button>
+        <button onClick={save} className="text-control bg-accent text-white hover:bg-accent/90 px-3 py-1.5 rounded-control">{t('common.save')}</button>
       </div>
-      <p className="text-2xs text-ink-faint">{t('content.draftExitHint')}</p>
+      <p className="text-control text-ink-faint">{t('content.draftExitHint')}</p>
     </div>
   );
 }
@@ -130,7 +131,8 @@ export default function ContentNode({ id, data, selected }: NodeProps<ThoughtNod
     setDraft(data.question);
     setEditing(false);
   };
-  const edit = useInlineEditDismiss({ active: editing, ref: editRef, onOutside: () => setEditing(false), onCancel: cancel });
+  const edit = useInlineEditDismiss({ active: editing, ref: editRef, onOutside: () => setEditing(false), onCancel: cancel,
+    ignoreOutside: event => isGeometryControl(event.target), ignoreFocusOutside: isGeometryControl });
   const startEditing = () => {
     if (isViewerMode) return;
     setDraft(useUiStore.getState().drafts[draftKey] ?? data.question);
@@ -258,22 +260,22 @@ export default function ContentNode({ id, data, selected }: NodeProps<ThoughtNod
       <div className="material-header flex items-center justify-between px-surface-inset py-section-gap border-b cursor-grab active:cursor-grabbing drag-handle shrink-0">
         <div className="flex items-center gap-2 min-w-0">
           {headerIcon}
-          <span className="text-xs font-medium material-label">{materialLabel}</span>
+          <span className="text-control font-medium material-label">{materialLabel}</span>
           {kind === 'link'
-            ? <span className="text-2xs text-ink-muted truncate">{linkDomain}</span>
-            : <span className="text-2xs text-ink-faint font-mono">{kind === 'note' ? `${data.tokenCount} tok` : `${attachments.length}`}</span>}
+            ? <span className="text-control text-ink-muted truncate">{linkDomain}</span>
+            : <span className="text-meta text-ink-faint font-mono">{kind === 'note' ? `${data.tokenCount} tokens` : `${attachments.length}`}</span>}
           {clipSourceName && (
             <button
               onClick={openClipSource}
               title={t('content.clipSourceTitle')}
               data-clip-source
-              className="text-2xs font-mono text-warm bg-warm/10 hover:bg-warm/20 px-1.5 py-0.5 rounded-tag truncate max-w-[180px] transition-colors shrink"
+              className="text-control font-mono text-warm bg-warm/10 hover:bg-warm/20 px-1.5 py-0.5 rounded-tag truncate max-w-[180px] transition-colors shrink"
             >
               {clipSourceName} &middot; p.{clipAnchor!.page}
             </button>
           )}
           {!isLinked && (
-            <span className="text-2xs text-ink-faint bg-wash px-1.5 py-0.5 rounded-tag flex items-center gap-1 shrink-0" title={t('content.unlinkedTitle')}>
+            <span className="text-control text-ink-faint bg-wash px-1.5 py-0.5 rounded-tag flex items-center gap-1 shrink-0" title={t('content.unlinkedTitle')}>
               <Link2Off size={11} strokeWidth={1.75} /> {t('content.unlinked')}
             </span>
           )}
@@ -307,16 +309,17 @@ export default function ContentNode({ id, data, selected }: NodeProps<ThoughtNod
         </div>
       </div>
 
-      {data.displayName && <div className="px-surface-inset pt-surface-inset text-base font-medium text-ink" title={nodeNameSource} data-node-name>{nodeName}</div>}
 
       {/* Body: grows with content by default, a note up to the answer box's
           height (a long note would otherwise cover the cards below it once
           the canvas zooms in); when the card is resized the body becomes the
           scroll region (wheel scrolls text, not zoom) */}
-      <div className="p-surface-inset nodrag flex-1 min-h-0 overflow-y-auto nowheel" style={kind === 'note' && !resized ? { maxHeight: NOTE_BODY_MAX } : undefined} data-content-body>
+      <div className="p-surface-inset nodrag flex-1 min-h-0 flex flex-col" style={kind === 'note' && !resized ? { maxHeight: NOTE_BODY_MAX } : undefined}>
+      <div className="flex-1 min-h-0 overflow-y-auto nowheel" data-content-body>
+        {data.displayName && <div className="mb-surface-inset text-title font-semibold text-ink" title={nodeNameSource} data-node-name>{nodeName}</div>}
         {/* a quote from the why layer says where it came from, above its text */}
         {kind === 'note' && data.recallSource && (
-          <div className="text-2xs text-ink-faint font-mono truncate mb-1.5" title={data.recallSource.file} data-recall-source>
+          <div className="text-meta text-ink-faint font-mono truncate mb-1.5" title={data.recallSource.file} data-recall-source>
             {fmt(t('node.recallSource'), { s: recallSourceLine(data.recallSource) })}
           </div>
         )}
@@ -329,54 +332,54 @@ export default function ContentNode({ id, data, selected }: NodeProps<ThoughtNod
                 placeholder={t('content.notePlaceholder')}
                 rows={5}
                 autoFocus
-                className="w-full min-h-[7rem] bg-surface border border-line rounded-control px-3 py-2 text-sm text-ink resize-y focus:outline-none focus:ring-1 focus:ring-accent/40 placeholder-ink-faint leading-relaxed nopan nowheel"
+                className="w-full min-h-[7rem] bg-surface border border-line rounded-control px-3 py-2 text-body text-ink resize-y focus:outline-none focus:ring-1 focus:ring-accent/40 placeholder-ink-faint nopan nowheel"
               />
               <div className="flex justify-end gap-2">
-                <button onClick={cancel} className="text-xs text-ink-muted hover:bg-wash px-3 py-1.5 rounded-control">{t('common.cancel')}</button>
-                <button onClick={commit} className="text-xs bg-accent text-white hover:bg-accent/90 px-3 py-1.5 rounded-control">{t('common.save')}</button>
+                <button onClick={cancel} className="text-control text-ink-muted hover:bg-wash px-3 py-1.5 rounded-control">{t('common.cancel')}</button>
+                <button onClick={commit} className="text-control bg-accent text-white hover:bg-accent/90 px-3 py-1.5 rounded-control">{t('common.save')}</button>
               </div>
-              <p className="text-2xs text-ink-faint">{t(canContinueWorkflow ? 'content.materialSaveHint' : 'content.draftExitHint')}</p>
+              <p className="text-control text-ink-faint">{t(canContinueWorkflow ? 'content.materialSaveHint' : 'content.draftExitHint')}</p>
             </div>
           ) : (
             <div
               onDoubleClick={startEditing}
-              className="markdown-body text-sm text-ink leading-relaxed cursor-text nopan"
+              className="markdown-body text-body text-ink cursor-text nopan"
               title={t('content.noteEditTitle')}
             >
               {data.question
                 ? <Markdown>{data.question}</Markdown>
-                : <span className="text-ink-faint italic text-xs">{t('content.notePlaceholder')}</span>}
-              {retainedDraft !== undefined && <button onClick={startEditing} className="mt-2 block text-xs text-accent hover:underline" data-resume-note-draft>{t('content.resumeDraft')}</button>}
+                : <span className="text-ink-faint italic text-body">{t('content.notePlaceholder')}</span>}
+              {retainedDraft !== undefined && <button onClick={startEditing} className="mt-2 block text-control text-accent hover:underline" data-resume-note-draft>{t('content.resumeDraft')}</button>}
             </div>
           )
         )}
 
         {kind === 'link' && (
           linkLoading ? (
-            <div className="flex items-center gap-2 text-xs text-ink-muted py-2">
+            <div className="flex items-center gap-2 text-control text-ink-muted py-2">
               <Loader2 size={14} strokeWidth={1.75} className="animate-spin text-accent" /> {t('content.linkFetching')}
             </div>
           ) : (
             <div className="space-y-1.5">
               {data.linkTitle && (
-                <div className={`text-sm font-semibold leading-snug ${data.linkTitle.startsWith('⚠') ? 'text-red-600' : 'text-ink'}`}>{data.linkTitle}</div>
+                <div className={`text-title font-semibold ${data.linkTitle.startsWith('⚠') ? 'text-red-600' : 'text-ink'}`}>{data.linkTitle}</div>
               )}
               {data.linkTitle?.startsWith('⚠') && data.linkUrl && (
                 <button
                   onClick={(e) => { e.stopPropagation(); void fetchLinkIntoNode(id, data.linkUrl!); }}
-                  className="text-xs bg-wash hover:bg-line text-ink-muted px-3 py-1.5 rounded-control transition-colors flex items-center gap-1.5"
+                  className="text-control bg-wash hover:bg-line text-ink-muted px-3 py-1.5 rounded-control transition-colors flex items-center gap-1.5"
                 >
                   <RefreshCw size={13} strokeWidth={1.75} /> {t('common.retry')}
                 </button>
               )}
               {data.question && (
-                <div className="text-xs text-ink-muted leading-relaxed max-h-[200px] overflow-y-auto nopan nowheel whitespace-pre-wrap">
+                <div className="text-body text-ink-muted max-h-[200px] overflow-y-auto nopan nowheel whitespace-pre-wrap">
                   {data.question.slice(0, 1200)}{data.question.length > 1200 ? '…' : ''}
                 </div>
               )}
               {data.linkFetchedAt && (
-                <div className="text-2xs text-ink-faint font-mono">
-                  {fmt(t('content.linkStamp'), { date: data.linkFetchedAt.slice(0, 10) })} · {data.tokenCount} tok
+                <div className="text-meta text-ink-faint font-mono">
+                  {fmt(t('content.linkStamp'), { date: data.linkFetchedAt.slice(0, 10) })} · {data.tokenCount} tokens
                 </div>
               )}
             </div>
@@ -397,7 +400,7 @@ export default function ContentNode({ id, data, selected }: NodeProps<ThoughtNod
                     className="w-full rounded-content border border-line/60"
                   />
                   {att.isExtracting ? (
-                    <span className="absolute bottom-1.5 left-1.5 text-2xs bg-ink/60 text-white px-2 py-0.5 rounded-tag flex items-center gap-1">
+                    <span className="absolute bottom-1.5 left-1.5 text-control bg-ink/60 text-white px-2 py-0.5 rounded-tag flex items-center gap-1">
                       <Loader2 size={11} strokeWidth={1.75} className="animate-spin" /> {t('content.extracting')}
                     </span>
                   ) : att.extractedText !== undefined ? (
@@ -405,7 +408,7 @@ export default function ContentNode({ id, data, selected }: NodeProps<ThoughtNod
                       onClick={(e) => { e.stopPropagation(); setOpenExtract(openExtract === att.id ? null : att.id); }}
                       data-extract-toggle={att.id}
                       title={t('content.editExtractTitle')}
-                      className="absolute bottom-1.5 left-1.5 text-2xs bg-ink/60 hover:bg-ink/80 text-white px-2 py-0.5 rounded-tag transition-colors"
+                      className="absolute bottom-1.5 left-1.5 text-control bg-ink/60 hover:bg-ink/80 text-white px-2 py-0.5 rounded-tag transition-colors"
                     >
                       {useUiStore.getState().drafts[`extraction:${id}:${att.id}`] !== undefined
                         ? t('content.resumeDraft')
@@ -415,7 +418,7 @@ export default function ContentNode({ id, data, selected }: NodeProps<ThoughtNod
                     <button
                       onClick={(e) => { e.stopPropagation(); void extractImage(id, att.id); }}
                       title={t('content.reExtractTitle')}
-                      className="absolute bottom-1.5 left-1.5 text-2xs bg-ink/60 hover:bg-ink/80 text-white px-2 py-0.5 rounded-tag opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1"
+                      className="absolute bottom-1.5 left-1.5 text-control bg-ink/60 hover:bg-ink/80 text-white px-2 py-0.5 rounded-tag opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1"
                     >
                       <RefreshCw size={11} strokeWidth={1.75} /> {t('content.reExtract')}
                     </button>
@@ -441,7 +444,7 @@ export default function ContentNode({ id, data, selected }: NodeProps<ThoughtNod
                     alt={att.name}
                     className="w-full rounded-content border border-line/60"
                   />
-                  <span className="absolute bottom-1.5 left-1.5 max-w-[85%] text-2xs bg-ink/60 text-white px-2 py-0.5 rounded-tag flex items-center gap-1">
+                  <span className="absolute bottom-1.5 left-1.5 max-w-[85%] text-control bg-ink/60 text-white px-2 py-0.5 rounded-tag flex items-center gap-1">
                     <FileText size={11} strokeWidth={1.75} className="shrink-0" />
                     <span className="truncate">{att.name}</span>
                     {att.numPages != null && <span className="shrink-0 opacity-80">· {att.numPages}p</span>}
@@ -475,10 +478,10 @@ export default function ContentNode({ id, data, selected }: NodeProps<ThoughtNod
             ))}
             <button
               onClick={() => fileRef.current?.click()}
-              className={`material-upload w-full border border-dashed border-line hover:border-accent/40 hover:bg-accent/5 rounded-control text-xs text-ink-faint hover:text-ink-muted transition-colors ${attachments.length === 0 ? 'py-6' : 'py-2'}`}
+              className={`material-upload w-full border border-dashed border-line hover:border-accent/40 hover:bg-accent/5 rounded-control text-control text-ink-faint hover:text-ink-muted transition-colors ${attachments.length === 0 ? 'py-6' : 'py-2'}`}
             >
               {t('attach.upload')}
-              {attachments.length === 0 && <span className="block text-2xs mt-1">{t('attach.types')}</span>}
+              {attachments.length === 0 && <span className="block text-control mt-1">{t('attach.types')}</span>}
             </button>
             <input
               ref={fileRef}
@@ -493,32 +496,19 @@ export default function ContentNode({ id, data, selected }: NodeProps<ThoughtNod
         {(
           <div className="px-1 pt-2" data-wire-status>
             {wireState === 'none:0' ? (
-              <p className="text-2xs text-amber-700 leading-snug">{t('content.wireNone')}</p>
+              <p className="text-control text-amber-700 leading-snug">{t('content.wireNone')}</p>
             ) : wireState === 'quote:0' ? (
-              <p className="text-2xs text-amber-700 leading-snug">{t('content.wireQuoteOnly')}</p>
+              <p className="text-control text-amber-700 leading-snug">{t('content.wireQuoteOnly')}</p>
             ) : (
-              <p className="text-2xs text-ink-faint leading-snug">{fmt(t('content.wireFull'), { n: wireState.split(':')[1] })}</p>
+              <p className="text-control text-ink-faint leading-snug">{fmt(t('content.wireFull'), { n: wireState.split(':')[1] })}</p>
             )}
           </div>
         )}
       </div>
 
-      {/* Corner resize: width scales images, height turns the body into a
-          scroll region for long material */}
-      {selected && (
-        <NodeResizeControl
-          position="bottom-right"
-          minWidth={340}
-          maxWidth={860}
-          minHeight={120}
-          keepAspectRatio={!!data.lockAspectRatio}
-          onResizeStart={recordStep}
-          onResizeEnd={recordStep}
-          style={{ background: 'transparent', border: 'none', width: 18, height: 18 }}
-        >
-          <MoveDiagonal2 size={13} strokeWidth={1.75} className="text-ink-faint absolute bottom-0.5 right-0.5" />
-        </NodeResizeControl>
-      )}
+      </div>
+
+      {!isViewerMode && (selected || selectedNodeId === id) && !zoomedOut && <NodeResizeControls id={id} />}
 
       <NodeConnectionHandles id={id} isTargetAllowed={false} muted large={zoomedOut} />
     </div>

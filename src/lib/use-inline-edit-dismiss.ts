@@ -10,6 +10,7 @@ interface InlineEditDismissOptions<T extends HTMLElement> {
   ignoreOutside?: (event: PointerEvent) => boolean;
   ignoreFocusOutside?: (target: EventTarget | null) => boolean;
   restoreFocusRef?: RefObject<HTMLElement | null>;
+  restoreFocus?: boolean;
 }
 
 /** The entire editor, including its action buttons, is one focus boundary. */
@@ -30,6 +31,7 @@ export function useInlineEditDismiss<T extends HTMLElement>(options: InlineEditD
     onDismiss: reason => finish(reason === 'escape'),
     ignoreOutside: options.ignoreOutside,
     restoreFocusRef: options.restoreFocusRef,
+    restoreFocus: options.restoreFocus,
   });
   return {
     onBlur: event => {

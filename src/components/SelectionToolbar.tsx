@@ -19,7 +19,7 @@ type GeometryField = 'width' | 'height' | 'x' | 'y';
 type GeometryDraft = Partial<Record<GeometryField, string>>;
 const fieldLabels = { width: 'format.width', height: 'format.height', x: 'format.x', y: 'format.y' } as const;
 const numericText = (value: number) => String(Math.round(value * 100) / 100);
-const buttonClass = 'min-h-8 px-2.5 rounded-control text-xs text-ink-muted hover:bg-wash transition-colors flex items-center gap-2 text-left focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-40 disabled:cursor-not-allowed';
+const buttonClass = 'min-h-8 px-2.5 rounded-control text-control text-ink-muted hover:bg-wash transition-colors flex items-center gap-2 text-left focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-40 disabled:cursor-not-allowed';
 
 /** One reversible edit boundary: Tab moves between fields without committing. */
 function GeometryEditor({ selectedNodes, allowPosition }: { selectedNodes: ThoughtNode[]; allowPosition: boolean }) {
@@ -36,6 +36,12 @@ function GeometryEditor({ selectedNodes, allowPosition }: { selectedNodes: Thoug
   const dirty = Object.keys(draft).length > 0;
   const canEditPosition = allowPosition && selectedNodes.length === 1;
   const geometries = selectedNodes.map(effectiveNodeGeometry);
+  const heightEditableNodes = selectedNodes.filter(node => node.data.stepKind !== 'frame');
+  const automaticHeightCount = heightEditableNodes.filter(node => node.height == null).length;
+  const heightMode = automaticHeightCount === selectedNodes.length ? 'auto'
+    : automaticHeightCount === 0 ? 'fixed' : 'mixed';
+  const canRestoreHeight = heightEditableNodes.some(node => node.height != null || node.data.keepOverviewHeight || node.data.lockAspectRatio)
+    || draft.height !== undefined;
   useEffect(() => { if (lock.current) lock.current.indeterminate = mixedLock; }, [mixedLock]);
 
   const minimum = (field: 'width' | 'height') => Math.ceil(Math.max(...selectedNodes.map((node, index) => {
@@ -99,7 +105,12 @@ function GeometryEditor({ selectedNodes, allowPosition }: { selectedNodes: Thoug
     return values.every(value => Math.abs(value - values[0]) < 0.01) ? numericText(values[0]) : '';
   };
   const field = (name: GeometryField) => <label className="block min-w-0 space-y-1.5">
-    <span className="text-xs text-ink-muted">{t(fieldLabels[name])}</span>
+    <span className="flex flex-wrap items-baseline justify-between gap-1 text-control text-ink-muted">
+      <span>{t(fieldLabels[name])}</span>
+      {name === 'height' && heightEditableNodes.length > 0 && <span className="text-meta text-ink-faint" data-node-format-height-mode={heightMode}>
+        {t(heightMode === 'auto' ? 'format.heightAuto' : heightMode === 'fixed' ? 'format.heightFixed' : 'format.heightMixed')}
+      </span>}
+    </span>
     <span className={`flex items-center h-9 rounded-control border bg-card focus-within:border-accent focus-within:ring-1 focus-within:ring-accent ${error && draft[name] !== undefined ? 'border-watch' : 'border-line'}`}>
       <input type="text" inputMode="decimal" aria-label={t(fieldLabels[name])} data-node-format-field={name}
         value={valueFor(name)} placeholder={t('format.mixed')} autoComplete="off"
@@ -119,24 +130,38 @@ function GeometryEditor({ selectedNodes, allowPosition }: { selectedNodes: Thoug
         onKeyDown={event => {
           if (event.key === 'Enter' && !isImeComposing(event)) { event.preventDefault(); event.stopPropagation(); commit(); }
         }}
-        className="w-full min-w-0 h-full bg-transparent px-2.5 text-sm tabular-nums text-ink placeholder:text-ink-faint outline-none rounded-control" />
-      <span className="pr-2 text-xs text-ink-faint select-none" aria-hidden="true">px</span>
+        className="w-full min-w-0 h-full bg-transparent px-2.5 text-control tabular-nums text-ink placeholder:text-ink-faint outline-none rounded-control" />
+      <span className="pr-2 text-control text-ink-faint select-none" aria-hidden="true">px</span>
     </span>
   </label>;
 
   return <div ref={editor} onBlur={dismiss.onBlur} data-node-format-geometry>
     <section className="px-4 py-3 space-y-3" aria-label={t('format.size')}>
-      <h3 className="text-xs font-medium text-ink">{t('format.size')}</h3>
+      <h3 className="text-title font-semibold text-ink">{t('format.size')}</h3>
       <div className="grid grid-cols-2 gap-3">{field('width')}{field('height')}</div>
-      <label className="flex items-center gap-2 text-xs text-ink-muted cursor-pointer w-fit min-h-6">
+      {heightEditableNodes.length > 0 && <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="text-meta text-ink-faint">{t('format.heightModeHint')}</span>
+        <button type="button" data-node-format-auto-height disabled={!canRestoreHeight}
+          className={buttonClass}
+          onClick={() => {
+            useStore.getState().setSelectionGeometry(heightEditableNodes.map(node => node.id), { autoHeight: true });
+            const remaining = { ...draft };
+            delete remaining.height;
+            setDraft(remaining); setEditing(Object.keys(remaining).length > 0); setError('');
+          }}>{t('format.restoreAutoHeight')}</button>
+        {heightEditableNodes.some(node => node.data.lockAspectRatio) && <span className="w-full text-meta text-ink-faint" data-node-format-auto-height-hint>
+          {t('format.autoHeightUnlockHint')}
+        </span>}
+      </div>}
+      <label className="flex items-center gap-2 text-control text-ink-muted cursor-pointer w-fit min-h-6">
         <input ref={lock} type="checkbox" checked={allLocked} aria-checked={mixedLock ? 'mixed' : allLocked} data-node-format-lock
           onChange={event => {
             const patch = parsedDraft();
             if (!patch) return;
             const ids = selectedNodes.map(node => node.id);
-            if (dirty) useStore.getState().setSelectionGeometry(ids, patch);
-            // Lock the newly committed shape without changing its dimensions.
-            useStore.getState().setSelectionGeometry(ids, { lockAspectRatio: event.target.checked });
+            // Apply fields under the previous ratio, then lock the resulting shape.
+            // The sequence is one undo step and never exposes an intermediate size.
+            useStore.getState().setSelectionGeometry(ids, [patch, { lockAspectRatio: event.target.checked }]);
             cancel();
           }} className="h-3.5 w-3.5 accent-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent" />
         {t('format.lockAspectRatio')}
@@ -144,12 +169,12 @@ function GeometryEditor({ selectedNodes, allowPosition }: { selectedNodes: Thoug
     </section>
     {(canEditPosition || error || dirty) && <section className="px-4 py-3 border-t border-line space-y-3" aria-label={canEditPosition ? t('format.position') : undefined}>
       {canEditPosition && <>
-        <h3 className="text-xs font-medium text-ink">{t('format.position')}</h3>
+        <h3 className="text-title font-semibold text-ink">{t('format.position')}</h3>
         <div className="grid grid-cols-2 gap-3">{field('x')}{field('y')}</div>
       </>}
-      {error && <p className="text-xs text-watch leading-relaxed" role="alert">{error}</p>}
+      {error && <p className="text-control text-watch" role="alert">{error}</p>}
       {dirty && <div className="flex items-center justify-between gap-2">
-        <span className="text-xs text-ink-faint">{t('format.editHint')}</span>
+        <span className="text-control text-ink-faint">{t('format.editHint')}</span>
         <div className="flex gap-1">
           <button type="button" onClick={cancel} data-node-format-cancel className={buttonClass} title={t('common.cancel')} aria-label={t('common.cancel')}><X size={14} /></button>
           <button type="button" onClick={() => commit()} data-node-format-apply className={`${buttonClass} text-accent`}><Check size={14} />{t('format.apply')}</button>
@@ -216,23 +241,32 @@ export default function SelectionToolbar({ getViewportRect, withDetails = false 
 
   return <aside ref={panel} className="canvas-tool-panel flex flex-col" style={panelPosition}
     aria-label={panelTitle} data-selection-toolbar data-node-format-panel data-with-details={withDetails || undefined}>
-    <header className={`px-4 py-3 flex shrink-0 items-start gap-3 ${collapsed ? '' : 'border-b border-line'}`}>
-      <div className="min-w-0 flex-1">
-        <h2 className="text-sm font-medium leading-5">{panelTitle}</h2>
-        <p className="text-xs text-ink-muted mt-1 leading-4">
-          {mixedTypes ? fmt(t('frame.mixedSelection'), { frames: frames.length, nodes: contentNodes.length })
-            : fmt(t(framesOnly ? 'frame.framesSelected' : 'toolbar.nodesSelected'), { n: selectedNodes.length })}
-        </p>
-        {selectedNodes.length === 1 && !framesOnly && <p className="text-xs text-ink-muted mt-1 truncate" data-format-node-name title={getNodeDisplayName(selectedNodes[0].data, t('ctx.unnamedNode'))}>
-          {getNodeDisplayName(selectedNodes[0].data, t('ctx.unnamedNode'))}
-        </p>}
-      </div>
-      <button type="button" onClick={() => setCollapsed(!collapsed)} aria-expanded={!collapsed}
+    <header className={`shrink-0 ${collapsed ? '' : 'border-b border-line'}`}>
+      <button type="button" onClick={() => setCollapsed(previous => !previous)} aria-expanded={!collapsed}
         data-node-format-close={!collapsed ? '' : undefined} data-node-format-reopen={collapsed ? '' : undefined}
         aria-label={t(framesOnly ? collapsed ? 'frame.expandSettings' : 'frame.collapseSettings' : collapsed ? 'format.expand' : 'format.collapse')}
         title={t(framesOnly ? collapsed ? 'frame.expandSettings' : 'frame.collapseSettings' : collapsed ? 'format.expand' : 'format.collapse')}
-        className="h-7 w-7 -mr-1 flex items-center justify-center rounded-control text-ink-muted hover:bg-wash focus-visible:outline-2 focus-visible:outline-accent">
-        {collapsed ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
+        onKeyDown={event => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.stopPropagation();
+            if (isImeComposing(event)) event.preventDefault();
+          }
+        }}
+        style={{ outlineOffset: -2 }}
+        className="w-full px-4 py-3 flex items-start gap-3 text-left cursor-pointer hover:bg-wash transition-colors focus-visible:outline-2 focus-visible:outline-accent">
+        <span className="min-w-0 flex-1">
+          <span className="block text-title font-semibold">{panelTitle}</span>
+          <span className="block text-meta text-ink-muted mt-1">
+            {mixedTypes ? fmt(t('frame.mixedSelection'), { frames: frames.length, nodes: contentNodes.length })
+              : fmt(t(framesOnly ? 'frame.framesSelected' : 'toolbar.nodesSelected'), { n: selectedNodes.length })}
+          </span>
+          {selectedNodes.length === 1 && !framesOnly && <span className="block text-control text-ink-muted mt-1 truncate" data-format-node-name title={getNodeDisplayName(selectedNodes[0].data, t('ctx.unnamedNode'))}>
+            {getNodeDisplayName(selectedNodes[0].data, t('ctx.unnamedNode'))}
+          </span>}
+        </span>
+        <span className="h-7 w-7 -mr-1 shrink-0 flex items-center justify-center text-ink-muted" aria-hidden="true">
+          {collapsed ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
+        </span>
       </button>
     </header>
     {!collapsed && <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain" data-node-format-scroll>
@@ -240,7 +274,7 @@ export default function SelectionToolbar({ getViewportRect, withDetails = false 
         <div className="flex gap-1 rounded-control bg-wash p-1" role="group" aria-label={t('frame.formatScope')}>
           {(['nodes', 'frames'] as const).map(scope => <button type="button" key={scope} data-format-scope={scope}
             aria-pressed={formatScope === scope} onClick={() => setFormatScope(scope)}
-            className={`flex-1 min-h-8 px-2 rounded-control text-xs focus-visible:outline-2 focus-visible:outline-accent ${formatScope === scope ? 'bg-card text-ink' : 'text-ink-muted hover:text-ink'}`}>
+            className={`flex-1 min-h-8 px-2 rounded-control text-control focus-visible:outline-2 focus-visible:outline-accent ${formatScope === scope ? 'bg-card text-ink' : 'text-ink-muted hover:text-ink'}`}>
             {fmt(t(scope === 'nodes' ? 'frame.nodeScope' : 'frame.frameScope'), { n: scope === 'nodes' ? contentNodes.length : frames.length })}
           </button>)}
         </div>
@@ -249,14 +283,14 @@ export default function SelectionToolbar({ getViewportRect, withDetails = false 
         <GeometryEditor key={`${selectionKey}:frames`} selectedNodes={formatNodes} allowPosition={selectedNodes.length === 1} />
       </FrameSettings> : <GeometryEditor key={`${selectionKey}:nodes`} selectedNodes={formatNodes} allowPosition={selectedNodes.length === 1} />}
       <section className="px-4 py-3 border-t border-line space-y-2.5" aria-label={t('arrange.spatialTools')}>
-        <h3 className="text-xs font-medium">{t(mixedTypes ? 'frame.arrangeSelection' : 'format.arrange')}</h3>
+        <h3 className="text-title font-semibold">{t(mixedTypes ? 'frame.arrangeSelection' : 'format.arrange')}</h3>
         <div className="[&>div]:w-full [&>div]:ml-0 [&>div>button]:flex-1 [&>div>button]:justify-center [&>div>button]:border [&>div>button]:border-line [&>div>button]:bg-card [&>div>button:hover]:bg-wash">
           <SelectionArrangeMenu ids={selectedNodeIds} getViewportRect={getViewportRect} />
         </div>
       </section>
       {editingFrames && <FrameObjectActions frames={frames} allowDelete={framesOnly} />}
       {!framesOnly && <div ref={contentEditor} onBlur={dismiss.onBlur} className="border-t border-line">
-        <div className="flex items-center gap-2 px-4 py-3 text-xs text-ink-muted" data-node-format-content>
+        <div className="flex items-center gap-2 px-4 py-3 text-control text-ink-muted" data-node-format-content>
           <h3 className="font-medium text-ink">{t('format.contentActions')}</h3>
           <span className="ml-auto tabular-nums">{fmt(t('toolbar.tokens'), { n: totalTokens })}</span>
         </div>
@@ -275,11 +309,11 @@ export default function SelectionToolbar({ getViewportRect, withDetails = false 
               onKeyDown={event => { if (event.key === 'Enter' && !isImeComposing(event) && (pending !== 'explore' || input.trim())) { event.preventDefault(); run(); } }}
               aria-label={pending === 'explore' ? t('toolbar.explorePlaceholder') : t('toolbar.intentPlaceholder')}
               placeholder={pending === 'explore' ? t('toolbar.explorePlaceholder') : t('toolbar.intentPlaceholder')}
-              className="w-full text-xs border border-line rounded-control px-2.5 py-2 focus:outline-none focus:ring-1 focus:ring-accent bg-card min-w-0" />
+              className="w-full text-control border border-line rounded-control px-2.5 py-2 focus:outline-none focus:ring-1 focus:ring-accent bg-card min-w-0" />
             <div className="flex justify-end gap-2">
               <button type="button" onClick={cancelInput} className={buttonClass}>{t('common.cancel')}</button>
               <button type="button" onClick={run} disabled={!contentIds.length || (pending === 'explore' && !input.trim())}
-                className="text-xs bg-action text-white px-3 min-h-8 rounded-control hover:bg-action-strong transition-colors disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent">{t('common.go')}</button>
+                className="text-control bg-action text-white px-3 min-h-8 rounded-control hover:bg-action-strong transition-colors disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent">{t('common.go')}</button>
             </div>
           </div>}
         </div>

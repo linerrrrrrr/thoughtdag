@@ -29,6 +29,7 @@ const { autoLayout, placeNewNodes, nodeHeight } = await import(pathToFileURL(bun
 const framesBundle = join(tmp, 'frames.mjs');
 execFileSync(process.execPath, [join(ROOT, 'node_modules/esbuild/bin/esbuild'),
   join(ROOT, 'src/lib/frames.ts'), '--bundle', '--format=esm', '--platform=node', `--outfile=${framesBundle}`,
+  '--define:import.meta.env={}',
 ], { stdio: ['ignore', 'ignore', 'pipe'] });
 const { frameMembers } = await import(pathToFileURL(framesBundle).href);
 
@@ -276,6 +277,14 @@ test('a parent folded by the ask is measured folded: the follow-up sits right un
   const laid = placeNewNodes([parent, fresh('c')], [ed('p', 'c')], ['c']);
   const y = nodeOf(laid, 'c').position.y;
   assert(y < 700, `follow-up at y ${y}, below the parent's stale unfolded height`);
+});
+
+test('a forced-full parent keeps its real footprint despite a stale collapse flag', () => {
+  const parent = { ...placed(th('p'), 80, 120, 670, 580), data: { ...th('p').data, isCollapsed: true, detailLevel: 'full' } };
+  const laid = placeNewNodes([parent, fresh('c')], [ed('p', 'c')], ['c']);
+  assert(nodeOf(laid, 'c').position.y >= 700, 'follow-up overlaps its visibly full parent');
+  assert(nodeOf(laid, 'c').position.x === 80, 'follow-up leaves the context column');
+  assert(unmoved([parent], laid).length === 0, 'placing a follow-up moves its parent');
 });
 
 test('a follow-up clears its resized parent after a compact measurement', () => {
