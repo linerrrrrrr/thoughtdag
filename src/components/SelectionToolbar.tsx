@@ -189,7 +189,7 @@ export default function SelectionToolbar({ getViewportRect, withDetails = false 
   const t = useT();
   const [pending, setPending] = useState<PendingAction>(null);
   const [input, setInput] = useState('');
-  const [collapsed, setCollapsed] = useState(true);
+  const [collapsed, setCollapsed] = useState(false);
   const [formatScope, setFormatScope] = useState<'nodes' | 'frames'>('nodes');
   const panelPosition = useCanvasPanelPosition();
   const panel = useRef<HTMLElement>(null);
@@ -206,7 +206,7 @@ export default function SelectionToolbar({ getViewportRect, withDetails = false 
   const [prevSelectionKey, setPrevSelectionKey] = useState(selectionKey);
   if (prevSelectionKey !== selectionKey) {
     setPrevSelectionKey(selectionKey);
-    setPending(null); setInput(''); setCollapsed(true); setFormatScope('nodes');
+    setPending(null); setInput(''); setCollapsed(false); setFormatScope('nodes');
   }
 
   const selected = new Set(selectedNodeIds);

@@ -1,15 +1,16 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { describeModel } from '../../lib/use-models';
-import { AlertTriangle, ChevronLeft, ChevronRight, Copy, GitBranch, RefreshCw, Star, Trash2, Pencil } from 'lucide-react';
+import { AlertTriangle, ChevronLeft, ChevronRight, Copy, GitBranch, RefreshCw, Trash2, Pencil } from 'lucide-react';
 import { useStore } from '../../store';
 import { useUiStore } from '../../lib/ui-store';
-import { generateId, isImeComposing } from '../../utils';
+import { isImeComposing } from '../../utils';
 import { copyText } from '../../lib/export';
 import { Markdown, HighlightedMarkdown } from '../Markdown';
 import { useT } from '../../i18n';
 import { isViewerMode } from '../../lib/viewer';
 import { collectExploreMarksKey, type ExploreMark } from '../../lib/explore-marks';
-import { withinOneCodeBlock } from '../../lib/highlight-match';
+import { useTextHighlighter } from '../../lib/use-text-highlighter';
+import HighlighterButton from '../ui/HighlighterButton';
 import ReasoningDisclosure from '../ui/ReasoningDisclosure';
 import { ApprovalCard, DecisionsDisclosure } from '../ui/ApprovalCard';
 import { AgentTrace } from '../ui/AgentTrace';
@@ -40,7 +41,6 @@ export default function ResponseSection({
   const navigateVersion = useStore((s) => s.navigateVersion);
   const rerunNode = useStore((s) => s.rerunNode);
   const deleteVersion = useStore((s) => s.deleteVersion);
-  const addHighlight = useStore((s) => s.addHighlight);
   const setSelectedNodeId = useStore((s) => s.setSelectedNodeId);
   // Passages child branches explore from (derived from the children).
   // Clicking a mark walks the panel to that branch and centers it. The
@@ -57,6 +57,7 @@ export default function ResponseSection({
     title: `${t('node.exploredHere')} · ${m.question.slice(0, 80)}`,
   }));
   const handleExploreMarkClick = (e: React.MouseEvent) => {
+    if (highlighter.active) return;
     const m = (e.target as HTMLElement).closest?.('mark[data-explore-target]');
     if (!m) return;
     if (window.getSelection()?.toString()) return; // a drag-select, not a click
@@ -80,9 +81,22 @@ export default function ResponseSection({
     onCancel: cancelEdit,
   });
   const [selectedText, setSelectedText] = useState('');
-  const [selectionPos, setSelectionPos] = useState<{ x: number; y: number; inCode: boolean } | null>(null);
+  const [selectionPos, setSelectionPos] = useState<{ x: number; y: number } | null>(null);
   const responseRef = useRef<HTMLDivElement>(null);
+  const responseWrapperRef = useRef<HTMLDivElement>(null);
   const streamRef = useRef<HTMLDivElement>(null);
+  const highlighter = useTextHighlighter({
+    scopeKey: `${nodeId}:${data.responseIndex}:${data.response}`,
+    enabled: !isViewerMode && !data.isLoading && !data.isEditingResponse && !!data.response,
+    surfaceRef: responseRef,
+  });
+  const { markSelection } = highlighter;
+  const toggleHighlighter = () => {
+    setSelectedText('');
+    setSelectionPos(null);
+    window.getSelection()?.removeAllRanges();
+    highlighter.toggle();
+  };
 
   // Follow the stream — but only while the reader is at the bottom. Scroll
   // up during generation and the view stays put (read from the top while
@@ -97,31 +111,38 @@ export default function ResponseSection({
 
   // Text selection handler
   const handleTextSelection = useCallback((e: MouseEvent) => {
+    if (e.button !== 0) return;
     // Preserve selection while its toolbar or another editor receives focus.
     const target = e.target as HTMLElement;
-    if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'BUTTON') {
+    if (target.closest?.('input, textarea, button')) {
       return;
     }
 
     const selection = window.getSelection();
-    if (selection && selection.toString().trim().length > 0 && responseRef.current?.contains(selection.anchorNode)) {
+    const range = selection?.rangeCount ? selection.getRangeAt(0) : null;
+    if (selection && range && selection.toString().trim().length > 0
+      && responseRef.current?.contains(range.startContainer)
+      && responseRef.current.contains(range.endContainer)) {
+      if (markSelection(selection, nodeId)) {
+        setSelectedText('');
+        setSelectionPos(null);
+        return;
+      }
       const text = selection.toString().trim();
       setSelectedText(text);
-      const range = selection.getRangeAt(0);
       const rangeRect = range.getBoundingClientRect();
-      const panelRect = responseRef.current?.getBoundingClientRect();
+      const panelRect = responseWrapperRef.current?.getBoundingClientRect();
       if (panelRect) {
         setSelectionPos({
           x: rangeRect.left + rangeRect.width / 2 - panelRect.left,
           y: rangeRect.top - panelRect.top - 48,
-          inCode: withinOneCodeBlock(range),
         });
       }
     } else {
       setSelectedText('');
       setSelectionPos(null);
     }
-  }, []);
+  }, [markSelection, nodeId, setSelectedText, setSelectionPos]);
 
   useEffect(() => {
     if (isViewerMode) return; // selection actions create nodes or highlights
@@ -149,14 +170,6 @@ export default function ResponseSection({
       e.preventDefault();
       handleResponseEditSubmit();
     }
-  };
-
-  const handleHighlight = () => {
-    if (!selectedText) return;
-    addHighlight(nodeId, { id: generateId(), text: selectedText });
-    setSelectedText('');
-    setSelectionPos(null);
-    window.getSelection()?.removeAllRanges();
   };
 
   const handleBranchFromSelection = () => {
@@ -218,12 +231,12 @@ export default function ResponseSection({
           <p className="mt-1.5 text-control text-ink-faint">{t('edit.draftHint')}</p>
         </div>
       ) : (
-        <div ref={responseRef} className="relative">
+        <div ref={responseWrapperRef} className="relative">
           {data.approvals && data.approvals.length > 0 && <DecisionsDisclosure records={data.approvals} />}
           {data.reasonings?.[data.responseIndex] && !activity.length && (
             <ReasoningDisclosure text={data.reasonings[data.responseIndex]!} />
           )}
-          <div className="focus-assistant-message markdown-body text-body text-ink cursor-text" onClick={handleExploreMarkClick}>
+          <div ref={responseRef} className="focus-assistant-message markdown-body text-body text-ink cursor-text" onClick={handleExploreMarkClick} data-highlighter-active={highlighter.active || undefined}>
             {highlightedTexts.size > 0 || exploreSpecs.length > 0 ? (
               <HighlightedMarkdown base={data.agentSession?.cwd ?? data.importSource?.cwd} content={data.response} highlights={highlightedTexts} exploreMarks={exploreSpecs} />
             ) : (
@@ -232,7 +245,7 @@ export default function ResponseSection({
           </div>
 
           {/* Floating toolbar for text selection */}
-          {selectedText && selectionPos && (
+          {!highlighter.active && selectedText && selectionPos && (
             <div
               style={{
                 position: 'absolute',
@@ -250,14 +263,6 @@ export default function ResponseSection({
                 >
                   <GitBranch size={14} strokeWidth={1.75} className="inline" /> {t('common.explore')}
                 </button>
-                {!selectionPos.inCode && (
-                  <button
-                    onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); handleHighlight(); }}
-                    className="bg-amber-500 hover:bg-amber-400 text-white text-control px-3 py-1.5 rounded-control transition-all whitespace-nowrap cursor-pointer"
-                  >
-                    <Star size={14} strokeWidth={1.75} className="inline" /> {t('common.highlight')}
-                  </button>
-                )}
               </div>
             </div>
           )}
@@ -283,6 +288,14 @@ export default function ResponseSection({
           >
             <Copy size={14} strokeWidth={1.75} />
           </button>
+          {!isViewerMode && (
+            <HighlighterButton
+              active={highlighter.active}
+              onClick={toggleHighlighter}
+              buttonRef={highlighter.buttonRef}
+              className="w-7 h-7"
+            />
+          )}
           {!isViewerMode && (
             <button
               onClick={startEditResponse}

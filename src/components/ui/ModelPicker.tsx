@@ -43,7 +43,7 @@ export default function ModelPicker({ value, onChange, compact }: PickerProps) {
   const [requestedOpen, setOpen] = useState(false);
   const cardOpen = useCanvasToolCard('model', requestedOpen && !nodeMode, () => setOpen(false));
   const open = nodeMode ? requestedOpen : cardOpen;
-  const panelPosition = useCanvasPanelPosition(open && !nodeMode);
+  const panelPosition = useCanvasPanelPosition(open && !nodeMode, 'left');
   const anysearchKey = useUiStore(s => s.anysearchKey);
   // This credential draft lives only in this mounted control, never in the
   // generic draft cache. Outside dismissal suspends; Escape discards it.

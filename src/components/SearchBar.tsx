@@ -36,7 +36,7 @@ export default function SearchBar({
   const t = useT();
   const hintId = useId();
   const open = useCanvasToolCard('search', requestedOpen, onClose);
-  const position = useCanvasPanelPosition(open);
+  const position = useCanvasPanelPosition(open, 'left');
   const nodes = useStore((s) => s.nodes);
   const setHitIds = useUiStore((s) => s.setSearchHitIds);
   const [query, setQuery] = useState('');

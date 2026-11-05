@@ -32,7 +32,7 @@ export default function AgentCwdChip() {
   const [mirrored, setMirrored] = useState<string | null>(null);
   const [requestedOpen, setOpen] = useState(false);
   const open = useCanvasToolCard('directory', requestedOpen, () => setOpen(false));
-  const panelPosition = useCanvasPanelPosition(open);
+  const panelPosition = useCanvasPanelPosition(open, 'left');
   const [typed, setTyped] = useState('');
   const [invalidPath, setInvalidPath] = useState(false);
   const pathErrorId = useId();

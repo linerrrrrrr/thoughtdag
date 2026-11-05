@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type AnchorHTMLAttributes } from 'react';
 import { createPortal } from 'react-dom';
 import { Copy, ExternalLink, FileText, FolderOpen, Link as LinkIcon, X } from 'lucide-react';
 import { useT, fmt } from '../i18n';
-import { localTargetOf, basenameOf, safeMarkdownUrl, type LocalTarget } from '../lib/local-target';
+import { localTargetOf, localFileHref, basenameOf, safeMarkdownUrl, type LocalTarget } from '../lib/local-target';
 import { openLocalPath } from '../lib/local-path';
 import { toast } from '../lib/ui-store';
 import { useDismissableLayer } from '../lib/use-dismissable-layer';
@@ -49,6 +49,7 @@ export function ConversationLink({ base, ...props }: AnchorHTMLAttributes<HTMLAn
   const t = useT();
   const href = safeMarkdownUrl(props.href ?? '');
   const target = localTargetOf(href, base);
+  const linkHref = target ? localFileHref(target) : href;
   const anchor = useRef<HTMLAnchorElement>(null);
   const menu = useRef<HTMLDivElement>(null);
   const [point, setPoint] = useState<{ x: number; y: number } | null>(null);
@@ -79,7 +80,7 @@ export function ConversationLink({ base, ...props }: AnchorHTMLAttributes<HTMLAn
   };
   const action = (fn: () => void) => { setPoint(null); anchor.current?.focus({ preventScroll: true }); fn(); };
   return <>
-    <a {...props} href={href || undefined} ref={anchor} target={target || !href ? undefined : '_blank'} rel={target ? undefined : 'noreferrer noopener'}
+    <a {...props} href={linkHref || undefined} ref={anchor} target={target || !href ? undefined : '_blank'} rel={target ? undefined : 'noreferrer noopener'}
       className={[props.className, 'conversation-link nodrag nopan', target ? 'conversation-file-link' : ''].filter(Boolean).join(' ')}
       data-local-path={target?.path} data-file-line-ref={target?.line} aria-busy={busy || undefined}
       title={target ? `${target.path}${target.line ? `:${target.line}${target.column ? `:${target.column}` : ''}` : ''}` : props.title}
@@ -113,7 +114,7 @@ export function ConversationLink({ base, ...props }: AnchorHTMLAttributes<HTMLAn
         <button type="button" role="menuitem" onClick={() => action(() => void copy(target.path))}><Copy size={15} />{t('local.copyPath')}</button>
         <button type="button" role="menuitem" onClick={() => action(() => void copy(basenameOf(target.path)))}><FileText size={15} />{t('local.copyName')}</button>
       </>}
-      <button type="button" role="menuitem" onClick={() => action(() => void copy(props.href ?? ''))}><LinkIcon size={15} />{t('local.copyLink')}</button>
+      <button type="button" role="menuitem" onClick={() => action(() => void copy(linkHref))}><LinkIcon size={15} />{t('local.copyLink')}</button>
     </div>, document.body)}
     {preview && <FilePreview value={preview} onClose={() => { setPreview(null); anchor.current?.focus({ preventScroll: true }); }} />}
   </>;

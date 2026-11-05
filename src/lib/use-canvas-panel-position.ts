@@ -13,19 +13,23 @@ export function useFocusPanelSpace() {
   return useSyncExternalStore(subscribeToFocusPanelSpace, hasFocusPanelSpace);
 }
 
-/** Canvas tools share the format inspector's dock below the fixed header row. */
-export function useCanvasPanelPosition(open = true): CSSProperties {
-  const [position, setPosition] = useState<CSSProperties>({ top: 82, right: 16 });
+/** Tool cards dock below their toolbar; geometry inspectors keep the right dock. */
+export function useCanvasPanelPosition(open = true, side: 'left' | 'right' = 'right'): CSSProperties {
+  const [position, setPosition] = useState<CSSProperties>({ top: 82, [side]: 16 });
   useLayoutEffect(() => {
     if (!open) return;
     const header = document.querySelector<HTMLElement>('[data-canvas-header]');
-    const toolbar = header?.querySelector<HTMLElement>('[data-top-toolbar]');
+    const toolbar = header?.querySelector<HTMLElement>(side === 'left' ? '[data-project-switcher]' : '[data-top-toolbar]');
     const measure = () => {
       const bounds = header?.getBoundingClientRect();
       const top = (bounds?.bottom ?? 66) + 16;
-      const right = Math.max(16, window.innerWidth - (toolbar?.getBoundingClientRect().right ?? window.innerWidth - 16));
+      const toolbarBounds = toolbar?.getBoundingClientRect();
+      const left = side === 'left' ? Math.max(16, toolbarBounds?.left ?? bounds?.left ?? 16) : undefined;
+      const right = side === 'right' ? Math.max(16, window.innerWidth - (toolbarBounds?.right ?? window.innerWidth - 16)) : undefined;
+      const oppositeInset = side === 'left' ? Math.max(16, window.innerWidth - (bounds?.right ?? window.innerWidth - 16)) : 16;
+      const horizontalInsets = (left ?? right ?? 16) + oppositeInset;
       // CSS viewport units constrain the surface during resize, before observers run.
-      const next = { top, right, maxWidth: `max(0px, calc(100vw - ${right + 16}px))`, maxHeight: `max(0px, calc(100dvh - ${top + 16}px))`, '--canvas-tools-top': `${top}px` };
+      const next = { top, left, right, maxWidth: `max(0px, calc(100vw - ${horizontalInsets}px))`, maxHeight: `max(0px, calc(100dvh - ${top + 16}px))`, '--canvas-tools-top': `${top}px` };
       setPosition((previous) => Object.entries(next).every(([key, value]) => previous[key as keyof CSSProperties] === value) ? previous : next);
     };
     measure();
@@ -34,7 +38,7 @@ export function useCanvasPanelPosition(open = true): CSSProperties {
     if (toolbar) observer.observe(toolbar);
     window.addEventListener('resize', measure);
     return () => { observer.disconnect(); window.removeEventListener('resize', measure); };
-  }, [open]);
+  }, [open, side]);
   return position;
 }
 

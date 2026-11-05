@@ -2,8 +2,9 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useDismissableLayer } from '../lib/use-dismissable-layer';
 import { useInlineEditDismiss } from '../lib/use-inline-edit-dismiss';
 import { useSessionDraft } from '../lib/use-session-draft';
+import { useTextHighlighter } from '../lib/use-text-highlighter';
 import { useProjects } from '../store/projects';
-import { ChevronDown, ChevronRight, Crosshair, FileText, Highlighter, Link2, Loader2, Maximize2, PanelLeft, Pencil, RefreshCw, ScanText, Send, Sparkles, StickyNote, X, ZoomIn, ZoomOut } from 'lucide-react';
+import { ChevronDown, ChevronRight, Crosshair, FileText, Link2, Loader2, Maximize2, PanelLeft, Pencil, RefreshCw, ScanText, Send, Sparkles, StickyNote, X, ZoomIn, ZoomOut } from 'lucide-react';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 import type { Attachment, ThoughtNode } from '../types';
 import { useStore } from '../store';
@@ -19,6 +20,7 @@ import { HtmlMaterialView } from './HtmlMaterialView';
 import { NotebookView } from './NotebookView';
 import { isNotebook } from '../lib/notebook';
 import SearchToggles from './ui/SearchToggles';
+import HighlighterButton from './ui/HighlighterButton';
 import { useReaderDock, READER_MIN_WIDTH, READER_DEFAULT_WIDTH, READER_STRIP_WIDTH, DOCK_MIN_WINDOW, type ReaderDock } from '../lib/reader-dock';
 
 // MaterialReader: the reading overlay — a VIEW onto a material node, never a
@@ -283,15 +285,29 @@ function ReaderOverlay({ node, onLocate, dock }: { node: ThoughtNode; onLocate: 
   const askRef = useRef<HTMLDivElement>(null);
   useDismissableLayer({ open: !!ask, refs: [askRef], onDismiss: () => setAsk(null) });
 
-  const handleMouseUp = () => {
-    if (isViewerMode) return;
+  const handleMouseUp = (event: React.MouseEvent) => {
+    if (isViewerMode || event.button !== 0) return;
     window.setTimeout(() => {
       const sel = window.getSelection();
       // a plain click (no selection) anywhere in the reading surface
       // dismisses the ask bar — the draft survives for the next selection
-      if (!sel || sel.isCollapsed || !bodyRef.current) { setAsk(null); return; }
+      if (!sel || !sel.rangeCount || sel.isCollapsed || !bodyRef.current) { setAsk(null); return; }
       const range = sel.getRangeAt(0);
       if (!bodyRef.current.contains(range.commonAncestorContainer)) return;
+      if (materialHighlighter.active) {
+        const surface = bodyRef.current.querySelector('[data-reader-highlight-surface]');
+        if (!surface?.contains(range.startContainer) || !surface.contains(range.endContainer)) return;
+        const start = range.startContainer instanceof Element ? range.startContainer : range.startContainer.parentElement;
+        const end = range.endContainer instanceof Element ? range.endContainer : range.endContainer.parentElement;
+        const content = start?.closest('[data-reader-highlight-content]');
+        // Each extracted page renders independently; a mark must fit one source.
+        if (!content || content !== end?.closest('[data-reader-highlight-content]')) return;
+        if (materialHighlighter.markSelection(sel, node.id)) {
+          setAsk(null);
+          sel.removeAllRanges();
+          return;
+        }
+      }
       const raw = sel.toString();
       // PDF text-layer spans carry hard breaks; the reading order is what matters
       const text = (view === 'original' ? raw.replace(/\s+/g, ' ') : raw).trim();
@@ -502,31 +518,32 @@ function ReaderOverlay({ node, onLocate, dock }: { node: ThoughtNode; onLocate: 
     setClipMode(false);
   };
 
-  // highlight a rail-answer selection: same data the node card and the
-  // context tags use — marked here, visible everywhere
-  const highlightSelection = () => {
-    if (!ask?.targetNodeId) return;
-    useStore.getState().addHighlight(ask.targetNodeId, { id: generateId(), text: ask.text });
-    setAsk(null);
-    window.getSelection()?.removeAllRanges();
-  };
-
   // selection inside the rail: only ANSWER text is explorable (the answer
   // node becomes the parent); question text and chrome stay inert
-  const handleRailMouseUp = () => {
-    if (isViewerMode) return;
+  const handleRailMouseUp = (event: React.MouseEvent) => {
+    if (isViewerMode || event.button !== 0) return;
     window.setTimeout(() => {
       const sel = window.getSelection();
-      if (!sel || sel.isCollapsed || !railRef.current) { setAsk((a) => (a?.targetNodeId ? null : a)); return; }
+      if (!sel || !sel.rangeCount || sel.isCollapsed || !railRef.current) { setAsk((a) => (a?.targetNodeId ? null : a)); return; }
       const range = sel.getRangeAt(0);
       if (!railRef.current.contains(range.commonAncestorContainer)) return;
       const el = range.startContainer instanceof Element ? range.startContainer : range.startContainer.parentElement;
       const wrap = el?.closest('[data-turn-answer]');
-      if (!wrap) return;
+      if (!wrap || !wrap.contains(range.endContainer)) return;
+      const targetNodeId = wrap.getAttribute('data-turn-answer');
+      if (!targetNodeId) return;
+      if (railHighlighter.active) {
+        if (useStore.getState().nodes.find((n) => n.id === targetNodeId)?.data.isLoading) return;
+        if (railHighlighter.markSelection(sel, targetNodeId)) {
+          setAsk(null);
+          sel.removeAllRanges();
+          return;
+        }
+      }
       const text = sel.toString().trim();
       if (text.length < 2) return;
       const rect = range.getBoundingClientRect();
-      setAsk({ text, page: null, x: rect.left + rect.width / 2, y: rect.bottom, targetNodeId: wrap.getAttribute('data-turn-answer') ?? undefined });
+      setAsk({ text, page: null, x: rect.left + rect.width / 2, y: rect.bottom, targetNodeId });
     }, 0);
   };
 
@@ -561,6 +578,11 @@ function ReaderOverlay({ node, onLocate, dock }: { node: ThoughtNode; onLocate: 
 
   // ── edit the extracted copy (MinerU paste point) ──
   const [editing, setEditing] = useState(false);
+  const materialHighlighter = useTextHighlighter({
+    scopeKey: `reader:${node.id}:${view}:${textBody}`,
+    enabled: !isViewerMode && view === 'text' && !editing && !collapsed && !!textBody.trim(),
+    surfaceRef: bodyRef,
+  });
   const editRef = useRef<HTMLTextAreaElement>(null);
   const editBoundary = useRef<HTMLDivElement>(null);
   const editKey = `${draftPrefix}:extracted:${pdfAtt?.id ?? ''}`;
@@ -662,6 +684,11 @@ function ReaderOverlay({ node, onLocate, dock }: { node: ThoughtNode; onLocate: 
 
   // stream follows the reading eye: keep the rail pinned to the newest text
   const railRef = useRef<HTMLDivElement>(null);
+  const railHighlighter = useTextHighlighter({
+    scopeKey: `reader-thread:${node.id}:${threadId ?? ''}:${thread.map(turn => `${turn.id}:${turn.data.responseIndex}:${!!turn.data.isEditingResponse}:${turn.data.response}`).join('\n')}`,
+    enabled: !isViewerMode && !collapsed && thread.some((turn) => !!turn.data.response && !turn.data.isLoading),
+    surfaceRef: railRef,
+  });
   const lastTurn = thread[thread.length - 1];
   useEffect(() => {
     const el = railRef.current;
@@ -830,6 +857,18 @@ function ReaderOverlay({ node, onLocate, dock }: { node: ThoughtNode; onLocate: 
                 </button>
               )}
             </div>
+          )}
+          {!isViewerMode && view === 'text' && !editing && !!textBody.trim() && (
+            <HighlighterButton
+              active={materialHighlighter.active}
+              buttonRef={materialHighlighter.buttonRef}
+              onClick={() => {
+                if (!materialHighlighter.active && railHighlighter.active) railHighlighter.toggle();
+                setAsk(null);
+                materialHighlighter.toggle();
+              }}
+              className="w-7 h-7 shrink-0"
+            />
           )}
           {(pdfAtt || imageAtts.length > 0 || htmlAtt || linkHtml) && view === 'original' && !isViewerMode && (
             <button
@@ -1010,7 +1049,7 @@ function ReaderOverlay({ node, onLocate, dock }: { node: ThoughtNode; onLocate: 
           )}
 
           {view === 'text' && (
-            <div className="max-w-[820px] mx-auto px-8 py-6">
+            <div className="max-w-[820px] mx-auto px-8 py-6" data-reader-highlight-surface data-highlighter-active={materialHighlighter.active || undefined}>
               {pdfAtt && hasTextLayer === false && (
                 <div className="mb-4 text-control text-amber-800 bg-amber-50 border border-amber-200 rounded-content px-3 py-2">
                   {t('reader.scannedHint')}
@@ -1046,7 +1085,7 @@ function ReaderOverlay({ node, onLocate, dock }: { node: ThoughtNode; onLocate: 
                     {s.page != null && (
                       <div className="text-meta text-ink-faint font-mono text-center select-none pt-4 pb-1">— p.{s.page} —</div>
                     )}
-                    <div className="markdown-body text-body text-ink">
+                    <div className="markdown-body text-body text-ink" data-reader-highlight-content>
                       {materialHighlights.size > 0
                         ? <HighlightedMarkdown content={s.md} highlights={materialHighlights} />
                         : <Markdown>{s.md}</Markdown>}
@@ -1074,6 +1113,18 @@ function ReaderOverlay({ node, onLocate, dock }: { node: ThoughtNode; onLocate: 
                   <div className="text-control text-ink-faint">{t('reader.wholeThread')}</div>
                 )}
               </div>
+              {!isViewerMode && thread.some((turn) => !!turn.data.response && !turn.data.isLoading) && (
+                <HighlighterButton
+                  active={railHighlighter.active}
+                  buttonRef={railHighlighter.buttonRef}
+                  onClick={() => {
+                    if (!railHighlighter.active && materialHighlighter.active) materialHighlighter.toggle();
+                    setAsk(null);
+                    railHighlighter.toggle();
+                  }}
+                  className="w-7 h-7 shrink-0"
+                />
+              )}
               <button
                 onClick={() => { if (!docked) close(); onLocate(thread[0].id); }}
                 title={t('reader.locate')}
@@ -1098,7 +1149,7 @@ function ReaderOverlay({ node, onLocate, dock }: { node: ThoughtNode; onLocate: 
                       <Loader2 size={13} strokeWidth={1.75} className="animate-spin text-accent" /> {t('common.thinking')}
                     </div>
                   ) : (
-                    <div className="markdown-body text-body text-ink" data-turn-answer={turn.id}>
+                    <div className="markdown-body text-body text-ink" data-turn-answer={turn.id} data-highlighter-active={(railHighlighter.active && !turn.data.isLoading) || undefined}>
                       {(turn.data.highlights?.length ?? 0) > 0 ? (
                         <HighlightedMarkdown base={turn.data.agentSession?.cwd ?? turn.data.importSource?.cwd} content={turn.data.response} highlights={new Set(turn.data.highlights.map((h) => h.text))} />
                       ) : (
@@ -1221,30 +1272,6 @@ function ReaderOverlay({ node, onLocate, dock }: { node: ThoughtNode; onLocate: 
                 ta.style.height = `${Math.min(120, ta.scrollHeight)}px`;
               }}
             />
-            {ask.targetNodeId && (
-              <button
-                onClick={highlightSelection}
-                title={t('common.highlight')}
-                className="w-8 h-8 rounded-control bg-wash text-ink-muted hover:text-accent hover:bg-accent/10 flex items-center justify-center transition-colors shrink-0"
-              >
-                <Highlighter size={14} strokeWidth={1.75} />
-              </button>
-            )}
-            {!ask.targetNodeId && (
-              <button
-                onClick={() => {
-                  useStore.getState().addHighlight(node.id, { id: generateId(), text: ask.text });
-                  toast('success', t('reader.textHighlighted'));
-                  setAsk(null);
-                  window.getSelection()?.removeAllRanges();
-                }}
-                title={t('reader.highlightText')}
-                data-reader-highlight
-                className="w-8 h-8 rounded-control bg-wash text-ink-muted hover:text-amber-600 hover:bg-amber-500/10 flex items-center justify-center transition-colors shrink-0"
-              >
-                <Highlighter size={14} strokeWidth={1.75} />
-              </button>
-            )}
             {!ask.targetNodeId && (
               <button
                 onClick={saveSelectionAsNote}

@@ -79,7 +79,7 @@ export default function CanvasLayoutPanel({ flow: rf }: { flow: ReactFlowInstanc
   const cancel = () => { useUiStore.getState().setDraft(draftKey, ''); close(); };
   useDismissableLayer({ open: true, refs: [panel], onDismiss: reason => {
     cancel();
-    if (reason === 'escape') restoreCanvasToolbarFocus(null);
+    if (reason === 'escape') restoreCanvasToolbarFocus(document.querySelector('[data-layout-entry]'));
   }, dismissOnOutside: false, restoreFocus: false });
   useEffect(() => {
     pending.current?.cancel();

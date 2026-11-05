@@ -783,7 +783,8 @@ function Canvas() {
     if (panelMode && !panelFits) useUiStore.getState().setPanelOpen(false);
   }, [panelMode, panelFits]);
   const toolCardOpen = useCanvasToolCards((state) => state.active !== null);
-  const showFormatPanel = selectedNodeIds.length > 0 && !edgeEditorOpen && !batchEdgeOpen && !layoutOpen && !toolCardOpen;
+  const inspectorSuspended = toolCardOpen || chatOpen;
+  const showFormatPanel = selectedNodeIds.length > 0 && !edgeEditorOpen && !batchEdgeOpen && !layoutOpen && !inspectorSuspended;
   const [formatPanelReady, setFormatPanelReady] = useState(false);
   useEffect(() => {
     // Let a double-click reach the card before a newly opened inspector can
@@ -792,7 +793,7 @@ function Canvas() {
     return () => window.clearTimeout(timer);
   }, [showFormatPanel]);
   const occupiedPanelWidth = panelOpen ? livePanelWidth : 0;
-  const toolbarPanelPosition = useCanvasPanelPosition();
+  const toolbarPanelPosition = useCanvasPanelPosition(true, 'left');
   const canvasHeaderRef = useResponsiveCanvasHeader();
   useEffect(() => {
     // a selection that names no node is stale; drop it so nothing else keys off it
@@ -1009,7 +1010,7 @@ function Canvas() {
   }, dismissOnFocusOutside: true, restoreFocus: false });
 
   // Toolbar overflow menu: low-frequency actions live behind one ⋯ button
-  // so the top-right row stays short in both languages and with the panel
+  // so the project toolbar stays short in both languages and with the panel
   // dragged wide.
   const [moreRequested, setMoreOpen] = useState(false);
   const [overflowMenu, setOverflowMenu] = useState<HTMLDivElement | null>(null);
@@ -1857,70 +1858,9 @@ function Canvas() {
       <div ref={canvasHeaderRef} className="canvas-header" data-canvas-header
         style={{ right: occupiedPanelWidth ? `calc(min(${occupiedPanelWidth}px, 70vw) + ${PANEL_INSET * 2}px)` : undefined }}>
       <CanvasToolbarOverflowContext.Provider value={overflowContext}>
+      {/* Session tools and general actions stay with the project on the left. */}
       {!isViewerMode && <ProjectSwitcher onSwitched={afterProjectSwitch}>
         {!isParadigm && <ModelPicker />}
-      </ProjectSwitcher>}
-
-      <div className="canvas-header-actions">
-      {/* Search floats below the fixed row and stays open while browsing results. */}
-      <SearchBar
-        open={searchOpen}
-        onClose={() => setSearchOpen(false)}
-        onLocate={(id) => {
-          const n = useStore.getState().nodes.find((x) => x.id === id);
-          if (n) {
-            setSelectedNodeId(id);
-            centerNode(n, { zoom: 1 });
-          }
-        }}
-      />
-
-      {/* Viewer: the toolbar collapses to a read-only badge + download + brand
-          link — every mutating control lives in the author toolbar below. */}
-      {isViewerMode && (
-        <div
-          className="canvas-toolbar relative z-10"
-          data-top-toolbar
-        >
-          <span className="canvas-toolbar-icon bg-card border border-line rounded-control h-8 px-3 flex items-center gap-1.5 text-ink-muted text-control font-medium" title={t('viewer.badge')} aria-label={t('viewer.badge')} data-viewer-badge>
-            <Eye size={14} strokeWidth={1.75} /><span className="canvas-toolbar-label">{t('viewer.badge')}</span>
-          </span>
-          <button
-            onClick={() => setSearchOpen(true)}
-            className="bg-card border border-line rounded-control w-8 h-8 flex items-center justify-center hover:bg-wash transition-colors text-ink-muted hover:text-accent"
-            title={t('search.entryTitle')}
-            data-search-entry
-          >
-            <Search size={15} strokeWidth={1.75} />
-          </button>
-          <LangSwitch />
-          <button
-            onClick={() => exportActiveProjectJson()}
-            className="bg-card border border-line rounded-control w-8 h-8 flex items-center justify-center hover:bg-wash transition-colors text-ink-muted hover:text-accent"
-            title={t('viewer.downloadJson')}
-          >
-            <Download size={15} strokeWidth={1.75} />
-          </button>
-          <a
-            href="https://github.com/chenxiachan/thoughtdag"
-            target="_blank"
-            rel="noreferrer"
-            title={t('viewer.openApp')} aria-label={t('viewer.openApp')}
-            className="canvas-toolbar-icon bg-ink text-card rounded-control h-8 px-3 flex items-center gap-1.5 hover:bg-ink/85 transition-colors text-control font-medium"
-          >
-            <ArrowRight size={14} /><span className="canvas-toolbar-label">{t('viewer.openApp')}</span>
-          </a>
-        </div>
-      )}
-
-      {/* Toolbar: web search, language, tutorial, relayout, undo/redo.
-          Positioned relative to the VISIBLE canvas: when the overlay panel
-          is open it slides left instead of hiding underneath. */}
-      {!isViewerMode && (
-      <div
-        className="canvas-toolbar canvas-toolbar-main relative z-10"
-        data-top-toolbar
-      >
         <div className="canvas-toolbar-group canvas-toolbar-context">
         {isParadigm && (
           <>
@@ -1996,7 +1936,6 @@ function Canvas() {
           </CanvasToolbarOverflowAction>
         )}
         </div>
-        {hasNodes && !layoutOpen && <SelectionTargetControl />}
         {hasNodes && <div className="canvas-toolbar-group">
         {hasNodes && frames.length > 0 && (
           <div ref={frameNavRef} className="contents">
@@ -2033,7 +1972,10 @@ function Canvas() {
         )}
         {hasNodes && (
           <button
-            onClick={() => setChatOpen((v) => !v)}
+            onClick={() => {
+              useCanvasToolCards.getState().active?.suspend();
+              setChatOpen((v) => !v);
+            }}
             className="canvas-toolbar-button canvas-toolbar-secondary"
             aria-pressed={chatOpen}
             title={t('chat.entryTitle')}
@@ -2075,7 +2017,7 @@ function Canvas() {
             <FolderSync size={16} strokeWidth={1.75} />
           </button>
         )}
-        {/* ⋯ overflow: share, memory, annotations, relayout, tutorial —
+        {/* ⋯ overflow: share, memory, annotations, tutorial —
             one slot regardless of language or panel width. */}
         <div ref={moreRef} className="relative" data-selection-menu>
           <button
@@ -2141,18 +2083,6 @@ function Canvas() {
               >
                 <Hand size={14} strokeWidth={1.75} className={`shrink-0 ${wheelPans ? 'text-accent' : 'text-ink-faint'}`} /> <span className="flex-1">{t('toolbar.menuWheelPans')}</span>{wheelPans && <span className="text-accent">✓</span>}
               </button>
-              {hasNodes && (
-                <button
-                  onClick={() => {
-                    setMoreOpen(false);
-                    useCanvasEditing.getState().setLayoutOpen(true);
-                  }}
-                  data-layout-entry
-                  className="w-full text-left px-3 py-2 text-control text-ink hover:bg-wash transition-colors flex items-center gap-2.5"
-                >
-                  <SlidersHorizontal size={14} strokeWidth={1.75} className="text-ink-faint shrink-0" /> {t('canvasLayout.title')}
-                </button>
-              )}
               {highlightCount > 0 && (
                 <button
                   onClick={() => { setMoreOpen(false); useUiStore.getState().setHighlightsOverviewOpen(true); }}
@@ -2316,7 +2246,7 @@ function Canvas() {
           )}
         </div>
         </div>
-        <div className="canvas-toolbar-group canvas-toolbar-history">
+        <div className="canvas-toolbar-group canvas-toolbar-history" data-selection-menu>
         <button
           onClick={undo}
           disabled={!undoable.canUndo}
@@ -2334,10 +2264,81 @@ function Canvas() {
           <Redo2 size={16} strokeWidth={1.75} />
         </button>
         </div>
-      </div>
+      </ProjectSwitcher>}
+
+      <div className="canvas-header-actions">
+      {/* Viewer: the toolbar collapses to a read-only badge + download + brand
+          link — every mutating control lives in the author toolbar below. */}
+      {isViewerMode && (
+        <div
+          className="canvas-toolbar relative z-10"
+          data-top-toolbar
+        >
+          <span className="canvas-toolbar-icon bg-card border border-line rounded-control h-8 px-3 flex items-center gap-1.5 text-ink-muted text-control font-medium" title={t('viewer.badge')} aria-label={t('viewer.badge')} data-viewer-badge>
+            <Eye size={14} strokeWidth={1.75} /><span className="canvas-toolbar-label">{t('viewer.badge')}</span>
+          </span>
+          <button
+            onClick={() => setSearchOpen(true)}
+            className="bg-card border border-line rounded-control w-8 h-8 flex items-center justify-center hover:bg-wash transition-colors text-ink-muted hover:text-accent"
+            title={t('search.entryTitle')}
+            data-search-entry
+          >
+            <Search size={15} strokeWidth={1.75} />
+          </button>
+          <LangSwitch />
+          <button
+            onClick={() => exportActiveProjectJson()}
+            className="bg-card border border-line rounded-control w-8 h-8 flex items-center justify-center hover:bg-wash transition-colors text-ink-muted hover:text-accent"
+            title={t('viewer.downloadJson')}
+          >
+            <Download size={15} strokeWidth={1.75} />
+          </button>
+          <a
+            href="https://github.com/chenxiachan/thoughtdag"
+            target="_blank"
+            rel="noreferrer"
+            title={t('viewer.openApp')} aria-label={t('viewer.openApp')}
+            className="canvas-toolbar-icon bg-ink text-card rounded-control h-8 px-3 flex items-center gap-1.5 hover:bg-ink/85 transition-colors text-control font-medium"
+          >
+            <ArrowRight size={14} /><span className="canvas-toolbar-label">{t('viewer.openApp')}</span>
+          </a>
+        </div>
       )}
 
+      {/* Selection and layout stay beside the geometry inspectors on the right. */}
+      {!isViewerMode && hasNodes && (
+        <div className="canvas-toolbar canvas-toolbar-main relative z-10" data-top-toolbar data-selection-menu>
+          {!layoutOpen && <SelectionTargetControl />}
+          <button
+            onClick={() => {
+              useCanvasToolCards.getState().active?.suspend();
+              setChatOpen(false);
+              useCanvasEditing.getState().setLayoutOpen(true);
+            }}
+            className="canvas-toolbar-button canvas-toolbar-icon"
+            title={t('canvasLayout.title')}
+            aria-expanded={layoutOpen && !inspectorSuspended}
+            data-layout-entry
+          >
+            <SlidersHorizontal size={16} strokeWidth={1.75} />
+            <span className="canvas-toolbar-label">{t('canvasLayout.title')}</span>
+          </button>
+        </div>
+      )}
       </div>
+
+      {/* Search floats below the fixed row and stays open while browsing results. */}
+      <SearchBar
+        open={searchOpen}
+        onClose={() => setSearchOpen(false)}
+        onLocate={(id) => {
+          const n = useStore.getState().nodes.find((x) => x.id === id);
+          if (n) {
+            setSelectedNodeId(id);
+            centerNode(n, { zoom: 1 });
+          }
+        }}
+      />
 
       </CanvasToolbarOverflowContext.Provider>
       </div>
@@ -2346,12 +2347,13 @@ function Canvas() {
       {showFormatPanel && formatPanelReady && !isViewerMode && <CanvasQuickLayoutContext.Provider value={quickLayout}>
         <SelectionToolbar getViewportRect={getViewportRect} withDetails={panelOpen} />
       </CanvasQuickLayoutContext.Provider>}
-      {batchEdgeOpen && !toolCardOpen && <BatchEdgeInspector selected={selectedEdges} />}
+      {batchEdgeOpen && !inspectorSuspended && <BatchEdgeInspector selected={selectedEdges} />}
 
-      {/* Ask the canvas: the outline-reading dialog, bottom right */}
+      {/* Ask the canvas: a persistent work panel below the left toolbar. */}
       {!isViewerMode && (
         <CanvasChat
           open={chatOpen}
+          suspended={toolCardOpen}
           onClose={() => setChatOpen(false)}
           onLocate={(id) => {
             const n = useStore.getState().nodes.find((x) => x.id === id);
@@ -2426,8 +2428,8 @@ function Canvas() {
           centerNode(node, { duration: 300 });
         }
       }} />}
-      {layoutOpen && !toolCardOpen && !isViewerMode && rfInstance.current && <CanvasLayoutPanel flow={rfInstance.current} />}
-      {edgeEditorOpen && !toolCardOpen && editingEdgeId && <EdgeInspector edgeId={editingEdgeId}
+      {layoutOpen && !inspectorSuspended && !isViewerMode && rfInstance.current && <CanvasLayoutPanel flow={rfInstance.current} />}
+      {edgeEditorOpen && !inspectorSuspended && editingEdgeId && <EdgeInspector edgeId={editingEdgeId}
         onClose={() => useCanvasEditing.getState().setEdgeId(null)}
         onLocateNode={(id) => {
           const node = nodes.find((item) => item.id === id);

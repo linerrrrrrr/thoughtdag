@@ -50,7 +50,7 @@ export default function CanvasDetailControl({ openPing = 0 }: { openPing?: numbe
   const detail = useUiStore((state) => state.canvasDetail);
   const setDetail = useUiStore((state) => state.setCanvasDetail);
   const selectedId = useStore((state) => state.selectedNodeId);
-  const position = useCanvasPanelPosition(open);
+  const position = useCanvasPanelPosition(open, 'left');
   useDismissableLayer({ open, refs: [trigger, panel], onDismiss: reason => {
     setOpen(false);
     if (reason === 'escape') restoreCanvasToolbarFocus(trigger.current);

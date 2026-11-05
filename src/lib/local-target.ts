@@ -44,6 +44,13 @@ export function localTargetOf(href: string | undefined | null, base?: string | n
 
 export const basenameOf = (path: string): string => path.replace(/\\/g, '/').split('/').filter(Boolean).pop() ?? path;
 
+/** Keep copied/status-bar URLs local too, rather than exposing an app route. */
+export function localFileHref(target: LocalTarget): string {
+  const encoded = target.path.split('/').map(encodeURIComponent).join('/').replace(/^([a-z])%3A/i, '$1:');
+  const href = target.path.startsWith('~/') ? encoded : `file://${encoded.startsWith('/') ? '' : '/'}${encoded}`;
+  return `${href}${target.line ? `#L${target.line}${target.column ? `C${target.column}` : ''}` : ''}`;
+}
+
 /** Only these web schemes may reach the browser; local hrefs are intercepted. */
 export function safeMarkdownUrl(url: string): string {
   if (localTargetOf(url)) return url;

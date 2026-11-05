@@ -17,8 +17,9 @@ import { foldToolCalls } from '../lib/tool-markup';
 import { useAppearance } from '../lib/appearance';
 import { localTargetOf, safeMarkdownUrl } from '../lib/local-target';
 import { ConversationLink } from './ConversationLink';
+import { remarkFileCitations } from '../lib/remark-file-citations';
 
-const REMARK_PLUGINS = [remarkGfm, remarkMath];
+const REMARK_PLUGINS = [remarkGfm, remarkMath, remarkFileCitations];
 
 // Models freely emit \( \) and \[ \] math delimiters; remark-math only
 // parses $-style. Normalize outside code fences/spans so formulas render

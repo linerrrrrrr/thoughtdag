@@ -358,7 +358,6 @@ try {
   await page.evaluate(() => window.__store.getState().setSelectedNodeIds(['outer', 'inner']));
   await page.evaluate(() => window.__rf.fitView({ duration: 0, padding: 0.2 }));
   const nestedBefore = await graph();
-  await page.locator('[data-node-format-reopen]').click();
   await page.locator('[data-frame-fit]').click();
   await page.waitForTimeout(450);
   const nestedAfter = await graph();

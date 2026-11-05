@@ -51,7 +51,7 @@ const select = async ids => {
     state.setSelectedNodeIds(next);
     return changed;
   }, ids);
-  if (changed && ids.length) await page.locator('[data-node-format-reopen]').waitFor();
+  if (changed && ids.length) await page.locator('[data-node-format-close]').waitFor();
   if (ids.length) await expandInspector();
 };
 const fixture = async (ids = [], extraFrame = false) => {

@@ -12,12 +12,13 @@ import type { ThoughtNode as ThoughtNodeType } from '../types';
 import { useStore } from '../store';
 import { staleHiddenByJudge, currentStaleVerdict } from '../lib/stale-judge';
 import { setNodeDetail, useNodeDetail } from '../lib/node-detail';
-import { generateId, isImeComposing , activeSummary, awaitingInput, formatStamp } from '../utils';
+import { isImeComposing , activeSummary, awaitingInput, formatStamp } from '../utils';
 import { processFile } from '../lib/attachments';
 import { copyText } from '../lib/export';
 import { isRunLocked } from '../lib/paradigm';
 import { collectExploreMarksKey, type ExploreMark } from '../lib/explore-marks';
-import { withinOneCodeBlock } from '../lib/highlight-match';
+import { useTextHighlighter } from '../lib/use-text-highlighter';
+import HighlighterButton from './ui/HighlighterButton';
 import { useUiStore, toast } from '../lib/ui-store';
 import SearchToggles from './ui/SearchToggles';
 import { Markdown, HighlightedMarkdown } from './Markdown';
@@ -59,7 +60,6 @@ export default function ThoughtNode({ id, data, selected }: NodeProps<ThoughtNod
   const stopGeneration = useStore((s) => s.stopGeneration);
   const setEditingResponse = useStore((s) => s.setEditingResponse);
   const editResponse = useStore((s) => s.editResponse);
-  const addHighlight = useStore((s) => s.addHighlight);
   const navigateVersion = useStore((s) => s.navigateVersion);
   const deleteVersion = useStore((s) => s.deleteVersion);
   const setSelectedNodeId = useStore((s) => s.setSelectedNodeId);
@@ -73,7 +73,7 @@ export default function ThoughtNode({ id, data, selected }: NodeProps<ThoughtNod
   // fan-out placeholder shows its expand button until branches exist
   const hasFanoutChildren = useStore((s) => s.edges.some((e) => e.source === id && e.data?.isBranchFromSelection));
   const [selectedText, setSelectedText] = useState('');
-  const [selectionPos, setSelectionPos] = useState<{ x: number; y: number; inCode: boolean } | null>(null);
+  const [selectionPos, setSelectionPos] = useState<{ x: number; y: number } | null>(null);
   // An ask node's first question lives in shared drafts until sent:
   // undoing the node and redoing it brings the words back.
   const askDraftKey = `ask:${id}`;
@@ -172,26 +172,38 @@ export default function ThoughtNode({ id, data, selected }: NodeProps<ThoughtNod
     return () => clearTimeout(timer);
   }, [isAwaitingAsk, isAwaitingHuman, questionEditActive]);
 
-  const handleTextSelection = useCallback(() => {
+  const highlighter = useTextHighlighter({
+    scopeKey: `${id}:${data.responseIndex}:${data.response}`,
+    enabled: !isViewerMode && !!data.response && !data.isLoading && !data.isEditingResponse && !zoomedOut && !isCollapsed,
+    surfaceRef: responseRef,
+  });
+  const { markSelection } = highlighter;
+  const handleTextSelection = useCallback((event: MouseEvent) => {
+    if (event.button !== 0 || (event.target instanceof Element && event.target.closest('button, input, textarea'))) return;
     const selection = window.getSelection();
-    if (selection && selection.toString().trim().length > 0 && responseRef.current?.contains(selection.anchorNode)) {
+    const range = selection?.rangeCount ? selection.getRangeAt(0) : null;
+    if (selection && range && selection.toString().trim().length > 0
+      && responseRef.current?.contains(range.startContainer) && responseRef.current.contains(range.endContainer)) {
+      if (markSelection(selection, id)) {
+        setSelectedText('');
+        setSelectionPos(null);
+        return;
+      }
       const text = selection.toString().trim();
       setSelectedText(text);
-      const range = selection.getRangeAt(0);
       const rangeRect = range.getBoundingClientRect();
       const nodeRect = nodeRef.current?.getBoundingClientRect();
       if (nodeRect) {
         setSelectionPos({
           x: rangeRect.left + rangeRect.width / 2 - nodeRect.left,
           y: rangeRect.top - nodeRect.top - 48,
-          inCode: withinOneCodeBlock(range),
         });
       }
     } else {
       setSelectedText('');
       setSelectionPos(null);
     }
-  }, []);
+  }, [id, markSelection]);
 
   useEffect(() => {
     if (isViewerMode) return; // no selection menu (branch/highlight are writes)
@@ -210,14 +222,6 @@ export default function ThoughtNode({ id, data, selected }: NodeProps<ThoughtNod
       branchYRatio = Math.max(0.1, Math.min(0.9, (selRect.top + selRect.height / 2 - nodeRect.top) / nodeRect.height));
     }
     createQuestionDraft({ parentId: id, branchContext: selectedText, branchYRatio });
-    setSelectedText('');
-    setSelectionPos(null);
-    window.getSelection()?.removeAllRanges();
-  };
-
-  const handleHighlight = () => {
-    if (!selectedText) return;
-    addHighlight(id, { id: generateId(), text: selectedText });
     setSelectedText('');
     setSelectionPos(null);
     window.getSelection()?.removeAllRanges();
@@ -335,6 +339,7 @@ export default function ThoughtNode({ id, data, selected }: NodeProps<ThoughtNod
     title: `${t('node.exploredHere')} · ${m.question.slice(0, 80)}`,
   }));
   const handleResponseClick = (e: React.MouseEvent) => {
+    if (highlighter.active) return;
     const m = (e.target as HTMLElement).closest?.('mark[data-explore-target]');
     if (!m) return;
     if (window.getSelection()?.toString()) return; // a drag-select, not a click
@@ -780,6 +785,7 @@ export default function ThoughtNode({ id, data, selected }: NodeProps<ThoughtNod
               ref={responseRef}
               onClick={handleResponseClick}
               data-conversation-answer
+              data-highlighter-active={highlighter.active || undefined}
               className={`conversation-answer markdown-body text-body text-ink ${fixedHeight == null ? 'max-h-[400px] overflow-y-auto' : ''} cursor-text nopan nodrag nowheel`}
             >
               {highlightedTexts.size > 0 || exploreSpecs.length > 0 ? (
@@ -851,6 +857,12 @@ export default function ThoughtNode({ id, data, selected }: NodeProps<ThoughtNod
               >
                 <Copy size={13} strokeWidth={1.75} />
               </button>
+              {!isViewerMode && <HighlighterButton
+                active={highlighter.active}
+                buttonRef={highlighter.buttonRef}
+                onClick={() => { setSelectedText(''); setSelectionPos(null); highlighter.toggle(); }}
+                className="w-6 h-6"
+              />}
               {!isViewerMode && (
                 <button
                   onClick={(e) => { e.stopPropagation(); startEditResponse(); }}
@@ -945,7 +957,7 @@ export default function ThoughtNode({ id, data, selected }: NodeProps<ThoughtNod
       )}
 
       {/* Floating toolbar for text selection */}
-      {selectedText && selectionPos && (
+      {!highlighter.active && selectedText && selectionPos && (
         <div
           style={{
             position: 'absolute',
@@ -963,14 +975,6 @@ export default function ThoughtNode({ id, data, selected }: NodeProps<ThoughtNod
             >
               <GitBranch size={14} strokeWidth={1.75} className="inline" /> {t('common.explore')}
             </button>
-            {!selectionPos.inCode && (
-              <button
-                onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); handleHighlight(); }}
-                className="bg-amber-500 hover:bg-amber-400 text-white text-control px-3 py-1.5 rounded-control transition-all whitespace-nowrap cursor-pointer"
-              >
-                <Star size={14} strokeWidth={1.75} className="inline" /> {t('common.highlight')}
-              </button>
-            )}
           </div>
         </div>
       )}

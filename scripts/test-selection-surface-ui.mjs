@@ -255,7 +255,6 @@ try {
   });
 
   await fixture({ zoom: 0.6, preselect: true });
-  await page.locator('[data-node-format-reopen]').click();
   await page.locator('[data-node-format-field="width"]').fill('520');
   await page.keyboard.press('Enter'); await selected(['a', 'b']);
   for (const current of (await geometry()).filter(item => ['a', 'b'].includes(item.id))) assert.equal(current.width, 520);

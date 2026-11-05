@@ -49,6 +49,13 @@ const openDetail = async () => {
   else { await item('toolbar-more').click(); await item('menu-detail').click(); }
   await item('canvas-detail-panel').waitFor();
 };
+const leftDock = async name => {
+  const panel = await item(name).boundingBox();
+  const { header, left } = await geometry();
+  assert.ok(Math.abs(panel.x - left.x) <= 1, `${name} aligns with left toolbar`);
+  assert.ok(Math.abs(panel.y - header.bottom - 16) <= 1, `${name} opens below toolbar`);
+  assert.ok(panel.x + panel.width <= page.viewportSize().width - 15, `${name} fits the viewport`);
+};
 try {
   await page.goto(process.env.APP_URL ?? 'http://127.0.0.1:5193');
   await page.waitForFunction(() => window.__rf && window.__ui && window.__store?.persist.hasHydrated());
@@ -73,7 +80,8 @@ try {
   });
   await page.waitForTimeout(500);
   assert.equal(await page.locator('[data-layout-quick], [data-canvas-layout-entry]').count(), 0);
-  await page.locator('[data-top-toolbar]').screenshot({ path: `${output}/toolbar-wide.png` });
+  assert.equal(await item('top-toolbar').locator('[data-layout-entry]').count(), 1);
+  await item('canvas-header').screenshot({ path: `${output}/toolbar-wide.png` });
   assert.match(await page.locator('.canvas-project-button').getAttribute('title'), /Long research canvas/);
   const densities = new Set();
   for (const lang of ['zh', 'en']) {
@@ -92,6 +100,8 @@ try {
           await item('toolbar-more').click();
           assert.equal(await item('menu-quick-layout').count(), 0);
           assert.equal(await item('layout-entry').isVisible(), true);
+          assert.equal(await item('toolbar-more-panel').locator('[data-layout-entry]').count(), 0);
+          await leftDock('toolbar-more-panel');
           await page.screenshot({ path: `${output}/menu-${width}.png` });
           await page.keyboard.press('Escape');
         }
@@ -128,6 +138,7 @@ try {
   assert.equal(await page.locator('.canvas-tool-panel:visible').count(), 1);
   assert.equal(await item('node-format-panel').count(), 0);
   assert.ok(search.y >= row.header.bottom + 8);
+  await leftDock('canvas-search');
   assert.deepEqual((await geometry()).header, row.header);
   await page.keyboard.press('Escape');
   await item('canvas-search').waitFor({ state: 'hidden' });
@@ -146,11 +157,13 @@ try {
   assert.deepEqual(await page.evaluate(() => window.__store.getState().selectedNodeIds.sort()), ['a', 'b']);
   await page.keyboard.press('Escape');
   await openDetail();
+  await leftDock('canvas-detail-panel');
   await page.keyboard.press('Escape');
   assert.equal(await item('toolbar-more').evaluate(el => el === document.activeElement), true);
   await item('toolbar-more').click();
   await item('menu-frames').click();
   await item('frame-nav-panel').waitFor();
+  await leftDock('frame-nav-panel');
   await page.keyboard.press('Escape');
   assert.equal(await item('toolbar-more').evaluate(el => el === document.activeElement), true);
   console.log('PASS compact selection retains its semantics; overflow tools restore keyboard focus');
@@ -175,6 +188,32 @@ try {
       ? { ...node, data: { ...node.data, isLoading: true, pendingApprovals: [{ id: 'test', name: 'Review', askedAt: Date.now(), answered: false }] } } : node) }));
   });
   await page.waitForTimeout(400);
+  for (const entry of ['agent-cwd', 'agent-permission-chip']) {
+    assert.equal(await item('project-switcher').locator(`[data-${entry}]`).count(), 1, entry);
+    assert.equal(await item('top-toolbar').locator(`[data-${entry}]`).count(), 0, entry);
+  }
+  await page.setViewportSize({ width: 1760, height: 1000 });
+  await page.evaluate(() => window.__ui.getState().setPanelOpen(false));
+  await page.waitForTimeout(300);
+  await item('agent-cwd').click();
+  await item('agent-cwd-menu').waitFor();
+  await leftDock('agent-cwd-menu');
+  await item('agent-cwd-input').fill('E:/session-draft');
+  await page.screenshot({ path: `${output}/agent-directory-wide.png` });
+  await item('agent-permission-chip').click();
+  await item('agent-permission-menu').waitFor();
+  await leftDock('agent-permission-menu');
+  await page.evaluate(async () => {
+    (await window.__importLive('/src/i18n/index.ts')).useI18n.getState().setLang('en');
+    (await window.__importLive('/src/lib/appearance.ts')).useAppearance.getState().setLighting('dark');
+  });
+  await page.waitForTimeout(200);
+  await page.screenshot({ path: `${output}/agent-permission-en-dark.png` });
+  await page.keyboard.press('Escape');
+  await page.evaluate(async () => {
+    (await window.__importLive('/src/i18n/index.ts')).useI18n.getState().setLang('zh');
+    (await window.__importLive('/src/lib/appearance.ts')).useAppearance.getState().setLighting('light');
+  });
   for (const width of [1760, 960, 390, 320]) {
     await page.setViewportSize({ width, height: 1000 });
     await page.waitForTimeout(300);
@@ -187,13 +226,23 @@ try {
   await item('toolbar-more').click();
   await item('toolbar-more-panel').getByRole('button', { name: labels.cwd, exact: true }).click();
   await item('agent-cwd-menu').waitFor();
+  await leftDock('agent-cwd-menu');
+  assert.equal(await item('agent-cwd-input').inputValue(), 'E:/session-draft');
+  await item('agent-cwd-input').fill('');
+  await page.screenshot({ path: `${output}/agent-directory-narrow.png` });
   await page.keyboard.press('Escape');
   assert.equal(await item('toolbar-more').evaluate(el => el === document.activeElement), true);
   await item('toolbar-more').click();
   await item('toolbar-more-panel').getByRole('button', { name: labels.permission, exact: true }).click();
   await item('agent-permission-menu').waitFor();
+  await leftDock('agent-permission-menu');
   await page.keyboard.press('Escape');
   assert.equal(await item('toolbar-more').evaluate(el => el === document.activeElement), true);
+  await item('toolbar-more').click();
+  await item('toolbar-more-panel').getByRole('button', { name: labels.cwd, exact: true }).click();
+  await item('agent-cwd-menu').waitFor();
+  assert.equal(await item('agent-cwd-input').inputValue(), '');
+  await page.keyboard.press('Escape');
   console.log('PASS agent settings and transient statuses fit and remain accessible from More');
   await page.evaluate(async () => {
     const { useProjects } = await window.__importLive('/src/store/projects.ts');

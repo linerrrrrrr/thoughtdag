@@ -54,7 +54,7 @@ const select = async ids => {
     state.setSelectedNodeIds(next);
     return changed;
   }, ids);
-  if (changed && ids.length) await page.locator('[data-node-format-reopen]').waitFor();
+  if (changed && ids.length) await page.locator('[data-node-format-close]').waitFor();
 };
 const geometry = nodes => nodes.map(({ id, width, height, position, data }) => ({ id, width, height, position, lock: !!data.lockAspectRatio }));
 const screenshot = name => page.screenshot({ path: `${outputDir}/${name}.png` });
@@ -240,10 +240,9 @@ try {
 
   await fixture(['a']);
   await page.locator('[data-node-format-panel]').waitFor();
-  assert.equal(await page.locator('[data-node-format-reopen]').getAttribute('aria-expanded'), 'false');
-  assert.equal(await field('width').count(), 0, 'A new selection starts with the object inspector collapsed');
-  check('object inspector is collapsed by default and expands only on explicit request');
-  await expandInspector();
+  assert.equal(await page.locator('[data-node-format-close]').getAttribute('aria-expanded'), 'true');
+  assert.ok(await field('width').isVisible(), 'A new selection starts with the object inspector expanded');
+  check('object inspector is expanded by default with geometry controls immediately available');
   assert.equal(await field('width').inputValue(), '400');
   assert.equal(await field('height').inputValue(), '260');
   assert.equal(await field('x').inputValue(), '100');
@@ -370,7 +369,7 @@ try {
   await expandInspector();
   await assertPanelFits();
   assert.equal(await page.locator('[data-node-format-content]').evaluate(element => element.tagName), 'DIV', 'Content actions have no collapse toggle');
-  assert.ok(await page.locator('[data-node-format-panel]').getByRole('button', { name: '合并摘要', exact: true }).isVisible(), 'Content actions are visible after explicitly expanding the inspector');
+  assert.ok(await page.locator('[data-node-format-panel]').getByRole('button', { name: '合并摘要', exact: true }).isVisible(), 'Content actions are visible in the expanded inspector');
   await page.locator('[data-node-format-panel]').getByRole('button', { name: '探索', exact: true }).click();
   const exploreDraft = page.locator('[data-node-format-panel] input:not([data-node-format-field]):not([type="checkbox"])');
   await exploreDraft.fill('保留这份探索草稿，不调用模型');
@@ -389,11 +388,10 @@ try {
   assert.equal(await field('width').inputValue(), '400');
   check('collapsing and reopening the inspector preserves selection and saved geometry');
   await screenshot('desktop-single');
+  await page.locator('[data-node-format-close]').click();
   await select(['a', 'b']);
-  await page.locator('[data-node-format-reopen]').waitFor();
-  assert.equal(await field('width').count(), 0, 'Changing the selected objects collapses the inspector again');
-  assert.equal(await page.locator('[data-node-format-reopen]').getAttribute('aria-expanded'), 'false');
-  await expandInspector();
+  assert.ok(await field('width').isVisible(), 'Changing the selected objects expands the inspector again');
+  assert.equal(await page.locator('[data-node-format-close]').getAttribute('aria-expanded'), 'true');
   await assertPanelFits();
   await screenshot('desktop-multi');
   await page.evaluate(async () => (await import('/src/lib/appearance.ts')).useAppearance.getState().setLighting('dark'));

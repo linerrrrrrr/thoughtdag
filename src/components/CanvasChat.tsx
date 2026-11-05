@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
 import { useDismissableLayer } from '../lib/use-dismissable-layer';
+import { useCanvasPanelPosition } from '../lib/use-canvas-panel-position';
 import { useSessionDraft } from '../lib/use-session-draft';
 import { Loader2, MessageCircleQuestion, Send, X } from 'lucide-react';
 import { useStore } from '../store';
@@ -13,7 +14,7 @@ import { Markdown } from './Markdown';
 import { COLORS } from '../lib/constants';
 import type { ThoughtEdge } from '../types';
 
-// The "ask the canvas" dialog, bottom right: the model reads the canvas's
+// The "ask the canvas" panel below the project toolbar: the model reads the canvas's
 // outline (and the selected node's chain) and answers with [[numbers]];
 // each number is a chip that locates the node, a number the canvas does not
 // have is red. Turns are kept per canvas in this browser. An answer joins
@@ -25,8 +26,10 @@ const CAP = 40;
 const loadTurns = (projectId: string): CanvasChatTurn[] => { try { const v = JSON.parse(localStorage.getItem(KEY(projectId)) ?? '[]'); return Array.isArray(v) ? v : []; } catch { return []; } };
 const saveTurns = (projectId: string, turns: CanvasChatTurn[]) => { try { localStorage.setItem(KEY(projectId), JSON.stringify(turns.slice(-CAP))); } catch { /* the dialog still works for this page */ } };
 
-export default function CanvasChat({ open, onClose, onLocate }: { open: boolean; onClose: () => void; onLocate: (id: string) => void }) {
+export default function CanvasChat({ open, suspended = false, onClose, onLocate }: { open: boolean; suspended?: boolean; onClose: () => void; onLocate: (id: string) => void }) {
   const t = useT();
+  const visible = open && !suspended;
+  const panelPosition = useCanvasPanelPosition(visible, 'left');
   const lang = useI18n((s) => s.lang);
   const projectId = useProjects((s) => s.activeId) ?? 'default';
   const nodes = useStore((s) => s.nodes);
@@ -36,16 +39,16 @@ export default function CanvasChat({ open, onClose, onLocate }: { open: boolean;
   const [turns, setTurns] = useState<CanvasChatTurn[]>(() => loadTurns(projectId));
   const [draft, setDraft] = useSessionDraft(`canvas-chat:${projectId}`);
   const layerRef = useRef<HTMLDivElement>(null);
-  useDismissableLayer({ open, refs: [layerRef], onDismiss: onClose, dismissOnOutside: false });
+  useDismissableLayer({ open: visible, refs: [layerRef], onDismiss: onClose, dismissOnOutside: false });
   const [busy, setBusy] = useState(false);
   const [focusCleared, setFocusCleared] = useState(false);
   const list = useRef<HTMLDivElement>(null);
   useEffect(() => { setTurns(loadTurns(projectId)); }, [projectId]);
   const firstProject = useRef(projectId);
   useEffect(() => { if (projectId !== firstProject.current) { firstProject.current = projectId; if (open) onClose(); } }, [projectId, open, onClose]);
-  useEffect(() => { if (open) list.current?.scrollTo({ top: list.current.scrollHeight }); }, [open, turns.length, busy]);
+  useEffect(() => { if (visible) list.current?.scrollTo({ top: list.current.scrollHeight }); }, [visible, turns.length, busy]);
   // a beacon left on by a hover must not outlive the dialog
-  useEffect(() => { if (!open) useUiStore.getState().setBeaconNodeId(null); }, [open]);
+  useEffect(() => { if (!visible) useUiStore.getState().setBeaconNodeId(null); }, [visible]);
   // the selection is the focus unless the person set it aside for this question
   useEffect(() => { setFocusCleared(false); }, [selectedNodeId]);
   const focusId = !focusCleared && selectedNodeId && nodes.some((n) => n.id === selectedNodeId && !n.data.archived) ? selectedNodeId : null;
@@ -111,7 +114,7 @@ export default function CanvasChat({ open, onClose, onLocate }: { open: boolean;
     onLocate(node.id);
   };
 
-  if (!open) return null;
+  if (!visible) return null;
   const questionOf = (i: number): string => { for (let k = i - 1; k >= 0; k--) if (turns[k].role === 'user') return turns[k].text; return ''; };
   const chip = (id: string, alias: string, key: string) => {
     const n = nodes.find((x) => x.id === id);
@@ -128,7 +131,7 @@ export default function CanvasChat({ open, onClose, onLocate }: { open: boolean;
   const suggest = (q: string) => { setDraft(q); window.setTimeout(() => { const ta = document.querySelector<HTMLTextAreaElement>('[data-chat-input]'); ta?.focus(); ta?.setSelectionRange(q.length, q.length); }, 0); };
   const SUGGESTIONS: { k: 'Overview' | 'Locate' | 'Grounds' | 'Compare' | 'Progress' }[] = [{ k: 'Overview' }, { k: 'Locate' }, { k: 'Grounds' }, { k: 'Compare' }, { k: 'Progress' }];
   return (
-    <div ref={layerRef} className="fixed bottom-4 right-4 z-[85] w-[440px] max-w-[calc(100vw-32px)] max-h-[72vh] flex flex-col rounded-panel border border-line bg-card shadow-lg" data-canvas-chat>
+    <div ref={layerRef} className="fixed z-[85] w-[440px] flex flex-col rounded-panel border border-line bg-card shadow-lg" style={{ ...panelPosition, maxHeight: 'min(72vh, max(0px, calc(100dvh - var(--canvas-tools-top, 82px) - 16px)))' }} data-canvas-chat>
       <div className="flex items-center gap-2 px-4 py-2.5 border-b border-line shrink-0">
         <MessageCircleQuestion size={15} strokeWidth={1.75} className="text-accent" />
         <span className="text-title font-semibold text-ink flex-1">{t('chat.title')}</span>

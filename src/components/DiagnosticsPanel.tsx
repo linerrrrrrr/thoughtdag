@@ -35,7 +35,7 @@ export default function DiagnosticsPanel({ onLocate, openPing = 0, showTrigger =
   const t = useT();
   const [requestedOpen, setOpen] = useState(false);
   const open = useCanvasToolCard('diagnostics', requestedOpen, () => setOpen(false));
-  const panelPosition = useCanvasPanelPosition(open);
+  const panelPosition = useCanvasPanelPosition(open, 'left');
   const [findings, setFindings] = useState<Finding[]>([]);
   const ref = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);

@@ -5,7 +5,7 @@ const os = require('node:os');
 const { spawn } = require('node:child_process');
 
 const MAX_TEXT = 1024 * 1024;
-const VIEWABLE = /\.(png|jpe?g|gif|webp|pdf|docx|xlsx|pptx|odt|ods|odp)$/i;
+const VIEWABLE = /\.(png|jpe?g|gif|webp|pdf|zip|docx|xlsx|pptx|odt|ods|odp)$/i;
 const IMAGE_MIME = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', svg: 'image/svg+xml' };
 
 function nativePath(raw) {
@@ -17,11 +17,32 @@ function nativePath(raw) {
   return path.isAbsolute(value) ? path.normalize(value) : null;
 }
 
-function launch(command, args) {
+function launch(command, args, env = process.env) {
   return new Promise((resolve) => {
-    const child = spawn(command, args, { windowsHide: true, stdio: 'ignore', shell: false });
+    const child = spawn(command, args, { env, windowsHide: true, stdio: 'ignore', shell: false });
     child.once('error', () => resolve(false));
     child.once('exit', (code) => resolve(code === 0));
+  });
+}
+
+// Explorer can exit with code 1 after handing off to an existing window, and
+// can stay alive for the window's lifetime. Wait only for ShellExecute's result,
+// not the viewer process. Pass paths as data so names cannot become PS commands.
+function launchWindows(p, select = false) {
+  const script = `
+    $ErrorActionPreference = 'Stop'
+    $info = New-Object System.Diagnostics.ProcessStartInfo
+    $info.UseShellExecute = $true
+    if ($env:THOUGHTDAG_LOCAL_SELECT -eq '1') {
+      $info.FileName = 'explorer.exe'
+      $info.Arguments = '/select,"' + $env:THOUGHTDAG_LOCAL_PATH + '"'
+    } else {
+      $info.FileName = $env:THOUGHTDAG_LOCAL_PATH
+    }
+    [System.Diagnostics.Process]::Start($info) | Out-Null
+  `;
+  return launch('powershell.exe', ['-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-Command', script], {
+    ...process.env, THOUGHTDAG_LOCAL_PATH: p, THOUGHTDAG_LOCAL_SELECT: select ? '1' : '0',
   });
 }
 
@@ -42,7 +63,7 @@ function createLocalFiles({ shell, allowRemoteOrigin = false } = {}) {
       return { ok: true, kind: 'file', opened: 'finder' };
     }
     const ok = process.platform === 'win32'
-      ? await launch('explorer.exe', [stat.isDirectory() ? p : `/select,${p}`])
+      ? await launchWindows(p, !stat.isDirectory())
       : process.platform === 'darwin'
         ? await launch('/usr/bin/open', stat.isDirectory() ? [p] : ['-R', p])
         : await launch('xdg-open', [stat.isDirectory() ? p : path.dirname(p)]);
@@ -56,14 +77,15 @@ function createLocalFiles({ shell, allowRemoteOrigin = false } = {}) {
     if (!stat.isDirectory() && !VIEWABLE.test(p)) return reveal(p);
     if (shell) { const error = await shell.openPath(p); return { ok: !error, kind: stat.isDirectory() ? 'dir' : 'file', opened: 'viewer' }; }
     const ok = process.platform === 'win32'
-      ? await launch('explorer.exe', [p])
+      ? await launchWindows(p)
       : await launch(process.platform === 'darwin' ? '/usr/bin/open' : 'xdg-open', [p]);
     return { ok, kind: stat.isDirectory() ? 'dir' : 'file', opened: 'viewer', ...(!ok ? { reason: 'error' } : {}) };
   }
   async function read(raw) {
     const file = await inspect(raw);
     if (!file.ok) return file;
-    if (!file.stat.isFile()) return { ok: false, reason: 'not-text' };
+    // Even an ASCII-only PDF must use its viewer, not the source-code preview.
+    if (!file.stat.isFile() || VIEWABLE.test(file.path)) return { ok: false, reason: 'not-text' };
     const handle = await fs.open(file.path, 'r');
     try {
       const buffer = Buffer.alloc(Math.min(file.stat.size, MAX_TEXT));

@@ -25,10 +25,18 @@ await page.addInitScript(() => {
 const output = 'local-tests/toolbar-cards';
 await mkdir(output, { recursive: true });
 const card = name => page.locator(`[data-${name}]`);
+const rightCards = new Set(['node-format-panel', 'canvas-layout-panel', 'edge-inspector', 'batch-edge-inspector']);
 const one = async name => {
   await card(name).waitFor();
   assert.equal(await page.locator('.canvas-tool-panel:visible').count(), 1, name);
-  assert.equal(Math.round((await card(name).boundingBox()).width), 320, name);
+  const panel = await card(name).boundingBox();
+  const header = await card('canvas-header').boundingBox();
+  const anchor = await card(rightCards.has(name) ? 'top-toolbar' : 'project-switcher').boundingBox();
+  assert.equal(Math.round(panel.width), 320, name);
+  assert.ok(Math.abs(panel.y - (header.y + header.height + 16)) <= 1, `${name} below toolbar`);
+  assert.ok(rightCards.has(name)
+    ? Math.abs(panel.x + panel.width - (anchor.x + anchor.width)) <= 1
+    : Math.abs(panel.x - anchor.x) <= 1, `${name} docks on its owning side`);
 };
 const check = name => console.log('PASS', name);
 const openConnection = async () => {
@@ -73,9 +81,13 @@ try {
   await one('node-format-panel');
   assert.equal(await card('project-switcher').locator('[data-model-picker-trigger]').count(), 1);
   assert.equal(await card('top-toolbar').locator('[data-model-picker-trigger]').count(), 0);
-  check('model connection entry is in the left project toolbar');
+  for (const entry of ['model-picker-trigger', 'search-entry', 'chat-entry', 'frame-nav-trigger', 'canvas-detail-trigger', 'toolbar-more']) {
+    assert.equal(await card('project-switcher').locator(`[data-${entry}]`).count(), 1, entry);
+    assert.equal(await card('top-toolbar').locator(`[data-${entry}]`).count(), 0, entry);
+  }
+  assert.equal(await card('top-toolbar').locator('[data-layout-entry]').count(), 1);
+  check('session and utility entries live on the left; layout stays on the right');
 
-  await card('node-format-reopen').click();
   await page.locator('[data-node-format-field="width"]').fill('420');
   await card('canvas-detail-trigger').click(); await one('canvas-detail-panel');
   assert.equal(await page.evaluate(() => window.__store.getState().nodes.find(node => node.id === 'a').width), 420);
@@ -104,15 +116,19 @@ try {
   await page.keyboard.press('Escape'); await one('node-format-panel');
   check('switching cards preserves connection drafts, including empty values');
 
-  await card('toolbar-more').click();
   await card('layout-entry').click(); await one('canvas-layout-panel');
   await card('layout-direction').locator('label:has(input[value="horizontal"])').click();
+  await card('toolbar-more').click(); await one('toolbar-more-panel');
+  await card('layout-entry').click(); await one('canvas-layout-panel');
+  assert.equal(await card('toolbar-more-panel').count(), 0);
+  assert.equal(await card('layout-direction').locator('input:checked').inputValue(), 'horizontal');
+  check('the direct layout entry restores a suspended layout and its draft');
   await card('canvas-detail-trigger').click(); await one('canvas-detail-panel');
   await page.keyboard.press('Escape'); await one('canvas-layout-panel');
   assert.equal(await card('layout-direction').locator('input:checked').inputValue(), 'horizontal');
   await page.keyboard.press('Escape');
   await card('canvas-layout-panel').waitFor({ state: 'detached' });
-  assert.equal(await card('toolbar-more').evaluate(el => el === document.activeElement), true);
+  assert.equal(await card('layout-entry').evaluate(el => el === document.activeElement), true);
   await page.evaluate(() => window.__canvasEditing.getState().setEdgeId('ab'));
   await one('edge-inspector');
   await card('edge-label-add').click();
@@ -136,6 +152,52 @@ try {
   });
   await one('node-format-panel');
   check('layout and edge inspectors suspend while a toolbar card is open');
+
+  await page.locator('.canvas-project-button').click(); await one('project-menu');
+  await page.keyboard.press('Escape'); await one('node-format-panel');
+  await card('chat-entry').click();
+  await card('canvas-chat').waitFor();
+  const chat = await card('canvas-chat').boundingBox();
+  const header = await card('canvas-header').boundingBox();
+  assert.equal(chat.x, header.x);
+  assert.equal(chat.y, header.y + header.height + 16);
+  await card('chat-input').fill('保留画布问答草稿');
+  await card('toolbar-more').click(); await one('toolbar-more-panel');
+  assert.equal(await card('canvas-chat').count(), 0);
+  await page.keyboard.press('Escape');
+  await card('canvas-chat').waitFor();
+  assert.equal(await card('chat-input').inputValue(), '保留画布问答草稿');
+  await card('chat-input').fill('');
+  await card('canvas-detail-trigger').click(); await one('canvas-detail-panel');
+  assert.equal(await card('canvas-chat').count(), 0);
+  await page.keyboard.press('Escape');
+  await card('canvas-chat').waitFor();
+  assert.equal(await card('chat-input').inputValue(), '');
+  await page.locator('.canvas-project-button').click(); await one('project-menu');
+  assert.equal(await card('canvas-chat').count(), 0);
+  const originalProjects = await page.evaluate(async () => {
+    const path = '/src/store/projects.ts';
+    const moduleUrl = [...performance.getEntriesByType('resource')].reverse()
+      .find(entry => new URL(entry.name).pathname === path)?.name ?? path;
+    const { useProjects } = await import(moduleUrl);
+    window.__toolbarProjects = useProjects;
+    const { activeId, projects } = useProjects.getState();
+    const id = 'toolbar-chat-switched-project';
+    const project = projects.find(value => value.id === activeId);
+    useProjects.setState({ activeId: id, projects: [...projects, { ...project, id, name: 'Other test canvas' }] });
+    return { activeId, projects };
+  });
+  await page.waitForFunction(() => document.querySelector('[data-chat-entry]')?.getAttribute('aria-pressed') === 'false');
+  await page.keyboard.press('Escape');
+  await card('project-menu').waitFor({ state: 'detached' });
+  assert.equal(await card('canvas-chat').count(), 0);
+  await card('chat-entry').click();
+  await card('canvas-chat').waitFor();
+  assert.equal(await card('chat-input').inputValue(), '');
+  await card('chat-entry').click();
+  await page.evaluate(snapshot => window.__toolbarProjects.setState(snapshot), originalProjects);
+  check('project menu and canvas chat open on the left; temporary cards preserve chat drafts without covering each other');
+  check('switching projects while chat is suspended closes it until explicitly reopened');
 
   await page.locator('.react-flow__node[data-id="a"] [data-node-details="a"]').click();
   await card('focus-panel').waitFor();
@@ -163,8 +225,24 @@ try {
       await page.waitForTimeout(200);
       await page.screenshot({ path: `${output}/detail-reader-dark.png` });
       await page.evaluate(async () => { (await import('/src/lib/appearance.ts')).useAppearance.getState().setLighting('light'); });
+      await page.evaluate(async () => { (await import('/src/i18n/index.ts')).useI18n.getState().setLang('en'); });
+      await page.waitForTimeout(200);
+      await page.screenshot({ path: `${output}/detail-reader-en.png` });
+      await page.evaluate(async () => { (await import('/src/i18n/index.ts')).useI18n.getState().setLang('zh'); });
     }
     await page.keyboard.press('Escape'); await one('node-format-panel');
+    if (width === 390) {
+      await card('toolbar-more').click();
+      await card('menu-chat').click();
+      await card('canvas-chat').waitFor();
+      assert.equal(await card('node-format-panel').count(), 0);
+      assert.equal(await page.locator('.canvas-tool-panel:visible').count(), 0);
+      assert.equal(await page.evaluate(() => window.__store.getState().selectedNodeId), 'a');
+      await page.keyboard.press('Escape');
+      await card('canvas-chat').waitFor({ state: 'detached' });
+      await one('node-format-panel');
+      check('narrow canvas chat suspends the selected-node inspector and restores it on close');
+    }
   }
   check('desktop retains the independent reader; narrow windows collapse it and keep tool cards accessible');
   assert.deepEqual(errors, []);

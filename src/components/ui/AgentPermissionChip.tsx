@@ -39,7 +39,7 @@ export default function AgentPermissionChip() {
   const guard = useProjects((s) => s.projects.find((p) => p.id === s.activeId)?.agentGuard);
   const [requestedOpen, setOpen] = useState(false);
   const open = useCanvasToolCard('permissions', requestedOpen, () => setOpen(false));
-  const panelPosition = useCanvasPanelPosition(open);
+  const panelPosition = useCanvasPanelPosition(open, 'left');
   // inside the harness: whether its Auto review is installed (null = not asked yet)
   const [hostAuto, setHostAuto] = useState<boolean | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);

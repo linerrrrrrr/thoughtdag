@@ -124,7 +124,6 @@ try {
   assert.equal(await reading(), 'a'); assert.deepEqual(await selected(), ['b']);
   assert.match(await format.locator('[data-format-node-name]').textContent(), /节点 B/);
   assert.match(await reader.locator('[data-reading-node-name]').textContent(), /节点 A/);
-  await format.locator('[data-node-format-reopen]').click();
   await format.locator('[data-node-format-field="width"]').fill('450');
   await page.keyboard.press('Escape');
   assert.equal(await reading(), 'a'); assert.equal(await reader.count(), 1);

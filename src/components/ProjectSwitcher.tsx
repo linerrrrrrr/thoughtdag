@@ -14,6 +14,7 @@ import { useT, t as ti, fmt } from '../i18n';
 import { useDismissableLayer } from '../lib/use-dismissable-layer';
 import { useInlineEditDismiss } from '../lib/use-inline-edit-dismiss';
 import { useCanvasToolCard } from '../lib/use-canvas-tool-card';
+import { useCanvasPanelPosition } from '../lib/use-canvas-panel-position';
 import CanvasToolbarOverflowAction from './CanvasToolbarOverflowAction';
 
 function relativeTime(ts: number): string {
@@ -36,6 +37,7 @@ export default function ProjectSwitcher({ onSwitched, children }: { onSwitched: 
   const activeIsParadigm = projects.find((p) => p.id === activeId)?.kind === 'paradigm';
   const [requestedOpen, setOpen] = useState(false);
   const open = useCanvasToolCard('projects', requestedOpen, () => setOpen(false));
+  const panelPosition = useCanvasPanelPosition(open, 'left');
   // Windows and Linux shells: keep running in the tray when the window
   // closes (#77); the tray menu speaks the page's language
   const lang = useI18n((s) => s.lang);
@@ -102,7 +104,7 @@ export default function ProjectSwitcher({ onSwitched, children }: { onSwitched: 
     // z-20: the open dropdown must cover the content palette below (both
     // live on the left edge; the palette is z-10)
     <div ref={rootRef} className="relative z-20 min-w-0 max-w-full" data-project-switcher>
-      <div className="canvas-toolbar">
+      <div className="canvas-toolbar canvas-toolbar-main">
         <button
           onClick={() => setOpen(!open)}
           title={active?.name} aria-label={active?.name} aria-expanded={open}
@@ -148,7 +150,7 @@ export default function ProjectSwitcher({ onSwitched, children }: { onSwitched: 
       </div>
 
       {open && (
-        <div className="absolute left-0 top-full mt-related bg-card border border-line rounded-overlay shadow-lg py-1.5 w-[320px] max-w-[calc(100vw-32px)] animate-fade-in">
+        <div className="canvas-tool-panel canvas-tool-menu py-1.5 animate-fade-in" style={panelPosition} data-project-menu>
           <div className="max-h-[320px] overflow-y-auto">
             {sorted.map((p) => (
               <div

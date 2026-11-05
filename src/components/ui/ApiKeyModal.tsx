@@ -28,7 +28,7 @@ export default function ApiKeyModal() {
   const requestedOpen = useUiStore((s) => s.apiKeyModalOpen);
   const setOpen = useUiStore((s) => s.setApiKeyModalOpen);
   const open = useCanvasToolCard('connection', requestedOpen, () => setOpen(false));
-  const panelPosition = useCanvasPanelPosition(open);
+  const panelPosition = useCanvasPanelPosition(open, 'left');
   const data = useModels();
   const [providers, setProviders] = useState<RuntimeProvider[]>(() => storedProviders());
   useEffect(() => { if (open) setProviders(storedProviders()); }, [open]);
