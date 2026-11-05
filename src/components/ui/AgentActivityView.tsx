@@ -105,7 +105,7 @@ const ActivityRow = memo(function ActivityRow({ entry, compact, base }: { entry:
         </div> : <>
           <button type="button" className="activity-item-heading" aria-expanded={open} disabled={!hasBody} onClick={(event) => { event.stopPropagation(); setExpanded(!open); }}>
             <span className="activity-item-title">{title}</span>
-            <span className={`activity-status ${entry.status === 'failed' ? 'text-red-600' : 'text-ink-faint'}`} title={status}>
+            <span className={`activity-status ${entry.status === 'failed' ? 'text-red-600' : 'text-ink-faint'}`}>
               {isRunning ? <Loader2 size={12} className="activity-spinner" /> : entry.status === 'completed' ? <Check size={12} /> : entry.status === 'interrupted' ? <CirclePause size={12} /> : <X size={12} />}
               <span>{status}</span>
             </span>

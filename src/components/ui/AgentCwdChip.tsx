@@ -87,6 +87,7 @@ export default function AgentCwdChip() {
         onClick={(e) => { e.stopPropagation(); setOpen((v) => !v); }}
         className="bg-card border border-line rounded-control h-8 px-2.5 flex items-center gap-1.5 hover:bg-wash transition-colors text-control text-ink max-w-[220px]"
         title={`${t('agent.cwd')} · ${choice.cwd}`}
+        aria-label={`${t('agent.cwd')} · ${choice.cwd}`}
         data-agent-cwd={choice.kind}
         aria-expanded={open}
       >

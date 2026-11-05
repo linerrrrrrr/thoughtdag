@@ -7,14 +7,14 @@ import { resizeSelectionBy } from '../lib/node-geometry';
 import { condenseGuard } from '../lib/condense-guard';
 import { useDismissableLayer } from '../lib/use-dismissable-layer';
 import { useCanvasEditing } from '../lib/canvas-editing';
-import type { SelectionRegion } from '../lib/canvas-selection';
+import type { SelectionRegion, SelectionTarget } from '../lib/canvas-selection';
 import { useT } from '../i18n';
 import type { ThoughtNode } from '../types';
 import ResizeGrip from './ResizeGrip';
 import './SelectionResizeControls.css';
 
 type Direction = 'move' | 'width' | 'height' | 'both';
-type Gesture = { x: number; y: number; zoom: number; pointerId: number; direction: Direction; originals: ThoughtNode[]; changed: boolean; clickedId?: string; region: SelectionRegion | null };
+type Gesture = { x: number; y: number; zoom: number; pointerId: number; direction: Direction; originals: ThoughtNode[]; changed: boolean; clickedId?: string; region: SelectionRegion | null; target: SelectionTarget };
 
 export default function SelectionResizeControls({ onNodeContextMenu }: { onNodeContextMenu: (event: MouseEvent, node: { id: string }) => void }) {
   const nodes = useStore(state => state.nodes);
@@ -44,6 +44,7 @@ export default function SelectionResizeControls({ onNodeContextMenu }: { onNodeC
     if (!drag?.changed) return;
     if (cancel) {
       useCanvasEditing.getState().setSelectionRegion(drag.region);
+      if (drag.region) useCanvasEditing.getState().setSelectionTarget(drag.target);
       const previous = new Map(drag.originals.map(node => [node.id, node]));
       useStore.setState(state => ({ nodes: state.nodes.map(node => {
         const original = previous.get(node.id);
@@ -56,7 +57,10 @@ export default function SelectionResizeControls({ onNodeContextMenu }: { onNodeC
   };
   useDismissableLayer({
     open: selected.length > 1 && !region, refs: [ref], priority: -100, restoreFocus: false, independentOutside: true,
-    onDismiss: () => useStore.getState().setSelectedNodeIds([]),
+    onDismiss: () => {
+      useStore.getState().setSelectedNodeIds([]);
+      useStore.setState(state => ({ edges: state.edges.map(edge => edge.selected ? { ...edge, selected: false } : edge) }));
+    },
     // The selection's own editing controls form one interaction boundary.
     // Additive gestures must retain the old selection until React Flow reads it.
     ignoreOutside: event => !!gesture.current || event.ctrlKey || event.metaKey || event.shiftKey
@@ -73,6 +77,8 @@ export default function SelectionResizeControls({ onNodeContextMenu }: { onNodeC
     const clickedId = hit?.getAttribute('data-id') ?? undefined;
     if (direction === 'move' && (event.ctrlKey || event.metaKey || event.shiftKey)) {
       if (clickedId) {
+        useCanvasEditing.getState().setSelectionRegion(null);
+        useCanvasEditing.getState().requestProperties();
         state.setSelectedNodeIds(state.selectedNodeIds.includes(clickedId)
           ? state.selectedNodeIds.filter(selectedId => selectedId !== clickedId) : [...state.selectedNodeIds, clickedId]);
       }
@@ -82,7 +88,8 @@ export default function SelectionResizeControls({ onNodeContextMenu }: { onNodeC
     const originals = state.nodes.filter(node => moving.has(node.id));
     event.currentTarget.focus({ preventScroll: true });
     event.currentTarget.setPointerCapture(event.pointerId);
-    gesture.current = { x: event.clientX, y: event.clientY, zoom, pointerId: event.pointerId, direction, originals, changed: false, clickedId, region };
+    gesture.current = { x: event.clientX, y: event.clientY, zoom, pointerId: event.pointerId, direction, originals, changed: false, clickedId, region,
+      target: useCanvasEditing.getState().selectionTarget };
     setActive(direction);
   };
   const move = (event: PointerEvent<HTMLButtonElement>) => {
@@ -114,7 +121,12 @@ export default function SelectionResizeControls({ onNodeContextMenu }: { onNodeC
     const clickedId = !cancel && !gesture.current?.changed ? gesture.current?.clickedId : undefined;
     finish(cancel);
     // A click drills into a selected node; a drag still moves the whole selection.
-    if (clickedId) useStore.getState().setSelectedNodeId(clickedId);
+    if (clickedId) {
+      useCanvasEditing.getState().setSelectionRegion(null);
+      useCanvasEditing.getState().requestProperties();
+      useStore.setState(state => ({ edges: state.edges.map(edge => edge.selected ? { ...edge, selected: false } : edge) }));
+      useStore.getState().setSelectedNodeId(clickedId);
+    }
   };
   // Stay in screen coordinates, inside the native wheel/pan event boundary.
   return createPortal(<div ref={ref} data-selection-resizer data-selection-gesture={active || undefined} className="selection-resizer nodrag"
@@ -152,7 +164,6 @@ export default function SelectionResizeControls({ onNodeContextMenu }: { onNodeC
     {(['width', 'height', 'both'] as const).map(direction => <button key={direction} type="button"
       hidden={connecting} data-resize-active={active === direction || undefined}
       data-selection-resize={direction} className={`selection-resize-handle selection-resize-${direction} nodrag nopan`}
-      title={t(direction === 'width' ? 'selection.resizeWidth' : direction === 'height' ? 'selection.resizeHeight' : 'selection.resizeBoth')}
       aria-label={t(direction === 'width' ? 'selection.resizeWidth' : direction === 'height' ? 'selection.resizeHeight' : 'selection.resizeBoth')}
       onPointerDown={event => start(event, direction)} onPointerMove={move}
       onPointerUp={event => release(event)} onPointerCancel={event => release(event, true)} onLostPointerCapture={event => release(event, true)}

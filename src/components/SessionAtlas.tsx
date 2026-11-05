@@ -68,8 +68,9 @@ function SourcesDialog({ roots, counts, onChanged, onClose }: {
       </span>
       {!root.builtin && (
         <button
-          className="text-ink-faint hover:text-red-500 p-1 rounded-control transition-colors shrink-0"
+          className="p-1 rounded-control transition-colors shrink-0 object-action-danger" data-icon-only
           onClick={() => { void window.desktopSessions!.removeRoot(root.key).then(onChanged); }}
+          aria-label={t('actions.removeFolder')}
         >
           <Trash2 size={14} strokeWidth={1.75} />
         </button>
@@ -121,7 +122,7 @@ function SourcesDialog({ roots, counts, onChanged, onClose }: {
                 )}
                 {(c.state === 'installed' || c.state === 'outdated') && (
                   <button
-                    className="text-ink-faint hover:text-red-500 p-1 rounded-control transition-colors shrink-0"
+                    className="p-1 rounded-control transition-colors shrink-0 object-action-danger" data-icon-only
                     title={t('atlas.handoffRemove')}
                     data-handoff-remove
                     onClick={() => void window.desktopSessions!.commandsRemove!(runner).then(refreshCmds)}
@@ -803,7 +804,7 @@ export default function SessionAtlas({ onClose, onSwitched, focusSessionId, init
                   </button>
                 </>
               )}
-            <button className="text-ink-faint hover:text-ink p-1" onClick={() => setPicked(new Map())} title={t('common.cancel')}>
+            <button className="text-ink-faint hover:text-ink p-1" onClick={() => setPicked(new Map())} aria-label={t('common.cancel')}>
               <X size={14} strokeWidth={1.75} />
             </button>
           </div>

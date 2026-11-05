@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useDismissableLayer } from '../lib/use-dismissable-layer';
 import { useInlineEditDismiss } from '../lib/use-inline-edit-dismiss';
 import { useSessionDraft } from '../lib/use-session-draft';
@@ -197,20 +197,9 @@ function ReaderOverlay({ node, onLocate, dock }: { node: ThoughtNode; onLocate: 
   // zoomed past the column, the mouse drags the picture around: horizontal
   // pan on the image row, vertical on the reader body — one grab, both axes
   const imgPanRef = useRef<HTMLDivElement>(null);
-  const startImagePan = (e: React.MouseEvent) => {
-    if (clipMode || e.button !== 0) return;
-    const scroller = imgPanRef.current, body = bodyRef.current;
-    if (!scroller || !body) return;
-    e.preventDefault();
-    const sx = e.clientX, sy = e.clientY, sl = scroller.scrollLeft, st = body.scrollTop;
-    const move = (ev: MouseEvent) => {
-      scroller.scrollLeft = sl - (ev.clientX - sx);
-      body.scrollTop = st - (ev.clientY - sy);
-    };
-    const up = () => { window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up); };
-    window.addEventListener('mousemove', move);
-    window.addEventListener('mouseup', up);
-  };
+  const [imageCanPan, setImageCanPan] = useState(false);
+  const [imagePanning, setImagePanning] = useState(false);
+  const imagePan = useRef<{ pointerId: number; x: number; y: number; left: number; top: number } | null>(null);
   const [digestBusy, setDigestBusy] = useState(false);
   // the digest works off extractedText, so HTML materials digest the same
   // way PDFs do — docAtt is whichever document this material carries
@@ -434,6 +423,49 @@ function ReaderOverlay({ node, onLocate, dock }: { node: ThoughtNode; onLocate: 
   // rides anchor.attId, the same as clipped notes; wire it into a question
   // and the image flows to a vision model.
   const [clipMode, setClipMode] = useState(false);
+  const updateImagePanAvailability = useCallback(() => {
+    const scroller = imgPanRef.current, body = bodyRef.current;
+    setImageCanPan(!!scroller && !!body && (scroller.scrollWidth > scroller.clientWidth + 1 || body.scrollHeight > body.clientHeight + 1));
+  }, []);
+  useEffect(() => {
+    const scroller = imgPanRef.current, body = bodyRef.current;
+    if (!scroller || !body) return;
+    // Both viewport and intrinsic image sizes can change after rendering.
+    const observer = new ResizeObserver(updateImagePanAvailability);
+    observer.observe(scroller);
+    observer.observe(body);
+    if (scroller.firstElementChild) observer.observe(scroller.firstElementChild);
+    scroller.addEventListener('load', updateImagePanAvailability, true);
+    return () => {
+      observer.disconnect();
+      scroller.removeEventListener('load', updateImagePanAvailability, true);
+      imagePan.current = null;
+      setImagePanning(false);
+    };
+  }, [view, collapsed, docked, imageAtts, updateImagePanAvailability]);
+  const startImagePan = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (clipMode || event.button !== 0) return;
+    const scroller = imgPanRef.current, body = bodyRef.current;
+    if (!scroller || !body || (scroller.scrollWidth <= scroller.clientWidth + 1 && body.scrollHeight <= body.clientHeight + 1)) return;
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    imagePan.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, left: scroller.scrollLeft, top: body.scrollTop };
+    setImagePanning(false);
+  };
+  const moveImagePan = (event: React.PointerEvent<HTMLDivElement>) => {
+    const drag = imagePan.current, scroller = imgPanRef.current, body = bodyRef.current;
+    if (!drag || event.pointerId !== drag.pointerId || !scroller || !body) return;
+    if (Math.hypot(event.clientX - drag.x, event.clientY - drag.y) < 3) return;
+    setImagePanning(true);
+    scroller.scrollLeft = drag.left - (event.clientX - drag.x);
+    body.scrollTop = drag.top - (event.clientY - drag.y);
+  };
+  const finishImagePan = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.pointerId !== imagePan.current?.pointerId) return;
+    imagePan.current = null;
+    setImagePanning(false);
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+  };
   const handleClipped = (pageNo: number, rect: [number, number, number, number], dataUrl: string, screenRect?: { left: number; top: number; width: number; height: number }) => {
     const base64 = dataUrl.split(',')[1] ?? '';
     if (!base64) return;
@@ -809,7 +841,7 @@ function ReaderOverlay({ node, onLocate, dock }: { node: ThoughtNode; onLocate: 
             <div ref={pickerRef} className="relative min-w-0" data-reader-material-picker>
               <button
                 onClick={() => setPickerOpen((v) => !v)}
-                title={t('reader.switchMaterial')}
+                aria-label={t('reader.switchMaterial')}
                 className="flex items-center gap-1 text-title font-semibold text-ink min-w-0 max-w-full hover:text-accent transition-colors"
               >
                 <span className="truncate">{shownTitle}</span>
@@ -830,7 +862,7 @@ function ReaderOverlay({ node, onLocate, dock }: { node: ThoughtNode; onLocate: 
               )}
             </div>
           ) : (
-            <span className="text-title font-semibold text-ink truncate min-w-0" title={shownTitle}>{shownTitle}</span>
+            <span className="text-title font-semibold text-ink truncate min-w-0" title={shownTitle} data-tooltip-overflow>{shownTitle}</span>
           )}
           {numPages != null && <span className="text-meta text-ink-faint font-mono shrink-0">{numPages}p</span>}
           <div className="flex-1" />
@@ -941,7 +973,7 @@ function ReaderOverlay({ node, onLocate, dock }: { node: ThoughtNode; onLocate: 
           )}
           {/* dock beside the canvas, or expand to the overlay */}
           {docked ? (
-            <button onClick={() => useUiStore.getState().setReaderMode('full')} title={t('reader.expand')} data-reader-expand className={iconButton}>
+            <button onClick={() => useUiStore.getState().setReaderMode('full')} aria-label={t('reader.expand')} data-reader-expand className={iconButton}>
               <Maximize2 size={14} strokeWidth={1.75} />
             </button>
           ) : window.innerWidth >= DOCK_MIN_WINDOW && (
@@ -949,7 +981,7 @@ function ReaderOverlay({ node, onLocate, dock }: { node: ThoughtNode; onLocate: 
               <PanelLeft size={14} strokeWidth={1.75} />
             </button>
           )}
-          <button onClick={close} title={t('panel.close')} className={iconButton}>
+          <button onClick={close} aria-label={t('panel.close')} className={iconButton}>
             <X size={16} strokeWidth={1.75} />
           </button>
         </div>
@@ -992,18 +1024,23 @@ function ReaderOverlay({ node, onLocate, dock }: { node: ThoughtNode; onLocate: 
                   flex from stretching the toolbar into that zero height */}
               <div className="sticky top-3 z-10 flex items-start justify-end pr-4 h-0">
                 <div className="flex items-center gap-1 bg-card border border-line rounded-overlay px-1.5 py-1" data-image-zoom>
-                  <button onClick={() => setImgZoom((z) => Math.max(0.5, +(z - 0.25).toFixed(2)))} title={t('reader.imageZoomOut')} data-zoom-out
+                  <button onClick={() => setImgZoom((z) => Math.max(0.5, +(z - 0.25).toFixed(2)))} aria-label={t('reader.imageZoomOut')} data-zoom-out
                     className="w-7 h-7 rounded-control hover:bg-wash flex items-center justify-center text-ink-muted hover:text-ink transition-colors"><ZoomOut size={14} strokeWidth={1.75} /></button>
                   <button onClick={() => setImgZoom(1)} title={t('reader.imageZoomFit')} data-zoom-fit
                     className="px-2 h-7 rounded-control hover:bg-wash font-mono text-control text-ink-muted hover:text-ink transition-colors min-w-[52px]">{Math.round(imgZoom * 100)}%</button>
-                  <button onClick={() => setImgZoom((z) => Math.min(3, +(z + 0.25).toFixed(2)))} title={t('reader.imageZoomIn')} data-zoom-in
+                  <button onClick={() => setImgZoom((z) => Math.min(3, +(z + 0.25).toFixed(2)))} aria-label={t('reader.imageZoomIn')} data-zoom-in
                     className="w-7 h-7 rounded-control hover:bg-wash flex items-center justify-center text-ink-muted hover:text-ink transition-colors"><ZoomIn size={14} strokeWidth={1.75} /></button>
                 </div>
               </div>
               <div
                 ref={imgPanRef}
-                onMouseDown={startImagePan}
-                className={`overflow-x-auto ${clipMode ? '' : 'cursor-grab active:cursor-grabbing'}`}
+                onPointerDown={startImagePan}
+                onPointerMove={moveImagePan}
+                onPointerUp={finishImagePan}
+                onPointerCancel={finishImagePan}
+                onLostPointerCapture={finishImagePan}
+                className={`overflow-x-auto ${!clipMode && imageCanPan ? imagePanning ? 'cursor-grabbing' : 'cursor-grab' : 'cursor-default'}`}
+                style={{ touchAction: !clipMode && imageCanPan ? 'none' : undefined }}
                 data-image-pan
               >
                 {/* w-max + mx-auto instead of items-center: a centered flex
@@ -1039,7 +1076,7 @@ function ReaderOverlay({ node, onLocate, dock }: { node: ThoughtNode; onLocate: 
                     <RefreshCw size={11} strokeWidth={1.75} /> {t('reader.redigest')}
                   </button>
                   {digestNode && (
-                    <button onClick={() => { if (!docked) close(); onLocate(digestNode.id); }} className="flex items-center gap-1 hover:text-accent transition-colors" title={t('reader.locate')}>
+                    <button onClick={() => { if (!docked) close(); onLocate(digestNode.id); }} className="flex items-center gap-1 hover:text-accent transition-colors">
                       <Crosshair size={11} strokeWidth={1.75} /> {t('reader.digestOnCanvas')}
                     </button>
                   )}
@@ -1134,7 +1171,7 @@ function ReaderOverlay({ node, onLocate, dock }: { node: ThoughtNode; onLocate: 
               </button>
               <button
                 onClick={() => setThreadId(null)}
-                title={t('reader.threadClose')}
+                aria-label={t('reader.threadClose')}
                 className="w-6 h-6 rounded-control text-ink-faint hover:text-ink hover:bg-wash flex items-center justify-center transition-colors shrink-0"
               >
                 <X size={14} strokeWidth={1.75} />
@@ -1299,16 +1336,16 @@ function ReaderOverlay({ node, onLocate, dock }: { node: ThoughtNode; onLocate: 
   if (docked && collapsed) {
     return (
       <div className="absolute left-0 top-0 bottom-0 z-[30] bg-card border-r border-line flex flex-col items-center py-3 gap-3" style={{ width: READER_STRIP_WIDTH }} data-material-reader data-reader-strip>
-        <button onClick={() => useStore.getState().setSelectedNodeId(null)} title={t('reader.stripExpand')} data-reader-strip-expand className="w-7 h-7 rounded-control text-ink-muted hover:bg-wash hover:text-ink flex items-center justify-center transition-colors">
+        <button onClick={() => useStore.getState().setSelectedNodeId(null)} aria-label={t('reader.stripExpand')} data-reader-strip-expand className="w-7 h-7 rounded-control text-ink-muted hover:bg-wash hover:text-ink flex items-center justify-center transition-colors">
           <ChevronRight size={15} strokeWidth={1.75} />
         </button>
         {headerIcon}
-        <span className="text-control text-ink-muted truncate [writing-mode:vertical-rl] max-h-[45vh]" title={shownTitle}>{shownTitle}</span>
+        <span className="text-control text-ink-muted truncate [writing-mode:vertical-rl] max-h-[45vh]" title={shownTitle} data-tooltip-overflow>{shownTitle}</span>
         <div className="flex-1" />
-        <button onClick={() => useUiStore.getState().setReaderMode('full')} title={t('reader.expand')} className={iconButton}>
+        <button onClick={() => useUiStore.getState().setReaderMode('full')} aria-label={t('reader.expand')} className={iconButton}>
           <Maximize2 size={14} strokeWidth={1.75} />
         </button>
-        <button onClick={close} title={t('panel.close')} className={iconButton}>
+        <button onClick={close} aria-label={t('panel.close')} className={iconButton}>
           <X size={15} strokeWidth={1.75} />
         </button>
       </div>
@@ -1327,7 +1364,7 @@ function ReaderOverlay({ node, onLocate, dock }: { node: ThoughtNode; onLocate: 
           onPointerUp={onResizePointerUp}
           onDoubleClick={onResizeDoubleClick}
           className={`absolute right-0 top-0 h-full w-[8px] -mr-[3px] z-20 cursor-col-resize hover:bg-accent/20 transition-colors flex items-center justify-center ${resizing ? 'bg-accent/30' : ''}`}
-          title={t('panel.resizeTitle')}
+          aria-label={t('panel.resizeTitle')}
           data-reader-resize
         >
           <div className={`w-[3px] h-9 rounded-control transition-colors ${resizing ? 'bg-accent' : 'bg-line-strong'}`} />

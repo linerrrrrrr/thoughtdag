@@ -96,10 +96,10 @@ export default function AgentMemoryFiles() {
                                 {u ? <ChevronDown size={11} className="mt-0.5 shrink-0 text-ink-faint" /> : <ChevronRight size={11} className="mt-0.5 shrink-0 text-ink-faint" />}
                                 <span className="break-words">{h}</span>
                               </button>
-                              <button onClick={() => void cite(f, i)} disabled={busy === k} className="shrink-0 text-control text-accent hover:bg-accent/10 px-1.5 py-0.5 rounded-tag flex items-center gap-1 disabled:opacity-50" title={t('recall.cite')} data-agent-memory-cite>
+                              <button onClick={() => void cite(f, i)} disabled={busy === k} className="shrink-0 text-control text-accent hover:bg-accent/10 px-1.5 py-0.5 rounded-tag flex items-center gap-1 disabled:opacity-50"  data-agent-memory-cite>
                                 <Quote size={10} strokeWidth={1.75} /> {t('recall.cite')}
                               </button>
-                              <button onClick={() => void importEntry(f, i)} disabled={busy === k} className="shrink-0 text-control text-ink-muted hover:text-ink hover:bg-wash px-1.5 py-0.5 rounded-tag flex items-center gap-1 disabled:opacity-50" title={t('recall.import')} data-agent-memory-import>
+                              <button onClick={() => void importEntry(f, i)} disabled={busy === k} className="shrink-0 text-control text-ink-muted hover:text-ink hover:bg-wash px-1.5 py-0.5 rounded-tag flex items-center gap-1 disabled:opacity-50"  data-agent-memory-import>
                                 <Download size={10} strokeWidth={1.75} /> {t('recall.import')}
                               </button>
                             </div>

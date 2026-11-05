@@ -147,7 +147,7 @@ export default function QuestionSection({
           <Markdown base={base}>{(displayQuestion ?? question) || placeholder || ''}</Markdown>
         </div>
         {!isViewerMode && <button type="button" onClick={handleDoubleClickQuestion}
-          title={t('actions.editQuestion')} aria-label={t('actions.editQuestion')} data-edit-question
+          aria-label={t('actions.editQuestion')} data-edit-question
           className="focus-question-edit">
           <Pencil size={14} strokeWidth={1.75} />
         </button>}

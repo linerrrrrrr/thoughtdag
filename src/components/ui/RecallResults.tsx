@@ -89,7 +89,6 @@ export function HitCards({ hits, onOpened, extra, cards }: { hits: WhyFindHit[];
                 onClick={() => void cite(h)}
                 disabled={citing === k}
                 className="shrink-0 flex items-center gap-1 text-control text-accent hover:bg-accent/10 px-2 py-1 rounded-tag transition-colors disabled:opacity-50"
-                title={t('recall.cite')}
                 data-recall-cite
               >
                 {citing === k ? <Loader2 size={11} className="animate-spin" /> : <Quote size={11} strokeWidth={1.75} />} {t('recall.cite')}

@@ -5,6 +5,8 @@ import { useStore } from '../store';
 import { useCanvasEditing } from '../lib/canvas-editing';
 import { useDismissableLayer } from '../lib/use-dismissable-layer';
 import { useT } from '../i18n';
+import SelectionTargetControl from './SelectionTargetControl';
+import { partitionSpatialSelection } from '../lib/canvas-selection';
 import './SelectionResizeControls.css';
 
 /** A confirmed marquee is a canvas selection, not a temporary popup. */
@@ -29,12 +31,12 @@ export default function SelectionRegion({ hasNodeSurface }: { hasNodeSurface: bo
       useCanvasEditing.getState().setSelectionRegion(null);
       return;
     }
-    const actual = target === 'nodes' ? selectedNodeIds : edges.filter(edge => edge.selected && !edge.hidden).map(edge => edge.id);
-    const candidates = target === 'nodes' ? region.nodeIds : region.edgeIds;
-    const expected = target === 'nodes'
-      ? region.nodeIds.filter(id => nodes.some(node => node.id === id && !node.hidden && node.selectable !== false))
-      : region.edgeIds.filter(id => edges.some(edge => edge.id === id && !edge.hidden && edge.selectable !== false));
-    const oppositeSelected = target === 'nodes' ? edges.some(edge => edge.selected) : selectedNodeIds.length > 0;
+    const actual = target === 'edges' ? edges.filter(edge => edge.selected && !edge.hidden).map(edge => edge.id) : selectedNodeIds;
+    const candidates = target === 'nodes' ? region.nodeIds : target === 'frames' ? region.frameIds : region.edgeIds;
+    const spatial = partitionSpatialSelection(nodes, candidates);
+    const expected = target === 'edges' ? candidates.filter(id => edges.some(edge => edge.id === id && !edge.hidden && edge.selectable !== false))
+      : target === 'frames' ? spatial.frameIds : spatial.nodeIds;
+    const oppositeSelected = target === 'edges' ? selectedNodeIds.length > 0 : edges.some(edge => edge.selected);
     if (oppositeSelected || candidates.length > 0 && expected.length === 0 || actual.length !== expected.length || actual.some(id => !expected.includes(id))) {
       useCanvasEditing.getState().setSelectionRegion(null);
     }
@@ -57,12 +59,14 @@ export default function SelectionRegion({ hasNodeSurface }: { hasNodeSurface: bo
   });
   if (!region || !renderer) return null;
   // Multi-node geometry controls draw this same rectangle and own its movement.
-  return createPortal(<div ref={ref} data-selection-region data-selection-region-target={target}
+  return createPortal(<><div ref={ref} data-selection-region data-selection-region-target={target}
     data-selection-region-surface={!hasNodeSurface || undefined}
     className="selection-region nodrag"
     style={{ left: x + region.rect.x * zoom, top: y + region.rect.y * zoom, width: region.rect.width * zoom, height: region.rect.height * zoom }}
     role="group" aria-label={t('selection.region')}
     onPointerDown={event => { if (event.button === 0) event.stopPropagation(); }}
-    onClick={event => event.stopPropagation()} onDoubleClick={event => event.stopPropagation()} />,
+    onClick={event => event.stopPropagation()} onDoubleClick={event => event.stopPropagation()} />
+    <SelectionTargetControl region={region} />
+    </>,
   renderer);
 }

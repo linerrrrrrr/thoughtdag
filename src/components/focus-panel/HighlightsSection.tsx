@@ -1,4 +1,4 @@
-import { ChevronRight, GitBranch, Scissors, Star, Tag, X } from 'lucide-react';
+import { ChevronRight, GitBranch, Scissors, Star, Tag, Trash2 } from 'lucide-react';
 import { useStore } from '../../store';
 import { useT } from '../../i18n';
 import { isViewerMode } from '../../lib/viewer';
@@ -52,9 +52,10 @@ export default function HighlightsSection({
                     </span>
                     {!isViewerMode && <button
                       onClick={() => removeHighlight(nodeId, h.id)}
-                      className="text-amber-300 hover:text-red-500 transition-colors shrink-0 opacity-0 group-hover/hl:opacity-100"
+                      className="object-action-danger rounded-control transition-colors shrink-0 opacity-0 group-hover/hl:opacity-100 group-focus-within/hl:opacity-100 focus:opacity-100"
+                      data-icon-only aria-label={t('actions.deleteHighlight')}
                     >
-                      <X size={14} strokeWidth={1.75} />
+                      <Trash2 size={14} strokeWidth={1.75} />
                     </button>}
                   </div>
                 ))}

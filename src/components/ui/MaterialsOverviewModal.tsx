@@ -134,14 +134,14 @@ export default function MaterialsOverviewModal({ onLocate }: { onLocate: (nodeId
                     </button>
                   )}
                   {sort === 'node' && (
-                    <button className={chip} onClick={() => { close(); onLocate(e.nodeId); }} title={t('hlov.locateTitle')}>
+                    <button className={chip} onClick={() => { close(); onLocate(e.nodeId); }} title={t('hlov.locateTitle')} aria-label={t('hlov.locateTitle')}>
                       ↦
                     </button>
                   )}
                   {e.canOpen && (
                     <button
                       onClick={() => openReader(e.nodeId)}
-                      title={t('attach.openReader')}
+                      title={t('attach.openReader')} aria-label={t('attach.openReader')}
                       className="w-7 h-7 rounded-control text-ink-faint hover:text-accent hover:bg-wash flex items-center justify-center transition-colors shrink-0"
                     >
                       <BookOpen size={14} strokeWidth={1.75} />

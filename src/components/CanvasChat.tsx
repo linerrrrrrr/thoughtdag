@@ -26,10 +26,10 @@ const CAP = 40;
 const loadTurns = (projectId: string): CanvasChatTurn[] => { try { const v = JSON.parse(localStorage.getItem(KEY(projectId)) ?? '[]'); return Array.isArray(v) ? v : []; } catch { return []; } };
 const saveTurns = (projectId: string, turns: CanvasChatTurn[]) => { try { localStorage.setItem(KEY(projectId), JSON.stringify(turns.slice(-CAP))); } catch { /* the dialog still works for this page */ } };
 
-export default function CanvasChat({ open, suspended = false, onClose, onLocate }: { open: boolean; suspended?: boolean; onClose: () => void; onLocate: (id: string) => void }) {
+export default function CanvasChat({ open, onClose, onLocate }: { open: boolean; onClose: () => void; onLocate: (id: string) => void }) {
   const t = useT();
-  const visible = open && !suspended;
-  const panelPosition = useCanvasPanelPosition(visible, 'left');
+  const visible = open;
+  const panelPosition = useCanvasPanelPosition(visible, 'right');
   const lang = useI18n((s) => s.lang);
   const projectId = useProjects((s) => s.activeId) ?? 'default';
   const nodes = useStore((s) => s.nodes);
@@ -118,7 +118,7 @@ export default function CanvasChat({ open, suspended = false, onClose, onLocate 
   const questionOf = (i: number): string => { for (let k = i - 1; k >= 0; k--) if (turns[k].role === 'user') return turns[k].text; return ''; };
   const chip = (id: string, alias: string, key: string) => {
     const n = nodes.find((x) => x.id === id);
-    return <button key={key} type="button" className="cite-chip" title={n ? nodeLabel(n.data, lang) : alias} onClick={() => onLocate(id)} onMouseEnter={() => beacon(id)} onMouseLeave={() => beacon(null)} data-cite={id}>{alias}</button>;
+    return <button key={key} type="button" className="cite-chip" title={n ? nodeLabel(n.data, lang) : undefined} onClick={() => onLocate(id)} onMouseEnter={() => beacon(id)} onMouseLeave={() => beacon(null)} data-cite={id}>{alias}</button>;
   };
   // the answer is markdown with its citations as explore marks: one click handler locates the node a mark names,
   // and hovering a mark lights that node on the canvas with the beacon the "continue last thought" button uses
@@ -136,7 +136,7 @@ export default function CanvasChat({ open, suspended = false, onClose, onLocate 
         <MessageCircleQuestion size={15} strokeWidth={1.75} className="text-accent" />
         <span className="text-title font-semibold text-ink flex-1">{t('chat.title')}</span>
         <button type="button" onClick={() => { setTurns([]); saveTurns(projectId, []); }} disabled={!turns.length || busy} className="text-control text-ink-faint hover:text-ink disabled:opacity-40" data-chat-clear>{t('chat.clear')}</button>
-        <button type="button" onClick={onClose} className="text-ink-faint hover:text-ink w-7 h-7 rounded-control flex items-center justify-center hover:bg-wash" title={t('common.close')}><X size={15} strokeWidth={1.75} /></button>
+        <button type="button" onClick={onClose} className="text-ink-faint hover:text-ink w-7 h-7 rounded-control flex items-center justify-center hover:bg-wash" aria-label={t('common.close')}><X size={15} strokeWidth={1.75} /></button>
       </div>
       <div ref={list} className="flex-1 overflow-y-auto px-4 py-3 space-y-3 text-body" data-chat-turns>
         {!turns.length && (
@@ -198,7 +198,7 @@ export default function CanvasChat({ open, suspended = false, onClose, onLocate 
             onInput={(e) => { const ta = e.currentTarget; ta.style.height = 'auto'; ta.style.height = `${Math.min(120, ta.scrollHeight)}px`; }}
             data-chat-input
           />
-          <button type="button" onClick={() => void send()} disabled={!draft.trim() || busy} className="w-8 h-8 rounded-control bg-action text-white flex items-center justify-center disabled:opacity-30 shrink-0" title={t('chat.send')} data-chat-send><Send size={14} strokeWidth={1.75} /></button>
+          <button type="button" onClick={() => void send()} disabled={!draft.trim() || busy} className="w-8 h-8 rounded-control bg-action text-white flex items-center justify-center disabled:opacity-30 shrink-0" aria-label={t('chat.send')} data-chat-send><Send size={14} strokeWidth={1.75} /></button>
         </div>
       </div>
     </div>

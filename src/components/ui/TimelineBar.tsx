@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useId, useMemo, useState } from 'react';
 import { History } from 'lucide-react';
 import { useReactFlow, useStore as useRfStore } from '@xyflow/react';
 import { useStore } from '../../store';
@@ -29,6 +29,7 @@ const tickWidth = (i: number, hoverIdx: number | null, badged: boolean) => {
 };
 
 export function TimelineBar() {
+  const previewId = useId();
   const tier = useZoomTier();
   const nodes = useStore((s) => s.nodes);
   const setSelectedNodeId = useStore((s) => s.setSelectedNodeId);
@@ -82,10 +83,12 @@ export function TimelineBar() {
     >
       {hovered && hover && (
         <div
+          id={previewId}
+          role="tooltip"
           className="fixed left-[124px] max-w-[320px] bg-card border border-line rounded-overlay shadow-lg px-3 py-2 text-control pointer-events-none z-20"
           style={{ top: hover.y - 14 }}
         >
-          <div className="font-medium text-ink truncate">
+          <div className="font-medium text-ink break-words">
             {hovered.topic && <span className="text-accent">{hovered.topic} · </span>}
             {hovered.label || '…'}
           </div>
@@ -100,7 +103,7 @@ export function TimelineBar() {
       )}
       <button
         onClick={() => setOverviewOpen(true)}
-        title={t('timeline.openOverview')}
+        title={t('timeline.openOverview')} aria-label={t('timeline.openOverview')}
         data-timeline-overview-btn
         className="pointer-events-auto self-start ml-[9px] w-control-size h-control-size rounded-control flex items-center justify-center text-ink-faint/70 hover:text-accent hover:bg-accent/10 transition-colors"
       >
@@ -120,7 +123,11 @@ export function TimelineBar() {
                 key={e.id}
                 data-timeline-dot={e.id}
                 onMouseEnter={(ev) => setHover({ id: e.id, idx: i, y: ev.currentTarget.getBoundingClientRect().top })}
-                onMouseLeave={() => setHover((h) => (h?.id === e.id ? null : h))}
+                onMouseLeave={(ev) => { if (document.activeElement !== ev.currentTarget) setHover((h) => (h?.id === e.id ? null : h)); }}
+                onFocus={(ev) => { if (ev.currentTarget.matches(':focus-visible')) setHover({ id: e.id, idx: i, y: ev.currentTarget.getBoundingClientRect().top }); }}
+                onBlur={() => setHover((h) => (h?.id === e.id ? null : h))}
+                onKeyDown={(ev) => { if (ev.key === 'Escape' && !ev.nativeEvent.isComposing) setHover(null); }}
+                onPointerDown={() => setHover(null)}
                 // Single click = pinpoint: pan the node into view at the
                 // CURRENT zoom, so the rail survives and a miss costs one
                 // more click. Double click = commit: fly into the card tier.
@@ -139,6 +146,7 @@ export function TimelineBar() {
                 }}
                 className="relative flex items-center w-full h-[14px] shrink-0 pl-[17px] cursor-pointer"
                 aria-label={e.label}
+                aria-describedby={hover?.id === e.id ? previewId : undefined}
               >
                 <span
                   className={`rounded-tag ${e.recentlyEdited ? 'tdag-timeline-pulse' : ''}`}

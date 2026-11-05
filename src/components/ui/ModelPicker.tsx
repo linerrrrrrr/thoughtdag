@@ -146,6 +146,8 @@ export default function ModelPicker({ value, onChange, compact }: PickerProps) {
             ? 'bg-accent/10 border border-accent/40 rounded-control h-8 px-2.5 flex items-center gap-1.5 hover:bg-accent/20 transition-colors text-accent max-w-[190px]'
             : 'bg-card border border-line rounded-control h-8 px-2.5 flex items-center gap-1.5 hover:bg-wash transition-colors text-ink-muted max-w-[190px]'}
         title={noModels ? t('apikey.entryTitle') : nodeMode && !value ? t('model.inherit') : `${t('toolbar.model')} · ${label ?? t('model.none')}`}
+        data-tooltip-icon-only={!(nodeMode && !value) || undefined}
+        data-tooltip-overflow={!noModels && !(nodeMode && !value) || undefined}
         aria-label={noModels ? t('apikey.entryTitle') : `${t('toolbar.model')} · ${label ?? t('model.none')}`}
         data-apikey-entry={noModels || undefined}
         aria-expanded={open}
@@ -215,7 +217,6 @@ export default function ModelPicker({ value, onChange, compact }: PickerProps) {
                         <div key={m.id}>
                           <button
                             onClick={() => pick(m.id)}
-                            title={m.name}
                             className={`w-full text-left pl-8 pr-3 py-1.5 text-control flex items-center gap-2 transition-colors hover:bg-wash ${m.id === activeId ? 'text-accent font-medium' : 'text-ink'}`}
                           >
                             <span className="flex-1 break-words leading-snug">{m.name.replace(` (${m.provider})`, '').replace(`${label} · `, '')}</span>
@@ -232,7 +233,7 @@ export default function ModelPicker({ value, onChange, compact }: PickerProps) {
                 <div key={m.id}>
                 <button
                   onClick={() => pick(m.id)}
-                  title={m.name}
+                  title={m.name} data-tooltip-overflow
                   className={`w-full text-left px-3 py-1.5 text-control flex items-center gap-2 transition-colors hover:bg-wash ${
                     m.id === activeId ? 'text-accent font-medium' : 'text-ink'
                   }`}
@@ -269,7 +270,7 @@ export default function ModelPicker({ value, onChange, compact }: PickerProps) {
                   .finally(() => setRefreshing(false));
               }}
               disabled={refreshing}
-              title={t('model.refreshList')}
+              title={t('model.refreshList')} aria-label={t('model.refreshList')}
               className="w-6 h-6 rounded-control flex items-center justify-center text-ink-faint hover:text-accent hover:bg-wash transition-colors shrink-0"
               data-model-refresh
             >
@@ -322,8 +323,8 @@ function EffortStep({ model, onDone }: { model: ModelInfo; onDone: () => void })
   const levels = model.efforts ?? [];
   const value = levels.includes(effort) ? effort : '';
   return (
-    <div className="mx-3 mb-1.5 mt-0.5 rounded-content bg-wash/70 border border-line px-2 py-1.5 flex items-center gap-2" title={t('model.effortHint')} data-agent-effort>
-      <span className="text-control text-ink-faint uppercase tracking-wider font-medium shrink-0">{t('model.effort')}</span>
+    <div className="mx-3 mb-1.5 mt-0.5 rounded-content bg-wash/70 border border-line px-2 py-1.5 flex items-center gap-2" data-agent-effort>
+      <span className="text-control text-ink-faint uppercase tracking-wider font-medium shrink-0 cursor-help" tabIndex={0} title={t('model.effortHint')}>{t('model.effort')}</span>
       <select
         value={value}
         onChange={(e) => setEffort(e.target.value)}
@@ -331,6 +332,7 @@ function EffortStep({ model, onDone }: { model: ModelInfo; onDone: () => void })
         autoFocus
         className="flex-1 min-w-0 text-control text-ink bg-card border border-line rounded-control px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-accent/40"
         data-agent-effort-select
+        aria-label={t('model.effort')}
       >
         <option value="">{model.defaultEffort ? fmt(t('model.effortDefaultKnown'), { level: model.defaultEffort }) : t('model.effortDefault')}</option>
         {levels.map((l) => <option key={l} value={l}>{l}</option>)}

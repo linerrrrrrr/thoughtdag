@@ -118,7 +118,7 @@ export default function TopicsPanel({ onOpened, onChanged }: { onOpened?: () => 
             <div key={i} className="flex items-center gap-2">
               <input autoFocus={i === 0} value={d.name} onChange={(e) => setDraft(draft.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)))} placeholder={t('topics.name')} className="w-[180px] bg-wash border border-line rounded-control px-2 py-1 text-control text-ink" data-topic-name />
               <input value={d.description} onChange={(e) => setDraft(draft.map((x, j) => (j === i ? { ...x, description: e.target.value } : x)))} placeholder={t('topics.description')} className="flex-1 bg-wash border border-line rounded-control px-2 py-1 text-control text-ink" data-topic-description />
-              <button onClick={() => setDraft(draft.filter((_, j) => j !== i))} className="text-ink-faint hover:text-red-500 p-1" title={t('topics.remove')}><Trash2 size={12} strokeWidth={1.75} /></button>
+              <button onClick={() => setDraft(draft.filter((_, j) => j !== i))} className="p-1 object-action-danger" data-icon-only aria-label={t('topics.remove')}><Trash2 size={12} strokeWidth={1.75} /></button>
             </div>
           ))}
           <div className="flex items-center gap-2 pt-1">
@@ -163,7 +163,7 @@ export default function TopicsPanel({ onOpened, onChanged }: { onOpened?: () => 
           ) : allLabeled ? (
             <span>{t('topics.labelDone')}</span>
           ) : (
-            <button onClick={() => void label()} disabled={!canLabel} title={canLabel ? undefined : t('topics.needJudge')} className="text-control px-2.5 py-1 rounded-control bg-accent/10 text-accent hover:bg-accent/20 disabled:opacity-50" data-topics-label>
+            <button onClick={() => void label()} disabled={!canLabel} className="text-control px-2.5 py-1 rounded-control bg-accent/10 text-accent hover:bg-accent/20 disabled:opacity-50" data-topics-label>
               {info.labeled ? fmt(t('topics.labelMore'), { n: LABEL_CHUNK }) : t('topics.label')}
             </button>
           )}

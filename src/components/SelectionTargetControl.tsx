@@ -1,59 +1,48 @@
-import { ChevronDown, MousePointer2, Spline } from 'lucide-react';
+import { useRef } from 'react';
 import { useCanvasEditing } from '../lib/canvas-editing';
+import { partitionSpatialSelection, type SelectionRegion, type SelectionTarget } from '../lib/canvas-selection';
+import { useSelectionToolbarPosition } from '../lib/use-selection-toolbar-position';
 import { useStore } from '../store';
-import { useT } from '../i18n';
+import { useT, fmt } from '../i18n';
 
-/** A persistent canvas setting; switching is immediate and reversible. */
-export default function SelectionTargetControl() {
+/** A confirmed marquee owns its object-type choice, including an empty active type. */
+export default function SelectionTargetControl({ region }: { region: SelectionRegion }) {
   const t = useT();
   const target = useCanvasEditing(state => state.selectionTarget);
-  const choose = (value: 'nodes' | 'edges') => {
+  const nodes = useStore(state => state.nodes);
+  const edges = useStore(state => state.edges);
+  const { nodeIds, frameIds } = partitionSpatialSelection(nodes, [...region.nodeIds, ...region.frameIds]);
+  const edgeIds = region.edgeIds.filter(id => edges.some(edge => edge.id === id && !edge.hidden && edge.selectable !== false));
+  const ref = useRef<HTMLDivElement>(null);
+  const visible = nodeIds.length + edgeIds.length + frameIds.length > 0;
+  const style = useSelectionToolbarPosition(ref, visible);
+  const choose = (value: SelectionTarget) => {
+    useCanvasEditing.getState().requestProperties();
     if (target === value) return;
-    const state = useStore.getState();
-    const region = useCanvasEditing.getState().selectionRegion;
-    const nodes = new Set(state.selectedNodeIds);
-    const edges = state.edges.filter(edge => edge.selected);
     useCanvasEditing.getState().setSelectionTarget(value);
-    if (region) {
-      const nodeIds = value === 'nodes' ? region.nodeIds.filter(id => state.nodes.some(node => node.id === id && !node.hidden && node.selectable !== false)) : [];
-      const edgeIds = new Set(value === 'edges' ? region.edgeIds : []);
-      useStore.setState({
-        selectedNodeIds: nodeIds,
-        selectedNodeId: nodeIds.length === 1 ? nodeIds[0] : null,
-        nodes: state.nodes.map(node => ({ ...node, selected: nodeIds.includes(node.id) })),
-        edges: state.edges.map(edge => ({ ...edge, selected: edgeIds.has(edge.id) && !edge.hidden && edge.selectable !== false })),
-      });
-      return;
-    }
-    if (value === 'edges') {
-      state.setSelectedNodeIds([]);
-      useStore.setState({ edges: state.edges.map(edge => ({ ...edge, selected: !edge.hidden && edge.selectable !== false && (edges.includes(edge) || nodes.has(edge.source) && nodes.has(edge.target)) })) });
-    } else {
-      useStore.setState({ edges: state.edges.map(edge => ({ ...edge, selected: false })) });
-      state.setSelectedNodeIds([...new Set([...nodes, ...edges.flatMap(edge => [edge.source, edge.target])])]);
-    }
+    const selectedNodes = value === 'nodes' ? nodeIds : value === 'frames' ? frameIds : [];
+    const selectedEdges = new Set(value === 'edges' ? edgeIds : []);
+    useStore.setState(state => ({
+      selectedNodeIds: selectedNodes,
+      selectedNodeId: selectedNodes.length === 1 ? selectedNodes[0] : null,
+      nodes: state.nodes.map(node => ({ ...node, selected: selectedNodes.includes(node.id) })),
+      edges: state.edges.map(edge => ({ ...edge, selected: selectedEdges.has(edge.id) })),
+    }));
   };
-  const ActiveIcon = target === 'nodes' ? MousePointer2 : Spline;
-  return <div className="canvas-selection-control" role="group" aria-label={t('selection.target')} data-selection-target-control>
-      <div className="canvas-selection-segments">
-      {(['nodes', 'edges'] as const).map(value => {
-        const Icon = value === 'nodes' ? MousePointer2 : Spline;
-        return <button key={value} type="button" data-selection-target={value} aria-pressed={target === value}
-          aria-label={t(value === 'nodes' ? 'selection.nodes' : 'selection.edges')} title={`${t('selection.target')} · ${t(value === 'nodes' ? 'selection.nodes' : 'selection.edges')}`}
-          className="canvas-toolbar-button"
-          onClick={() => choose(value)}><Icon size={16} strokeWidth={1.75} className="canvas-selection-icon" aria-hidden="true" /><span className="canvas-toolbar-label">{t(value === 'nodes' ? 'selection.nodes' : 'selection.edges')}</span></button>;
-      })}
-      </div>
-      <div className="canvas-selection-picker relative h-8 items-center text-accent">
-        <ActiveIcon size={14} className="pointer-events-none absolute left-2" aria-hidden="true" />
-        <select value={target} onChange={event => choose(event.target.value as 'nodes' | 'edges')}
-          aria-label={t('selection.target')} title={`${t('selection.target')} · ${t(target === 'nodes' ? 'selection.nodes' : 'selection.edges')}`}
-          className="h-8 appearance-none rounded-control bg-wash pl-7 pr-6 text-control focus-visible:outline-2 focus-visible:outline-accent"
-          data-selection-target-picker>
-          <option value="nodes">{t('selection.nodes')}</option>
-          <option value="edges">{t('selection.edges')}</option>
-        </select>
-        <ChevronDown size={12} className="pointer-events-none absolute right-1.5" aria-hidden="true" />
-      </div>
-    </div>;
+  if (!visible) return null;
+  return <div ref={ref} className="canvas-toolbar selection-target-toolbar nodrag nopan nowheel"
+    role="group" aria-label={t('selection.target')} data-selection-target-control data-selection-target-docked
+    style={style} onPointerDown={event => event.stopPropagation()} onClick={event => event.stopPropagation()}
+    onDoubleClick={event => event.stopPropagation()}>
+    {(['nodes', 'edges', 'frames'] as const).map(value => {
+      const count = value === 'nodes' ? nodeIds.length : value === 'frames' ? frameIds.length : edgeIds.length;
+      return <button key={value} type="button" className="canvas-toolbar-button"
+        data-selection-target={value} aria-pressed={target === value}
+        aria-label={fmt(t(value === 'nodes' ? 'selection.nodeCandidates' : value === 'frames' ? 'selection.frameCandidates' : 'selection.edgeCandidates'), { n: count })}
+        onClick={() => choose(value)}>
+        <span>{t(value === 'nodes' ? 'selection.nodes' : value === 'frames' ? 'selection.frames' : 'selection.edges')}</span>
+        <span className="tabular-nums" aria-hidden="true">{count}</span>
+      </button>;
+    })}
+  </div>;
 }

@@ -17,7 +17,7 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import 'highlight.js/styles/github.css';
-import { ArrowRight, BookOpen, Bot, Brain, CircleHelp, Download, Drama, Eye, FileText, FolderSync, Frame, GitBranch, Hand, Highlighter, History as HistoryIcon, ImageDown, KeyRound, ListRestart, Loader2, MessageCircleQuestion, Minimize2, MoreHorizontal, Paperclip, Redo2, Rewind, Scissors, Search, Share2, SlidersHorizontal, SquareTerminal, Star, Stethoscope, StickyNote, Trash2, Undo2, Workflow, X } from 'lucide-react';
+import { ArrowRight, BookOpen, Bot, Brain, CircleHelp, Download, FileDown, Drama, Eye, FileText, FolderSync, Frame, GitBranch, Hand, Highlighter, History as HistoryIcon, ImageDown, KeyRound, ListRestart, Loader2, MessageCircleQuestion, Minimize2, MoreHorizontal, Paperclip, Redo2, Rewind, Scissors, Search, Share2, SlidersHorizontal, SquareTerminal, Star, Stethoscope, StickyNote, Trash2, Undo2, Workflow, X } from 'lucide-react';
 import './index.css';
 import { ListFilter } from 'lucide-react';
 import ThoughtNode from './components/ThoughtNode';
@@ -28,21 +28,19 @@ import { useAppearance, edgePalette, LEGACY_EDGE_HEX } from './lib/appearance';
 import ContentNode from './components/ContentNode';
 import FrameNode from './components/FrameNode';
 import ThoughtEdgeView from './components/ThoughtEdgeView';
-import EdgeInspector from './components/EdgeInspector';
-import CanvasLayoutPanel from './components/CanvasLayoutPanel';
+import SelectionInspector from './components/SelectionInspector';
+import CanvasLayoutPanel, { type CanvasLayoutPanelHandle } from './components/CanvasLayoutPanel';
 import { canvasToolViewport, useCanvasPanelPosition, useFocusPanelSpace } from './lib/use-canvas-panel-position';
 import { CanvasToolbarOverflowContext, restoreCanvasToolbarFocus, useResponsiveCanvasHeader } from './lib/use-responsive-canvas-header';
 import CanvasToolbarOverflowAction from './components/CanvasToolbarOverflowAction';
-import { useCanvasToolCard, useCanvasToolCards } from './lib/use-canvas-tool-card';
+import { useCanvasSelectionCard, useCanvasToolCard, useCanvasToolCards } from './lib/use-canvas-tool-card';
 import { useCanvasEditing } from './lib/canvas-editing';
+import { useContextInspection } from './lib/context-inspection';
 import { CanvasQuickLayoutContext, quickCanvasLayout } from './lib/canvas-layout-preferences';
 import { createEdgeAnchorResolver } from './lib/edge-anchors';
 import { createEdgeRoutingContext } from './lib/edge-path';
 import { CanvasEdgeRouting } from './lib/edge-routing-context';
 import FocusPanel from './components/focus-panel';
-import SelectionToolbar from './components/SelectionToolbar';
-import SelectionTargetControl from './components/SelectionTargetControl';
-import BatchEdgeInspector from './components/BatchEdgeInspector';
 import SelectionResizeControls from './components/SelectionResizeControls';
 import SelectionRegion from './components/SelectionRegion';
 import NodeContextMenu from './components/NodeContextMenu';
@@ -58,8 +56,8 @@ import SessionAtlas from './components/SessionAtlas';
 import { useStore } from './store';
 import { undoState } from './store/slices/history';
 import { shownStaleIds } from './lib/stale-judge';
-import { resolveCarriedNodeIds } from './lib/frames';
-import { enclosedSelection, intersectingEdgeSelection, snapshotEdgeSelectionPaths, type EdgeSelectionPath, type SelectionRegion as SelectionRegionState } from './lib/canvas-selection';
+import { isFrameNode, resolveCarriedNodeIds } from './lib/frames';
+import { enclosedSelection, partitionSpatialSelection, intersectingEdgeSelection, snapshotEdgeSelectionPaths, type SelectionTarget, type EdgeSelectionPath, type SelectionRegion as SelectionRegionState } from './lib/canvas-selection';
 import type { ArrangeRect } from './lib/arrange-selection';
 import { useProjects, adoptImportedProject, markInstantiatedFrom } from './store/projects';
 import { projectStorageKey } from './store/projects';
@@ -79,7 +77,7 @@ import { buildExampleGraph } from './lib/example-graph';
 import { COLORS, FRAME_COLORS, PANEL_INSET, EDGE_ARROW_GEOMETRY } from './lib/constants';
 import { panelShift } from './lib/panel-shift';
 import { useReaderDock } from './lib/reader-dock';
-import { useDismissableLayer } from './lib/use-dismissable-layer';
+import { handleDismissableLayerKeyDown, useDismissableLayer } from './lib/use-dismissable-layer';
 import { migrateActiveCanvasToVault, gcVaultAtBoot } from './lib/attachment-vault-boot';
 import { consumeOpenRouterCallback, handMintedKeyToModal, startOpenRouterOAuth } from './lib/openrouter-oauth';
 import { bootDesktopUpdateUI } from './lib/desktop-update-ui';
@@ -232,9 +230,9 @@ export default function App() {
 
 function Canvas() {
   const { nodes, edges, setNodes, setEdges, addQuestion, undo, redo, addCrossLink, setSelectedNodeId, setSelectedNodeIds, history, historyIndex } = useStore();
-  const { edgeId: editingEdgeId, edgePreview, layoutOpen, layoutPreview, selectionTarget } = useCanvasEditing();
+  const { edgePreviews, propertiesRequest, layoutOpen, layoutPreview, selectionTarget } = useCanvasEditing();
   const selectedEdges = edges.filter(edge => edge.selected && !edge.hidden);
-  const batchEdgeOpen = selectedEdges.length > 0 && (selectionTarget === 'edges' || selectedEdges.length > 1) && !layoutOpen && !isViewerMode;
+  const editingEdge = selectedEdges.length === 1 ? selectedEdges[0] : undefined;
   const anchorResolver = useRef(createEdgeAnchorResolver());
   const activeProjectId = useProjects((s) => s.activeId);
   useEffect(() => {
@@ -242,17 +240,12 @@ function Canvas() {
     useCanvasEditing.getState().reset();
     useUiStore.getState().setPanelOpen(false);
   }, [activeProjectId]);
-  const editingEdge = edges.find((edge) => edge.id === editingEdgeId);
-  const edgeEditorOpen = !!editingEdge && !isViewerMode && !batchEdgeOpen;
-  useEffect(() => {
-    if (editingEdgeId && !editingEdge) useCanvasEditing.getState().setEdgeId(null);
-  }, [editingEdgeId, editingEdge]);
   const openEdgeEditor = useCallback((id: string) => {
     if (isViewerMode) return;
     useCanvasEditing.getState().setSelectionRegion(null);
     useStore.getState().setSelectedNodeIds([]);
     useStore.setState((state) => ({ edges: state.edges.map((edge) => ({ ...edge, selected: edge.id === id })) }));
-    useCanvasEditing.getState().setEdgeId(id);
+    useCanvasEditing.getState().requestProperties();
   }, []);
   const undoable = undoState({ nodes, edges, history, historyIndex });
   const t = useT();
@@ -279,6 +272,7 @@ function Canvas() {
   const materialCount = useStore((s) => s.nodes.reduce((sum, n) =>
     sum + (n.data.attachments?.length ?? 0) + (['note', 'link'].includes(n.data.stepKind ?? '') ? 1 : 0), 0));
   const rfInstance = useRef<ReactFlowInstance<ThoughtNodeType, ThoughtEdge> | null>(null);
+  const layoutPanelRef = useRef<CanvasLayoutPanelHandle>(null);
   const quickLayout = useCallback((ids?: string[]) => quickCanvasLayout(rfInstance.current, ids), []);
   const getViewportRect = useCallback((): ArrangeRect | undefined => {
     const viewport = rfInstance.current?.getViewport();
@@ -589,18 +583,19 @@ function Canvas() {
   // the mutation with the stale pre-render snapshot.
   // Keep the additive baseline before React Flow clears its internal selection.
   // The rectangle selects measured node footprints independently of groups.
-  const marquee = useRef<{ start: { x: number; y: number }; baseNodes: string[]; baseEdges: string[]; ids: string[]; active: boolean; target: 'nodes' | 'edges'; paths: EdgeSelectionPath[]; region: SelectionRegionState | null } | null>(null);
+  const marquee = useRef<{ start: { x: number; y: number }; baseNodes: string[]; baseFrames: string[]; baseEdges: string[]; ids: string[]; active: boolean; target: SelectionTarget; paths: EdgeSelectionPath[]; region: SelectionRegionState | null } | null>(null);
   const marqueeClickPending = useRef(false);
   const isRetainedSelectionPane = useCallback((event: Pick<React.MouseEvent, 'target' | 'clientX' | 'clientY'>) => {
     if (!(event.target instanceof Element) || !event.target.classList.contains('react-flow__pane')) return false;
     const region = useCanvasEditing.getState().selectionRegion;
     const point = rfInstance.current?.screenToFlowPosition({ x: event.clientX, y: event.clientY }, { snapToGrid: false });
-    return !!region && !!point && point.x >= region.rect.x && point.x <= region.rect.x + region.rect.width
+    return !!region && region.nodeIds.length + region.edgeIds.length + region.frameIds.length > 0
+      && !!point && point.x >= region.rect.x && point.x <= region.rect.x + region.rect.width
       && point.y >= region.rect.y && point.y <= region.rect.y + region.rect.height;
   }, []);
   const syncMarqueeSelection = useCallback((ids: string[]) => {
     const selected = new Set(ids);
-    useCanvasEditing.getState().setEdgeId(null);
+    useCanvasEditing.getState().setEdgePreviews(null);
     useStore.setState(state => ({
       selectedNodeIds: marquee.current?.target === 'edges' ? [] : ids,
       selectedNodeId: marquee.current?.target !== 'edges' && ids.length === 1 ? ids[0] : null,
@@ -712,8 +707,9 @@ function Canvas() {
 
   const deleteEdge = useCallback(
     (edgeId: string) => {
-      deleteEdges([edgeId]);
       setEdgeMenu(null);
+      void confirmDialog({ title: ti('selection.deleteEdges'), message: fmt(ti('selection.deleteEdgesConfirm'), { n: 1 }),
+        confirmLabel: ti('common.delete'), danger: true }).then(ok => { if (ok) deleteEdges([edgeId]); });
     },
     [deleteEdges]
   );
@@ -782,18 +778,22 @@ function Canvas() {
     // Closing leaves session drafts intact and never reopens on a wider window.
     if (panelMode && !panelFits) useUiStore.getState().setPanelOpen(false);
   }, [panelMode, panelFits]);
-  const toolCardOpen = useCanvasToolCards((state) => state.active !== null);
-  const inspectorSuspended = toolCardOpen || chatOpen;
-  const showFormatPanel = selectedNodeIds.length > 0 && !edgeEditorOpen && !batchEdgeOpen && !layoutOpen && !inspectorSuspended;
+  const selectionKey = selectedNodeIds.length || selectedEdges.length
+    ? JSON.stringify([activeProjectId, [...selectedNodeIds].sort(), selectedEdges.map(edge => edge.id).sort()]) : '';
+  const showProperties = useCanvasSelectionCard('selection-properties', isViewerMode ? '' : selectionKey,
+    !layoutOpen, propertiesRequest);
+  const showLayoutPanel = useCanvasToolCard('layout', layoutOpen && !isViewerMode,
+    () => useCanvasEditing.getState().setLayoutOpen(false));
+  const showChatPanel = useCanvasToolCard('chat', chatOpen, () => setChatOpen(false));
   const [formatPanelReady, setFormatPanelReady] = useState(false);
   useEffect(() => {
     // Let a double-click reach the card before a newly opened inspector can
     // cover it on a narrow canvas. Changing an existing selection stays live.
-    const timer = window.setTimeout(() => setFormatPanelReady(showFormatPanel), showFormatPanel ? 300 : 0);
+    const timer = window.setTimeout(() => setFormatPanelReady(showProperties), showProperties ? 300 : 0);
     return () => window.clearTimeout(timer);
-  }, [showFormatPanel]);
+  }, [showProperties]);
   const occupiedPanelWidth = panelOpen ? livePanelWidth : 0;
-  const toolbarPanelPosition = useCanvasPanelPosition(true, 'left');
+  const toolbarPanelPosition = useCanvasPanelPosition(true, 'right');
   const canvasHeaderRef = useResponsiveCanvasHeader();
   useEffect(() => {
     // a selection that names no node is stale; drop it so nothing else keys off it
@@ -820,16 +820,22 @@ function Canvas() {
       const inField = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable;
       if ((e.metaKey || e.ctrlKey) && !e.altKey && key === 'a' && !inField) {
         e.preventDefault();
-        useCanvasEditing.getState().setSelectionRegion(null);
         const st = useStore.getState();
-        if (useCanvasEditing.getState().selectionTarget === 'edges') {
-          const shownEdges = new Set((rfInstance.current?.getEdges() ?? st.edges).filter(edge => !edge.hidden && edge.selectable !== false).map(edge => edge.id));
-          st.setSelectedNodeIds([]);
-          st.setEdges(st.edges.map(edge => ({ ...edge, selected: shownEdges.has(edge.id) })));
-          return;
+        const editing = useCanvasEditing.getState();
+        const selectedKinds = new Set<SelectionTarget>();
+        if (editing.selectionRegion) selectedKinds.add(editing.selectionTarget);
+        else {
+          for (const node of st.nodes) if (st.selectedNodeIds.includes(node.id)) selectedKinds.add(isFrameNode(node) ? 'frames' : 'nodes');
+          if (st.edges.some(edge => edge.selected)) selectedKinds.add('edges');
         }
+        if (!selectedKinds.size) selectedKinds.add('nodes');
+        editing.setSelectionRegion(null);
+        const shownEdges = new Set((rfInstance.current?.getEdges() ?? st.edges).filter(edge => !edge.hidden && edge.selectable !== false).map(edge => edge.id));
+        st.setEdges(st.edges.map(edge => ({ ...edge, selected: selectedKinds.has('edges') && shownEdges.has(edge.id) })));
         const shown = rfInstance.current?.getNodes() ?? st.nodes;
-        st.setSelectedNodeIds(shown.filter(node => !node.hidden && node.selectable !== false).map(node => node.id));
+        st.setSelectedNodeIds(shown.filter(node => !node.hidden && node.selectable !== false
+          && selectedKinds.has(isFrameNode(node) ? 'frames' : 'nodes')).map(node => node.id));
+        editing.requestProperties();
         return;
       }
       // Only canvas focus cycles objects. Tab within controls keeps its usual
@@ -846,7 +852,7 @@ function Canvas() {
           const next = index < 0 ? (e.shiftKey ? selectable.length - 1 : 0)
             : (index + (e.shiftKey ? -1 : 1) + selectable.length) % selectable.length;
           useCanvasEditing.getState().setSelectionRegion(null);
-          useCanvasEditing.getState().setEdgeId(null);
+          useCanvasEditing.getState().requestProperties();
           st.setEdges(st.edges.map(edge => edge.selected ? { ...edge, selected: false } : edge));
           st.setSelectedNodeId(selectable[next].id);
           (document.activeElement as HTMLElement | null)?.blur();
@@ -869,7 +875,8 @@ function Canvas() {
       {
         const target = e.target as HTMLElement;
         const inField = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable;
-        if (!inField && selectedNodeId && !isParadigm && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        if (!inField && selectedNodeId && !isParadigm && !e.metaKey && !e.ctrlKey && !e.altKey
+          && useStore.getState().nodes.some(node => node.id === selectedNodeId && !isFrameNode(node))) {
           const { nodes: ns, edges: es } = useStore.getState();
           // Space: collapse/expand the selected node
           if (e.key === ' ') {
@@ -895,7 +902,7 @@ function Canvas() {
               const parentEdge = structural.find((ed) => ed.target === selectedNodeId);
               const siblings = parentEdge
                 ? structural.filter((ed) => ed.source === parentEdge.source).map((ed) => ed.target)
-                : ns.filter((n) => !structural.some((ed) => ed.target === n.id)).map((n) => n.id);
+                : ns.filter((n) => !isFrameNode(n) && !structural.some((ed) => ed.target === n.id)).map((n) => n.id);
               const idx = siblings.indexOf(selectedNodeId);
               if (idx !== -1 && siblings.length > 1) {
                 nextId = siblings[(idx + (e.key === 'ArrowRight' ? 1 : siblings.length - 1)) % siblings.length];
@@ -912,7 +919,7 @@ function Canvas() {
           }
         }
       }
-      // Esc: step out — clear multi-selection first, then close the panel
+      // Card and nested-editor layers consume Escape first; the canvas then clears selection.
       if (e.key === 'Escape') {
         const target = e.target as HTMLElement;
         if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) return;
@@ -921,6 +928,7 @@ function Canvas() {
         } else if (selectedNodeId) {
           setSelectedNodeId(null);
         }
+        useStore.getState().setEdges(useStore.getState().edges.map(edge => edge.selected ? { ...edge, selected: false } : edge));
         return;
       }
       // Frames delete only their explicitly selected bounds, never contents.
@@ -930,7 +938,14 @@ function Canvas() {
         const selection = new Set(selectedNodeIds);
         const selected = useStore.getState().nodes.filter(node => selection.has(node.id));
         const frameCount = selected.filter(node => node.data.stepKind === 'frame').length;
-        if (selectedNodeIds.length > 1 || frameCount > 0) {
+        const selectedEdgeIds = edges.filter(edge => edge.selected).map(edge => edge.id);
+        if (selectedNodeIds.length && selectedEdgeIds.length) {
+          e.preventDefault();
+          void confirmDialog({ title: ti('selection.deleteObjects'),
+            message: fmt(ti('selection.deleteObjectsConfirm'), { nodes: selected.length - frameCount, frames: frameCount, edges: selectedEdgeIds.length }),
+            confirmLabel: ti('common.delete'), danger: true,
+          }).then(ok => { if (ok) batchDelete(selectedNodeIds, selectedEdgeIds); });
+        } else if (selectedNodeIds.length > 0) {
           e.preventDefault();
           const nodeCount = selected.length - frameCount;
           void confirmDialog({
@@ -942,7 +957,6 @@ function Canvas() {
             danger: true,
           }).then((ok) => { if (ok) batchDelete(selectedNodeIds); });
         } else {
-          const selectedEdgeIds = edges.filter((ed) => ed.selected).map((ed) => ed.id);
           if (selectedEdgeIds.length > 0) {
             e.preventDefault();
             void confirmDialog({ title: ti('selection.deleteEdges'), message: fmt(ti('selection.deleteEdgesConfirm'), { n: selectedEdgeIds.length }), confirmLabel: ti('common.delete'), danger: true })
@@ -1010,7 +1024,7 @@ function Canvas() {
   }, dismissOnFocusOutside: true, restoreFocus: false });
 
   // Toolbar overflow menu: low-frequency actions live behind one ⋯ button
-  // so the project toolbar stays short in both languages and with the panel
+  // so the action toolbar stays short in both languages and with the panel
   // dragged wide.
   const [moreRequested, setMoreOpen] = useState(false);
   const [overflowMenu, setOverflowMenu] = useState<HTMLDivElement | null>(null);
@@ -1028,11 +1042,14 @@ function Canvas() {
   // material stays — it's part of the reasoning record). A filter over the
   // render, not a layer system: the semantic layering already lives in edges.
   const searchHitIds = useUiStore((s2) => s2.searchHitIds);
+  const inspectedTarget = useContextInspection(state => state.targetId);
+  const inspectedEdgeId = useContextInspection(state => state.activeEdgeId);
+  const inspectedSource = edges.find(edge => edge.id === inspectedEdgeId && edge.target === inspectedTarget)?.source;
   // Context Focus: single-selection lights up what the node actually
   // receives (mainline + materials + reference sources, via the same
   // partitionContext the prompt builder uses) and dims the rest. Read-only.
   const focusSets = useMemo(() => {
-    if (!selectedNodeId || selectedNodeIds.length > 1 || edgeEditorOpen || layoutOpen || edges.some((edge) => edge.selected)) return null;
+    if (inspectedTarget || !selectedNodeId || selectedNodeIds.length > 1 || layoutOpen || edges.some((edge) => edge.selected)) return null;
     // Frames organize space; selecting one does not focus a conversation.
     if (!nodes.some((n) => n.id === selectedNodeId && n.data.stepKind !== 'frame')) return null;
     const part = partitionContext(selectedNodeId, nodes, edges);
@@ -1050,7 +1067,7 @@ function Canvas() {
       pathEdgeIds, refEdgeIds,
       downEdgeIds: new Set(downOut.map((e) => e.id)),
     };
-  }, [selectedNodeId, selectedNodeIds, nodes, edges, edgeEditorOpen, layoutOpen]);
+  }, [selectedNodeId, selectedNodeIds, nodes, edges, layoutOpen, inspectedTarget]);
 
   // Preview overlays only geometry and visual defaults: streamed content stays live.
   const renderNodes = useMemo(() => {
@@ -1063,9 +1080,15 @@ function Canvas() {
         layoutDirection: draft.data.layoutDirection, edgeRouteDefault: draft.data.edgeRouteDefault } } : node;
     });
   }, [nodes, layoutPreview]);
-  const renderEdges = useMemo(() => edgePreview ? edges.map((edge) => edge.id === edgePreview.id
-    ? { ...edgePreview, selected: edge.selected } : edge) : edges, [edges, edgePreview]);
+  const renderEdges = useMemo(() => {
+    // Source inspection describes committed context. Keep property drafts, but
+    // suspend their visual preview until the temporary source card closes.
+    if (inspectedTarget || !edgePreviews) return edges;
+    const previews = new Map(edgePreviews.map(edge => [edge.id, edge]));
+    return edges.map(edge => previews.has(edge.id) ? { ...previews.get(edge.id)!, selected: edge.selected } : edge);
+  }, [edges, edgePreviews, inspectedTarget]);
 
+  const canvasNodesDraggable = !isViewerMode && !layoutPreview && !condenseBuilding;
   const displayNodes = useMemo((): typeof nodes => {
     // Smaller frames represent more specific regions, so render them above
     // larger frames while keeping every frame below ordinary canvas nodes.
@@ -1114,8 +1137,13 @@ function Canvas() {
     }
     if (editingEdge) out = out.map((node) => node.id === editingEdge.source || node.id === editingEdge.target
       ? { ...node, className: [node.className, 'edge-endpoint'].filter(Boolean).join(' ') } : node);
-    return out;
-  }, [renderNodes, edges, annotationsHidden, searchHitIds, focusSets, selectedNodeId, editingEdge]);
+    if (inspectedTarget) out = out.map(node => node.id === inspectedTarget || node.id === inspectedSource
+      ? { ...node, className: [node.className, node.id === inspectedTarget ? 'context-target-active' : 'context-source-active'].filter(Boolean).join(' ') }
+      : node);
+    // Per-node flags override React Flow's global setting. The rendered graph
+    // must honor temporary locks even for an imported explicit draggable=true.
+    return canvasNodesDraggable ? out : out.map(node => ({ ...node, draggable: false }));
+  }, [renderNodes, edges, annotationsHidden, searchHitIds, focusSets, selectedNodeId, editingEdge, canvasNodesDraggable, inspectedTarget, inspectedSource]);
 
   const highlightedEdges = useMemo((): ThoughtEdge[] => {
     // Visual law: SOLID = structural (conversation, layout, cascade),
@@ -1169,6 +1197,7 @@ function Canvas() {
         return { ...e, style: { ...e.style, strokeWidth: 1.5, opacity: 0.2 }, zIndex: 0 };
       });
     }
+    if (inspectedTarget) return base;
     const activeIds = selectedNodeIds.length > 1
       ? selectedNodeIds.filter((id) => nodes.some((node) => node.id === id && node.data.stepKind !== 'frame')) : [];
     if (activeIds.length === 0) return base;
@@ -1192,7 +1221,7 @@ function Canvas() {
         zIndex: 0,
       };
     });
-  }, [nodes, edges, renderEdges, selectedNodeIds, themePalette, focusSets]);
+  }, [nodes, edges, renderEdges, selectedNodeIds, themePalette, focusSets, inspectedTarget]);
 
   const displayEdges = useMemo(() => {
     anchorResolver.current.prune(highlightedEdges);
@@ -1318,6 +1347,12 @@ function Canvas() {
       >
       <CanvasEdgeRouting.Provider value={routingContext}>
       <ReactFlow
+        onKeyDownCapture={event => {
+          // Resolve our active editor before the library deselects a focused node.
+          if (event.key !== 'Escape' || isImeComposing(event)) return;
+          handleDismissableLayerKeyDown(event.nativeEvent);
+          if (event.nativeEvent.defaultPrevented) { event.preventDefault(); event.stopPropagation(); }
+        }}
         onClickCapture={event => {
           // Let React Flow consume the release click and reset its gesture flag.
           if (marqueeClickPending.current) { marqueeClickPending.current = false; return; }
@@ -1330,23 +1365,25 @@ function Canvas() {
           const state = useStore.getState();
           const previous = useCanvasEditing.getState().selectionRegion;
           const additive = event.ctrlKey || event.metaKey || event.shiftKey;
+          const marqueeTarget = additive && previous ? selectionTarget : 'nodes';
           if (!additive && isRetainedSelectionPane(event)) {
             event.stopPropagation();
             return;
           }
-          const selectedNodes = new Set(state.selectedNodeIds);
-          const selectedLines = state.edges.filter(edge => edge.selected);
+          const spatial = partitionSpatialSelection(state.nodes, state.selectedNodeIds);
           marquee.current = {
             start: { x: event.clientX, y: event.clientY },
-            baseNodes: additive ? previous?.nodeIds ?? [...new Set([...selectedNodes, ...selectedLines.flatMap(edge => [edge.source, edge.target])])] : [],
-            baseEdges: additive ? previous?.edgeIds ?? state.edges.filter(edge => edge.selected || selectedNodes.has(edge.source) && selectedNodes.has(edge.target)).map(edge => edge.id) : [],
+            baseNodes: additive ? previous?.nodeIds ?? spatial.nodeIds : [],
+            baseFrames: additive ? previous?.frameIds ?? spatial.frameIds : [],
+            baseEdges: additive ? previous?.edgeIds ?? state.edges.filter(edge => edge.selected).map(edge => edge.id) : [],
             ids: [],
             active: false,
-            target: selectionTarget,
+            target: marqueeTarget,
             paths: snapshotEdgeSelectionPaths(event.currentTarget).filter(path => state.edges.some(edge => edge.id === path.id && !edge.hidden && edge.selectable !== false)),
             region: null,
           };
           useCanvasEditing.getState().setSelectionRegion(null);
+          useCanvasEditing.getState().setSelectionTarget(marqueeTarget);
         }}
         onPointerMoveCapture={(event) => {
           const gesture = marquee.current;
@@ -1364,9 +1401,11 @@ function Canvas() {
             x: Math.min(start.x, end.x), y: Math.min(start.y, end.y),
             width: Math.abs(end.x - start.x), height: Math.abs(end.y - start.y),
           };
-          const nodeIds = enclosedSelection(flow.getNodes(), rect, gesture.baseNodes);
-          gesture.region = { rect, nodeIds, edgeIds };
-          gesture.ids = gesture.target === 'edges' ? edgeIds : nodeIds;
+          const spatialNodes = flow.getNodes();
+          const { nodeIds, frameIds } = partitionSpatialSelection(spatialNodes,
+            enclosedSelection(spatialNodes, rect, [...gesture.baseNodes, ...gesture.baseFrames]));
+          gesture.region = { rect, nodeIds, edgeIds, frameIds };
+          gesture.ids = gesture.target === 'edges' ? edgeIds : gesture.target === 'frames' ? frameIds : nodeIds;
           syncMarqueeSelection(gesture.ids);
         }}
         onPointerCancel={() => { marquee.current = null; }}
@@ -1415,20 +1454,19 @@ function Canvas() {
         onEdgeContextMenu={onEdgeContextMenu}
         onEdgeClick={(event, edge) => {
           if (isViewerMode) return;
+          useCanvasEditing.getState().requestProperties();
           useCanvasEditing.getState().setSelectionRegion(null);
-          if (selectionTarget === 'edges' || event.ctrlKey || event.metaKey || event.shiftKey) {
-            useStore.getState().setSelectedNodeIds([]);
-            useCanvasEditing.getState().setEdgeId(null);
-          } else openEdgeEditor(edge.id);
+          if (!(event.ctrlKey || event.metaKey || event.shiftKey)) openEdgeEditor(edge.id);
         }}
         onEdgeDoubleClick={(_event, edge) => openEdgeEditor(edge.id)}
-        onNodeClick={() => {
+        onNodeClick={event => {
+          useCanvasEditing.getState().requestProperties();
           useCanvasEditing.getState().setSelectionRegion(null);
-          useCanvasEditing.getState().setEdgeId(null);
-          useStore.setState(state => ({ edges: state.edges.map(edge => edge.selected ? { ...edge, selected: false } : edge) }));
+          if (!(event.ctrlKey || event.metaKey || event.shiftKey)) {
+            useStore.setState(state => ({ edges: state.edges.map(edge => edge.selected ? { ...edge, selected: false } : edge) }));
+          }
         }}
         onNodeDoubleClick={(event, node) => {
-          useCanvasEditing.getState().setEdgeId(null);
           const target = event.target as Element;
           if (isParadigm || !target.closest('[data-node-details-header]')
             || target.closest('button, a, input, textarea, select, [contenteditable="true"], [role="button"], .nodrag')) return;
@@ -1458,13 +1496,19 @@ function Canvas() {
         snapToGrid={paperTexture === 'grid'}
         snapGrid={[22, 22]}
         proOptions={{ hideAttribution: true }}
+        ariaLabelConfig={{
+          'controls.zoomIn.ariaLabel': t('canvas.zoomIn'),
+          'controls.zoomOut.ariaLabel': t('canvas.zoomOut'),
+          'controls.fitView.ariaLabel': t('canvas.fitView'),
+          'controls.interactive.ariaLabel': t('canvas.toggleInteraction'),
+        }}
         nodeDragThreshold={5}
         connectionRadius={40}
         selectionMode={SelectionMode.Full}
         selectionKeyCode={null}
         multiSelectionKeyCode={['Control', 'Meta', 'Shift']}
         selectionOnDrag={!isViewerMode}
-        nodesDraggable={!isViewerMode && !layoutPreview}
+        nodesDraggable={canvasNodesDraggable}
         nodesConnectable={!isViewerMode && !layoutPreview}
         panOnDrag={isViewerMode ? true : [1, 2]}
         // Ordinary scrolling respects node scroll regions. Modified scrolling is
@@ -1478,7 +1522,7 @@ function Canvas() {
         onPaneClick={() => {
           marquee.current = null;
           useCanvasEditing.getState().setSelectionRegion(null);
-          useCanvasEditing.getState().setEdgeId(null);
+          useCanvasEditing.getState().setEdgePreviews(null);
           if (!layoutOpen) { setSelectedNodeId(null); setSelectedNodeIds([]); }
           setNodeMenu(null);
         }}
@@ -1494,8 +1538,8 @@ function Canvas() {
         )}
         <ZoomTierTag />
         <CanvasWheelZoom />
-        {!isViewerMode && <SelectionRegion hasNodeSurface={!layoutOpen && !edgeEditorOpen && !batchEdgeOpen && selectedNodeIds.length > 1} />}
-        {!isViewerMode && !layoutOpen && !edgeEditorOpen && !batchEdgeOpen && <SelectionResizeControls onNodeContextMenu={onNodeContextMenu} />}
+        {!isViewerMode && <SelectionRegion hasNodeSurface={canvasNodesDraggable && !layoutOpen && selectedNodeIds.length > 1} />}
+        {canvasNodesDraggable && !layoutOpen && <SelectionResizeControls onNodeContextMenu={onNodeContextMenu} />}
         <ThoughtMapPill panelShiftWidth={occupiedPanelWidth} />
         <TimelineBar />
         <Controls position="bottom-left" />
@@ -1669,7 +1713,7 @@ function Canvas() {
                 <button
                   onClick={() => landingFileRef.current?.click()}
                   className="text-ink-faint hover:text-accent hover:bg-wash rounded-control px-3 py-2 transition-colors text-control"
-                  title={t('landing.attach')}
+                  aria-label={t('landing.attach')}
                 >
                   <Paperclip size={16} strokeWidth={1.75} />
                 </button>
@@ -1858,7 +1902,7 @@ function Canvas() {
       <div ref={canvasHeaderRef} className="canvas-header" data-canvas-header
         style={{ right: occupiedPanelWidth ? `calc(min(${occupiedPanelWidth}px, 70vw) + ${PANEL_INSET * 2}px)` : undefined }}>
       <CanvasToolbarOverflowContext.Provider value={overflowContext}>
-      {/* Session tools and general actions stay with the project on the left. */}
+      {/* Session controls and transient status stay with the project on the left. */}
       {!isViewerMode && <ProjectSwitcher onSwitched={afterProjectSwitch}>
         {!isParadigm && <ModelPicker />}
         <div className="canvas-toolbar-group canvas-toolbar-context">
@@ -1936,6 +1980,50 @@ function Canvas() {
           </CanvasToolbarOverflowAction>
         )}
         </div>
+      </ProjectSwitcher>}
+
+      <div className="canvas-header-actions">
+      {/* Viewer: the toolbar collapses to a read-only badge + download + brand
+          link — every mutating control lives in the author toolbar below. */}
+      {isViewerMode && (
+        <div
+          className="canvas-toolbar relative z-10"
+          data-top-toolbar
+        >
+          <span className="canvas-toolbar-icon bg-card border border-line rounded-control h-8 px-3 flex items-center gap-1.5 text-ink-muted text-control font-medium" title={t('viewer.badge')} data-tooltip-icon-only aria-label={t('viewer.badge')} data-viewer-badge>
+            <Eye size={14} strokeWidth={1.75} /><span className="canvas-toolbar-label">{t('viewer.badge')}</span>
+          </span>
+          <button
+            onClick={() => setSearchOpen(true)}
+            className="bg-card border border-line rounded-control w-8 h-8 flex items-center justify-center hover:bg-wash transition-colors text-ink-muted hover:text-accent"
+            title={t('search.entryTitle')}
+            data-search-entry
+          >
+            <Search size={15} strokeWidth={1.75} />
+          </button>
+          <LangSwitch />
+          <button
+            onClick={() => exportActiveProjectJson()}
+            className="bg-card border border-line rounded-control w-8 h-8 flex items-center justify-center hover:bg-wash transition-colors text-ink-muted hover:text-accent"
+            title={t('viewer.downloadJson')}
+          >
+            <FileDown size={15} strokeWidth={1.75} />
+          </button>
+          <a
+            href="https://github.com/chenxiachan/thoughtdag"
+            target="_blank"
+            rel="noreferrer"
+            title={t('viewer.openApp')} data-tooltip-icon-only aria-label={t('viewer.openApp')}
+            className="canvas-toolbar-icon bg-ink text-card rounded-control h-8 px-3 flex items-center gap-1.5 hover:bg-ink/85 transition-colors text-control font-medium"
+          >
+            <ArrowRight size={14} /><span className="canvas-toolbar-label">{t('viewer.openApp')}</span>
+          </a>
+        </div>
+      )}
+
+      {/* Canvas tools share the right toolbar and its panel dock. */}
+      {!isViewerMode && (
+        <div className="canvas-toolbar canvas-toolbar-main relative z-10" data-top-toolbar data-selection-menu>
         {hasNodes && <div className="canvas-toolbar-group">
         {hasNodes && frames.length > 0 && (
           <div ref={frameNavRef} className="contents">
@@ -1972,10 +2060,7 @@ function Canvas() {
         )}
         {hasNodes && (
           <button
-            onClick={() => {
-              useCanvasToolCards.getState().active?.suspend();
-              setChatOpen((v) => !v);
-            }}
+            onClick={() => setChatOpen((v) => !v)}
             className="canvas-toolbar-button canvas-toolbar-secondary"
             aria-pressed={chatOpen}
             title={t('chat.entryTitle')}
@@ -2005,25 +2090,30 @@ function Canvas() {
           }} />
         )}
         <CanvasDetailControl openPing={detailPing} />
+        <button
+          onClick={() => {
+            if (showLayoutPanel) layoutPanelRef.current?.close();
+            else useCanvasEditing.getState().setLayoutOpen(true);
+          }}
+          className="canvas-toolbar-button canvas-toolbar-icon"
+          title={t('canvasLayout.title')}
+          data-tooltip-icon-only
+          aria-label={t('canvasLayout.title')}
+          aria-expanded={showLayoutPanel}
+          data-layout-entry
+        >
+          <SlidersHorizontal size={16} strokeWidth={1.75} />
+          <span className="canvas-toolbar-label">{t('canvasLayout.title')}</span>
+        </button>
         </div>}
         <div className="canvas-toolbar-group">
-        {backupCapable() && (
-          <button
-            onClick={() => useUiStore.getState().setBackupDialogOpen(true)}
-            className="canvas-toolbar-button canvas-toolbar-secondary"
-            title={t('backup.dialogTitle')}
-            data-backup-entry
-          >
-            <FolderSync size={16} strokeWidth={1.75} />
-          </button>
-        )}
         {/* ⋯ overflow: share, memory, annotations, tutorial —
             one slot regardless of language or panel width. */}
         <div ref={moreRef} className="relative" data-selection-menu>
           <button
             onClick={() => setMoreOpen((v) => !v)}
             className="canvas-toolbar-button"
-            title={t('toolbar.more')}
+            aria-label={t('toolbar.more')}
             aria-expanded={moreOpen}
             data-toolbar-more
           >
@@ -2047,12 +2137,12 @@ function Canvas() {
                   className="w-full text-left px-3 py-2 text-control text-ink hover:bg-wash flex items-center gap-2.5">
                   <MessageCircleQuestion size={14} className="text-ink-faint shrink-0" />{t('chat.entryTitle')}
                 </button>}
-                {backupCapable() && <button type="button" data-menu-backup
-                  onClick={() => { setMoreOpen(false); useUiStore.getState().setBackupDialogOpen(true); }}
-                  className="w-full text-left px-3 py-2 text-control text-ink hover:bg-wash flex items-center gap-2.5">
-                  <FolderSync size={14} className="text-ink-faint shrink-0" />{t('backup.dialogTitle')}
-                </button>}
               </div>
+              {backupCapable() && <button type="button" data-menu-backup
+                onClick={() => { setMoreOpen(false); useUiStore.getState().setBackupDialogOpen(true); }}
+                className="w-full text-left px-3 py-2 text-control text-ink hover:bg-wash flex items-center gap-2.5">
+                <FolderSync size={14} className="text-ink-faint shrink-0" />{t('backup.dialogTitle')}
+              </button>}
               <div ref={setOverflowMenu} className="canvas-toolbar-minimal-menu">
                 <button type="button" data-menu-undo disabled={!undoable.canUndo}
                   onClick={() => { setMoreOpen(false); undo(); }}
@@ -2069,7 +2159,7 @@ function Canvas() {
                 <button
                   onClick={() => { setMoreOpen(false); setAnnotationsHidden(!annotationsHidden); }}
                   className="w-full text-left px-3 py-2 text-control text-ink hover:bg-wash transition-colors flex items-center gap-2.5"
-                  title={annotationsHidden ? t('toolbar.showAnnotations') : t('toolbar.hideAnnotations')}
+                  title={annotationsHidden ? undefined : t('toolbar.hideAnnotations')}
                 >
                   <StickyNote size={14} strokeWidth={1.75} className={`shrink-0 ${annotationsHidden ? 'text-accent' : 'text-ink-faint'}`} /> {annotationsHidden ? t('toolbar.menuAnnotationsShow') : t('toolbar.menuAnnotationsHide')}
                 </button>
@@ -2087,7 +2177,6 @@ function Canvas() {
                 <button
                   onClick={() => { setMoreOpen(false); useUiStore.getState().setHighlightsOverviewOpen(true); }}
                   className="w-full text-left px-3 py-2 text-control text-ink hover:bg-wash transition-colors flex items-center gap-2.5"
-                  title={t('hlov.entryTitle')}
                   data-hlov-entry
                 >
                   <Highlighter size={14} strokeWidth={1.75} className="text-ink-faint shrink-0" /> {fmt(t('hlov.entry'), { n: highlightCount })}
@@ -2097,7 +2186,6 @@ function Canvas() {
                 <button
                   onClick={() => { setMoreOpen(false); useUiStore.getState().setMaterialsOverviewOpen(true); }}
                   className="w-full text-left px-3 py-2 text-control text-ink hover:bg-wash transition-colors flex items-center gap-2.5"
-                  title={t('matov.entryTitle')}
                   data-matov-entry
                 >
                   <Paperclip size={14} strokeWidth={1.75} className="text-ink-faint shrink-0" /> {fmt(t('matov.entry'), { n: materialCount })}
@@ -2117,7 +2205,6 @@ function Canvas() {
                 <button
                   onClick={() => { setMoreOpen(false); setDiagPing((v) => v + 1); }}
                   className="w-full text-left px-3 py-2 text-control text-ink hover:bg-wash transition-colors flex items-center gap-2.5"
-                  title={t('toolbar.diagnose')}
                   data-menu-diagnose
                 >
                   <Stethoscope size={14} strokeWidth={1.75} className="text-ink-faint shrink-0" /> {t('toolbar.menuDiagnose')}
@@ -2151,7 +2238,7 @@ function Canvas() {
                   className="w-full text-left px-3 py-2 text-control text-ink hover:bg-wash transition-colors flex items-center gap-2.5"
                   data-menu-export
                 >
-                  <Download size={14} strokeWidth={1.75} className="text-ink-faint shrink-0" /> {isParadigm ? t('paradigm.exportParadigm') : t('switcher.exportBackup')}
+                  <FileDown size={14} strokeWidth={1.75} className="text-ink-faint shrink-0" /> {isParadigm ? t('paradigm.exportParadigm') : t('switcher.exportBackup')}
                 </button>
               )}
               {hasEvents && (
@@ -2236,7 +2323,6 @@ function Canvas() {
                 rel="noreferrer"
                 onClick={() => setMoreOpen(false)}
                 className="w-full text-left px-3 py-2 text-control text-ink hover:bg-wash transition-colors flex items-center gap-2.5"
-                title={t('menu.githubTitle')}
                 data-open-github
               >
                 <Star size={14} strokeWidth={1.75} className="text-ink-faint shrink-0" /> {t('menu.github')}
@@ -2264,65 +2350,6 @@ function Canvas() {
           <Redo2 size={16} strokeWidth={1.75} />
         </button>
         </div>
-      </ProjectSwitcher>}
-
-      <div className="canvas-header-actions">
-      {/* Viewer: the toolbar collapses to a read-only badge + download + brand
-          link — every mutating control lives in the author toolbar below. */}
-      {isViewerMode && (
-        <div
-          className="canvas-toolbar relative z-10"
-          data-top-toolbar
-        >
-          <span className="canvas-toolbar-icon bg-card border border-line rounded-control h-8 px-3 flex items-center gap-1.5 text-ink-muted text-control font-medium" title={t('viewer.badge')} aria-label={t('viewer.badge')} data-viewer-badge>
-            <Eye size={14} strokeWidth={1.75} /><span className="canvas-toolbar-label">{t('viewer.badge')}</span>
-          </span>
-          <button
-            onClick={() => setSearchOpen(true)}
-            className="bg-card border border-line rounded-control w-8 h-8 flex items-center justify-center hover:bg-wash transition-colors text-ink-muted hover:text-accent"
-            title={t('search.entryTitle')}
-            data-search-entry
-          >
-            <Search size={15} strokeWidth={1.75} />
-          </button>
-          <LangSwitch />
-          <button
-            onClick={() => exportActiveProjectJson()}
-            className="bg-card border border-line rounded-control w-8 h-8 flex items-center justify-center hover:bg-wash transition-colors text-ink-muted hover:text-accent"
-            title={t('viewer.downloadJson')}
-          >
-            <Download size={15} strokeWidth={1.75} />
-          </button>
-          <a
-            href="https://github.com/chenxiachan/thoughtdag"
-            target="_blank"
-            rel="noreferrer"
-            title={t('viewer.openApp')} aria-label={t('viewer.openApp')}
-            className="canvas-toolbar-icon bg-ink text-card rounded-control h-8 px-3 flex items-center gap-1.5 hover:bg-ink/85 transition-colors text-control font-medium"
-          >
-            <ArrowRight size={14} /><span className="canvas-toolbar-label">{t('viewer.openApp')}</span>
-          </a>
-        </div>
-      )}
-
-      {/* Selection and layout stay beside the geometry inspectors on the right. */}
-      {!isViewerMode && hasNodes && (
-        <div className="canvas-toolbar canvas-toolbar-main relative z-10" data-top-toolbar data-selection-menu>
-          {!layoutOpen && <SelectionTargetControl />}
-          <button
-            onClick={() => {
-              useCanvasToolCards.getState().active?.suspend();
-              setChatOpen(false);
-              useCanvasEditing.getState().setLayoutOpen(true);
-            }}
-            className="canvas-toolbar-button canvas-toolbar-icon"
-            title={t('canvasLayout.title')}
-            aria-expanded={layoutOpen && !inspectorSuspended}
-            data-layout-entry
-          >
-            <SlidersHorizontal size={16} strokeWidth={1.75} />
-            <span className="canvas-toolbar-label">{t('canvasLayout.title')}</span>
-          </button>
         </div>
       )}
       </div>
@@ -2343,17 +2370,10 @@ function Canvas() {
       </CanvasToolbarOverflowContext.Provider>
       </div>
 
-      {/* Multi-select toolbar */}
-      {showFormatPanel && formatPanelReady && !isViewerMode && <CanvasQuickLayoutContext.Provider value={quickLayout}>
-        <SelectionToolbar getViewportRect={getViewportRect} withDetails={panelOpen} />
-      </CanvasQuickLayoutContext.Provider>}
-      {batchEdgeOpen && !inspectorSuspended && <BatchEdgeInspector selected={selectedEdges} />}
-
-      {/* Ask the canvas: a persistent work panel below the left toolbar. */}
+      {/* Ask the canvas: a persistent work panel below the right toolbar. */}
       {!isViewerMode && (
         <CanvasChat
-          open={chatOpen}
-          suspended={toolCardOpen}
+          open={showChatPanel}
           onClose={() => setChatOpen(false)}
           onLocate={(id) => {
             const n = useStore.getState().nodes.find((x) => x.id === id);
@@ -2398,7 +2418,7 @@ function Canvas() {
           </button>
           <button
             onClick={() => deleteEdge(edgeMenu.edgeId)}
-            className="w-full text-left px-4 py-2 text-control text-red-600 hover:bg-red-50 transition-colors flex items-center gap-1.5"
+            className="w-full text-left px-4 py-2 text-control transition-colors flex items-center gap-1.5 object-action-danger"
           >
             <Trash2 size={14} strokeWidth={1.75} />
             {t('canvas.deleteEdge')}
@@ -2428,15 +2448,16 @@ function Canvas() {
           centerNode(node, { duration: 300 });
         }
       }} />}
-      {layoutOpen && !inspectorSuspended && !isViewerMode && rfInstance.current && <CanvasLayoutPanel flow={rfInstance.current} />}
-      {edgeEditorOpen && !inspectorSuspended && editingEdgeId && <EdgeInspector edgeId={editingEdgeId}
-        onClose={() => useCanvasEditing.getState().setEdgeId(null)}
+      {showLayoutPanel && rfInstance.current && <CanvasLayoutPanel ref={layoutPanelRef} flow={rfInstance.current} />}
+      {showProperties && formatPanelReady && !isViewerMode && <CanvasQuickLayoutContext.Provider value={quickLayout}>
+        <SelectionInspector getViewportRect={getViewportRect} withDetails={panelOpen}
+        onClose={() => { if (useCanvasToolCards.getState().active?.name === 'selection-properties') useCanvasToolCards.getState().active?.suspend(); }}
         onLocateNode={(id) => {
           const node = nodes.find((item) => item.id === id);
           if (!node) return;
           const rf = rfInstance.current;
           const canvas = document.querySelector<HTMLElement>('.react-flow');
-          const inspector = document.querySelector<HTMLElement>('[data-edge-inspector]');
+          const inspector = document.querySelector<HTMLElement>('[data-selection-properties]');
           const width = node.measured?.width ?? node.width ?? 480;
           if (rf && canvas && inspector) {
             const region = canvasToolViewport(canvas, inspector);
@@ -2445,7 +2466,7 @@ function Canvas() {
             void rf.setViewport({ zoom, x: region.x + region.width / 2 - (node.position.x + width / 2) * zoom,
               y: region.y + region.height / 2 - (node.position.y + height / 2) * zoom }, { duration: 300 });
           } else centerNode(node, { zoom: Math.max(0.7, rf?.getZoom() ?? 1), offX: width / 2 });
-        }} />}
+        }} /></CanvasQuickLayoutContext.Provider>}
 
       {/* Material reading overlay: select a passage, ask, the node lands on
           the canvas immediately (a view onto the material, not a container) */}

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { Check, Copy, Frame, Maximize, MousePointer2, Trash2, X } from 'lucide-react';
+import { Check, Files, Frame, Maximize, MousePointer2, Trash2, X } from 'lucide-react';
 import type { ThoughtNode } from '../types';
 import { useStore } from '../store';
 import { FRAME_COLORS } from '../lib/constants';
@@ -113,13 +113,13 @@ export function FrameObjectActions({ frames, allowDelete = true }: { frames: Tho
   const ids = frames.map(frame => frame.id);
   return <section className="px-2 py-2 border-t border-line space-y-0.5" aria-label={t('frame.settingsActions')}>
     <button type="button" className={actionClass} data-frame-copy="only"
-      onClick={() => useStore.getState().duplicateFrames(ids, false)}><Copy size={14} />{t('frame.copyOnly')}</button>
+      onClick={() => useStore.getState().duplicateFrames(ids, false)}><Files size={14} strokeWidth={1.75} />{t('frame.copyOnly')}</button>
     <button type="button" className={actionClass} data-frame-copy="contents"
-      onClick={() => useStore.getState().duplicateFrames(ids, true)}><Copy size={14} />{t('frame.copyWithContents')}</button>
-    {allowDelete && <button type="button" className={`${actionClass} text-watch`} data-frame-delete
+      onClick={() => useStore.getState().duplicateFrames(ids, true)}><Files size={14} strokeWidth={1.75} />{t('frame.copyWithContents')}</button>
+    {allowDelete && <button type="button" className={`${actionClass} object-action-danger`} data-frame-delete aria-label={t('frame.deleteOnly')}
       onClick={() => {
         void confirmDialog({ title: t('frame.deleteOnly'), message: fmt(t('frame.deleteOnlyConfirm'), { n: ids.length }), confirmLabel: t('common.delete'), danger: true })
           .then(ok => { if (ok) useStore.getState().batchDelete(ids); });
-      }}><Trash2 size={14} />{t('frame.deleteOnly')}</button>}
+      }}><Trash2 size={14} strokeWidth={1.75} />{t('frame.deleteOnlyAction')}</button>}
   </section>;
 }

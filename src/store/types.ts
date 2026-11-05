@@ -50,7 +50,7 @@ export interface NodeSlice {
   applyCanvasLayout: (options: import('../lib/canvas-layout').CanvasLayoutOptions, selectedIds?: string[], isCurrent?: () => boolean) => Promise<{ ok: boolean; error?: string }>;
   navigateVersion: (nodeId: string, direction: 'prev' | 'next') => void;
   deleteVersion: (nodeId: string, versionIndex: number) => void;
-  batchDelete: (nodeIds: string[]) => void;
+  batchDelete: (nodeIds: string[], edgeIds?: string[]) => void;
   /** Duplicate the multi-selection as a detached copy: inner edges kept, boundary edges cut, attachments shared by reference under new ids (undoable). */
   duplicateSelection: (nodeIds: string[]) => void;
   /** Re-run the column-tree layout over the whole graph (undoable). */

@@ -1,5 +1,29 @@
 @import "tailwindcss";
 
+/* Click actions opt out of inherited canvas/text cursors. Keep these defaults
+   in the base layer so resize, move, and other explicit tools can override. */
+@layer base {
+  button, a[href], summary, select, [role="button"], [role="menuitem"],
+  input:is([type="checkbox"], [type="radio"]) { cursor: pointer; }
+  button:disabled, input:disabled, select:disabled, [aria-disabled="true"] { cursor: default; }
+}
+
+/* A grab cursor promises movement from this exact hit target. React Flow's
+   node-wide grab/pointer defaults do not respect our header-only drag handles. */
+.react-flow .react-flow__node,
+.react-flow .react-flow__node.draggable { cursor: default; }
+.react-flow__node.draggable .drag-handle { cursor: grab; }
+.react-flow__node .drag-handle :where(.nodrag:not(.react-flow__handle, .react-flow__resize-control)) { cursor: default; }
+.react-flow__node .drag-handle :is(button, a[href], select) { cursor: pointer; }
+.react-flow__node .drag-handle :is(button:disabled, [aria-disabled="true"]) { cursor: default; }
+.react-flow__node .drag-handle :is(input, textarea, [contenteditable="true"]) { cursor: text; }
+.react-flow .react-flow__pane.selection { cursor: crosshair; }
+.react-flow .react-flow__pane.dragging { cursor: grabbing; }
+/* Selecting on drag can reveal a resize grip under the pointer. The active
+   gesture still owns the cursor until release, regardless of that new target. */
+.react-flow__node.draggable.dragging,
+.react-flow__node.draggable.dragging * { cursor: grabbing !important; }
+
 /* Multi-selection has one screen-space drag surface and resize boundary;
    the library's outline must not create a competing pointer target. */
 .react-flow__nodesselection-rect {
@@ -347,6 +371,15 @@ code, pre {
 .canvas-toolbar-main { gap: var(--spacing-surface-inset); }
 .canvas-toolbar-group { display: flex; align-items: center; gap: var(--spacing-control-gap); }
 .canvas-toolbar-group:empty { display: none; }
+/* Destructive object actions share theme-aware feedback across cards and menus.
+   Icon-only controls stay quiet until interaction; text actions state the risk. */
+.object-action-danger { color: var(--color-watch); }
+.object-action-danger[data-icon-only] { color: var(--color-ink-faint); }
+.object-action-danger:hover:not(:disabled), .object-action-danger:focus-visible {
+  color: var(--color-watch);
+  background: color-mix(in srgb, var(--color-watch) 9%, transparent);
+}
+.object-action-danger:focus-visible { opacity: 1; outline: 2px solid var(--color-watch); outline-offset: 2px; }
 .canvas-toolbar-context { gap: 4px; }
 .canvas-toolbar-button {
   display: flex;
@@ -372,29 +405,41 @@ code, pre {
 .canvas-toolbar-button.canvas-toolbar-icon { width: auto; padding-inline: 8px; }
 .canvas-toolbar-button.canvas-project-button { width: auto; padding-inline: 12px; gap: var(--spacing-related); color: var(--color-ink); font-size: var(--text-control); }
 .canvas-toolbar-button.canvas-session-button { width: auto; padding-inline: 8px; gap: var(--spacing-control-gap); color: var(--color-ink-faint); }
+/* A saved setting has a quiet marker; only an open card fills its trigger. */
+.canvas-toolbar-button[data-setting-active] { position: relative; }
+.canvas-toolbar-button[data-setting-active="true"]::after {
+  content: '';
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--color-accent);
+  pointer-events: none;
+}
 /* Shared chrome already establishes the boundary; nested outlines add noise. */
 .canvas-header [data-model-picker-trigger] { border-color: transparent; }
 .canvas-header [data-model-picker-trigger]:not([data-apikey-entry]) { background: transparent; }
 .canvas-header [data-model-picker-trigger]:not([data-apikey-entry]):hover { background: var(--color-wash); }
-.canvas-header [data-model-picker-trigger][aria-expanded="true"] { background: color-mix(in srgb, var(--color-accent) 9%, transparent); }
+.canvas-header :is([data-model-picker-trigger], [data-agent-cwd], [data-agent-permission-chip])[aria-expanded="true"],
+.canvas-header :is([data-model-picker-trigger], [data-agent-cwd], [data-agent-permission-chip])[aria-expanded="true"]:hover {
+  background: color-mix(in srgb, var(--color-accent) 9%, transparent);
+  color: var(--color-accent);
+}
+.canvas-header :is(.canvas-toolbar-button, [data-model-picker-trigger], [data-agent-cwd], [data-agent-permission-chip])[aria-expanded="true"] > .lucide { color: inherit; }
 .canvas-header [data-model-picker-trigger]:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
-.canvas-selection-control { display: flex; align-items: center; height: var(--spacing-control-size); white-space: nowrap; }
-.canvas-selection-segments { display: flex; align-items: center; gap: var(--spacing-control-gap); }
-.canvas-selection-segments .canvas-toolbar-button { width: auto; padding-inline: 8px; }
-.canvas-selection-icon { display: none; }
-.canvas-header:not([data-toolbar-density="full"]) .canvas-selection-icon { display: block; }
-.canvas-header:not([data-toolbar-density="full"]) .canvas-selection-segments .canvas-toolbar-button { width: var(--spacing-control-size); padding-inline: 0; }
-.canvas-toolbar-overflow, .canvas-toolbar-minimal-menu, .canvas-selection-picker { display: none; }
+.selection-target-toolbar { position: absolute; z-index: 6; flex-wrap: nowrap; width: max-content; border-radius: var(--radius-toolbar); pointer-events: auto; }
+.selection-target-toolbar .canvas-toolbar-button { width: auto; padding-inline: var(--spacing-related); gap: var(--spacing-related); white-space: nowrap; }
+.canvas-toolbar-overflow, .canvas-toolbar-minimal-menu { display: none; }
 .canvas-header:not([data-toolbar-density="full"]) .canvas-project-button { max-width: 140px; }
 .canvas-header:not([data-toolbar-density="full"]) .canvas-toolbar-label,
 .canvas-header:not([data-toolbar-density="full"]) [data-project-switcher] [data-model-picker-trigger] > span,
 .canvas-header:not([data-toolbar-density="full"]) [data-project-switcher] [data-model-picker-trigger] > .lucide-chevron-down { display: none; }
 .canvas-header:not([data-toolbar-density="full"]) [data-model-picker-trigger],
 .canvas-header:not([data-toolbar-density="full"]) .canvas-toolbar-icon { width: 32px; padding-inline: 0; justify-content: center; }
-.canvas-header:is([data-toolbar-density="overflow"], [data-toolbar-density="minimal"]) .canvas-toolbar-secondary,
-.canvas-header:is([data-toolbar-density="overflow"], [data-toolbar-density="minimal"]) .canvas-selection-segments { display: none; }
+.canvas-header:is([data-toolbar-density="overflow"], [data-toolbar-density="minimal"]) .canvas-toolbar-secondary { display: none; }
 .canvas-header:is([data-toolbar-density="overflow"], [data-toolbar-density="minimal"]) .canvas-toolbar-overflow { display: block; }
-.canvas-header:is([data-toolbar-density="overflow"], [data-toolbar-density="minimal"]) .canvas-selection-picker { display: flex; }
 .canvas-header:is([data-toolbar-density="overflow"], [data-toolbar-density="minimal"]) .canvas-project-button { max-width: 110px; }
 .canvas-header[data-toolbar-density="minimal"] { column-gap: 8px; }
 .canvas-header:is([data-toolbar-density="overflow"], [data-toolbar-density="minimal"]) .canvas-toolbar-main { gap: 8px; }
@@ -403,13 +448,8 @@ code, pre {
 .canvas-header[data-toolbar-density="minimal"] .canvas-project-button { width: 32px; padding-inline: 0; justify-content: center; }
 .canvas-header[data-toolbar-density="minimal"] .canvas-project-button > span,
 .canvas-header[data-toolbar-density="minimal"] .canvas-project-button > .lucide-chevron-down,
-.canvas-header[data-toolbar-density="minimal"] .canvas-selection-picker > span,
-.canvas-header[data-toolbar-density="minimal"] .canvas-selection-picker > .lucide-chevron-down,
 .canvas-header[data-toolbar-density="minimal"] .canvas-toolbar-minimal-secondary,
 .canvas-header[data-toolbar-density="minimal"] .canvas-toolbar-history { display: none; }
-.canvas-header[data-toolbar-density="minimal"] .canvas-selection-picker { width: 32px; padding-inline: 0; justify-content: center; }
-.canvas-header[data-toolbar-density="minimal"] .canvas-selection-picker select { width: 32px; padding: 0; color: transparent; }
-.canvas-header[data-toolbar-density="minimal"] .canvas-selection-picker option { color: var(--color-ink); }
 .canvas-header[data-toolbar-density="minimal"] .canvas-toolbar-minimal-menu { display: block; }
 .canvas-header[data-toolbar-density="minimal"]:has([data-waiting-pill]) [data-toolbar-more]::after {
   content: '';

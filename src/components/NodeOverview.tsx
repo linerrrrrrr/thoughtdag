@@ -27,11 +27,11 @@ export default function NodeOverview({ name, source, preview, previewAlways = fa
       </div>}
       <div className="node-overview-heading">
         {icon && <span className="node-overview-icon" aria-hidden="true">{icon}</span>}
-        <div className="node-overview-name" title={source || name} data-node-name>{name}</div>
+        <div className="node-overview-name" title={source || name} data-tooltip-overflow={!source || source === name || undefined} data-node-name>{name}</div>
         {action && <div className="node-overview-action">{action}</div>}
       </div>
       {showPreview && text && text !== name && <p className="node-overview-preview" data-node-preview>{text.slice(0, 240)}</p>}
-      {showPreview && meta && <div className="node-overview-meta" title={meta}>{meta}</div>}
+      {showPreview && meta && <div className="node-overview-meta" title={meta} data-tooltip-overflow>{meta}</div>}
     </div>
   );
 }

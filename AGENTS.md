@@ -33,6 +33,7 @@ npm run lint
 
 - 新增、调整或审查应用 UI 时，使用项目技能 [thoughtdag-design-system](.agents/skills/thoughtdag-design-system/SKILL.md)，按工具、阅读、画布场景选择规则。
 - [DESIGN.md](DESIGN.md) 说明视觉角色和组件组合；运行数值来自共享 CSS token。避免把当前局部差异直接升级为全局标准。
+- 工具栏与卡片的显隐按 [入口状态规则](DESIGN.md#toolbar-and-card-visibility) 分类：区分打开态、持续设置、选区操作与直接动作；卡片切换保持工具栏结构稳定，覆盖即关闭旧卡片且不自动恢复。「节点／连线／分区」属于框选后出现的选区操作；分区不计入节点，单选和多选共用「选区属性」。
 - 开发服务器的 `/design-system.html` 提供规范样张；按 [设计验收](docs/reference/design-acceptance.md) 检查实际功能。`npm run design:check` 检查基础 token 快照；确认变量变更后用 `npm run design:sync` 同步受管字段。
 
 ## 编辑与退出（必遵守）

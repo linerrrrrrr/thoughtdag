@@ -13,6 +13,7 @@ Paths below are relative to this skill's installed location at `.agents/skills/t
 
 - Read the relevant sections of [DESIGN.md](../../../DESIGN.md) and inspect the affected component. The **Overview** defines authority and surface profiles; **Typography**, **Layout**, **Shapes**, and **Components** define the visual rules.
 - For inputs, menus, dialogs, or panels, classify the interaction using [interaction-contract.md](../../../docs/reference/interaction-contract.md). Keep its shared dismissal hooks and draft behavior.
+- For toolbar entries, cards, or selection controls, read [Toolbar and card visibility](../../../DESIGN.md#toolbar-and-card-visibility) and use its four entry roles before choosing visibility or emphasis. Verify the affected [transition sequences](../../../docs/reference/design-acceptance.md#toolbar-card-visibility), including replacement and responsive overflow.
 - Choose checks from [design-acceptance.md](../../../docs/reference/design-acceptance.md). The development specimen at `/design-system.html` uses application styles; inspect the actual affected application surface as well.
 
 User decisions define the target. Runtime CSS defines implemented values. DESIGN.md records the intended roles and a checked token snapshot. A mismatch is migration work, not permission to silently change the user's direction. Generic design skills may improve the method but do not replace project references.

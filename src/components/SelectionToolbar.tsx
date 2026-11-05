@@ -1,7 +1,7 @@
-import { useState, useRef, useEffect } from 'react';
-import { useCanvasPanelPosition } from '../lib/use-canvas-panel-position';
-import { Archive, Check, ChevronDown, ChevronUp, ClipboardList, Copy, FileDown, GitBranch, Highlighter, Layers, Trash2, X } from 'lucide-react';
+import { useState, useRef, useEffect, useMemo } from 'react';
+import { Archive, Check, ClipboardList, Files, FileDown, GitBranch, Highlighter, Layers, Trash2, X } from 'lucide-react';
 import { useStore } from '../store';
+import { useProjects } from '../store/projects';
 import type { ThoughtNode } from '../types';
 import { confirmDialog, useUiStore } from '../lib/ui-store';
 import { useInlineEditDismiss } from '../lib/use-inline-edit-dismiss';
@@ -13,6 +13,8 @@ import { useT, t as ti, fmt } from '../i18n';
 import SelectionArrangeMenu, { type ViewportRectGetter } from './SelectionArrangeMenu';
 import FrameSettings, { FrameObjectActions } from './FrameSettings';
 import { getNodeDisplayName } from '../lib/node-display-name';
+import { useSessionDraft } from '../lib/use-session-draft';
+import { useSelectionDraftBoundary } from '../lib/selection-panel-context';
 
 type PendingAction = 'explore' | 'merge' | 'mergeDelete' | 'weave' | null;
 type GeometryField = 'width' | 'height' | 'x' | 'y';
@@ -24,9 +26,22 @@ const buttonClass = 'min-h-8 px-2.5 rounded-control text-control text-ink-muted 
 /** One reversible edit boundary: Tab moves between fields without committing. */
 function GeometryEditor({ selectedNodes, allowPosition }: { selectedNodes: ThoughtNode[]; allowPosition: boolean }) {
   const t = useT();
+  const project = useProjects(state => state.activeId);
   const editor = useRef<HTMLDivElement>(null);
   const lock = useRef<HTMLInputElement>(null);
-  const [draft, setDraft] = useState<GeometryDraft>({});
+  const kind = selectedNodes[0]?.data.stepKind === 'frame' ? 'frames' : 'nodes';
+  const draftKey = `selection-geometry:${project}:${kind}:${JSON.stringify(selectedNodes.map(node => node.id).sort())}`;
+  const [draftText, setDraftText] = useSessionDraft(draftKey, '{}');
+  const draft = useMemo<GeometryDraft>(() => {
+    try {
+      const value = JSON.parse(draftText);
+      if (!value || typeof value !== 'object') return {};
+      return Object.fromEntries(Object.entries(value).filter(([key, text]) => key in fieldLabels && typeof text === 'string'));
+    } catch { return {}; }
+  }, [draftText]);
+  const setDraft = (value: GeometryDraft | ((previous: GeometryDraft) => GeometryDraft)) => {
+    setDraftText(JSON.stringify(typeof value === 'function' ? value(draft) : value));
+  };
   const [editing, setEditing] = useState(false);
   const [error, setError] = useState('');
   const lockedCount = selectedNodes.filter(node => node.data.lockAspectRatio).length;
@@ -36,12 +51,6 @@ function GeometryEditor({ selectedNodes, allowPosition }: { selectedNodes: Thoug
   const dirty = Object.keys(draft).length > 0;
   const canEditPosition = allowPosition && selectedNodes.length === 1;
   const geometries = selectedNodes.map(effectiveNodeGeometry);
-  const heightEditableNodes = selectedNodes.filter(node => node.data.stepKind !== 'frame');
-  const automaticHeightCount = heightEditableNodes.filter(node => node.height == null).length;
-  const heightMode = automaticHeightCount === selectedNodes.length ? 'auto'
-    : automaticHeightCount === 0 ? 'fixed' : 'mixed';
-  const canRestoreHeight = heightEditableNodes.some(node => node.height != null || node.data.keepOverviewHeight || node.data.lockAspectRatio)
-    || draft.height !== undefined;
   useEffect(() => { if (lock.current) lock.current.indeterminate = mixedLock; }, [mixedLock]);
 
   const minimum = (field: 'width' | 'height') => Math.ceil(Math.max(...selectedNodes.map((node, index) => {
@@ -56,7 +65,8 @@ function GeometryEditor({ selectedNodes, allowPosition }: { selectedNodes: Thoug
     if (!node.data.lockAspectRatio) return max[field];
     return field === 'width' ? Math.min(max.width, max.height * size.width / size.height) : Math.min(max.height, max.width * size.height / size.width);
   }));
-  const cancel = () => { setDraft({}); setEditing(false); setError(''); };
+  const cancel = () => { useUiStore.getState().setDraft(draftKey, ''); setEditing(false); setError(''); };
+  useSelectionDraftBoundary(dirty, cancel);
   const parsedDraft = (): Partial<Record<GeometryField, number>> | null => {
     const patch: Partial<Record<GeometryField, number>> = {};
     for (const field of Object.keys(draft) as GeometryField[]) {
@@ -79,19 +89,16 @@ function GeometryEditor({ selectedNodes, allowPosition }: { selectedNodes: Thoug
     }
     return patch;
   };
-  const commit = (outside = false) => {
+  const commit = () => {
     const patch = parsedDraft();
     if (patch) {
       if (dirty) useStore.getState().setSelectionGeometry(selectedNodes.map(node => node.id), patch);
       cancel();
-    } else if (outside) {
-      // Invalid local drafts never silently alter saved geometry.
-      setDraft({}); setEditing(false);
     }
   };
-  const dismiss = useInlineEditDismiss({ active: editing, ref: editor, onOutside: () => commit(true), onCancel: cancel });
-  const valueFor = (field: GeometryField): string => {
-    if (draft[field] !== undefined) return draft[field];
+  const dismiss = useInlineEditDismiss({ active: editing, ref: editor, onOutside: () => setEditing(false), onCancel: cancel });
+  const displayFor = (field: GeometryField): { value: string; placeholder?: string } => {
+    if (draft[field] !== undefined) return { value: draft[field] };
     const values = selectedNodes.map((node, index) => {
       const size = geometries[index];
       if (field === 'x' || field === 'y') return node.position[field];
@@ -102,18 +109,16 @@ function GeometryEditor({ selectedNodes, allowPosition }: { selectedNodes: Thoug
       }
       return size[field];
     });
-    return values.every(value => Math.abs(value - values[0]) < 0.01) ? numericText(values[0]) : '';
+    if (values.every(value => Math.abs(value - values[0]) < 0.01)) return { value: numericText(values[0]) };
+    // A range describes the selection; only an entered number becomes a draft.
+    return { value: '', placeholder: `${numericText(Math.min(...values))}~${numericText(Math.max(...values))}` };
   };
-  const field = (name: GeometryField) => <label className="block min-w-0 space-y-1.5">
-    <span className="flex flex-wrap items-baseline justify-between gap-1 text-control text-ink-muted">
-      <span>{t(fieldLabels[name])}</span>
-      {name === 'height' && heightEditableNodes.length > 0 && <span className="text-meta text-ink-faint" data-node-format-height-mode={heightMode}>
-        {t(heightMode === 'auto' ? 'format.heightAuto' : heightMode === 'fixed' ? 'format.heightFixed' : 'format.heightMixed')}
-      </span>}
-    </span>
-    <span className={`flex items-center h-9 rounded-control border bg-card focus-within:border-accent focus-within:ring-1 focus-within:ring-accent ${error && draft[name] !== undefined ? 'border-watch' : 'border-line'}`}>
+  const field = (name: GeometryField) => <label className={name === 'width' || name === 'height'
+    ? 'min-w-0 grid grid-cols-[minmax(0,1fr)_minmax(0,11rem)] items-center gap-3' : 'block min-w-0 space-y-1.5'}>
+    <span className="block text-control text-ink-muted">{t(fieldLabels[name])}</span>
+    <span className={`flex min-w-0 items-center h-9 rounded-control border bg-card focus-within:border-accent focus-within:ring-1 focus-within:ring-accent ${error && draft[name] !== undefined ? 'border-watch' : 'border-line'}`}>
       <input type="text" inputMode="decimal" aria-label={t(fieldLabels[name])} data-node-format-field={name}
-        value={valueFor(name)} placeholder={t('format.mixed')} autoComplete="off"
+        {...displayFor(name)} autoComplete="off"
         aria-invalid={error && draft[name] !== undefined ? true : undefined}
         onFocus={() => setEditing(true)}
         onChange={event => {
@@ -138,21 +143,7 @@ function GeometryEditor({ selectedNodes, allowPosition }: { selectedNodes: Thoug
   return <div ref={editor} onBlur={dismiss.onBlur} data-node-format-geometry>
     <section className="px-4 py-3 space-y-3" aria-label={t('format.size')}>
       <h3 className="text-title font-semibold text-ink">{t('format.size')}</h3>
-      <div className="grid grid-cols-2 gap-3">{field('width')}{field('height')}</div>
-      {heightEditableNodes.length > 0 && <div className="flex flex-wrap items-center justify-between gap-2">
-        <span className="text-meta text-ink-faint">{t('format.heightModeHint')}</span>
-        <button type="button" data-node-format-auto-height disabled={!canRestoreHeight}
-          className={buttonClass}
-          onClick={() => {
-            useStore.getState().setSelectionGeometry(heightEditableNodes.map(node => node.id), { autoHeight: true });
-            const remaining = { ...draft };
-            delete remaining.height;
-            setDraft(remaining); setEditing(Object.keys(remaining).length > 0); setError('');
-          }}>{t('format.restoreAutoHeight')}</button>
-        {heightEditableNodes.some(node => node.data.lockAspectRatio) && <span className="w-full text-meta text-ink-faint" data-node-format-auto-height-hint>
-          {t('format.autoHeightUnlockHint')}
-        </span>}
-      </div>}
+      <div className="grid gap-3">{field('width')}{field('height')}</div>
       <label className="flex items-center gap-2 text-control text-ink-muted cursor-pointer w-fit min-h-6">
         <input ref={lock} type="checkbox" checked={allLocked} aria-checked={mixedLock ? 'mixed' : allLocked} data-node-format-lock
           onChange={event => {
@@ -176,7 +167,7 @@ function GeometryEditor({ selectedNodes, allowPosition }: { selectedNodes: Thoug
       {dirty && <div className="flex items-center justify-between gap-2">
         <span className="text-control text-ink-faint">{t('format.editHint')}</span>
         <div className="flex gap-1">
-          <button type="button" onClick={cancel} data-node-format-cancel className={buttonClass} title={t('common.cancel')} aria-label={t('common.cancel')}><X size={14} /></button>
+          <button type="button" onClick={cancel} data-node-format-cancel className={buttonClass} aria-label={t('common.cancel')}><X size={14} /></button>
           <button type="button" onClick={() => commit()} data-node-format-apply className={`${buttonClass} text-accent`}><Check size={14} />{t('format.apply')}</button>
         </div>
       </div>}
@@ -184,19 +175,22 @@ function GeometryEditor({ selectedNodes, allowPosition }: { selectedNodes: Thoug
   </div>;
 }
 
-export default function SelectionToolbar({ getViewportRect, withDetails = false }: { getViewportRect: ViewportRectGetter; withDetails?: boolean }) {
+export default function SelectionToolbar({ getViewportRect }: { getViewportRect: ViewportRectGetter; withDetails?: boolean }) {
   const { selectedNodeIds, nodes, batchDelete, batchMergeSummarize, weaveHighlights, exploreFrom, setArchived, duplicateSelection } = useStore();
+  const project = useProjects(state => state.activeId);
   const t = useT();
   const [pending, setPending] = useState<PendingAction>(null);
   const [input, setInput] = useState('');
-  const [collapsed, setCollapsed] = useState(false);
-  const [formatScope, setFormatScope] = useState<'nodes' | 'frames'>('nodes');
-  const panelPosition = useCanvasPanelPosition();
-  const panel = useRef<HTMLElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const contentEditor = useRef<HTMLDivElement>(null);
-  const selectionKey = [...selectedNodeIds].sort().join('\n');
-  const draftKey = (action: Exclude<PendingAction, null>) => `selection-action:${JSON.stringify([...selectedNodeIds].sort())}:${action}`;
+  const selected = new Set(selectedNodeIds);
+  const selectedNodes = nodes.filter(node => selected.has(node.id) && !node.hidden && node.selectable !== false);
+  const contentNodes = selectedNodes.filter(node => node.data.stepKind !== 'frame');
+  const frames = selectedNodes.filter(node => node.data.stepKind === 'frame');
+  const contentIds = contentNodes.map(node => node.id);
+  const selectionKey = JSON.stringify([project, [...contentIds].sort()]);
+  const frameKey = JSON.stringify([project, frames.map(frame => frame.id).sort()]);
+  const draftKey = (action: Exclude<PendingAction, null>) => `selection-action:${selectionKey}:${action}`;
   const cancelInput = () => {
     if (pending) useUiStore.getState().setDraft(draftKey(pending), '');
     setPending(null); setInput('');
@@ -206,21 +200,11 @@ export default function SelectionToolbar({ getViewportRect, withDetails = false 
   const [prevSelectionKey, setPrevSelectionKey] = useState(selectionKey);
   if (prevSelectionKey !== selectionKey) {
     setPrevSelectionKey(selectionKey);
-    setPending(null); setInput(''); setCollapsed(false); setFormatScope('nodes');
+    setPending(null); setInput('');
   }
 
-  const selected = new Set(selectedNodeIds);
-  const selectedNodes = nodes.filter(node => selected.has(node.id));
   if (!selectedNodes.length) return null;
-  const contentNodes = selectedNodes.filter(node => node.data.stepKind !== 'frame');
-  const frames = selectedNodes.filter(node => node.data.stepKind === 'frame');
-  const contentIds = contentNodes.map(node => node.id);
-  const hasFrames = contentNodes.length !== selectedNodes.length;
-  const framesOnly = hasFrames && contentNodes.length === 0;
-  const mixedTypes = hasFrames && contentNodes.length > 0;
-  const editingFrames = framesOnly || (mixedTypes && formatScope === 'frames');
-  const formatNodes = editingFrames ? frames : contentNodes;
-  const panelTitle = t(framesOnly ? 'frame.settingsTitle' : 'format.title');
+  const mixedTypes = frames.length > 0 && contentNodes.length > 0;
   const totalTokens = contentNodes.reduce((sum, node) => sum + (node.data.tokenCount || 0), 0);
   const allHighlights = contentNodes.flatMap(node => node.data.highlights || []);
   const run = () => {
@@ -239,64 +223,24 @@ export default function SelectionToolbar({ getViewportRect, withDetails = false 
   };
   const actionClass = (action: Exclude<PendingAction, null>) => `${buttonClass} ${pending === action ? 'bg-accent/10 text-accent' : ''}`;
 
-  return <aside ref={panel} className="canvas-tool-panel flex flex-col" style={panelPosition}
-    aria-label={panelTitle} data-selection-toolbar data-node-format-panel data-with-details={withDetails || undefined}>
-    <header className={`shrink-0 ${collapsed ? '' : 'border-b border-line'}`}>
-      <button type="button" onClick={() => setCollapsed(previous => !previous)} aria-expanded={!collapsed}
-        data-node-format-close={!collapsed ? '' : undefined} data-node-format-reopen={collapsed ? '' : undefined}
-        aria-label={t(framesOnly ? collapsed ? 'frame.expandSettings' : 'frame.collapseSettings' : collapsed ? 'format.expand' : 'format.collapse')}
-        title={t(framesOnly ? collapsed ? 'frame.expandSettings' : 'frame.collapseSettings' : collapsed ? 'format.expand' : 'format.collapse')}
-        onKeyDown={event => {
-          if (event.key === 'Enter' || event.key === ' ') {
-            event.stopPropagation();
-            if (isImeComposing(event)) event.preventDefault();
-          }
-        }}
-        style={{ outlineOffset: -2 }}
-        className="w-full px-4 py-3 flex items-start gap-3 text-left cursor-pointer hover:bg-wash transition-colors focus-visible:outline-2 focus-visible:outline-accent">
-        <span className="min-w-0 flex-1">
-          <span className="block text-title font-semibold">{panelTitle}</span>
-          <span className="block text-meta text-ink-muted mt-1">
-            {mixedTypes ? fmt(t('frame.mixedSelection'), { frames: frames.length, nodes: contentNodes.length })
-              : fmt(t(framesOnly ? 'frame.framesSelected' : 'toolbar.nodesSelected'), { n: selectedNodes.length })}
-          </span>
-          {selectedNodes.length === 1 && !framesOnly && <span className="block text-control text-ink-muted mt-1 truncate" data-format-node-name title={getNodeDisplayName(selectedNodes[0].data, t('ctx.unnamedNode'))}>
-            {getNodeDisplayName(selectedNodes[0].data, t('ctx.unnamedNode'))}
-          </span>}
-        </span>
-        <span className="h-7 w-7 -mr-1 shrink-0 flex items-center justify-center text-ink-muted" aria-hidden="true">
-          {collapsed ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
-        </span>
-      </button>
-    </header>
-    {!collapsed && <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain" data-node-format-scroll>
-      {mixedTypes && <div className="px-4 py-3 border-b border-line">
-        <div className="flex gap-1 rounded-control bg-wash p-1" role="group" aria-label={t('frame.formatScope')}>
-          {(['nodes', 'frames'] as const).map(scope => <button type="button" key={scope} data-format-scope={scope}
-            aria-pressed={formatScope === scope} onClick={() => setFormatScope(scope)}
-            className={`flex-1 min-h-8 px-2 rounded-control text-control focus-visible:outline-2 focus-visible:outline-accent ${formatScope === scope ? 'bg-card text-ink' : 'text-ink-muted hover:text-ink'}`}>
-            {fmt(t(scope === 'nodes' ? 'frame.nodeScope' : 'frame.frameScope'), { n: scope === 'nodes' ? contentNodes.length : frames.length })}
-          </button>)}
-        </div>
-      </div>}
-      {editingFrames ? <FrameSettings key={`${selectionKey}:frames`} frames={frames}>
-        <GeometryEditor key={`${selectionKey}:frames`} selectedNodes={formatNodes} allowPosition={selectedNodes.length === 1} />
-      </FrameSettings> : <GeometryEditor key={`${selectionKey}:nodes`} selectedNodes={formatNodes} allowPosition={selectedNodes.length === 1} />}
-      <section className="px-4 py-3 border-t border-line space-y-2.5" aria-label={t('arrange.spatialTools')}>
-        <h3 className="text-title font-semibold">{t(mixedTypes ? 'frame.arrangeSelection' : 'format.arrange')}</h3>
-        <div className="[&>div]:w-full [&>div]:ml-0 [&>div>button]:flex-1 [&>div>button]:justify-center [&>div>button]:border [&>div>button]:border-line [&>div>button]:bg-card [&>div>button:hover]:bg-wash">
-          <SelectionArrangeMenu ids={selectedNodeIds} getViewportRect={getViewportRect} />
-        </div>
-      </section>
-      {editingFrames && <FrameObjectActions frames={frames} allowDelete={framesOnly} />}
-      {!framesOnly && <div ref={contentEditor} onBlur={dismiss.onBlur} className="border-t border-line">
+  return <div data-node-format-panel data-node-format-scroll>
+    {contentNodes.length > 0 && <section data-selection-section="nodes" aria-label={fmt(t('frame.nodeScope'), { n: contentNodes.length })}>
+      <div className="px-4 pt-3">
+        <h3 className="text-title font-semibold text-ink">{fmt(t('frame.nodeScope'), { n: contentNodes.length })}</h3>
+        {contentNodes.length === 1 && <p className="text-control text-ink-muted mt-1 truncate" data-format-node-name
+          title={getNodeDisplayName(contentNodes[0].data, t('ctx.unnamedNode'))} data-tooltip-overflow>
+          {getNodeDisplayName(contentNodes[0].data, t('ctx.unnamedNode'))}
+        </p>}
+      </div>
+      <GeometryEditor key={selectionKey} selectedNodes={contentNodes} allowPosition={contentNodes.length === 1} />
+      <div ref={contentEditor} onBlur={dismiss.onBlur} className="border-t border-line">
         <div className="flex items-center gap-2 px-4 py-3 text-control text-ink-muted" data-node-format-content>
           <h3 className="font-medium text-ink">{t('format.contentActions')}</h3>
           <span className="ml-auto tabular-nums">{fmt(t('toolbar.tokens'), { n: totalTokens })}</span>
         </div>
         <div className="px-2 pb-3 space-y-2">
           <div className="grid grid-cols-2 gap-1">
-            <button type="button" onClick={() => toggle('merge')} disabled={contentIds.length < 2} className={actionClass('merge')} title={t('toolbar.mergeSummaryTitle')}><ClipboardList size={14} className="shrink-0" />{t('toolbar.mergeSummary')}</button>
+            <button type="button" onClick={() => toggle('merge')} disabled={contentIds.length < 2} className={actionClass('merge')} ><ClipboardList size={14} className="shrink-0" />{t('toolbar.mergeSummary')}</button>
             <button type="button" onClick={() => toggle('mergeDelete')} disabled={contentIds.length < 2} className={actionClass('mergeDelete')} title={t('toolbar.mergeDeleteTitle')}><ClipboardList size={14} className="shrink-0" />{t('toolbar.mergeDelete')}</button>
             <button type="button" onClick={() => toggle('explore')} disabled={!contentIds.length} className={actionClass('explore')} title={t('toolbar.exploreTitle')}><GitBranch size={14} className="shrink-0" />{t('common.explore')}</button>
             {allHighlights.length > 0 && <button type="button" onClick={() => toggle('weave')} className={actionClass('weave')} title={t('toolbar.weaveTitle')}><Highlighter size={14} className="shrink-0" />{t('toolbar.weave')}</button>}
@@ -317,17 +261,30 @@ export default function SelectionToolbar({ getViewportRect, withDetails = false 
             </div>
           </div>}
         </div>
-      </div>}
-      {!framesOnly && <footer className="border-t border-line px-2 py-2 flex flex-wrap gap-1">
-        <button type="button" onClick={() => duplicateSelection(selectedNodeIds)} className={buttonClass} title={t('toolbar.duplicateTitle')}><Copy size={14} />{t(mixedTypes ? 'frame.copySelection' : 'toolbar.duplicate')}</button>
-        <button type="button" onClick={() => downloadMarkdown(selectionMarkdown(contentIds))} className={buttonClass} title={t('toolbar.exportTitle')}><FileDown size={14} />{t(mixedTypes ? 'frame.exportSelectedNodes' : 'format.export')}</button>
-        <button type="button" onClick={() => {
-          void confirmDialog({ title: mixedTypes ? ti('frame.deleteSelection') : ti('confirm.deleteNodesTitle'), message: mixedTypes
-            ? fmt(ti('frame.deleteMixedConfirm'), { frames: frames.length, nodes: contentNodes.length })
-            : fmt(ti('confirm.deleteNodes'), { n: selectedNodeIds.length }), confirmLabel: ti('common.delete'), danger: true })
-            .then(ok => { if (ok) batchDelete(selectedNodeIds); });
-        }} className={`${buttonClass} ml-auto text-watch`}><Trash2 size={14} />{t(mixedTypes ? 'frame.deleteSelection' : 'common.delete')}</button>
-      </footer>}
-    </div>}
-  </aside>;
+      </div>
+      <footer className="border-t border-line px-2 py-2 flex flex-wrap gap-1 [&>button]:px-2 [&>button]:gap-1.5 [&_svg]:shrink-0">
+        <button type="button" onClick={() => duplicateSelection(contentIds)} className={buttonClass} title={t('toolbar.duplicateTitle')}><Files size={14} strokeWidth={1.75} />{t('common.duplicate')}</button>
+        <button type="button" onClick={() => downloadMarkdown(selectionMarkdown(contentIds))} className={buttonClass} aria-label={t('common.exportMd')} title={t('toolbar.exportTitle')}><FileDown size={14} strokeWidth={1.75} />{t('common.export')}</button>
+        <button type="button" data-selection-delete-nodes onClick={() => {
+          void confirmDialog({ title: ti('confirm.deleteNodesTitle'), message: fmt(ti('confirm.deleteNodes'), { n: contentIds.length }), confirmLabel: ti('common.delete'), danger: true })
+            .then(ok => { if (ok) batchDelete(contentIds); });
+        }} className={`${buttonClass} ml-auto object-action-danger`} aria-label={t('confirm.deleteNodesTitle')}><Trash2 size={14} strokeWidth={1.75} />{t('common.delete')}</button>
+      </footer>
+    </section>}
+    {frames.length > 0 && <section data-selection-section="frames" className={contentNodes.length ? 'border-t border-line' : undefined}
+      aria-label={fmt(t('frame.frameScope'), { n: frames.length })}>
+      <h3 className="px-4 pt-3 text-title font-semibold text-ink">{fmt(t('frame.frameScope'), { n: frames.length })}</h3>
+      <FrameSettings key={frameKey} frames={frames}>
+        <GeometryEditor key={frameKey} selectedNodes={frames} allowPosition={frames.length === 1} />
+      </FrameSettings>
+      <FrameObjectActions frames={frames} />
+    </section>}
+    <section className="px-4 py-3 border-t border-line space-y-2.5" aria-label={t('arrange.spatialTools')}>
+      <h3 className="text-title font-semibold">{t(mixedTypes ? 'frame.arrangeSelection' : 'format.arrange')}</h3>
+      {mixedTypes && <p className="text-control text-ink-muted">{fmt(t('frame.mixedSelection'), { frames: frames.length, nodes: contentNodes.length })}</p>}
+      <div className="[&>div]:w-full [&>div]:ml-0 [&>div>button]:flex-1 [&>div>button]:justify-center [&>div>button]:border [&>div>button]:border-line [&>div>button]:bg-card [&>div>button:hover]:bg-wash">
+        <SelectionArrangeMenu ids={selectedNodes.map(node => node.id)} getViewportRect={getViewportRect} />
+      </div>
+    </section>
+  </div>;
 }

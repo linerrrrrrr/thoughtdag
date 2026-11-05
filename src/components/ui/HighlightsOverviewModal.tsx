@@ -3,7 +3,7 @@ import { useSessionDraft } from '../../lib/use-session-draft';
 import { useProjects } from '../../store/projects';
 import { useRef, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Download, Highlighter, Trash2, X } from 'lucide-react';
+import { FileDown, Highlighter, Trash2, X } from 'lucide-react';
 import { useStore } from '../../store';
 import { useUiStore } from '../../lib/ui-store';
 import { downloadMarkdown } from '../../lib/export';
@@ -133,15 +133,15 @@ export default function HighlightsOverviewModal({ onLocate }: { onLocate: (nodeI
                     </button>
                   )}
                   {sort === 'node' && (
-                    <button className={chip} onClick={() => { close(); onLocate(e.nodeId); }} title={t('hlov.locateTitle')}>
+                    <button className={chip} onClick={() => { close(); onLocate(e.nodeId); }} title={t('hlov.locateTitle')} aria-label={t('hlov.locateTitle')}>
                       ↦
                     </button>
                   )}
                   {e.at && <span className="shrink-0 text-meta text-ink-faint font-mono mt-0.5">{e.at.slice(5, 10)}</span>}
                   <button
                     onClick={() => removeHighlight(e.nodeId, e.hlId)}
-                    title={t('common.delete')}
-                    className="text-ink-faint hover:text-red-500 w-5 h-5 rounded-control flex items-center justify-center transition-colors shrink-0 opacity-0 group-hover:opacity-100"
+                    aria-label={t('actions.deleteHighlight')}
+                    className="w-5 h-5 rounded-control flex items-center justify-center transition-colors shrink-0 opacity-0 group-hover:opacity-100 object-action-danger" data-icon-only
                   >
                     <Trash2 size={12} strokeWidth={1.75} />
                   </button>
@@ -172,7 +172,7 @@ export default function HighlightsOverviewModal({ onLocate }: { onLocate: (nodeI
             <div className="flex-1" />
             {entries.length > 0 && (
               <button onClick={exportMd} className="flex items-center gap-1.5 text-control text-ink-faint hover:text-ink-muted transition-colors" title={t('hlov.exportTitle')}>
-                <Download size={12} strokeWidth={1.75} /> {t('hlov.export')}
+                <FileDown size={12} strokeWidth={1.75} /> {t('common.export')}
               </button>
             )}
           </div>

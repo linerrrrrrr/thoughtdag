@@ -1,15 +1,16 @@
 import { create } from 'zustand';
 import type { ThoughtEdge, ThoughtNode } from '../types';
-import type { SelectionRegion } from './canvas-selection';
+import type { SelectionRegion, SelectionTarget } from './canvas-selection';
 
 /** Draft geometry is rendered separately from the persisted graph and undo history. */
 export const useCanvasEditing = create<{
-  edgeId: string | null;
-  edgePreview: ThoughtEdge | null;
-  selectionTarget: 'nodes' | 'edges';
+  edgePreviews: ThoughtEdge[] | null;
+  propertiesRequest: number;
+  requestProperties: () => void;
+  selectionTarget: SelectionTarget;
   selectionRegion: SelectionRegion | null;
   setSelectionRegion: (region: SelectionRegion | null) => void;
-  setSelectionTarget: (target: 'nodes' | 'edges') => void;
+  setSelectionTarget: (target: SelectionTarget) => void;
   layoutOpen: boolean;
   layoutPreview: ThoughtNode[] | null;
   layoutBusy: boolean;
@@ -17,18 +18,19 @@ export const useCanvasEditing = create<{
   beginLayout: () => number;
   finishLayout: (request: number) => void;
   cancelLayout: () => void;
-  setEdgeId: (id: string | null) => void;
-  setEdgePreview: (edge: ThoughtEdge | null) => void;
+  setEdgePreviews: (edges: ThoughtEdge[] | null) => void;
   setLayoutOpen: (open: boolean) => void;
   setLayoutPreview: (nodes: ThoughtNode[] | null) => void;
   reset: () => void;
 }>((set, get) => ({
-  edgeId: null,
-  edgePreview: null,
+  edgePreviews: null,
+  propertiesRequest: 0,
+  requestProperties: () => set(state => ({ propertiesRequest: state.propertiesRequest + 1 })),
   selectionTarget: 'nodes',
   selectionRegion: null,
-  setSelectionRegion: (selectionRegion) => set({ selectionRegion }),
-  setSelectionTarget: (selectionTarget) => set({ selectionTarget, edgeId: null, edgePreview: null }),
+  setSelectionRegion: (selectionRegion) => set({ selectionRegion: selectionRegion ? { ...selectionRegion, frameIds: selectionRegion.frameIds ?? [] } : null,
+    ...(!selectionRegion ? { selectionTarget: 'nodes' as const } : {}) }),
+  setSelectionTarget: (selectionTarget) => set({ selectionTarget, edgePreviews: null }),
   layoutOpen: false,
   layoutPreview: null,
   layoutBusy: false,
@@ -42,13 +44,11 @@ export const useCanvasEditing = create<{
   },
   finishLayout: (request) => set((state) => state.layoutRequest === request ? { layoutBusy: false } : state),
   cancelLayout: () => set((state) => ({ layoutRequest: state.layoutRequest + 1, layoutBusy: false, layoutPreview: null })),
-  setEdgeId: (edgeId) => set((state) => state.edgeId === edgeId ? state
-    : edgeId ? { edgeId, edgePreview: null, layoutOpen: false, layoutPreview: null, layoutBusy: false, layoutRequest: state.layoutRequest + 1 } : { edgeId, edgePreview: null }),
-  setEdgePreview: (edgePreview) => set({ edgePreview }),
+  setEdgePreviews: (edgePreviews) => set({ edgePreviews }),
   setLayoutOpen: (layoutOpen) => set((state) => ({ layoutOpen, layoutPreview: null, layoutBusy: false, layoutRequest: state.layoutRequest + 1,
-    ...(layoutOpen ? { edgeId: null, edgePreview: null } : {}) })),
+    ...(layoutOpen ? { edgePreviews: null } : {}) })),
   setLayoutPreview: (layoutPreview) => set({ layoutPreview }),
-  reset: () => set((state) => ({ edgeId: null, edgePreview: null, selectionRegion: null, layoutOpen: false, layoutPreview: null,
+  reset: () => set((state) => ({ edgePreviews: null, selectionRegion: null, selectionTarget: 'nodes', layoutOpen: false, layoutPreview: null,
     layoutBusy: false, layoutRequest: state.layoutRequest + 1 })),
 }));
 

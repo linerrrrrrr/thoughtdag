@@ -174,10 +174,11 @@ export function answerForCanvas(text: string, byAlias: Map<string, string>, node
   const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   return citations(text, byAlias).map((p) => {
     if (p.kind === 'text') return p.text;
-    if (p.kind === 'unknown') return `<mark class="explore-mark" data-explore-target="" title="?">${esc(p.alias)}?</mark>`;
+    if (p.kind === 'unknown') return `<mark class="explore-mark" data-explore-target="">${esc(p.alias)}?</mark>`;
     const n = nodes.find((x) => x.id === p.id);
     const full = n ? nodeLabel(n.data, lang) : p.alias;
     const shown = label === 'alias' ? p.alias : one(clip(full.split('：')[0], 40));
-    return `<mark class="explore-mark" data-explore-target="${esc(p.id)}" title="${esc(label === 'alias' ? full : p.alias)}">${esc(shown)}</mark>`;
+    const title = full !== shown ? ` title="${esc(full)}"` : '';
+    return `<mark class="explore-mark" data-explore-target="${esc(p.id)}"${title}>${esc(shown)}</mark>`;
   }).join('');
 }

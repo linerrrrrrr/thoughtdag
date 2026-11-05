@@ -99,7 +99,7 @@ export default function FrameNode({ id, data, selected }: NodeProps<ThoughtNodeT
       {/* The label adapts to existing space; it never expands the region. */}
       <div
         data-frame-header
-        className="absolute drag-handle pointer-events-auto cursor-grab active:cursor-grabbing flex items-center gap-2 min-w-0"
+        className="absolute drag-handle pointer-events-auto flex items-center gap-2 min-w-0"
         style={{ left: FRAME_HEADER_INSET, top: FRAME_HEADER_INSET, transform: `scale(${barScale})`, transformOrigin: 'top left', width: Math.max(0, width - FRAME_HEADER_INSET * 2) / barScale }}
       >
         {editing ? (
@@ -119,7 +119,7 @@ export default function FrameNode({ id, data, selected }: NodeProps<ThoughtNodeT
           <span
             onDoubleClick={() => { if (isViewerMode) return; setDraft(data.question); setEditing(true); }}
             className="flex-1 min-w-0 truncate font-semibold text-ink-muted/80 select-none text-control"
-            title={data.question || t('frame.titlePlaceholder')}
+            title={data.question || t('frame.titlePlaceholder')} data-tooltip-overflow
           >
             {data.question || <span className="text-ink-faint normal-case tracking-normal">{t('frame.titlePlaceholder')}</span>}
           </span>
@@ -144,9 +144,9 @@ export default function FrameNode({ id, data, selected }: NodeProps<ThoughtNodeT
       {/* Edge strips: the border is a drag handle too, so a large frame can be
           moved without reaching its title bar. Rendered BEFORE the resizer so
           the resizer's handles win when the frame is selected. */}
-      <div data-frame-border className="drag-handle pointer-events-auto absolute inset-x-0 bottom-0 h-2.5 cursor-grab active:cursor-grabbing" />
-      <div data-frame-border className="drag-handle pointer-events-auto absolute inset-y-0 left-0 w-2.5 cursor-grab active:cursor-grabbing" />
-      <div data-frame-border className="drag-handle pointer-events-auto absolute inset-y-0 right-0 w-2.5 cursor-grab active:cursor-grabbing" />
+      <div data-frame-border className="drag-handle pointer-events-auto absolute inset-x-0 bottom-0 h-2.5" />
+      <div data-frame-border className="drag-handle pointer-events-auto absolute inset-y-0 left-0 w-2.5" />
+      <div data-frame-border className="drag-handle pointer-events-auto absolute inset-y-0 right-0 w-2.5" />
       {/* resize handles: NO manual scaling — React Flow's autoScale already
           counter-scales them (Math.max(1/zoom, 1)), so they keep a constant
           screen size; scaling here again would compound to huge squares */}

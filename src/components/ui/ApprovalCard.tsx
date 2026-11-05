@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import { ShieldAlert, MessageCircleQuestion, ChevronDown, ChevronRight } from 'lucide-react';
 import { useT } from '../../i18n';
 import { isImeComposing } from '../../utils';
@@ -21,6 +21,7 @@ import type { ApprovalRequest, ApprovalRecord, FormQuestion, FormAnswer } from '
 
 export function ApprovalCard({ nodeId, request, compact }: { nodeId: string; request: ApprovalRequest; compact?: boolean }) {
   const t = useT();
+  const scopeId = useId();
   const [showArgs, setShowArgs] = useState(false);
   const [text, setText] = useState(request.prefill ?? '');
   const busy = !!request.answered;
@@ -113,15 +114,15 @@ export function ApprovalCard({ nodeId, request, compact }: { nodeId: string; req
         <div className={`mt-2.5 flex flex-wrap items-center ${compact ? 'gap-1.5' : 'gap-2'}`}>
           <button onClick={() => void send({ confirmed: true }, 'allowed-once')} disabled={busy} className={primary} data-approval-allow>{t('approval.allowOnce')}</button>
           {request.rule && (
-            <button onClick={() => void send({ confirmed: true, scope: 'session' }, 'allowed-session')} disabled={busy} className={`${btn} text-accent rounded-control border border-accent/40 hover:bg-accent/10 transition-colors disabled:opacity-50 whitespace-nowrap`} title={t(request.rule.startsWith('harness:') ? 'approval.allowSessionExactTitle' : 'approval.allowSessionTitle')} data-approval-allow-session>{t('approval.allowSession')}</button>
+            <button onClick={() => void send({ confirmed: true, scope: 'session' }, 'allowed-session')} disabled={busy} className={`${btn} text-accent rounded-control border border-accent/40 hover:bg-accent/10 transition-colors disabled:opacity-50 whitespace-nowrap`} aria-describedby={`${scopeId}-session`} data-approval-allow-session>{t('approval.allowSession')}</button>
           )}
           {request.suggest && request.channel && (
             <button
               onClick={() => void send({ confirmed: true }, 'allowed-once', request.suggest!)}
               disabled={busy}
               className={`${btn} text-accent rounded-control border border-accent/40 hover:bg-accent/10 transition-colors disabled:opacity-50 truncate ${compact ? 'max-w-[150px]' : 'max-w-[240px]'}`}
-              title={`${t('approval.allowLocationTitle')} ${request.suggest}`}
               data-approval-allow-location
+              aria-describedby={`${scopeId}-location`}
             >
               {t('approval.allowLocation')} {request.suggest.split('/').filter(Boolean).pop()}
             </button>
@@ -132,6 +133,8 @@ export function ApprovalCard({ nodeId, request, compact }: { nodeId: string; req
           )}
         </div>
       )}
+      {isApproval && request.rule && <p id={`${scopeId}-session`} className="mt-1.5 text-control text-ink-faint break-words" data-approval-session-scope>{t(request.rule.startsWith('harness:') ? 'approval.allowSessionExactTitle' : 'approval.allowSessionTitle')}</p>}
+      {isApproval && request.suggest && request.channel && <p id={`${scopeId}-location`} className="mt-1.5 text-control text-ink-faint break-all" data-approval-location-scope>{t('approval.allowLocationTitle')} {request.suggest}</p>}
       <div className="mt-1.5 text-control text-ink-faint">{busy ? t('approval.sending') : t(isApproval ? 'approval.waiting' : 'approval.waitingAsk')}</div>
     </div>
   );
@@ -186,7 +189,6 @@ function FormQuestions({ questions, compact, busy, onSubmit, onSkip }: { questio
                       aria-checked={on}
                       onClick={() => toggle(q, o.label)}
                       disabled={busy}
-                      title={compact ? o.description : undefined}
                       className={`text-left rounded-control border px-2.5 ${compact ? 'py-1' : 'py-1.5'} transition-colors disabled:opacity-50 ${on ? 'border-accent bg-accent/10' : 'border-line bg-card hover:bg-wash'}`}
                       data-question-option={o.label}
                     >
@@ -194,7 +196,7 @@ function FormQuestions({ questions, compact, busy, onSubmit, onSkip }: { questio
                         <span className={`shrink-0 inline-block w-3 h-3 border ${q.multiSelect ? 'rounded-none' : 'shape-circle'} ${on ? 'bg-accent border-accent' : 'border-line-strong'}`} />
                         <span className="text-ink">{o.label}</span>
                       </span>
-                      {o.description && !compact && <span className="block pl-5 text-control text-ink-faint">{o.description}</span>}
+                      {o.description && <span className="block pl-5 text-control text-ink-faint">{o.description}</span>}
                     </button>
                   );
                 })}

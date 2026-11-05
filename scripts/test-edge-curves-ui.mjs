@@ -113,7 +113,11 @@ try {
     if (kind === 'obstacle') {
       const overlap = edges[0].samples.slice(20, -20).filter((p) => edges[1].samples.some((q) => Math.hypot(p.x - q.x, p.y - q.y) < 2));
       assert.ok(overlap.length < 80, 'shared routes must separate');
-      await page.evaluate(() => window.__canvasEditing.getState().setEdgeId('edge-2'));
+      await page.evaluate(() => {
+        window.__store.getState().setSelectedNodeIds([]);
+        window.__store.setState(state => ({ edges: state.edges.map(edge => ({ ...edge, selected: edge.id === 'edge-2' })) }));
+        window.__canvasEditing.getState().requestProperties();
+      });
       await page.waitForTimeout(150);
       assert.deepEqual((await geometry()).map((e) => e.d), edges.map((e) => e.d), 'selection cannot change routes');
     }

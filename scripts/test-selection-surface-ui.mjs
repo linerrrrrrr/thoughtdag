@@ -106,7 +106,7 @@ async function fixture({ zoom = 1, preselect = false, locked = false, frames = f
       { id: 'ab', source: 'a', target: 'b' }, { id: 'cd', source: 'c', target: 'd' },
     ].map(edge => ({ ...edge, type: 'smoothstep', sourceHandle: 'continue', targetHandle: 'top', data: { route: 'curve' } }));
     window.__canvasEditing.getState().setSelectionTarget('nodes');
-    window.__canvasEditing.getState().setEdgeId(null);
+    window.__canvasEditing.getState().setEdgePreviews(null);
     window.__canvasEditing.getState().setLayoutOpen(false);
     window.__store.setState({ nodes, edges, selectedNodeIds: ids, selectedNodeId: null, history: [{ nodes, edges }], historyIndex: 0 });
     window.__ui.setState({ panelOpen: false, panelNodeId: null, tutorialOpen: false, releaseNotesOpen: false, autoRefreshPaused: true, drafts: {} });
@@ -247,7 +247,7 @@ try {
   check('clicking an outside line clears the node selection and opens that line editor');
 
   await probe('the toolbar overflow menu preserves selection for its contained selection actions', async () => {
-    await page.evaluate(() => window.__canvasEditing.getState().setEdgeId(null));
+    await page.evaluate(() => window.__store.setState(state => ({ edges: state.edges.map(edge => ({ ...edge, selected: false })) })));
     await selectPair(); await page.locator('[data-selection-move]').waitFor();
     await page.locator('[data-toolbar-more]').click();
     await selected(['a', 'b']); await page.locator('[data-toolbar-more-panel]').waitFor();
@@ -263,6 +263,10 @@ try {
   await page.locator('[data-arrange-reference="selection"]').click(); await selected(['a', 'b']);
   await page.keyboard.press('Escape'); await selected(['a', 'b']);
   check('the selection format editor and its portal menu stay inside the editing boundary');
+  assert.equal(await page.locator('[data-selection-target-control]').count(), 0, 'ordinary multi-selection has no marquee controls');
+  await page.evaluate(() => window.__canvasEditing.getState().setSelectionRegion({
+    rect: { x: 120, y: 120, width: 560, height: 650 }, nodeIds: ['a', 'b'], edgeIds: ['ab'], frameIds: [],
+  }));
   await page.locator('[data-selection-target="edges"]').click();
   assert.deepEqual(await page.evaluate(() => window.__store.getState().edges.filter(edge => edge.selected).map(edge => edge.id)), ['ab']);
   await page.locator('[data-selection-target="nodes"]').click(); await selected(['a', 'b']);

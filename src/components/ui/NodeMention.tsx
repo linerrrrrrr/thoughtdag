@@ -78,7 +78,7 @@ export default function MentionSurface({ m, text, setText }: {
               <span className="truncate">{x.title}</span>
               <button
                 type="button"
-                title={t('common.delete')}
+                aria-label={t('actions.removeReference')}
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() => m.remove(x.nodeId)}
                 className="w-3.5 h-3.5 rounded-control hover:bg-accent/20 flex items-center justify-center shrink-0"

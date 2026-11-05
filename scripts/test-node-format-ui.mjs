@@ -42,9 +42,10 @@ const assertSelectionSync = async expected => {
 const node = id => page.locator(`.react-flow__node[data-id="format-${id}"]`);
 const field = name => page.locator(`[data-node-format-field="${name}"]`);
 const expandInspector = async () => {
-  await page.locator('[data-node-format-panel]').waitFor();
+  await page.locator('[data-selection-properties]').waitFor();
   const reopen = page.locator('[data-node-format-reopen]');
   if (await reopen.count()) await reopen.click();
+  await page.locator('[data-node-format-panel]').waitFor();
 };
 const select = async ids => {
   const changed = await page.evaluate(ids => {
@@ -114,7 +115,11 @@ const enclose = async id => {
 const commit = async (name, value) => { await expandInspector(); await field(name).fill(String(value)); await field(name).press('Enter'); await page.waitForTimeout(100); };
 const blur = () => page.evaluate(() => document.activeElement instanceof HTMLElement && document.activeElement.blur());
 const assertPanelFits = async () => {
-  const b = await page.locator('[data-node-format-panel]').boundingBox();
+  await page.waitForFunction(() => {
+    const box = document.querySelector('[data-selection-properties]')?.getBoundingClientRect();
+    return box && box.x >= 0 && box.y >= 0 && box.right <= innerWidth + 1 && box.bottom <= innerHeight + 1;
+  });
+  const b = await page.locator('[data-selection-properties]').boundingBox();
   const v = page.viewportSize();
   assert.ok(b && b.x >= 0 && b.y >= 0 && b.x + b.width <= v.width + 1 && b.y + b.height <= v.height + 1, 'Inspector remains within viewport');
   const header = await page.locator('[data-canvas-header]').boundingBox();
@@ -130,6 +135,7 @@ try {
   const a = await enclose('a');
   await marquee({ ...a, x2: a.x1 + 230 });
   assert.deepEqual(await selected(), [], 'A partially covered node is not selected');
+  await page.keyboard.press('Escape');
   await marquee(a);
   assert.deepEqual(await selected(), ['format-a']);
   check('marquee requires full node coverage');
@@ -200,6 +206,10 @@ try {
   await fixture();
   await page.keyboard.press('Control+a');
   assert.deepEqual(await selected(), ['format-a', 'format-b', 'format-c']);
+  await page.locator('[data-selection-properties]').waitFor();
+  await page.keyboard.press('Escape');
+  assert.deepEqual(await selected(), ['format-a', 'format-b', 'format-c'], 'Escape first closes properties without changing the selection');
+  assert.equal(await page.locator('[data-selection-properties]').count(), 0);
   await page.keyboard.press('Escape');
   assert.deepEqual(await selected(), []);
   await blur();
@@ -242,6 +252,7 @@ try {
   await page.locator('[data-node-format-panel]').waitFor();
   assert.equal(await page.locator('[data-node-format-close]').getAttribute('aria-expanded'), 'true');
   assert.ok(await field('width').isVisible(), 'A new selection starts with the object inspector expanded');
+  assert.equal(await page.locator('[data-node-format-height-mode], [data-node-format-auto-height], [data-node-format-auto-height-hint]').count(), 0);
   check('object inspector is expanded by default with geometry controls immediately available');
   assert.equal(await field('width').inputValue(), '400');
   assert.equal(await field('height').inputValue(), '260');
@@ -288,13 +299,33 @@ try {
   await field('width').press('Escape');
   check('IME confirmation, invalid values and empty dimensions never commit accidental geometry');
 
+  await field('width').fill('700');
+  await page.locator('[data-selection-section="nodes"] h3').first().click();
+  assert.equal((await readNodes())[0].width, 400, 'Leaving the geometry boundary keeps a draft without applying it');
+  assert.equal(await field('width').inputValue(), '700');
+  await page.locator('[data-selection-properties-close]').click();
+  assert.deepEqual(await selected(), ['format-a'], 'Closing properties keeps the selection');
+  assert.equal(await page.locator('[data-selection-properties]').count(), 0);
+  await clickNode('a'); await expandInspector();
+  assert.equal(await field('width').inputValue(), '700', 'Reopening the same selection restores its geometry draft');
+  await field('width').fill('');
+  await page.locator('[data-selection-properties-close]').click();
+  await clickNode('a'); await expandInspector();
+  assert.equal(await field('width').inputValue(), '', 'An empty geometry draft is distinct from an absent draft');
+  assert.equal((await readNodes())[0].width, 400);
+  await page.keyboard.press('Escape');
+  assert.equal(await field('width').inputValue(), '400');
+  assert.deepEqual(await selected(), ['format-a']);
+  check('outside focus and closing preserve unapplied geometry drafts, including empty input; Escape cancels without closing');
+
   await fixture(['a', 'b']);
   await expandInspector();
   assert.equal(await field('width').inputValue(), '');
   assert.equal(await field('height').inputValue(), '');
   assert.equal(await field('x').count(), 0);
   assert.equal(await field('y').count(), 0);
-  assert.ok(await field('width').getAttribute('placeholder'), 'Mixed dimensions are visibly distinguished');
+  assert.equal(await field('width').getAttribute('placeholder'), '400~480');
+  assert.equal(await field('height').getAttribute('placeholder'), '260~300');
   const beforeMulti = await readNodes();
   await commit('width', 600);
   const afterMulti = await readNodes();
@@ -304,28 +335,56 @@ try {
   assert.equal(afterMulti[1].height, beforeMulti[1].height);
   assert.deepEqual(afterMulti.map(n => n.position), beforeMulti.map(n => n.position));
   assert.equal(afterMulti[2].width, beforeMulti[2].width);
-  check('multi-selection shows mixed sizes, edits selected dimensions uniformly and never unifies coordinates');
+  check('multi-selection shows size ranges, edits selected dimensions uniformly and never unifies coordinates');
 
   await fixture(['a', 'b']);
   await expandInspector();
   const beforeRatio = await readNodes();
   await page.locator('[data-node-format-lock]').check();
   assert.ok((await readNodes()).slice(0, 2).every(n => n.data.lockAspectRatio));
-  await commit('width', 640);
+  await field('width').fill('640');
+  assert.equal(await field('height').getAttribute('placeholder'), '400~416', 'Locked heights update while typing a width');
+  assert.deepEqual((await readNodes()).slice(0, 2).map(node => node.width), [400, 480], 'Typing remains a cancellable draft');
+  await field('width').press('Enter');
   const locked = await readNodes();
   locked.slice(0, 2).forEach((n, i) => closeTo(n.width / n.height, beforeRatio[i].width / beforeRatio[i].height, 'Each original ratio is retained'));
   assert.ok(locked[0].height !== locked[1].height, 'Different ratios are not flattened');
+  await field('height').fill('520');
+  assert.equal(await field('width').getAttribute('placeholder'), '800~832', 'Locked widths update while typing a height');
+  await field('height').press('Enter');
+  const heightDriven = (await readNodes()).slice(0, 2);
+  assert.deepEqual(heightDriven.map(node => node.height), [520, 520]);
+  assert.deepEqual(heightDriven.map(node => node.width), [800, 832]);
+  await page.evaluate(() => window.__store.getState().undo());
+  assert.deepEqual(geometry(await readNodes()), geometry(locked), 'Both dimensions undo together');
   await select(['a']);
   await expandInspector();
   await page.locator('[data-node-format-lock]').uncheck();
   await select(['a', 'b']);
   await expandInspector();
   assert.ok(await page.locator('[data-node-format-lock]').evaluate(el => el.indeterminate), 'Mixed lock values are represented');
-  check('aspect lock applies to every selected object and preserves each object’s own ratio');
+  check('typing either locked dimension synchronizes the other range and preserves each selected object’s ratio');
 
   await fixture(['a']);
   await expandInspector();
   await page.locator('[data-node-format-lock]').check();
+  const beforeTyping = geometry(await readNodes());
+  await field('width').fill('600');
+  assert.equal(await field('height').inputValue(), '390');
+  await field('height').fill('520');
+  assert.equal(await field('width').inputValue(), '800', 'The most recently typed axis drives the paired value');
+  await field('height').press('Escape');
+  assert.equal(await field('width').inputValue(), '400');
+  assert.equal(await field('height').inputValue(), '260');
+  assert.deepEqual(geometry(await readNodes()), beforeTyping, 'Escape cancels both dimensions');
+  await field('height').fill('390');
+  assert.equal(await field('width').inputValue(), '600');
+  await field('height').press('Enter');
+  assert.equal((await readNodes())[0].width, 600);
+  assert.equal((await readNodes())[0].height, 390);
+  await page.evaluate(() => window.__store.getState().undo());
+  assert.deepEqual(geometry(await readNodes()), beforeTyping);
+  check('single-node paired fields synchronize immediately in both directions and cancel or undo together');
   const beforeResize = (await readNodes())[0];
   const corner = await node('a').locator('.thought-resize-corner').boundingBox();
   assert.ok(corner);
@@ -383,7 +442,7 @@ try {
   check('content input draft survives panel collapse and Escape cancels only the pending action without generation');
   await page.locator('[data-node-format-close]').click();
   assert.deepEqual(await selected(), ['format-a']);
-  assert.equal(await field('width').count(), 0);
+  assert.equal(await field('width').isVisible(), false);
   await page.locator('[data-node-format-reopen]').click();
   assert.equal(await field('width').inputValue(), '400');
   check('collapsing and reopening the inspector preserves selection and saved geometry');
@@ -399,6 +458,7 @@ try {
   await page.locator('[data-toolbar-more]').click();
   await page.locator('[data-menu-language]').getByRole('button', { name: 'English', exact: true }).click();
   await page.keyboard.press('Escape');
+  await select([]); await select(['a', 'b']);
   await page.locator('[data-node-format-panel]').waitFor();
   await assertPanelFits();
   await screenshot('english-multi');
@@ -406,6 +466,7 @@ try {
   await page.locator('[data-toolbar-more]').click();
   await page.locator('[data-menu-language]').getByRole('button', { name: '中文', exact: true }).click();
   await page.keyboard.press('Escape');
+  await select([]); await select(['a', 'b']);
   await page.locator('[data-node-format-panel]').waitFor();
   await page.evaluate(async () => (await import('/src/lib/appearance.ts')).useAppearance.getState().setLighting('light'));
   await page.setViewportSize({ width: 390, height: 844 });
@@ -422,7 +483,7 @@ try {
   const footerAction = page.locator('[data-node-format-panel] footer button').last();
   await footerAction.scrollIntoViewIfNeeded();
   const footerBox = await footerAction.boundingBox();
-  const panelBox = await page.locator('[data-node-format-panel]').boundingBox();
+  const panelBox = await page.locator('[data-selection-properties]').boundingBox();
   assert.ok(footerBox && footerBox.y >= panelBox.y && footerBox.y + footerBox.height <= panelBox.y + panelBox.height, 'Short viewport scroll reveals complete footer controls');
   await screenshot('short-scrolled');
   await page.locator('[data-selection-align]').click();

@@ -1,5 +1,5 @@
 import { useUiStore } from './ui-store';
-import { useCanvasEditing } from './canvas-editing';
+import { useCanvasToolCards } from './use-canvas-tool-card';
 import { useStore } from '../store';
 import { PANEL_INSET, PANEL_MIN_WINDOW_WIDTH } from './constants';
 
@@ -12,8 +12,8 @@ import { PANEL_INSET, PANEL_MIN_WINDOW_WIDTH } from './constants';
 export function panelShift(nodeId: string): number {
   const nodes = useStore.getState().nodes;
   if (!nodes.some((node) => node.id === nodeId)) return 0;
-  if (useCanvasEditing.getState().edgeId) {
-    const inspector = document.querySelector<HTMLElement>('[data-edge-inspector]');
+  if (useCanvasToolCards.getState().active?.name === 'selection-properties' && useStore.getState().edges.some(edge => edge.selected)) {
+    const inspector = document.querySelector<HTMLElement>('[data-selection-properties]');
     return inspector && window.innerWidth >= 768 ? window.innerWidth - inspector.getBoundingClientRect().left + PANEL_INSET : 0;
   }
   const ui = useUiStore.getState();

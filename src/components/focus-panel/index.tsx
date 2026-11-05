@@ -140,14 +140,13 @@ export default function FocusPanel({ nodeId, onFocusNode }: { nodeId: string; on
       {/* Reading identity stays quiet; operational details follow the conversation. */}
       <div className="focus-panel-header flex items-center gap-related shrink-0">
         <div className="min-w-0 flex-1">
-          <h2 className="focus-panel-title" title={getNodeNameSource(data, t('ctx.unnamedNode'))} data-reading-node-name>{getNodeNameSource(data, t('ctx.unnamedNode'))}</h2>
+          <h2 className="focus-panel-title" title={getNodeNameSource(data, t('ctx.unnamedNode'))} data-tooltip-overflow data-reading-node-name>{getNodeNameSource(data, t('ctx.unnamedNode'))}</h2>
         </div>
         <div className="flex items-center gap-1 shrink-0">
           {!isViewerMode && <HeaderActions key={nodeId} nodeId={nodeId!} isLoading={data.isLoading} />}
           <button
             onClick={() => useUiStore.getState().setPanelOpen(false)}
             aria-label={t('panel.close')} data-node-details-close
-            title={t('panel.close')}
             className="text-ink-faint hover:text-ink hover:bg-wash rounded-control transition-colors shrink-0 w-control-size h-control-size flex items-center justify-center"
           >
             <X size={16} strokeWidth={1.75} />

@@ -24,7 +24,7 @@ export default function LadderJobCard() {
         <span className="text-control font-medium text-ink flex-1">{t('ladder.jobTitle')}</span>
         {job.running
           ? <button onClick={stopLadderJob} disabled={job.cancelled} className="flex items-center gap-1 text-control text-ink-muted hover:text-red-600 disabled:opacity-50" data-ladder-job-stop><Square size={10} strokeWidth={1.75} fill="currentColor" /> {job.cancelled ? t('ladder.jobStopping') : t('ladder.jobStop')}</button>
-          : <button onClick={dismissLadderJob} className="text-ink-faint hover:text-ink" title={t('ladder.jobClose')} data-ladder-job-close><X size={13} strokeWidth={1.75} /></button>}
+          : <button onClick={dismissLadderJob} className="text-ink-faint hover:text-ink" aria-label={t('ladder.jobClose')} data-ladder-job-close><X size={13} strokeWidth={1.75} /></button>}
       </div>
       <div className="mt-2 h-1 rounded-content bg-wash overflow-hidden"><div className="h-full bg-accent transition-[width] duration-300" style={{ width: `${Math.round(progress * 100)}%` }} /></div>
       <p className="mt-1.5 text-control text-ink-muted tabular-nums" data-ladder-job-line>

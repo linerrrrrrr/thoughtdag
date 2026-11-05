@@ -146,9 +146,10 @@ export default function RelatedSection({ question, answer }: { question: string;
           </div>
           {suggested && (
             <div className="flex flex-wrap items-center gap-1" data-related-suggested>
+              {suggested.length > 0 && <p className="w-full text-control text-ink-faint">{t('panel.relatedSuggested')}</p>}
               {suggested.length === 0 && <span className="text-control text-ink-faint">{t('panel.relatedNoSuggest')}</span>}
               {suggested.map((s) => (
-                <button key={s.term} onClick={() => addTerm(s.term)} title={`${s.count}`} className="text-control px-2 py-0.5 rounded-tag border border-dashed border-accent/50 text-accent hover:bg-accent/10" data-related-suggest={s.term}>+ {s.term}</button>
+                <button key={s.term} onClick={() => addTerm(s.term)} className="text-control px-2 py-0.5 rounded-tag border border-dashed border-accent/50 text-accent hover:bg-accent/10" data-related-suggest={s.term}>+ {s.term} ({s.count})</button>
               ))}
             </div>
           )}

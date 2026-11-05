@@ -99,7 +99,7 @@ export default function TimelineOverviewModal({ onLocate }: { onLocate: (nodeId:
           <History size={15} strokeWidth={1.75} className="text-accent" />
           <span className="text-section font-semibold text-ink">{t('tlov.title')}</span>
           <span className="text-meta text-ink-faint">{fmt(t('tlov.count'), { n: entries.length })}</span>
-          <label className="flex items-center gap-2 ml-3 text-control text-ink-faint" title={t('tlov.detailTitle')}>
+          <label className="flex items-center gap-2 ml-3 text-control text-ink-faint">
             <span>{t('tlov.detail')}</span>
             <input type="range" min={0} max={3} step={0.01} value={detail} onChange={(e) => changeDetail(Number(e.target.value))} className="w-28 accent-accent" data-tlov-detail />
             <span className="text-ink-muted w-8">{t(`ladder.level${level}` as 'ladder.level0')}</span>
@@ -188,7 +188,7 @@ export default function TimelineOverviewModal({ onLocate }: { onLocate: (nodeId:
                   <button
                     className="shrink-0 text-control font-mono text-accent bg-accent/10 hover:bg-accent/20 rounded-tag px-1.5 py-0.5 transition-colors opacity-0 group-hover:opacity-100"
                     onClick={() => { close(); onLocate(e.id); }}
-                    title={t('hlov.locateTitle')}
+                    aria-label={t('hlov.locateTitle')}
                   >
                     {t('tlov.locate')}
                   </button>

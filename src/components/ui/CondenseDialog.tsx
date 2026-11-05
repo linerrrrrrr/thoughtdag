@@ -1,7 +1,7 @@
 import { useDismissableLayer } from '../../lib/use-dismissable-layer';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Archive, Check, Copy, Loader2, Minimize2, X } from 'lucide-react';
+import { Archive, Check, Files, Loader2, Minimize2, X } from 'lucide-react';
 import { useUiStore, toast } from '../../lib/ui-store';
 import { useStore } from '../../store';
 import { useModels } from '../../lib/use-models';
@@ -41,18 +41,32 @@ export default function CondenseDialog({ onFocusSegment }: { onFocusSegment?: (n
   const [unchecked, setUnchecked] = useState<Set<string>>(new Set());
   // draggable: grab the title row, put the window anywhere
   const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
+  const [dragging, setDragging] = useState(false);
+  const drag = useRef<{ pointerId: number; x: number; y: number; left: number; top: number } | null>(null);
   const winRef = useRef<HTMLDivElement>(null);
-  const startDrag = (e: React.MouseEvent) => {
+  const startDrag = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.button !== 0 || (e.target instanceof Element && e.target.closest('button'))) return;
     const r = winRef.current?.getBoundingClientRect();
     if (!r) return;
-    const dx = e.clientX - r.left, dy = e.clientY - r.top;
-    const onMove = (ev: MouseEvent) => setPos({
-      x: Math.min(window.innerWidth - 120, Math.max(0, ev.clientX - dx)),
-      y: Math.min(window.innerHeight - 80, Math.max(0, ev.clientY - dy)),
+    e.preventDefault();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    drag.current = { pointerId: e.pointerId, x: e.clientX, y: e.clientY, left: r.left, top: r.top };
+    setDragging(false);
+  };
+  const moveDrag = (event: React.PointerEvent<HTMLDivElement>) => {
+    const start = drag.current;
+    if (!start || start.pointerId !== event.pointerId || Math.hypot(event.clientX - start.x, event.clientY - start.y) < 3) return;
+    setDragging(true);
+    setPos({
+      x: Math.min(window.innerWidth - 120, Math.max(0, start.left + event.clientX - start.x)),
+      y: Math.min(window.innerHeight - 80, Math.max(0, start.top + event.clientY - start.y)),
     });
-    const onUp = () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
-    window.addEventListener('mousemove', onMove);
-    window.addEventListener('mouseup', onUp);
+  };
+  const finishDrag = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.pointerId !== drag.current?.pointerId) return;
+    drag.current = null;
+    setDragging(false);
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
   };
   const key = (s: CondenseSegment) => s.nodeIds.join(',');
   const picked = segments.filter((s) => !unchecked.has(key(s)));
@@ -60,6 +74,8 @@ export default function CondenseDialog({ onFocusSegment }: { onFocusSegment?: (n
 
   // closing HIDES the window; the background run keeps going
   const close = () => {
+    drag.current = null;
+    setDragging(false);
     useUiStore.getState().setCondenseDialogOpen(false);
     useUiStore.getState().setCondenseHighlightIds([]);
   };
@@ -94,82 +110,86 @@ export default function CondenseDialog({ onFocusSegment }: { onFocusSegment?: (n
       data-condense-dialog
       onClick={(e) => e.stopPropagation()}
     >
-      <div className="flex items-start justify-between mb-1 cursor-grab active:cursor-grabbing select-none" onMouseDown={startDrag}>
+      <div className={`flex items-start justify-between mb-1 shrink-0 select-none ${dragging ? 'cursor-grabbing' : 'cursor-grab'}`}
+        data-condense-drag-handle style={{ touchAction: 'none' }}
+        onPointerDown={startDrag} onPointerMove={moveDrag} onPointerUp={finishDrag} onPointerCancel={finishDrag} onLostPointerCapture={finishDrag}>
         <div className="text-title font-semibold text-ink flex items-center gap-2">
           <Minimize2 size={15} strokeWidth={1.75} className="text-accent" /> {t('condense.title')}
         </div>
-        <button onClick={close} title={run.status === 'building' ? t('condense.runningBg') : undefined}
-          className="text-ink-faint hover:text-ink rounded-control w-7 h-7 flex items-center justify-center hover:bg-wash transition-colors"><X size={15} /></button>
+        <button onClick={close} title={run.status === 'building' ? t('condense.runningBg') : undefined} aria-label={t('common.close')}
+          className="cursor-pointer text-ink-faint hover:text-ink rounded-control w-7 h-7 flex items-center justify-center hover:bg-wash transition-colors"><X size={15} /></button>
       </div>
 
       {run.status === 'idle' && (
         <>
-          <div className="flex items-center justify-between gap-2 mb-2">
-            <p className="text-control text-ink-faint leading-snug" title={t('condense.copyIntroFull')}>{t('condense.copyIntroShort')}</p>
-            <button
-              onClick={() => setRefreshTick((v) => v + 1)}
-              title={t('condense.rescanTitle')}
-              data-condense-rescan
-              className="text-control text-ink-muted hover:text-accent px-2 py-1 rounded-tag hover:bg-wash transition-colors shrink-0"
-            >
-              ⟳ {t('condense.rescan')}
-            </button>
-          </div>
-          <p className="text-control text-ink-faint mb-2" data-condense-scanline>
-            {fmt(t('condense.scanLine'), { turns: String(nodes.filter((n) => n.data.response && !n.data.stepKind).length), n: String(segments.length) })}
-          </p>
-          <div className="flex items-center gap-2 mb-3">
-            <label className="text-control text-ink-muted shrink-0">{t('condense.modelLabel')}</label>
-            <select value={model} onChange={(e) => setModel(e.target.value)} data-condense-model
-              className="text-control bg-wash text-ink rounded-control px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-accent/40 max-w-[220px] truncate">
-              <option value="">{fmt(t('condense.modelAuto'), { model: autoModel ?? '—' })}</option>
-              {models.map((m) => <option key={m.id} value={m.id}>{m.id}</option>)}
-            </select>
-          </div>
-          {segments.length === 0 ? (
-            <p className="text-control text-ink-muted py-4">{t('condense.segNothing')}</p>
-          ) : (
-            <div className="flex-1 min-h-0 overflow-y-auto space-y-2 pr-1">
-              {segments.map((seg) => {
-                const k = key(seg);
-                const on = !unchecked.has(k);
-                return (
-                  <div
-                    key={k}
-                    data-condense-item
-                    className={`border rounded-content p-3 transition-colors cursor-pointer ${on ? 'border-accent/60 bg-accent/5' : 'border-line opacity-60'}`}
-                    onClick={() => {
-                      useUiStore.getState().setCondenseHighlightIds(seg.nodeIds);
-                      onFocusSegment?.(seg.nodeIds);
-                    }}
-                  >
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <input
-                        type="checkbox"
-                        checked={on}
-                        onClick={(e) => e.stopPropagation()}
-                        onChange={() => setUnchecked((prev) => { const nx = new Set(prev); if (nx.has(k)) nx.delete(k); else nx.add(k); return nx; })}
-                        className="accent-[var(--color-accent)]"
-                        data-condense-check
-                      />
-                      <span className="text-meta text-ink-faint font-mono">{fmt(t('condense.segMeta'), { n: String(seg.nodeIds.length), tok: String(seg.saving) })}</span>
-                    </div>
-                    <p className="text-control text-ink mt-1 leading-snug line-clamp-2">{seg.headQuestion}</p>
-                  </div>
-                );
-              })}
+          <div className="flex-1 min-h-0 overflow-y-auto" data-condense-content>
+            <div className="flex items-center justify-between gap-2 mb-2">
+              <p className="text-control text-ink-faint leading-snug">{t('condense.copyIntroFull')}</p>
+              <button
+                onClick={() => setRefreshTick((v) => v + 1)}
+                title={t('condense.rescanTitle')}
+                data-condense-rescan
+                className="text-control text-ink-muted hover:text-accent px-2 py-1 rounded-tag hover:bg-wash transition-colors shrink-0"
+              >
+                ⟳ {t('condense.rescan')}
+              </button>
             </div>
-          )}
+            <p className="text-control text-ink-faint mb-2" data-condense-scanline>
+              {fmt(t('condense.scanLine'), { turns: String(nodes.filter((n) => n.data.response && !n.data.stepKind).length), n: String(segments.length) })}
+            </p>
+            <div className="flex items-center gap-2 mb-3">
+              <label className="text-control text-ink-muted shrink-0">{t('condense.modelLabel')}</label>
+              <select value={model} onChange={(e) => setModel(e.target.value)} data-condense-model
+                className="text-control bg-wash text-ink rounded-control px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-accent/40 max-w-[220px] truncate">
+                <option value="">{fmt(t('condense.modelAuto'), { model: autoModel ?? '—' })}</option>
+                {models.map((m) => <option key={m.id} value={m.id}>{m.id}</option>)}
+              </select>
+            </div>
+            {segments.length === 0 ? (
+              <p className="text-control text-ink-muted py-4">{t('condense.segNothing')}</p>
+            ) : (
+              <div className="space-y-2 pr-1">
+                {segments.map((seg) => {
+                  const k = key(seg);
+                  const on = !unchecked.has(k);
+                  return (
+                    <div
+                      key={k}
+                      data-condense-item
+                      className={`border rounded-content p-3 transition-colors cursor-pointer ${on ? 'border-accent/60 bg-accent/5' : 'border-line opacity-60'}`}
+                      onClick={() => {
+                        useUiStore.getState().setCondenseHighlightIds(seg.nodeIds);
+                        onFocusSegment?.(seg.nodeIds);
+                      }}
+                    >
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <input
+                          type="checkbox"
+                          checked={on}
+                          onClick={(e) => e.stopPropagation()}
+                          onChange={() => setUnchecked((prev) => { const nx = new Set(prev); if (nx.has(k)) nx.delete(k); else nx.add(k); return nx; })}
+                          className="accent-[var(--color-accent)]"
+                          data-condense-check
+                        />
+                        <span className="text-meta text-ink-faint font-mono">{fmt(t('condense.segMeta'), { n: String(seg.nodeIds.length), tok: String(seg.saving) })}</span>
+                      </div>
+                      <p className="text-control text-ink mt-1 leading-snug line-clamp-2">{seg.headQuestion}</p>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
           {segments.length > 0 && (
-            <div className="flex items-center justify-between gap-2 pt-3 mt-2 border-t border-line">
+            <div className="flex flex-col items-start gap-2 pt-3 mt-2 border-t border-line shrink-0">
               <span className="text-control text-ink-faint">{t('condense.copyFootnote')}</span>
               <button
                 onClick={build}
                 disabled={picked.length === 0}
                 data-condense-build
-                className="text-control bg-action text-white px-3.5 py-2 rounded-control disabled:opacity-40 transition-colors flex items-center gap-1.5 shrink-0"
+                className="text-control bg-action text-white px-3.5 py-2 rounded-control disabled:opacity-40 transition-colors flex items-center gap-1.5 self-end max-w-full"
               >
-                <Copy size={13} strokeWidth={1.75} />
+                <Files size={13} strokeWidth={1.75} />
                 {fmt(t('condense.buildCopy'), { n: String(picked.length), tok: String(pickedSaving) })}
               </button>
             </div>

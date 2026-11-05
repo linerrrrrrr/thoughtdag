@@ -1,0 +1,33 @@
+.tdag-context-order {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 4px;
+  border: 1px solid currentColor;
+  border-radius: var(--radius-tag);
+  background: var(--color-card);
+  font-size: var(--text-meta);
+  font-family: var(--font-mono);
+  transform: scale(calc(1 / max(0.6, var(--tdag-zoom, 1))));
+}
+
+.tdag-context-order.is-active {
+  background: color-mix(in srgb, currentColor 12%, var(--color-card));
+  font-weight: 600;
+}
+
+.react-flow .react-flow__nodes .react-flow__node.context-source-active,
+.react-flow .react-flow__nodes .react-flow__node.context-target-active { opacity: 1; }
+
+[data-searching] .react-flow__edges:has([data-context-edge-active]) { opacity: 1; }
+[data-searching] .react-flow__edges:has([data-context-edge-active]) > .react-flow__edge:not(:has([data-context-edge-active])) { opacity: .18; }
+
+.react-flow__node.context-source-active > .thought-node,
+.react-flow__node.context-source-active > .content-card,
+.react-flow__node.context-source-active [data-node-overview],
+.react-flow__node.context-target-active > .thought-node {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 3px;
+}

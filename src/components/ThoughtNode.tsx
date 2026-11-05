@@ -2,7 +2,7 @@ import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { describeModel } from '../lib/use-models';
 import { conclusionOf } from '../lib/turn-insight';
 import { useReactFlow, useUpdateNodeInternals, type NodeProps } from '@xyflow/react';
-import { AlertTriangle, Archive, BookOpen, Check, ChevronDown, ChevronLeft, ChevronRight, Copy, Eye, GitBranch, Globe, Hourglass, Minimize2, RefreshCw, Send, Split, Square, Star, Trash2, UserRound, X, Pencil } from 'lucide-react';
+import { AlertTriangle, Archive, BookOpen, Check, ChevronDown, ChevronLeft, ChevronRight, ClipboardCopy, Eye, GitBranch, Globe, Hourglass, Minimize2, RefreshCw, Send, Split, Square, Star, Trash2, UserRound, X, Pencil } from 'lucide-react';
 import 'katex/dist/katex.min.css';
 
 /** A tool's status line standing in for the answer while it runs (see
@@ -31,6 +31,7 @@ import NodeResizeControls from './NodeResizeControls';
 import { getNodeDisplayName, getNodeNameSource } from '../lib/node-display-name';
 import NodeMetadataEditor from './NodeMetadataEditor';
 import NodeTokenUsage from './NodeTokenUsage';
+import NodeContextSources from './NodeContextSources';
 import './ConversationSurface.css';
 import { ApprovalCard } from './ui/ApprovalCard';
 import { AgentTrace } from './ui/AgentTrace';
@@ -438,8 +439,7 @@ export default function ThoughtNode({ id, data, selected }: NodeProps<ThoughtNod
       )}
       {glyphTier ? (
         <div
-          className="drag-handle cursor-grab active:cursor-grabbing w-full min-h-32 flex items-center justify-center"
-          title={nodeNameSource}
+          className="drag-handle w-full min-h-32 flex items-center justify-center"
           data-glyph-node
           data-node-details-header
           data-node-stale={isStale || undefined}
@@ -456,7 +456,7 @@ export default function ThoughtNode({ id, data, selected }: NodeProps<ThoughtNod
       ) : (
       <>
       {/* Header */}
-      <div data-node-details-header className="thought-node-header shrink-0 flex items-center justify-between gap-related px-surface-inset py-related border-b border-line cursor-grab active:cursor-grabbing drag-handle">
+      <div data-node-details-header className="thought-node-header shrink-0 flex items-center justify-between gap-related px-surface-inset py-related border-b border-line drag-handle">
         <div className="node-header-status flex flex-wrap items-center gap-2 min-w-0">
           <button onClick={() => zoomedOut ? setNodeDetail(id, 'full') : fullDetail ? setNodeDetail(id, 'summary') : toggleCollapse(id)}
             aria-label={t(zoomedOut || isCollapsed ? 'node.expandCard' : 'node.collapseCard')} className={`nodrag nopan rounded-control w-7 h-7 flex items-center justify-center transition-colors text-body font-bold ${
@@ -469,6 +469,7 @@ export default function ThoughtNode({ id, data, selected }: NodeProps<ThoughtNod
           </button>
           {isRoot && <span className="node-start-label">{t('node.startLabel')}</span>}
           <NodeTokenUsage data={data} />
+          <NodeContextSources nodeId={id} />
           {data.condensedFrom && data.condensedFrom.length > 0 && (
             <button
               onClick={(e) => {
@@ -484,7 +485,7 @@ export default function ThoughtNode({ id, data, selected }: NodeProps<ThoughtNod
               }}
               title={t('node.condensedFromTitle')}
               data-condensed-from
-              className="text-control bg-accent/10 text-accent hover:bg-accent/20 px-1.5 py-0.5 rounded-tag flex items-center gap-1 font-medium transition-colors"
+              className="nodrag nopan text-control bg-accent/10 text-accent hover:bg-accent/20 px-1.5 py-0.5 rounded-tag flex items-center gap-1 font-medium transition-colors"
             >
               <Minimize2 size={11} strokeWidth={1.75} /> {fmt(t('node.condensedFrom'), { n: String(data.condensedFrom.length) })}
             </button>
@@ -494,7 +495,7 @@ export default function ThoughtNode({ id, data, selected }: NodeProps<ThoughtNod
               onClick={(e) => { e.stopPropagation(); if (!isViewerMode) void rerunNode(id, {}); }}
               title={staleTitle}
               data-stale-badge
-              className="text-control bg-amber-500/10 text-amber-600 hover:bg-amber-500/25 px-1.5 py-0.5 rounded-tag flex items-center gap-1 font-medium transition-colors"
+              className="nodrag nopan text-control bg-amber-500/10 text-amber-600 hover:bg-amber-500/25 px-1.5 py-0.5 rounded-tag flex items-center gap-1 font-medium transition-colors"
             >
               <RefreshCw size={11} strokeWidth={1.75} /> {t('node.staleBadge')}
             </button>
@@ -519,7 +520,7 @@ export default function ThoughtNode({ id, data, selected }: NodeProps<ThoughtNod
               <Eye size={12} strokeWidth={1.75} /> {t('evaluator.badge')}
             </span>
           ) : data.appliedRole && (
-            <span className="text-control bg-accent/10 text-accent px-1.5 py-0.5 rounded-tag truncate max-w-[120px]" title={data.appliedRole}>
+            <span className="text-control bg-accent/10 text-accent px-1.5 py-0.5 rounded-tag truncate max-w-[120px]" title={data.appliedRole} data-tooltip-overflow={data.appliedRole.length <= 20 || undefined}>
               {data.appliedRole.slice(0, 20)}{data.appliedRole.length > 20 ? '…' : ''}
             </span>
           )}
@@ -547,15 +548,15 @@ export default function ThoughtNode({ id, data, selected }: NodeProps<ThoughtNod
           {data.isLoading && (
             <button
               onClick={(e) => { e.stopPropagation(); stopGeneration(id); }}
-              title={t('actions.stop')}
+              aria-label={t('actions.stop')}
               className="text-white bg-red-500 hover:bg-red-600 rounded-control w-7 h-7 flex items-center justify-center transition-colors"
             >
               <Square size={10} strokeWidth={1.75} fill="currentColor" />
             </button>
           )}
           {!(isParadigmNode && runLocked) && !isViewerMode && (
-            <button onClick={() => deleteNode(id)} className="text-ink-faint hover:text-red-500 hover:bg-red-50 rounded-control w-7 h-7 flex items-center justify-center transition-colors" title={t('common.delete')}>
-              <X size={16} strokeWidth={1.75} />
+            <button onClick={() => deleteNode(id)} className="rounded-control w-7 h-7 flex items-center justify-center transition-colors object-action-danger" data-icon-only aria-label={t('actions.deleteNode')}>
+              <Trash2 size={16} strokeWidth={1.75} />
             </button>
           )}
         </div>
@@ -618,7 +619,7 @@ export default function ThoughtNode({ id, data, selected }: NodeProps<ThoughtNod
                     <SearchToggles size={16} />
                   </div>
                   <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={handleEditSubmit}
-                    disabled={!editValue.trim()} title={t('common.send')} aria-label={t('common.send')}
+                    disabled={!editValue.trim()} aria-label={t('common.send')}
                     className="node-ask-send" data-ask-submit>
                     <Send size={16} strokeWidth={1.75} />
                   </button>
@@ -679,7 +680,7 @@ export default function ThoughtNode({ id, data, selected }: NodeProps<ThoughtNod
               {/* a question is markdown like an answer (lists, code, emphasis), set compact; the plaques above keep the plain text */}
               <Markdown base={data.agentSession?.cwd ?? data.importSource?.cwd} diagrams="placeholder">{originalQuestionBeforeInstructions(data.question, activity)}</Markdown>
             </div>
-            {!isViewerMode && <div className="conversation-question-tools"><button onClick={handleDoubleClickQuestion} title={t(hasQuestionDraft ? 'edit.resumeDraft' : 'actions.editQuestion')} disabled={data.isLoading} data-edit-question className="w-6 h-6 shrink-0 rounded-control flex items-center justify-center text-ink-faint hover:text-accent hover:bg-wash disabled:opacity-30"><Pencil size={13} /></button></div>}
+            {!isViewerMode && <div className="conversation-question-tools"><button onClick={handleDoubleClickQuestion} aria-label={t(hasQuestionDraft ? 'edit.resumeDraft' : 'actions.editQuestion')} title={hasQuestionDraft ? t('edit.resumeDraft') : undefined} disabled={data.isLoading} data-edit-question className="w-6 h-6 shrink-0 rounded-control flex items-center justify-center text-ink-faint hover:text-accent hover:bg-wash disabled:opacity-30"><Pencil size={13} /></button></div>}
             </div>
           )}
 
@@ -853,9 +854,9 @@ export default function ThoughtNode({ id, data, selected }: NodeProps<ThoughtNod
               <button
                 onClick={(e) => { e.stopPropagation(); void copyText(data.response); }}
                 className="rounded-control w-6 h-6 flex items-center justify-center hover:text-accent hover:bg-wash transition-colors"
-                title={t('actions.copyResponse')}
+                aria-label={t('actions.copyResponse')}
               >
-                <Copy size={13} strokeWidth={1.75} />
+                <ClipboardCopy size={13} strokeWidth={1.75} />
               </button>
               {!isViewerMode && <HighlighterButton
                 active={highlighter.active}
@@ -867,7 +868,7 @@ export default function ThoughtNode({ id, data, selected }: NodeProps<ThoughtNod
                 <button
                   onClick={(e) => { e.stopPropagation(); startEditResponse(); }}
                   className="rounded-control w-6 h-6 flex items-center justify-center hover:text-accent hover:bg-wash transition-colors"
-                  title={t(hasResponseDraft ? 'edit.resumeDraft' : 'actions.editResponse')}
+                  aria-label={t(hasResponseDraft ? 'edit.resumeDraft' : 'actions.editResponse')} title={hasResponseDraft ? t('edit.resumeDraft') : undefined}
                   data-edit-response
                 >
                   <Pencil size={13} strokeWidth={1.75} />
@@ -916,8 +917,8 @@ export default function ThoughtNode({ id, data, selected }: NodeProps<ThoughtNod
                   {!isViewerMode && (
                     <button
                       onClick={(e) => { e.stopPropagation(); deleteVersion(id, data.responseIndex); }}
-                      className="text-ink-faint hover:text-red-500 hover:bg-red-50 rounded-control w-5 h-5 flex items-center justify-center transition-colors"
-                      title={t('common.deleteVersion')}
+                      className="rounded-control w-5 h-5 flex items-center justify-center transition-colors object-action-danger" data-icon-only
+                      aria-label={t('common.deleteVersion')}
                     >
                       <Trash2 size={13} strokeWidth={1.75} />
                     </button>

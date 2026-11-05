@@ -33,12 +33,12 @@ export default function AgentSessionLine({ data }: { data: ThoughtData }) {
       <span className="font-mono text-ink-muted truncate flex-1 min-w-0" title={cwd} data-agent-session-cwd={cwd}>{short}</span>
       {data.agentSession?.continued && <span className="text-control text-ink-faint shrink-0" title={t('agent.continuedTitle')}>↩ {t('agent.continued')}</span>}
       {window.desktopLocal && (
-        <button onClick={() => void window.desktopLocal!.open(cwd)} className="text-ink-faint hover:text-accent shrink-0" title={t('agent.openDir')}>
+        <button onClick={() => void window.desktopLocal!.open(cwd)} className="text-ink-faint hover:text-accent shrink-0" title={t('agent.openDir')} aria-label={t('agent.openDir')}>
           <FolderOpen size={14} strokeWidth={1.75} />
         </button>
       )}
       {sessionId && window.desktopSessions && (
-        <button onClick={() => void window.desktopSessions!.openInCli(runner, cwd, sessionId, 'terminal')} className="text-ink-faint hover:text-accent shrink-0" title={t('agent.openInTerminal')}>
+        <button onClick={() => void window.desktopSessions!.openInCli(runner, cwd, sessionId, 'terminal')} className="text-ink-faint hover:text-accent shrink-0" title={t('agent.openInTerminal')} aria-label={t('agent.openInTerminal')}>
           <SquareTerminal size={14} strokeWidth={1.75} />
         </button>
       )}
@@ -47,6 +47,7 @@ export default function AgentSessionLine({ data }: { data: ThoughtData }) {
           onClick={() => { void setProjectAgentCwd(activeId!, cwd).then(() => toast('success', t('agent.useAsCwdDone'), 4000)); }}
           className="text-ink-faint hover:text-accent shrink-0"
           title={t('agent.useAsCwd')}
+          aria-label={t('agent.useAsCwd')}
           data-agent-session-pin
         >
           <Pin size={14} strokeWidth={1.75} />

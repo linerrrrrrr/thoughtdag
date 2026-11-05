@@ -1,5 +1,6 @@
 import { useLayoutEffect, useState, useSyncExternalStore, type CSSProperties } from 'react';
 import { PANEL_MIN_WINDOW_WIDTH } from './constants';
+import { useCanvasEditing } from './canvas-editing';
 
 const hasFocusPanelSpace = () => window.innerWidth >= PANEL_MIN_WINDOW_WIDTH;
 const subscribeToFocusPanelSpace = (onChange: () => void) => {
@@ -15,14 +16,22 @@ export function useFocusPanelSpace() {
 
 /** Tool cards dock below their toolbar; geometry inspectors keep the right dock. */
 export function useCanvasPanelPosition(open = true, side: 'left' | 'right' = 'right'): CSSProperties {
+  const hasSelectionToolbar = useCanvasEditing(state => !!state.selectionRegion
+    && state.selectionRegion.nodeIds.length + state.selectionRegion.edgeIds.length + state.selectionRegion.frameIds.length > 0);
   const [position, setPosition] = useState<CSSProperties>({ top: 82, [side]: 16 });
   useLayoutEffect(() => {
     if (!open) return;
     const header = document.querySelector<HTMLElement>('[data-canvas-header]');
     const toolbar = header?.querySelector<HTMLElement>(side === 'left' ? '[data-project-switcher]' : '[data-top-toolbar]');
     const measure = () => {
+      const gap = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--spacing-canvas-inset'));
       const bounds = header?.getBoundingClientRect();
-      const top = (bounds?.bottom ?? 66) + 16;
+      const selectionToolbar = document.querySelector<HTMLElement>('[data-selection-target-control]');
+      // Right cards always sit below the selection controls. Narrow left cards
+      // share that row too, since they would otherwise overlap the right dock.
+      const selectionInset = hasSelectionToolbar && (side === 'right' || bounds && bounds.width < 640)
+        ? (selectionToolbar?.offsetHeight ?? 50) + gap : 0;
+      const top = (bounds?.bottom ?? 66) + gap + selectionInset;
       const toolbarBounds = toolbar?.getBoundingClientRect();
       const left = side === 'left' ? Math.max(16, toolbarBounds?.left ?? bounds?.left ?? 16) : undefined;
       const right = side === 'right' ? Math.max(16, window.innerWidth - (toolbarBounds?.right ?? window.innerWidth - 16)) : undefined;
@@ -36,9 +45,11 @@ export function useCanvasPanelPosition(open = true, side: 'left' | 'right' = 'ri
     const observer = new ResizeObserver(measure);
     if (header) observer.observe(header);
     if (toolbar) observer.observe(toolbar);
+    const selectionToolbar = document.querySelector('[data-selection-target-control]');
+    if (selectionToolbar) observer.observe(selectionToolbar);
     window.addEventListener('resize', measure);
     return () => { observer.disconnect(); window.removeEventListener('resize', measure); };
-  }, [open, side]);
+  }, [open, side, hasSelectionToolbar]);
   return position;
 }
 

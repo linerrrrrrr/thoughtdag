@@ -662,18 +662,22 @@ export const createNodeSlice: StateCreator<StoreState, [], [], NodeSlice> = (set
     if (!result.ok) toast('info', t(result.error === 'stale-layout' ? 'canvasLayout.stale' : 'canvasLayout.boundaryBlocked'));
   },
 
-  batchDelete: (nodeIds: string[]) => {
+  batchDelete: (nodeIds: string[], edgeIds: string[] = []) => {
     if (condenseGuard()) return;
-    get().logEvent('delete', nodeIds[0], { n: nodeIds.length });
+    get().logEvent('delete', nodeIds[0], { n: nodeIds.length, edges: edgeIds.length });
     get().pushHistory();
     const removeSet = new Set(nodeIds);
+    const removeEdges = new Set(edgeIds);
     abortGenerations(removeSet);
-    set((state) => ({
-      nodes: state.nodes.filter((n) => !removeSet.has(n.id)),
-      edges: state.edges.filter((e) => !removeSet.has(e.source) && !removeSet.has(e.target)),
-      selectedNodeId: null,
-      selectedNodeIds: [],
-    }));
+    set((state) => {
+      const remainingSelection = state.selectedNodeIds.filter(id => !removeSet.has(id));
+      return {
+        nodes: state.nodes.filter((n) => !removeSet.has(n.id)),
+        edges: state.edges.filter((e) => !removeEdges.has(e.id) && !removeSet.has(e.source) && !removeSet.has(e.target)),
+        selectedNodeId: remainingSelection.length === 1 ? remainingSelection[0] : null,
+        selectedNodeIds: remainingSelection,
+      };
+    });
     get().pushHistory();
     // deletion IS unsubscription — see canonical.unsubscribeOrphanedSessions
     void import('../../lib/atlas/canonical').then((m) => m.unsubscribeOrphanedSessions());

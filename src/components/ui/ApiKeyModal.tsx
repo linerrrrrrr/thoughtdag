@@ -278,10 +278,10 @@ export default function ApiKeyModal() {
                     {p.models.some((m) => m.vision) && <span> · 📷 {p.models.filter((m) => m.vision).length}</span>}
                   </div>
                 </div>
-                <button onClick={() => void refresh(p)} disabled={busy} title={t('provider.refreshTitle')} className="text-ink-faint hover:text-accent w-6 h-6 rounded-control flex items-center justify-center transition-colors shrink-0" data-provider-refresh>
+                <button onClick={() => void refresh(p)} disabled={busy} title={t('provider.refreshTitle')} aria-label={t('provider.refreshTitle')} className="text-ink-faint hover:text-accent w-6 h-6 rounded-control flex items-center justify-center transition-colors shrink-0" data-provider-refresh>
                   <Pencil size={13} strokeWidth={1.75} />
                 </button>
-                <button onClick={() => void remove(p.baseURL)} disabled={busy} title={t('common.delete')} className="text-ink-faint hover:text-red-500 w-6 h-6 rounded-control flex items-center justify-center transition-colors shrink-0">
+                <button onClick={() => void remove(p.baseURL)} disabled={busy} aria-label={t('actions.deleteProvider')} className="w-6 h-6 rounded-control flex items-center justify-center transition-colors shrink-0 object-action-danger" data-icon-only>
                   <Trash2 size={13} strokeWidth={1.75} />
                 </button>
               </div>
@@ -420,7 +420,7 @@ export default function ApiKeyModal() {
                       ) : picked.has(m.id) && (
                         <button
                           onClick={(e) => { e.preventDefault(); const next = new Map(picked); next.set(m.id, !next.get(m.id)); setPicked(next); }}
-                          title={t('provider.visionToggle')}
+                          title={t('provider.visionToggle')} aria-label={t('provider.visionToggle')}
                           className={`flex items-center gap-0.5 text-control px-1.5 py-0.5 rounded-tag transition-colors ${picked.get(m.id) ? 'bg-accent/10 text-accent' : 'bg-wash text-ink-faint'}`}
                         >
                           <Camera size={11} strokeWidth={1.75} />

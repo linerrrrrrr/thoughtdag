@@ -8,16 +8,17 @@ import { sideAnchorOffset } from '../lib/edge-anchors';
 import { useDismissableLayer } from '../lib/use-dismissable-layer';
 import { useT } from '../i18n';
 import type { ThoughtNode } from '../types';
-import type { SelectionRegion } from '../lib/canvas-selection';
+import type { SelectionRegion, SelectionTarget } from '../lib/canvas-selection';
 import ResizeGrip, { type ResizeDirection } from './ResizeGrip';
 
 type Gesture = {
   x: number; y: number; zoom: number; pointerId: number; direction: ResizeDirection;
-  original: ThoughtNode; basis: ThoughtNode; changed: boolean; region: SelectionRegion | null;
+  original: ThoughtNode; basis: ThoughtNode; changed: boolean; region: SelectionRegion | null; target: SelectionTarget;
 };
 
 function restoreSize(drag: Gesture) {
   useCanvasEditing.getState().setSelectionRegion(drag.region);
+  if (drag.region) useCanvasEditing.getState().setSelectionTarget(drag.target);
   useStore.setState(state => ({ nodes: state.nodes.map(node => node.id !== drag.original.id ? node : {
     ...node, width: drag.original.width, height: drag.original.height,
     data: { ...node.data, keepOverviewHeight: drag.original.data.keepOverviewHeight },
@@ -78,7 +79,8 @@ export default function NodeResizeControls({ id, widthOnly = false }: { id: stri
     // Measure natural-height cards at the visible boundary, including after reflow.
     const basis = { ...original, measured: { width: box.width / zoom, height: box.height / zoom } };
     gesture.current = { x: event.clientX, y: event.clientY, zoom, pointerId: event.pointerId,
-      direction, original, basis, changed: false, region: useCanvasEditing.getState().selectionRegion };
+      direction, original, basis, changed: false, region: useCanvasEditing.getState().selectionRegion,
+      target: useCanvasEditing.getState().selectionTarget };
     setActive(direction);
   };
   const move = (event: PointerEvent<HTMLButtonElement>) => {
@@ -115,7 +117,6 @@ export default function NodeResizeControls({ id, widthOnly = false }: { id: stri
         style={direction === 'width' ? { top: widthGripTop } : undefined}
         className={`node-resize-handle node-resize-${direction} react-flow__resize-control thought-resize-${direction === 'width' ? 'side' : direction === 'height' ? 'bottom' : 'corner'} nodrag nopan`}
         aria-label={locked ? `${label} · ${t('format.lockAspectRatio')}` : label}
-        title={locked ? `${label} · ${t('format.lockAspectRatio')}` : label}
         onPointerDown={event => start(event, direction)} onPointerMove={move}
         onPointerUp={event => release(event)} onPointerCancel={event => release(event, true)} onLostPointerCapture={event => release(event, true)}
         onClick={event => event.stopPropagation()} onDoubleClick={event => event.stopPropagation()}

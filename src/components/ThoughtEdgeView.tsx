@@ -7,6 +7,9 @@ import { isViewerMode } from '../lib/viewer';
 import { useT } from '../i18n';
 import type { ThoughtEdge, ThoughtNode } from '../types';
 import { useStore } from '../store';
+import { useContextInspection } from '../lib/context-inspection';
+import { edgeAdornments } from '../lib/edge-adornments';
+import './ThoughtEdgeView.css';
 
 /**
  * Custom edge registered under the 'smoothstep' type name (overrides the
@@ -18,14 +21,18 @@ import { useStore } from '../store';
  */
 export default function ThoughtEdgeView({
   id, source, target, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition,
-  style, markerEnd, markerStart, selected, interactionWidth, data,
+  style, selected, interactionWidth, data,
 }: EdgeProps<ThoughtEdge>) {
-  const editEdge = useCanvasEditing((s) => s.setEdgeId);
+  const requestProperties = useCanvasEditing((s) => s.requestProperties);
   const routingContext = useContext(CanvasEdgeRouting);
   const visibleNodes = useFlowStore((s) => s.nodes as ThoughtNode[]);
   const edges = useFlowStore((s) => s.edges as ThoughtEdge[]);
   const zoom = useFlowStore((s) => s.transform[2]);
   const t = useT();
+  const inspectedTarget = useContextInspection((state) => state.targetId);
+  const activeEdgeId = useContextInspection((state) => state.activeEdgeId);
+  const inspecting = inspectedTarget === target;
+  const active = inspecting && activeEdgeId === id;
   const isRef = !!data?.isCrossLink;
   const routeMode = data?.route ?? visibleNodes.find((node) => node.id === source)?.data.edgeRouteDefault ?? 'auto';
   const label = data?.label?.trim();
@@ -38,11 +45,10 @@ export default function ThoughtEdgeView({
 
   // When selected, force full visibility (overrides the ancestor-dim pass)
   // and thicken the stroke as selection feedback.
-  const edgeStyle = selected ? { ...style, strokeWidth: 2.5, opacity: 1 } : style;
+  const edgeStyle = selected || active ? { ...style, strokeWidth: 2.5, opacity: 1 }
+    : inspecting ? { ...style, opacity: activeEdgeId ? 0.45 : 1 } : style;
 
-  // A merge's incoming blocks have a stated order — show it AT the join,
-  // where the question "which reads first?" is asked. Only merges wear
-  // numbers; a single-parent edge needs none.
+  // Order is inspection information, not a permanent part of the wire.
   const mergeIndex = useMemo(() => {
     if (isRef) return -1;
     const siblings = edges.filter((e) => e.target === target && !e.data?.isCrossLink);
@@ -50,20 +56,31 @@ export default function ThoughtEdgeView({
     siblings.sort((a, b) => (a.data?.contextOrder ?? Number.MAX_SAFE_INTEGER) - (b.data?.contextOrder ?? Number.MAX_SAFE_INTEGER));
     return siblings.findIndex((e) => e.id === id);
   }, [edges, target, id, isRef]);
-  const mergeOffset = 24 + Math.max(0, mergeIndex) * 20;
-  const mergeX = targetX + (targetPosition === 'left' ? -mergeOffset : targetPosition === 'right' ? mergeOffset : 0);
-  const mergeY = targetY + (targetPosition === 'bottom' ? mergeOffset : targetPosition === 'top' || !targetPosition ? -mergeOffset : 0);
+  const incoming = useMemo(() => {
+    const handle = edges.find(edge => edge.id === id)?.targetHandle;
+    return edges.filter(edge => edge.target === target && edge.targetHandle === handle);
+  }, [edges, target, id]);
+  const incomingIndex = Math.max(0, incoming.findIndex((edge) => edge.id === id));
+  const adornments = useMemo(() => edgeAdornments(path, incomingIndex, incoming.length), [path, incomingIndex, incoming.length]);
+  const badgeOffset = 16 / Math.max(0.6, zoom);
+  const mergeX = adornments ? adornments.badge.x + adornments.badge.normalX * badgeOffset : labelX;
+  const mergeY = adornments ? adornments.badge.y + adornments.badge.normalY * badgeOffset : labelY;
+  const stroke = edgeStyle?.stroke ?? 'var(--color-accent)';
 
   return (
-    <>
+    <g data-context-edge-active={active || undefined}>
       <BaseEdge
         path={path}
         style={edgeStyle}
-        markerEnd={markerEnd}
-        markerStart={markerStart}
         interactionWidth={Math.max(interactionWidth ?? 20, 14 / Math.max(zoom, 0.01))}
       />
-      {mergeIndex >= 0 && (
+      {adornments && <path
+        data-edge-direction={id}
+        d="M 0 0 L -11 -5 L -11 5 Z"
+        transform={`translate(${adornments.arrow.x} ${adornments.arrow.y}) rotate(${adornments.arrow.angle}) scale(${adornments.arrow.scale})`}
+        fill={stroke} opacity={edgeStyle?.opacity ?? 1} pointerEvents="none" aria-hidden="true"
+      />}
+      {inspecting && mergeIndex >= 0 && (
         <EdgeLabelRenderer>
           <div
             className="nodrag nopan"
@@ -73,8 +90,9 @@ export default function ThoughtEdgeView({
               transform: `translate(-50%, -50%) translate(${mergeX}px, ${mergeY}px)`,
             }}
             data-merge-order={mergeIndex + 1}
+            data-context-edge-id={id}
           >
-            <div className="w-4.5 h-4.5 min-w-[18px] px-0.5 rounded-tag bg-card border border-line flex items-center justify-center text-meta font-mono text-ink-muted">
+            <div className={`tdag-context-order${active ? ' is-active' : ''}`} style={{ color: stroke }}>
               {mergeIndex + 1}
             </div>
           </div>
@@ -103,15 +121,16 @@ export default function ThoughtEdgeView({
                   event.stopPropagation();
                   const state = useStore.getState();
                   const additive = event.ctrlKey || event.metaKey || event.shiftKey;
-                  state.setSelectedNodeIds([]);
+                  useCanvasEditing.getState().setSelectionRegion(null);
+                  if (!additive) state.setSelectedNodeIds([]);
                   state.setEdges(state.edges.map(edge => ({ ...edge, selected: additive ? edge.id === id ? !edge.selected : !!edge.selected : edge.id === id })));
-                  editEdge(additive || useCanvasEditing.getState().selectionTarget === 'edges' ? null : id);
+                  requestProperties();
                 }}
                   className={annotationClass} title={t('edgeEditor.title')} data-edge-annotation>{label}</button>)}
             </div>
           </div>
         </EdgeLabelRenderer>
       )}
-    </>
+    </g>
   );
 }

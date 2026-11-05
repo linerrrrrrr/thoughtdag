@@ -58,8 +58,7 @@
 .edge-inspector-actions { display: flex; align-items: center; gap: 8px; }
 .edge-inspector-actions > button { display: flex; align-items: center; justify-content: center; gap: 5px; min-height: 34px; padding: 6px 13px; border-radius: var(--radius-control); font-size: var(--text-control); }
 .edge-inspector-actions > button:disabled { opacity: .4; }
-.edge-inspector-actions .edge-inspector-delete { margin-right: auto; padding-inline: 0 8px; color: var(--color-ink-muted); }
-.edge-inspector-delete:hover { color: var(--color-red-600); }
+.edge-inspector-actions .edge-inspector-delete { margin-right: auto; padding-inline: 0 8px; color: var(--color-watch); }
 .edge-inspector-cancel { border: 1px solid var(--color-line); }
 .edge-inspector-cancel:hover:not(:disabled) { background: var(--color-wash); }
 .edge-inspector-apply { background: var(--color-action); color: white; }

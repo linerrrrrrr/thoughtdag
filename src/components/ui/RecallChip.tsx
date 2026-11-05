@@ -95,13 +95,13 @@ export default function RecallChip({ nodeId }: { nodeId?: string } = {}) {
             </button>
           </div>
           <div className="flex items-center justify-between gap-2">
-            <span className="text-ink-faint whitespace-nowrap" title={t('recall.reachHint')}>{t('recall.menuReach')}</span>
+            <span className="text-ink-faint whitespace-nowrap cursor-help" tabIndex={0} title={t('recall.reachHint')}>{t('recall.menuReach')}</span>
             <div className="flex gap-0.5" data-recall-menu-reach>
               {(['light', 'deep', 'full'] as RecallReach[]).map((r) => seg(r, reach === r, !on || (!judged && r !== 'light'), reachLabel(r), () => void pickReach(r), on && !judged && r !== 'light' ? t('recall.menuNeedsJudge') : undefined))}
             </div>
           </div>
           <div className="flex items-center justify-between gap-2">
-            <span className="text-ink-faint whitespace-nowrap" title={t('recall.scaleHint')}>{t('recall.menuScale')}</span>
+            <span className="text-ink-faint whitespace-nowrap cursor-help" tabIndex={0} title={t('recall.scaleHint')}>{t('recall.menuScale')}</span>
             <div className="flex gap-0.5" data-recall-menu-scale>
               {(['lean', 'standard', 'generous'] as RecallScale[]).map((s) => seg(s, scale === s, !on, `${scaleLabel(s)} ${RECALL_SCALES[s].budget / 1000}k`, () => apply({ scale: s })))}
             </div>

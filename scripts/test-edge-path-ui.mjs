@@ -86,7 +86,7 @@ try {
   await page.mouse.click(edges[1].midpoint.x, edges[1].midpoint.y);
   await page.waitForTimeout(200);
   assert.ok(await page.locator('.react-flow__edge.selected').count());
-  assert.ok(await page.getByRole('button', { name: '删除连线', exact: false }).count());
+  assert.ok(await page.getByRole('button', { name: '删除线条', exact: false }).count());
   check('edge selection and midpoint action remain available');
   await fixture(true);
   edges = await geometry();

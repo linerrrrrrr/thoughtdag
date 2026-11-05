@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { describeModel } from '../../lib/use-models';
-import { AlertTriangle, ChevronLeft, ChevronRight, Copy, GitBranch, RefreshCw, Trash2, Pencil } from 'lucide-react';
+import { AlertTriangle, ChevronLeft, ChevronRight, ClipboardCopy, GitBranch, RefreshCw, Trash2, Pencil } from 'lucide-react';
 import { useStore } from '../../store';
 import { useUiStore } from '../../lib/ui-store';
 import { isImeComposing } from '../../utils';
@@ -278,15 +278,16 @@ export default function ResponseSection({
             onClick={() => void rerunNode(nodeId, {})}
             className="rounded-control w-7 h-7 flex items-center justify-center hover:text-accent hover:bg-wash transition-colors"
             title={t('common.regenerate')}
+            aria-label={t('common.regenerate')}
           >
             <RefreshCw size={15} strokeWidth={1.75} />
           </button>}
           <button
             onClick={() => void copyText(data.response)}
             className="rounded-control w-7 h-7 flex items-center justify-center hover:text-accent hover:bg-wash transition-colors"
-            title={t('actions.copyResponse')}
+            aria-label={t('actions.copyResponse')}
           >
-            <Copy size={14} strokeWidth={1.75} />
+            <ClipboardCopy size={14} strokeWidth={1.75} />
           </button>
           {!isViewerMode && (
             <HighlighterButton
@@ -300,7 +301,7 @@ export default function ResponseSection({
             <button
               onClick={startEditResponse}
               className="rounded-control w-7 h-7 flex items-center justify-center hover:text-accent hover:bg-wash transition-colors"
-              title={t('actions.editResponse')}
+              aria-label={t('actions.editResponse')}
               data-edit-response
             >
               <Pencil size={14} strokeWidth={1.75} />
@@ -322,8 +323,8 @@ export default function ResponseSection({
               <button onClick={() => navigateVersion(nodeId, 'next')} className="hover:text-accent hover:bg-wash rounded-control w-5 h-5 flex items-center justify-center transition-colors"><ChevronRight size={14} strokeWidth={1.75} /></button>
               {!isViewerMode && <button
                 onClick={() => deleteVersion(nodeId, data.responseIndex)}
-                className="text-ink-faint hover:text-red-500 hover:bg-red-50 rounded-control w-5 h-5 flex items-center justify-center transition-colors"
-                title={t('common.deleteVersion')}
+                className="rounded-control w-5 h-5 flex items-center justify-center transition-colors object-action-danger" data-icon-only
+                aria-label={t('common.deleteVersion')}
               >
                 <Trash2 size={13} strokeWidth={1.75} />
               </button>}

@@ -58,6 +58,7 @@ export default function SearchToggles({ size = 16, nodeId }: { size?: number; no
           onClick={() => { if (!noSearchLane) setWeb(!web); }}
           disabled={noSearchLane}
           aria-pressed={web}
+          aria-label={t('toolbar.webSearch')}
           title={noSearchLane ? t('toolbar.searchUnavailableLane') : web ? t('toolbar.webSearch') : t('toolbar.webSearchOff')}
           className={cls(web)}
           data-web-toggle
@@ -70,6 +71,7 @@ export default function SearchToggles({ size = 16, nodeId }: { size?: number; no
         onClick={() => { if (!noSearchLane) setScholar(!scholar); }}
         disabled={noSearchLane}
         aria-pressed={scholar}
+        aria-label={t('toolbar.scholarSearch')}
         title={noSearchLane ? t('toolbar.searchUnavailableLane') : scholar ? t('toolbar.scholarSearch') : t('toolbar.scholarSearchOff')}
         className={cls(scholar)}
         data-scholar-toggle

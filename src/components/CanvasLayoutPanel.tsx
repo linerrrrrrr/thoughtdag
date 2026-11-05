@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from 'react';
+import { useEffect, useId, useImperativeHandle, useRef, useState, type Ref } from 'react';
 import type { ReactFlowInstance } from '@xyflow/react';
 import { Loader2, X } from 'lucide-react';
 import { useStore } from '../store';
@@ -16,6 +16,8 @@ import { canvasToolViewport, useCanvasPanelPosition } from '../lib/use-canvas-pa
 import { beginCanvasLayoutTask, canvasLayoutBounds, canvasLayoutErrorKey, fitCanvasLayout, readCanvasLayoutOptions, saveCanvasLayoutOptions } from '../lib/canvas-layout-preferences';
 
 const actionClass = 'min-h-8 px-2.5 rounded-control text-control text-ink-muted hover:bg-wash transition-colors flex items-center justify-center gap-2 focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-40 disabled:cursor-not-allowed';
+type LayoutDraft = CanvasLayoutOptions & { scope: 'all' | 'selection' };
+export interface CanvasLayoutPanelHandle { close: () => void }
 
 function LayoutChoices<V extends string>({ name, label, value, choices, disabled, onChange }: {
   name: string;
@@ -38,7 +40,10 @@ function LayoutChoices<V extends string>({ name, label, value, choices, disabled
   </fieldset>;
 }
 
-export default function CanvasLayoutPanel({ flow: rf }: { flow: ReactFlowInstance<ThoughtNode, ThoughtEdge> }) {
+export default function CanvasLayoutPanel({ flow: rf, ref }: {
+  flow: ReactFlowInstance<ThoughtNode, ThoughtEdge>;
+  ref?: Ref<CanvasLayoutPanelHandle>;
+}) {
   const t = useT();
   const nodes = useStore((s) => s.nodes);
   const edges = useStore((s) => s.edges);
@@ -51,17 +56,20 @@ export default function CanvasLayoutPanel({ flow: rf }: { flow: ReactFlowInstanc
   const panel = useRef<HTMLDivElement>(null);
   const panelPosition = useCanvasPanelPosition();
   const originalViewport = useRef(rf.getViewport());
-  const [options, setOptions] = useState(() => {
+  const [draft, setDraft] = useState<LayoutDraft>(() => {
+    const defaultScope = selectedIds.length ? 'selection' : 'all';
     try {
       const draft = JSON.parse(useUiStore.getState().drafts[draftKey] ?? 'null');
       if (draft && ['manual', 'chains', 'layers'].includes(draft.method) && ['vertical', 'horizontal'].includes(draft.direction)
         && ['compact', 'standard', 'relaxed'].includes(draft.density) && ['auto', 'curve', 'orthogonal'].includes(draft.route)) {
-        return { ...draft, route: draft.route === 'orthogonal' ? 'orthogonal' : 'curve' } as CanvasLayoutOptions;
+        return { method: draft.method, direction: draft.direction, density: draft.density,
+          route: draft.route === 'orthogonal' ? 'orthogonal' : 'curve',
+          scope: draft.scope === 'all' || draft.scope === 'selection' ? draft.scope : defaultScope };
       }
     } catch { /* Ignore obsolete session drafts. */ }
-    return readCanvasLayoutOptions();
+    return { ...readCanvasLayoutOptions(), scope: defaultScope };
   });
-  const [scope, setScope] = useState<'all' | 'selection'>(selectedIds.length ? 'selection' : 'all');
+  const { scope, ...options } = draft;
   const [error, setError] = useState<string>();
   const ids = scope === 'selection' ? selectedIds : undefined;
   const selectionKey = [...selectedIds].sort().join('\0');
@@ -76,6 +84,7 @@ export default function CanvasLayoutPanel({ flow: rf }: { flow: ReactFlowInstanc
     useCanvasEditing.getState().setLayoutOpen(false);
     void rf.setViewport(originalViewport.current, { duration: 150 });
   };
+  useImperativeHandle(ref, () => ({ close }));
   const cancel = () => { useUiStore.getState().setDraft(draftKey, ''); close(); };
   useDismissableLayer({ open: true, refs: [panel], onDismiss: reason => {
     cancel();
@@ -97,9 +106,9 @@ export default function CanvasLayoutPanel({ flow: rf }: { flow: ReactFlowInstanc
     pending.current?.cancel();
     useCanvasEditing.getState().setLayoutPreview(null);
   }, []);
-  const change = <K extends keyof CanvasLayoutOptions>(key: K, value: CanvasLayoutOptions[K]) => {
-    const next = { ...options, [key]: value };
-    setOptions(next);
+  const change = <K extends keyof LayoutDraft>(key: K, value: LayoutDraft[K]) => {
+    const next = { ...draft, [key]: value };
+    setDraft(next);
     useUiStore.getState().setDraft(draftKey, JSON.stringify(next), true);
     setError(undefined);
     invalidate();
@@ -164,9 +173,7 @@ export default function CanvasLayoutPanel({ flow: rf }: { flow: ReactFlowInstanc
       <button type="button" onClick={close} className="flex h-7 w-7 -mr-1 items-center justify-center rounded-control text-ink-muted hover:bg-wash hover:text-ink transition-colors focus-visible:outline-2 focus-visible:outline-accent" aria-label={t('common.close')}><X size={16} /></button>
     </div>
     <div className="canvas-layout-fields">
-      <LayoutChoices name="scope" label={t('canvasLayout.scope')} value={scope} onChange={(value) => {
-        setScope(value); setError(undefined); invalidate();
-      }} choices={[
+      <LayoutChoices name="scope" label={t('canvasLayout.scope')} value={scope} onChange={(value) => change('scope', value)} choices={[
         { value: 'all', label: t('canvasLayout.all') },
         { value: 'selection', label: t('canvasLayout.selection'), disabled: !selectedIds.length },
       ]} />

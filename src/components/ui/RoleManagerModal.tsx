@@ -49,8 +49,8 @@ function Row({ role, onCommit, onRemove }: {
         {role.builtin && <span className="text-control text-ink-faint bg-wash px-1.5 py-0.5 rounded-tag shrink-0">{t('roles.builtin')}</span>}
         <button
           onClick={() => { setEditing(false); onRemove(role); }}
-          title={t('common.delete')}
-          className="text-ink-faint hover:text-red-500 w-6 h-6 rounded-control flex items-center justify-center transition-colors shrink-0"
+          aria-label={t('actions.deleteRole')}
+          className="w-6 h-6 rounded-control flex items-center justify-center transition-colors shrink-0 object-action-danger" data-icon-only
         >
           <Trash2 size={13} strokeWidth={1.75} />
         </button>
@@ -100,7 +100,7 @@ export default function RoleManagerModal() {
         <div className="flex items-center gap-2 px-5 py-3 border-b border-line shrink-0">
           <span className="text-section font-semibold text-ink">{t('roles.managerTitle')}</span>
           <span className="text-control text-ink-faint flex-1">{t('roles.hint')}</span>
-          <button onClick={() => setOpen(false)} className="text-ink-faint hover:text-ink w-7 h-7 rounded-control hover:bg-wash flex items-center justify-center transition-colors shrink-0">
+          <button onClick={() => setOpen(false)} aria-label={t('common.close')} className="text-ink-faint hover:text-ink w-7 h-7 rounded-control hover:bg-wash flex items-center justify-center transition-colors shrink-0">
             <X size={15} strokeWidth={1.75} />
           </button>
         </div>

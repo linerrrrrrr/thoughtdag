@@ -22,15 +22,14 @@ export function NodeDetailControls({ nodeId }: { nodeId: string }) {
   const locked = node.data.detailLevel;
   return <fieldset className="min-w-0 space-y-2" data-node-detail-controls={nodeId}>
     <legend className="text-control font-medium text-ink">{t('detail.node')}</legend>
-    <p className="truncate text-control text-ink-muted" title={getNodeDisplayName(node.data, t('ctx.unnamedNode'))}>{getNodeDisplayName(node.data, t('ctx.unnamedNode'))}</p>
+    <p className="truncate text-control text-ink-muted" title={getNodeDisplayName(node.data, t('ctx.unnamedNode'))} data-tooltip-overflow>{getNodeDisplayName(node.data, t('ctx.unnamedNode'))}</p>
     <button type="button" className={`${optionClass} w-full ${optionState(!locked)}`} aria-pressed={!locked}
       onClick={() => setNodeDetail(nodeId)} data-node-detail="auto">
       <LockKeyholeOpen size={13} />{t('detail.follow')}
     </button>
     <div className="grid grid-cols-3 gap-1" role="group" aria-label={t('detail.node')}>
       {DETAIL_LEVELS.map((level) => <button key={level} type="button" className={`${optionClass} ${optionState(locked === level)}`}
-        aria-pressed={locked === level} onClick={() => setNodeDetail(nodeId, level)} data-node-detail={level}
-        title={t('detail.lockHint')}>
+        aria-pressed={locked === level} onClick={() => setNodeDetail(nodeId, level)} data-node-detail={level}>
         {locked === level && <LockKeyhole size={12} />}{t(`detail.${level}`)}
       </button>)}
     </div>
@@ -50,16 +49,16 @@ export default function CanvasDetailControl({ openPing = 0 }: { openPing?: numbe
   const detail = useUiStore((state) => state.canvasDetail);
   const setDetail = useUiStore((state) => state.setCanvasDetail);
   const selectedId = useStore((state) => state.selectedNodeId);
-  const position = useCanvasPanelPosition(open, 'left');
+  const position = useCanvasPanelPosition(open, 'right');
   useDismissableLayer({ open, refs: [trigger, panel], onDismiss: reason => {
     setOpen(false);
     if (reason === 'escape') restoreCanvasToolbarFocus(trigger.current);
   }, dismissOnFocusOutside: true, restoreFocus: false });
   return <>
     <button ref={trigger} type="button" onClick={() => setOpen((value) => !value)} aria-expanded={open}
-      aria-controls="canvas-detail-panel" aria-label={t('detail.title')} title={`${t('detail.global')} · ${t(`detail.${detail}`)}`}
+      aria-controls="canvas-detail-panel" aria-label={`${t('detail.title')} · ${t(`detail.${detail}`)}`} title={`${t('detail.global')} · ${t(`detail.${detail}`)}`}
       className="canvas-toolbar-button canvas-toolbar-secondary canvas-toolbar-icon"
-      data-active={detail !== 'auto' || undefined}
+      data-setting-active={detail !== 'auto' || undefined}
       data-canvas-detail-trigger>
       <ListFilter size={16} strokeWidth={1.75} /><span className="canvas-toolbar-label">{t('detail.toolbarLabel')}</span>
     </button>

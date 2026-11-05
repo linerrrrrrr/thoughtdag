@@ -35,7 +35,7 @@ export default function DiagnosticsPanel({ onLocate, openPing = 0, showTrigger =
   const t = useT();
   const [requestedOpen, setOpen] = useState(false);
   const open = useCanvasToolCard('diagnostics', requestedOpen, () => setOpen(false));
-  const panelPosition = useCanvasPanelPosition(open, 'left');
+  const panelPosition = useCanvasPanelPosition(open, 'right');
   const [findings, setFindings] = useState<Finding[]>([]);
   const ref = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -76,6 +76,7 @@ export default function DiagnosticsPanel({ onLocate, openPing = 0, showTrigger =
           <button
             onClick={() => onLocate(f.nodeIds[0])}
             title={t('diag.locate')}
+            aria-label={t('diag.locate')}
             className="w-6 h-6 rounded-control text-ink-faint hover:text-accent hover:bg-wash flex items-center justify-center transition-colors"
           >
             <Crosshair size={13} strokeWidth={1.75} />
@@ -85,7 +86,8 @@ export default function DiagnosticsPanel({ onLocate, openPing = 0, showTrigger =
           <button
             onClick={() => fix(f)}
             title={t('diag.fix')}
-            className="w-6 h-6 rounded-control text-ink-faint hover:text-red-500 hover:bg-red-50 flex items-center justify-center transition-colors"
+            aria-label={t('diag.fix')}
+            className="w-6 h-6 rounded-control flex items-center justify-center transition-colors object-action-danger" data-icon-only
           >
             <Trash2 size={13} strokeWidth={1.75} />
           </button>
@@ -103,6 +105,7 @@ export default function DiagnosticsPanel({ onLocate, openPing = 0, showTrigger =
             open ? 'border-accent/40 text-accent' : 'border-line text-ink-faint hover:bg-wash'
           }`}
           title={t('toolbar.diagnose')}
+          aria-label={t('toolbar.diagnose')}
         >
           <Stethoscope size={15} strokeWidth={1.75} />
         </button>

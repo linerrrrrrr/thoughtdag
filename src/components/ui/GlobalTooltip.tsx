@@ -2,14 +2,33 @@ import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import './GlobalTooltip.css';
 
-// Global fast tooltips: the browser's native title delay (~1s) is fixed and
-// sluggish. This layer watches every [title] in the app, shows a styled tip
-// after 350ms, and suppresses the native one by stashing the attribute
-// while hovered. The attribute is restored on mouseout AND on mousedown —
-// so anything that queries [title=...] right after a click (tests,
-// accessibility tools) always finds it in place.
+// Only supplement what the surface already communicates. Conditional titles
+// are suppressed natively too; hiding our own popup alone would still leave
+// a delayed browser tooltip. Restore titles when the interaction ends.
 
 const SHOW_DELAY_MS = 350;
+
+function hasClippedContent(element: HTMLElement): boolean {
+  return [element, ...element.querySelectorAll<HTMLElement>('*')].some(candidate => {
+    if (!candidate.getClientRects().length) return false;
+    const style = getComputedStyle(candidate);
+    const clipsX = /hidden|clip/.test(style.overflowX);
+    const clipsY = /hidden|clip/.test(style.overflowY);
+    return (clipsX && candidate.scrollWidth > candidate.clientWidth + 1)
+      || (clipsY && candidate.scrollHeight > candidate.clientHeight + 1);
+  });
+}
+
+function shouldShow(element: HTMLElement): boolean {
+  // The library owns these controls and their accessible names. Keep its
+  // zoom behavior intact while avoiding explanations of a familiar + / −.
+  if (element.matches('.react-flow__controls-zoomin, .react-flow__controls-zoomout')) return false;
+  const overflowOnly = element.hasAttribute('data-tooltip-overflow');
+  const iconOnly = element.hasAttribute('data-tooltip-icon-only');
+  if (!overflowOnly && !iconOnly) return true;
+  return (overflowOnly && hasClippedContent(element))
+    || (iconOnly && !element.innerText?.trim());
+}
 
 export interface TooltipDetails {
   title: string;
@@ -76,23 +95,20 @@ export default function GlobalTooltip() {
       const text = el.getAttribute('title') ?? el.dataset.tipStash ?? '';
       if (!text.trim()) return;
       current = el;
-      // Keep the native title available as an accessible-name fallback for
-      // keyboard focus; only pointer hover needs native-tooltip suppression.
-      if (!keyboard) {
-        // Icon controls may use title as their only accessible name. Preserve
-        // that name while suppressing the browser tooltip, without replacing
-        // any explicit label or text supplied by the component.
-        if (el.matches('button, a[href], [role="button"], [role="menuitem"]')
+      // Legacy icon controls may still rely on title for their name. Preserve
+      // that fallback for both keyboard and pointer interactions.
+      if (el.matches('button, a[href], [role="button"], [role="menuitem"]')
           && !el.hasAttribute('aria-label') && !el.hasAttribute('aria-labelledby')
-          && !el.innerText.trim() && !el.querySelector('img[alt]:not([alt=""]), svg title')) {
-          el.setAttribute('aria-label', text);
-          addedLabel = { element: el, value: text };
-        }
-        el.dataset.tipStash = text; el.removeAttribute('title');
+          && !el.innerText?.trim() && !el.querySelector('img[alt]:not([alt=""]), svg title')) {
+        el.setAttribute('aria-label', text);
+        addedLabel = { element: el, value: text };
       }
+      el.dataset.tipStash = text;
+      el.removeAttribute('title');
       timer = window.setTimeout(() => {
         if (current !== el || !el.isConnected) return;
-        if (!keyboard) el.removeAttribute('title'); // a React re-render may have put it back
+        el.removeAttribute('title'); // a React re-render may have put it back
+        if (!shouldShow(el)) return;
         const descriptions = (el.getAttribute('aria-describedby') ?? '').split(/\s+/).filter(Boolean);
         el.setAttribute('aria-describedby', [...new Set([...descriptions, tipId])].join(' '));
         const rect = el.getBoundingClientRect();

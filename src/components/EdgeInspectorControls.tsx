@@ -20,7 +20,7 @@ export function EdgeRelationOptions({ value, canContinue = true, batch = false, 
       data-selected={value === relation} data-disabled={relation === 'continue' && !canContinue}>
       <input type="radio" name={name} value={relation} checked={value === relation}
         disabled={relation === 'continue' && !canContinue}
-        data-edge-relation={batch ? undefined : relation} data-batch-edge-relation={batch ? relation : undefined}
+        data-connection-relation={relation} data-edge-relation={batch ? undefined : relation} data-batch-edge-relation={batch ? relation : undefined}
         onChange={() => onChange(relation)} />
       <span><strong>{t(relation === 'continue' ? 'edgeEditor.continue' : 'edgeEditor.reference')}</strong>
         <span className="edge-inspector-relation-hint">{t(relation === 'continue' ? 'edgeEditor.continueHint' : 'edgeEditor.referenceHint')}</span></span>
@@ -36,7 +36,7 @@ export function EdgeRouteOptions({ value, batch = false, onChange }: {
   const t = useT();
   return <div className="edge-inspector-routes" role="group" aria-label={t('edgeEditor.route')}>
     {routes.map(({ value: route, label, path }) => <button type="button" key={route}
-      data-edge-route={batch ? undefined : route} data-batch-edge-route={batch ? route : undefined}
+      data-connection-route={route} data-edge-route={batch ? undefined : route} data-batch-edge-route={batch ? route : undefined}
       aria-pressed={value === route} onClick={() => onChange(route)}>
       <svg width="60" height="32" viewBox="0 0 60 32" fill="none" aria-hidden="true">
         <path d={path} stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useReactFlow, useUpdateNodeInternals, type NodeProps } from '@xyflow/react';
-import { BookOpen, ExternalLink, FileText, Link2, Link2Off, Loader2, Paperclip, RefreshCw, StickyNote, Trash2, X } from 'lucide-react';
+import { BookOpen, ExternalLink, FileText, Link2, Link2Off, Loader2, Paperclip, Pencil, RefreshCw, StickyNote, Trash2, X } from 'lucide-react';
 import type { Attachment, ThoughtNode as ThoughtNodeType } from '../types';
 import { useStore } from '../store';
 import { useNodeDetail } from '../lib/node-detail';
@@ -184,15 +184,14 @@ export default function ContentNode({ id, data, selected }: NodeProps<ThoughtNod
     // a link. The footprint stays (edge anchors must not shift); only the
     // centered seal renders.
     return (
-      <div data-node-detail-level="compact" data-node-detail-locked={data.detailLevel || undefined} className={`material-${kind} drag-handle cursor-grab active:cursor-grabbing w-full h-full min-w-[340px] flex items-center justify-center ${selected || selectedNodeId === id ? 'glyph-selected' : ''}`}
+      <div data-node-detail-level="compact" data-node-detail-locked={data.detailLevel || undefined} className={`material-${kind} drag-handle w-full h-full min-w-[340px] flex items-center justify-center ${selected || selectedNodeId === id ? 'glyph-selected' : ''}`}
         onClick={(event) => { if (!event.ctrlKey && !event.metaKey && !event.shiftKey) setSelectedNodeId(id); }} data-glyph-node data-selection-sized={data.keepOverviewHeight || undefined}
         onDoubleClick={(e) => {
           e.stopPropagation();
           // documents open where they are read; notes zoom to working scale
           if (kind === 'file' || kind === 'link' || fixedDetail) useUiStore.getState().setReaderNodeId(id);
           else rf.setCenter((nodePos?.x ?? 0) + 200, (nodePos?.y ?? 0) + 120, { zoom: 1, duration: 300 });
-        }}
-        title={`${t(kind === 'file' ? 'glyph.file' : kind === 'link' ? 'glyph.link' : 'glyph.note')}\n${kind === 'file' ? (attachments[0]?.name ?? '') : kind === 'link' ? (data.linkTitle || data.linkUrl || '') : data.question.replace(/\s+/g, ' ').slice(0, 120)}`}>
+        }}>
         <NodeOverview name={nodeName} source={nodeNameSource} compact icon={headerIcon} variant={kind} fileTypes={kind === 'file' ? fileTypes : undefined} />
         <NodeConnectionHandles id={id} isTargetAllowed={false} muted large />
       </div>
@@ -219,7 +218,7 @@ export default function ContentNode({ id, data, selected }: NodeProps<ThoughtNod
         data-content-plaque={kind}
         data-node-detail-level="summary" data-node-detail-locked={data.detailLevel || undefined}
       >
-        <div className="drag-handle cursor-grab active:cursor-grabbing overflow-hidden">
+        <div className="drag-handle overflow-hidden">
           <NodeOverview
             name={nodeName}
             source={nodeNameSource}
@@ -257,7 +256,7 @@ export default function ContentNode({ id, data, selected }: NodeProps<ThoughtNod
       {/* Pure source: material feeds context, nothing flows INTO it — hence no target handle. */}
 
       {/* header: drag handle + identity + linked state + delete */}
-      <div className="material-header flex items-center justify-between px-surface-inset py-section-gap border-b cursor-grab active:cursor-grabbing drag-handle shrink-0">
+      <div className="material-header flex items-center justify-between px-surface-inset py-section-gap border-b drag-handle shrink-0">
         <div className="flex items-center gap-2 min-w-0">
           {headerIcon}
           <span className="text-control font-medium material-label">{materialLabel}</span>
@@ -269,7 +268,7 @@ export default function ContentNode({ id, data, selected }: NodeProps<ThoughtNod
               onClick={openClipSource}
               title={t('content.clipSourceTitle')}
               data-clip-source
-              className="text-control font-mono text-warm bg-warm/10 hover:bg-warm/20 px-1.5 py-0.5 rounded-tag truncate max-w-[180px] transition-colors shrink"
+              className="nodrag nopan text-control font-mono text-warm bg-warm/10 hover:bg-warm/20 px-1.5 py-0.5 rounded-tag truncate max-w-[180px] transition-colors shrink"
             >
               {clipSourceName} &middot; p.{clipAnchor!.page}
             </button>
@@ -280,7 +279,16 @@ export default function ContentNode({ id, data, selected }: NodeProps<ThoughtNod
             </span>
           )}
         </div>
-        <div className="flex items-center gap-1 shrink-0">
+        <div className="nodrag nopan flex items-center gap-1 shrink-0">
+          {kind === 'note' && !editing && !isViewerMode && <button
+            type="button"
+            onClick={(event) => { event.stopPropagation(); startEditing(); }}
+            aria-label={t('content.editNote')}
+            data-note-edit
+            className="text-ink-faint hover:text-accent rounded-control w-6 h-6 flex items-center justify-center transition-colors"
+          >
+            <Pencil size={13} strokeWidth={1.75} />
+          </button>}
           <button
             onClick={(e) => { e.stopPropagation(); useUiStore.getState().setReaderNodeId(id); }}
             title={t('reader.open')}
@@ -302,7 +310,8 @@ export default function ContentNode({ id, data, selected }: NodeProps<ThoughtNod
           )}
           {!isViewerMode && <button
             onClick={(e) => { e.stopPropagation(); deleteNode(id); }}
-            className="text-ink-faint hover:text-red-500 rounded-control w-6 h-6 flex items-center justify-center transition-colors"
+            aria-label={t('actions.deleteNode')}
+            className="rounded-control w-6 h-6 flex items-center justify-center transition-colors object-action-danger" data-icon-only
           >
             <Trash2 size={13} strokeWidth={1.75} />
           </button>}
@@ -315,8 +324,8 @@ export default function ContentNode({ id, data, selected }: NodeProps<ThoughtNod
           the canvas zooms in); when the card is resized the body becomes the
           scroll region (wheel scrolls text, not zoom) */}
       <div className="p-surface-inset nodrag flex-1 min-h-0 flex flex-col" style={kind === 'note' && !resized ? { maxHeight: NOTE_BODY_MAX } : undefined}>
-      <div className="flex-1 min-h-0 overflow-y-auto nowheel" data-content-body>
-        {data.displayName && <div className="mb-surface-inset text-title font-semibold text-ink" title={nodeNameSource} data-node-name>{nodeName}</div>}
+      <div className="flex-1 min-h-0 overflow-y-auto nowheel cursor-text" data-content-body>
+        {data.displayName && <div className="mb-surface-inset text-title font-semibold text-ink" title={nodeNameSource} data-tooltip-overflow={nodeNameSource === nodeName || undefined} data-node-name>{nodeName}</div>}
         {/* a quote from the why layer says where it came from, above its text */}
         {kind === 'note' && data.recallSource && (
           <div className="text-meta text-ink-faint font-mono truncate mb-1.5" title={data.recallSource.file} data-recall-source>
@@ -344,7 +353,6 @@ export default function ContentNode({ id, data, selected }: NodeProps<ThoughtNod
             <div
               onDoubleClick={startEditing}
               className="markdown-body text-body text-ink cursor-text nopan"
-              title={t('content.noteEditTitle')}
             >
               {data.question
                 ? <Markdown>{data.question}</Markdown>
@@ -396,7 +404,6 @@ export default function ContentNode({ id, data, selected }: NodeProps<ThoughtNod
                   <img
                     src={`data:${att.type};base64,${att.content}`}
                     alt={att.name}
-                    title={att.extractedText ? att.extractedText.slice(0, 400) : undefined}
                     className="w-full rounded-content border border-line/60"
                   />
                   {att.isExtracting ? (
@@ -425,6 +432,7 @@ export default function ContentNode({ id, data, selected }: NodeProps<ThoughtNod
                   )}
                   <button
                     onClick={(e) => { e.stopPropagation(); removeAttachment(id, att.id); }}
+                    aria-label={t('actions.removeAttachment')}
                     className="absolute top-1.5 right-1.5 bg-ink/60 text-white rounded-control w-6 h-6 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
                   >
                     <X size={13} strokeWidth={2} />
@@ -460,7 +468,7 @@ export default function ContentNode({ id, data, selected }: NodeProps<ThoughtNod
                 <div key={att.id} className="material-file-row group">
                   <FileIdentity name={att.name} />
                   <div className="min-w-0 flex-1">
-                    <button type="button" onClick={(e) => { e.stopPropagation(); useUiStore.getState().setReaderNodeId(id); }} className="material-file-name text-left hover:text-accent" title={att.name}>{att.name}</button>
+                    <button type="button" onClick={(e) => { e.stopPropagation(); useUiStore.getState().setReaderNodeId(id); }} className="material-file-name text-left hover:text-accent" title={att.name} data-tooltip-overflow>{att.name}</button>
                     <div className="material-file-meta">
                       {fileSizeLabel(att.size) && <span>{fileSizeLabel(att.size)}</span>}
                       {att.isExtracting && <span className="text-accent">{t('attach.extracting')}</span>}

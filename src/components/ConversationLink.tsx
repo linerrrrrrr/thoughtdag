@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type AnchorHTMLAttributes } from 'react';
 import { createPortal } from 'react-dom';
-import { Copy, ExternalLink, FileText, FolderOpen, Link as LinkIcon, X } from 'lucide-react';
+import { ClipboardCopy, ExternalLink, FileText, FolderOpen, X } from 'lucide-react';
 import { useT, fmt } from '../i18n';
 import { localTargetOf, localFileHref, basenameOf, safeMarkdownUrl, type LocalTarget } from '../lib/local-target';
 import { openLocalPath } from '../lib/local-path';
@@ -23,9 +23,9 @@ function FilePreview({ value, onClose }: { value: Preview; onClose: () => void }
     <div ref={ref} className="file-preview" role="dialog" aria-modal="true" aria-label={t('local.preview')} data-file-preview>
       <header>
         <FileText size={17} />
-        <div className="file-preview-heading"><strong>{basenameOf(value.target.path)}</strong><span title={value.target.path}>{value.target.path}</span></div>
+        <div className="file-preview-heading"><strong>{basenameOf(value.target.path)}</strong><span title={value.target.path} data-tooltip-overflow>{value.target.path}</span></div>
         <button type="button" title={t('local.reveal')} aria-label={t('local.reveal')} onClick={() => void reveal(value.target.path)}><FolderOpen size={17} /></button>
-        <button type="button" title={t('common.close')} aria-label={t('common.close')} data-file-preview-close onClick={onClose}><X size={18} /></button>
+        <button type="button" aria-label={t('common.close')} data-file-preview-close onClick={onClose}><X size={18} /></button>
       </header>
       {value.truncated && <div className="file-preview-notice">{t('local.previewTruncated')}</div>}
       <pre tabIndex={0} className="file-preview-content" aria-label={basenameOf(value.target.path)}>{value.text.split('\n').map((line, i) =>
@@ -111,10 +111,10 @@ export function ConversationLink({ base, ...props }: AnchorHTMLAttributes<HTMLAn
       <button type="button" role="menuitem" onClick={() => action(() => void open())}>{target ? <FileText size={15} /> : <ExternalLink size={15} />}{t(target ? 'local.open' : 'local.openLink')}</button>
       {target && <>
         <button type="button" role="menuitem" onClick={() => action(() => void reveal(target.path))}><FolderOpen size={15} />{t('local.reveal')}</button>
-        <button type="button" role="menuitem" onClick={() => action(() => void copy(target.path))}><Copy size={15} />{t('local.copyPath')}</button>
-        <button type="button" role="menuitem" onClick={() => action(() => void copy(basenameOf(target.path)))}><FileText size={15} />{t('local.copyName')}</button>
+        <button type="button" role="menuitem" onClick={() => action(() => void copy(target.path))}><ClipboardCopy size={15} />{t('local.copyPath')}</button>
+        <button type="button" role="menuitem" onClick={() => action(() => void copy(basenameOf(target.path)))}><ClipboardCopy size={15} />{t('local.copyName')}</button>
       </>}
-      <button type="button" role="menuitem" onClick={() => action(() => void copy(linkHref))}><LinkIcon size={15} />{t('local.copyLink')}</button>
+      <button type="button" role="menuitem" onClick={() => action(() => void copy(linkHref))}><ClipboardCopy size={15} />{t('local.copyLink')}</button>
     </div>, document.body)}
     {preview && <FilePreview value={preview} onClose={() => { setPreview(null); anchor.current?.focus({ preventScroll: true }); }} />}
   </>;

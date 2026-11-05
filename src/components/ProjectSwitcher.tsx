@@ -107,7 +107,7 @@ export default function ProjectSwitcher({ onSwitched, children }: { onSwitched: 
       <div className="canvas-toolbar canvas-toolbar-main">
         <button
           onClick={() => setOpen(!open)}
-          title={active?.name} aria-label={active?.name} aria-expanded={open}
+          title={active?.name} data-tooltip-overflow data-tooltip-icon-only aria-label={active?.name} aria-expanded={open}
           disabled={switching}
           className="canvas-toolbar-button canvas-project-button disabled:opacity-60"
         >
@@ -191,7 +191,6 @@ export default function ProjectSwitcher({ onSwitched, children }: { onSwitched: 
                       </div>
                     </div>
                     <button
-                      title={t('switcher.rename')}
                       aria-label={t('switcher.rename')}
                       className="opacity-0 group-hover:opacity-100 text-ink-faint hover:text-ink p-1 rounded-control transition-all shrink-0"
                       onClick={(e) => { e.stopPropagation(); setRenamingId(p.id); setRenameValue(p.name); }}
@@ -199,8 +198,8 @@ export default function ProjectSwitcher({ onSwitched, children }: { onSwitched: 
                       <Pencil size={14} strokeWidth={1.75} />
                     </button>
                     <button
-                      title={t('common.delete')}
-                      className="opacity-0 group-hover:opacity-100 text-ink-faint hover:text-red-500 p-1 rounded-control transition-all shrink-0"
+                      aria-label={t('confirm.deleteCanvasTitle')}
+                      className="opacity-0 group-hover:opacity-100 p-1 rounded-control transition-all shrink-0 object-action-danger" data-icon-only
                       onClick={(e) => { e.stopPropagation(); void confirmDelete(p); }}
                     >
                       <Trash2 size={14} strokeWidth={1.75} />

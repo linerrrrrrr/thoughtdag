@@ -162,6 +162,7 @@ export default function AttachmentsSection({
                     <button
                       onClick={() => useUiStore.getState().setReaderNodeId(nodeId)}
                       title={t('attach.openReader')}
+                      aria-label={t('attach.openReader')}
                       className="text-ink-faint hover:text-accent transition-colors shrink-0"
                     >
                       <BookOpen size={14} strokeWidth={1.75} />
@@ -206,6 +207,7 @@ export default function AttachmentsSection({
                       <button
                         onClick={() => useUiStore.getState().setReaderNodeId(sourceNodeId)}
                         title={t('attach.openReader')}
+                        aria-label={t('attach.openReader')}
                         className="text-ink-faint hover:text-accent transition-colors shrink-0"
                       >
                         <BookOpen size={14} strokeWidth={1.75} />

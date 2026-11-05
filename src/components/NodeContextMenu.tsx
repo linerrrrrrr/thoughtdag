@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useDismissableLayer } from '../lib/use-dismissable-layer';
 import { useInlineEditDismiss } from '../lib/use-inline-edit-dismiss';
 import { createPortal } from 'react-dom';
-import { Archive, ArchiveRestore, BookOpen, Copy, Files, FlaskConical, GitFork, Layers, Pencil, RefreshCw, StickyNote, Trash2 } from 'lucide-react';
+import { Archive, ArchiveRestore, BookOpen, ClipboardCopy, Files, FlaskConical, GitFork, Layers, Pencil, RefreshCw, StickyNote, Trash2 } from 'lucide-react';
 import { useStore } from '../store';
 import { useUiStore, confirmDialog, toast } from '../lib/ui-store';
 import { recapToNote } from '../lib/recap';
@@ -119,11 +119,11 @@ export default function NodeContextMenu({ x, y, nodeId, onClose }: {
         <button className={item} onClick={run(() => {
           void navigator.clipboard.writeText(copyText).then(() => toast('success', ti('ctx.copied')));
         })}>
-          <Copy size={14} strokeWidth={1.75} className={icon} /> {t('ctx.copyContent')}
+          <ClipboardCopy size={14} strokeWidth={1.75} className={icon} /> {t(isContent ? 'ctx.copyContent' : 'actions.copyResponse')}
         </button>
       )}
       <button className={item} onClick={run(() => useStore.getState().duplicateNode(nodeId))}>
-        <Files size={14} strokeWidth={1.75} className={icon} /> {t('ctx.duplicate')}
+        <Files size={14} strokeWidth={1.75} className={icon} /> {t('common.duplicate')}
       </button>
       <button className={item} onClick={run(() => useStore.getState().setArchived([nodeId], !node.data.archived))}>
         {node.data.archived
@@ -141,7 +141,7 @@ export default function NodeContextMenu({ x, y, nodeId, onClose }: {
       )}
       <div className="h-px bg-line my-1" />
       <button
-        className="w-full text-left px-3 py-2 text-control text-red-600 hover:bg-red-50 transition-colors flex items-center gap-2.5"
+        className="w-full text-left px-3 py-2 text-control object-action-danger transition-colors flex items-center gap-2.5"
         onClick={run(() => {
           void confirmDialog({
             title: ti('confirm.deleteNodesTitle'),

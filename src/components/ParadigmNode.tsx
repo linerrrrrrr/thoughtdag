@@ -54,7 +54,7 @@ export default function ParadigmNode({ id, data }: NodeProps<ThoughtNodeType>) {
       onFocusCapture={() => setEditing(true)}
       onBlurCapture={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) setEditing(false); }}>
       <NodeConnectionHandles id={id} muted large={overview} />
-      {overview ? <div className="drag-handle cursor-grab active:cursor-grabbing" onDoubleClick={(event) => {
+      {overview ? <div className="drag-handle" onDoubleClick={(event) => {
         event.stopPropagation();
         setEditing(true);
         requestAnimationFrame(() => root.current?.querySelector('input')?.focus());
@@ -64,14 +64,14 @@ export default function ParadigmNode({ id, data }: NodeProps<ThoughtNodeType>) {
       </div> : <>
 
       {/* header: drag handle + kind switcher + delete */}
-      <div className="flex shrink-0 items-center justify-between px-5 py-2 border-b border-line/60 cursor-grab active:cursor-grabbing drag-handle">
+      <div className="flex shrink-0 items-center justify-between px-5 py-2 border-b border-line/60 drag-handle">
         <div className="flex gap-1">
           {KINDS.map(({ kind: k, icon: Icon, labelKey }) => (
             <button
               key={k}
               onClick={(e) => { e.stopPropagation(); patch({ stepKind: k }); }}
               title={t(labelKey as Parameters<typeof t>[0])}
-              className={`w-7 h-7 rounded-control flex items-center justify-center transition-colors ${
+              className={`nodrag nopan w-7 h-7 rounded-control flex items-center justify-center transition-colors ${
                 kind === k ? (k === 'human' ? 'bg-warm/15 text-warm' : 'bg-accent/10 text-accent') : 'text-ink-faint hover:bg-wash'
               }`}
             >
@@ -84,7 +84,8 @@ export default function ParadigmNode({ id, data }: NodeProps<ThoughtNodeType>) {
         </div>
         <button
           onClick={(e) => { e.stopPropagation(); deleteNode(id); }}
-          className="text-ink-faint hover:text-red-500 rounded-control w-6 h-6 flex items-center justify-center transition-colors"
+          aria-label={t('actions.deleteNode')}
+          className="nodrag nopan rounded-control w-6 h-6 flex items-center justify-center transition-colors object-action-danger" data-icon-only
         >
           <Trash2 size={13} strokeWidth={1.75} />
         </button>
@@ -114,7 +115,8 @@ export default function ParadigmNode({ id, data }: NodeProps<ThoughtNodeType>) {
 
         {/* persona chips: prepend a template persona into the prompt */}
         {kind === 'prompt' && (
-          <div className="flex flex-wrap gap-1" title={t('paradigm.insertPersona')}>
+          <div className="flex flex-wrap gap-1">
+            <span className="basis-full text-control text-ink-faint">{t('paradigm.insertPersona')}</span>
             {effectiveRoles(lang, useUiStore.getState().roleLib).map((tpl) => (
               <button
                 key={tpl.id}
@@ -132,7 +134,7 @@ export default function ParadigmNode({ id, data }: NodeProps<ThoughtNodeType>) {
           <div className="flex items-center gap-1.5">
             <button
               onClick={() => patch({ webSearch: !data.webSearch })}
-              title={data.webSearch ? t('toolbar.webSearch') : t('toolbar.webSearchOff')}
+              aria-pressed={!!data.webSearch}
               className={`text-control px-2 py-1 rounded-control transition-colors flex items-center gap-1 ${
                 data.webSearch ? 'bg-accent/10 text-accent' : 'bg-wash text-ink-faint hover:bg-line'
               }`}
@@ -141,7 +143,7 @@ export default function ParadigmNode({ id, data }: NodeProps<ThoughtNodeType>) {
             </button>
             <button
               onClick={() => patch({ scholarSearch: !data.scholarSearch })}
-              title={data.scholarSearch ? t('toolbar.scholarSearch') : t('toolbar.scholarSearchOff')}
+              aria-pressed={!!data.scholarSearch}
               className={`text-control px-2 py-1 rounded-control transition-colors flex items-center gap-1 ${
                 data.scholarSearch ? 'bg-accent/10 text-accent' : 'bg-wash text-ink-faint hover:bg-line'
               }`}

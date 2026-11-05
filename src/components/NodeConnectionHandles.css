@@ -1,6 +1,15 @@
 .react-flow__handle.tdag-auto-handle {
   transition: opacity 120ms ease;
 }
+.react-flow__handle.tdag-auto-handle.tdag-port-used {
+  opacity: .45;
+}
+.react-flow__node:hover .react-flow__handle.tdag-port-used,
+.react-flow__node:focus-within .react-flow__handle.tdag-port-used,
+.react-flow__node.context-source-active .react-flow__handle.tdag-port-used,
+.react-flow__node.context-target-active .react-flow__handle.tdag-port-used {
+  opacity: 1;
+}
 .react-flow__handle.tdag-auto-handle.tdag-port-candidate {
   opacity: 0;
   pointer-events: none;

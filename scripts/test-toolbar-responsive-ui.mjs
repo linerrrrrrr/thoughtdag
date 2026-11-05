@@ -56,6 +56,13 @@ const leftDock = async name => {
   assert.ok(Math.abs(panel.y - header.bottom - 16) <= 1, `${name} opens below toolbar`);
   assert.ok(panel.x + panel.width <= page.viewportSize().width - 15, `${name} fits the viewport`);
 };
+const rightDock = async name => {
+  const panel = await item(name).boundingBox();
+  const { header, right } = await geometry();
+  assert.ok(Math.abs(panel.x + panel.width - right.right) <= 1, `${name} aligns with right toolbar`);
+  assert.ok(Math.abs(panel.y - header.bottom - 16) <= 1, `${name} opens below toolbar`);
+  assert.ok(panel.x >= 16 && panel.x + panel.width <= page.viewportSize().width - 15, `${name} fits the viewport`);
+};
 try {
   await page.goto(process.env.APP_URL ?? 'http://127.0.0.1:5193');
   await page.waitForFunction(() => window.__rf && window.__ui && window.__store?.persist.hasHydrated());
@@ -101,7 +108,7 @@ try {
           assert.equal(await item('menu-quick-layout').count(), 0);
           assert.equal(await item('layout-entry').isVisible(), true);
           assert.equal(await item('toolbar-more-panel').locator('[data-layout-entry]').count(), 0);
-          await leftDock('toolbar-more-panel');
+          await rightDock('toolbar-more-panel');
           await page.screenshot({ path: `${output}/menu-${width}.png` });
           await page.keyboard.press('Escape');
         }
@@ -138,35 +145,34 @@ try {
   assert.equal(await page.locator('.canvas-tool-panel:visible').count(), 1);
   assert.equal(await item('node-format-panel').count(), 0);
   assert.ok(search.y >= row.header.bottom + 8);
-  await leftDock('canvas-search');
+  await rightDock('canvas-search');
   assert.deepEqual((await geometry()).header, row.header);
   await page.keyboard.press('Escape');
   await item('canvas-search').waitFor({ state: 'hidden' });
-  await item('node-format-panel').waitFor();
+  assert.equal(await item('node-format-panel').count(), 0);
+  assert.deepEqual(await page.evaluate(() => window.__store.getState().selectedNodeIds), ['a']);
   assert.equal(await item('focus-panel').isVisible(), true);
   console.log('PASS search opens independently and Escape preserves the reader');
 
   await page.setViewportSize({ width: 390, height: 1000 });
   await page.waitForTimeout(300);
   await page.evaluate(() => window.__store.getState().setSelectedNodeIds(['a', 'b']));
-  await item('selection-target-picker').selectOption('edges');
-  assert.equal(await page.evaluate(() => window.__store.getState().edges[0].selected), true);
-  await item('selection-target-picker').selectOption('nodes');
+  assert.equal(await item('selection-target-control').count(), 0, 'node selection without a marquee does not expose object-type controls');
   assert.deepEqual(await page.evaluate(() => window.__store.getState().selectedNodeIds.sort()), ['a', 'b']);
   await item('toolbar-more').click();
   assert.deepEqual(await page.evaluate(() => window.__store.getState().selectedNodeIds.sort()), ['a', 'b']);
   await page.keyboard.press('Escape');
   await openDetail();
-  await leftDock('canvas-detail-panel');
+  await rightDock('canvas-detail-panel');
   await page.keyboard.press('Escape');
   assert.equal(await item('toolbar-more').evaluate(el => el === document.activeElement), true);
   await item('toolbar-more').click();
   await item('menu-frames').click();
   await item('frame-nav-panel').waitFor();
-  await leftDock('frame-nav-panel');
+  await rightDock('frame-nav-panel');
   await page.keyboard.press('Escape');
   assert.equal(await item('toolbar-more').evaluate(el => el === document.activeElement), true);
-  console.log('PASS compact selection retains its semantics; overflow tools restore keyboard focus');
+  console.log('PASS ordinary selection keeps the toolbar unchanged; overflow tools restore keyboard focus');
 
   await page.setViewportSize({ width: 1760, height: 1000 });
   await page.evaluate(() => window.__ui.getState().setPanelOpen(false));

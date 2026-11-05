@@ -16,7 +16,7 @@ await mkdir(output, { recursive: true });
 const errors = [], writes = [], checks = [];
 page.on('pageerror', error => errors.push(error.message));
 await context.route('**/api/**', route => {
-  if (['GET', 'HEAD', 'OPTIONS'].includes(route.request().method())) return route.continue();
+  if (['GET', 'HEAD', 'OPTIONS'].includes(route.request().method())) return route.fulfill({ json: { models: [], providers: [], sessions: [], topics: [] } });
   writes.push(route.request().url()); return route.abort();
 });
 await page.addInitScript(() => {
@@ -36,11 +36,10 @@ const fixture = async (zoom = 0.6) => {
         isCollapsed: false, isEditing: false, isEditingResponse: false, isLoading: false, isRoot: index === 0, isBranch: false,
         highlights: [], attachments: [], excludedAttachmentIds: [], includedAttachmentIds: [], tokenCount: 10, roleMode: 'inherit' } }));
     const edges = [{ id: 'ab', source: 'a', target: 'b', data: { label: 'first', route: 'curve' } }, { id: 'bc', source: 'b', target: 'c', data: { label: 'second', isCrossLink: true, route: 'orthogonal' } }, { id: 'co', source: 'c', target: 'outside', data: {} }].map(edge => ({ ...edge, type: 'smoothstep', sourceHandle: 'continue', targetHandle: 'top' }));
-    window.__canvasEditing.getState().setSelectionTarget('nodes');
-    window.__canvasEditing.getState().setSelectionRegion(null);
-    window.__canvasEditing.getState().setEdgeId(null);
+    window.__canvasEditing.getState().reset();
     window.__store.setState({ nodes, edges, selectedNodeIds: ['a', 'b', 'c'], selectedNodeId: null, history: [{ nodes, edges }], historyIndex: 0 });
     window.__ui.setState({ panelOpen: false, tutorialOpen: false, releaseNotesOpen: false, autoRefreshPaused: true, drafts: {} });
+    window.__canvasEditing.getState().requestProperties();
   });
   await page.waitForTimeout(600);
   await page.evaluate(zoom => window.__rf.setViewport({ x: 80, y: 50, zoom }, { duration: 0 }), zoom);
@@ -60,6 +59,15 @@ const drag = async (axis, dx, dy, cancel = false) => {
 };
 const near = (a, b) => assert.ok(Math.abs(a - b) < 1, `${a} != ${b}`);
 const undo = () => page.evaluate(() => window.__store.getState().undo());
+// Batch editing fixtures establish a confirmed scope; pointer hit-testing is
+// covered separately by test-selection-region-ui.mjs.
+const scopeFixture = (nodeIds, edgeIds) => page.evaluate(({ nodeIds, edgeIds }) => {
+  const state = window.__store.getState();
+  window.__canvasEditing.getState().setSelectionRegion(null);
+  state.setSelectedNodeIds(nodeIds);
+  window.__store.setState({ edges: state.edges.map(edge => ({ ...edge, selected: false })) });
+  window.__canvasEditing.getState().setSelectionRegion({ rect: { x: 80, y: 100, width: 600, height: 1300 }, nodeIds, edgeIds, frameIds: [] });
+}, { nodeIds, edgeIds });
 try {
   await page.goto(process.env.APP_URL ?? 'http://127.0.0.1:5196', { waitUntil: 'networkidle' });
   await page.waitForFunction(() => window.__store?.persist.hasHydrated() && window.__rf && window.__ui);
@@ -85,6 +93,7 @@ try {
   await undo(); assert.deepEqual(await geometry(), tall);
   check('keyboard resize has a single undo step');
 
+  await scopeFixture(['a', 'b', 'c'], ['ab', 'bc']);
   await page.locator('[data-selection-target="edges"]').click();
   assert.deepEqual(await selectedEdges(), ['ab', 'bc']);
   assert.deepEqual(await page.evaluate(() => window.__store.getState().selectedNodeIds), []);
@@ -125,7 +134,9 @@ try {
 
   await page.locator('[data-batch-edge-label]').fill('');
   await page.locator('[data-batch-edge-inspector]').getByRole('button', { name: '关闭', exact: true }).click();
-  await page.evaluate(() => window.__store.setState(state => ({ edges: state.edges.map(edge => ({ ...edge, selected: ['ab', 'bc'].includes(edge.id) })) })));
+  assert.deepEqual(await selectedEdges(), ['ab', 'bc']);
+  assert.equal(await page.locator('[data-selection-properties]').count(), 0);
+  await page.evaluate(() => window.__canvasEditing.getState().requestProperties());
   assert.equal(await page.locator('[data-batch-edge-label]').inputValue(), '');
   assert.deepEqual(await edges(), appliedEdges);
   await page.locator('[data-batch-edge-apply]').click();
@@ -139,15 +150,17 @@ try {
   await page.screenshot({ path: `${output}/edges-dark.png` });
 
   await fixture(0.4);
-  await page.locator('[data-selection-target="edges"]').click();
   await page.mouse.click(1050, 700);
   const point = await page.locator('.react-flow__edge[data-id="ab"] .react-flow__edge-path').evaluate(path => {
     const point = path.getPointAtLength(path.getTotalLength() / 2).matrixTransform(path.getScreenCTM());
     return { x: point.x, y: point.y };
   });
-  await page.mouse.move(point.x - 24, point.y - 24); await page.mouse.down();
-  await page.mouse.move(point.x + 24, point.y + 24, { steps: 10 }); await page.mouse.up();
+  // At overview zoom the node's minimum rendered height leaves a short gap.
+  // Start in that gap, outside both the node and the edge-label hit area.
+  await page.mouse.move(point.x - 38, point.y - 8); await page.mouse.down();
+  await page.mouse.move(point.x + 38, point.y + 8, { steps: 10 }); await page.mouse.up();
   await page.waitForTimeout(150);
+  await page.locator('[data-selection-target="edges"]').click();
   assert.deepEqual(await selectedEdges(), ['ab']);
   assert.deepEqual(await page.evaluate(() => window.__store.getState().selectedNodeIds), []);
   check('a marquee across the visible middle of a curve selects only the line, without its endpoints');
@@ -159,7 +172,9 @@ try {
   await page.keyboard.down('Control'); await page.mouse.click(other.x, other.y); await page.keyboard.up('Control');
   assert.deepEqual(await selectedEdges(), ['ab']);
   check('Ctrl-click adds and removes lines without replacing the whole selection');
-  await page.mouse.click(1050, 700); await page.keyboard.press('Control+a');
+  await scopeFixture(['a', 'b', 'c'], ['ab', 'bc']);
+  await page.locator('[data-selection-target="edges"]').click();
+  await page.keyboard.press('Control+a');
   assert.deepEqual(await selectedEdges(), ['ab', 'bc', 'co']);
   check('select all follows the line selection mode');
 
@@ -187,17 +202,22 @@ try {
   assert.deepEqual(clampCheck, { sizes: [[1200, 600], [860, 300], [600, 300], [600, 300]], minimum: [[480, 240], [340, 300]], positions: true, content: true });
   check('mixed ratios, minimum/maximum sizes, unselected nodes and live streamed content are preserved');
 
+  assert.equal(await page.locator('[data-selection-target-control]').count(), 0);
+  await scopeFixture(['a', 'b', 'c', 'outside'], ['ab', 'bc', 'co']);
+  await page.locator('[data-selection-target="edges"]').click();
   await page.locator('[data-selection-target="nodes"]').click();
   assert.deepEqual(await page.evaluate(() => [...window.__store.getState().selectedNodeIds].sort()), ['a', 'b', 'c', 'outside']);
   assert.deepEqual(await selectedEdges(), []);
   await page.locator('[data-selection-target="edges"]').click();
-  check('switching back selects line endpoints for node editing and clears the opposite object type');
+  check('switching a confirmed scope restores its node candidates and clears the opposite object type');
 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.locator('[data-toolbar-more]').click();
   await page.getByRole('button', { name: 'English', exact: true }).click();
   await page.keyboard.press('Escape');
-  await page.getByRole('complementary', { name: 'Edit selected lines', exact: true }).waitFor();
+  await page.locator('[data-selection-target="nodes"]').click();
+  await page.locator('[data-selection-target="edges"]').click();
+  await page.getByRole('complementary', { name: 'Selection properties', exact: true }).waitFor();
   for (const selector of ['[data-selection-target-control]', '[data-batch-edge-inspector]']) {
     const box = await page.locator(selector).boundingBox(); assert.ok(box && box.x >= 0 && box.x + box.width <= 390 && box.y >= 0 && box.y + box.height <= 844);
   }

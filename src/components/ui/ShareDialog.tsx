@@ -1,7 +1,7 @@
 import { useDismissableLayer } from '../../lib/use-dismissable-layer';
 import { useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Check, Copy, Eye, FileJson, ImageDown, X } from 'lucide-react';
+import { Check, ClipboardCopy, Eye, FileDown, ImageDown, X } from 'lucide-react';
 import { useUiStore } from '../../lib/ui-store';
 import { exportActiveProjectJson } from '../../lib/export';
 import { useT } from '../../i18n';
@@ -10,7 +10,7 @@ import { useT } from '../../i18n';
 // whole graph (minted against the public viewer origin, so a link made on
 // the desktop app opens for anyone); long by design, so the right channels
 // are the ones tolerant of long URLs (chat, mail, docs) and the right
-// control is Copy. LANE 2: one door — the thought-map console owns the
+// control is ClipboardCopy. LANE 2: one door — the thought-map console owns the
 // whole feed story (picture, caption, platform buttons) so entries stay few.
 export default function ShareDialog() {
   const url = useUiStore((s) => s.shareDialogUrl);
@@ -59,7 +59,7 @@ export default function ShareDialog() {
             }`}
             data-share-copy
           >
-            {copied ? <Check size={13} strokeWidth={2} /> : <Copy size={13} strokeWidth={1.75} />}
+            {copied ? <Check size={13} strokeWidth={2} /> : <ClipboardCopy size={13} strokeWidth={1.75} />}
             {copied ? t('viewer.copied') : t('viewer.copyLink')}
           </button>
         </div>
@@ -72,10 +72,11 @@ export default function ShareDialog() {
           <button
             onClick={() => void exportActiveProjectJson({ sharedReadonly: readonlyMark })}
             data-share-fullfile
+            title={t('share.fullFile')}
             className="text-control px-3 py-1.5 rounded-control border border-line text-ink-muted hover:bg-wash hover:text-ink transition-colors flex items-center gap-1.5"
           >
-            <FileJson size={13} strokeWidth={1.75} />
-            {t('share.fullFile')}
+            <FileDown size={13} strokeWidth={1.75} />
+            {t('share.exportCanvas')}
           </button>
           <label className="flex items-center gap-1.5 text-control text-ink-muted cursor-pointer select-none">
             <input type="checkbox" checked={readonlyMark} onChange={(e) => setReadonlyMark(e.target.checked)}

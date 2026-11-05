@@ -33,12 +33,14 @@ export default function RoleLine({
         <UserCog size={13} strokeWidth={1.75} className="shrink-0" />
         {effective ? (
           isViewerMode ? (
-            <span className="text-warm/90 truncate max-w-[45%] shrink-0" title={effective}>{effective}</span>
+            <span className="text-warm/90 truncate max-w-[45%] shrink-0" title={effective} data-tooltip-overflow>{effective}</span>
           ) : (
             <button
               onClick={() => onEdit(own ?? effective)}
               className="text-warm hover:underline decoration-dotted underline-offset-2 truncate font-medium max-w-[45%] shrink-0"
-              title={`${effective} — ${t('role.edit')}`}
+              title={effective}
+              data-tooltip-overflow
+              aria-label={`${t('role.edit')} · ${effective}`}
               data-role-line-edit
             >
               {effective}

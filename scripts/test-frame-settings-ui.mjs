@@ -35,11 +35,12 @@ const readNodes = () => page.evaluate(() => window.__store.getState().nodes);
 const readEdges = () => page.evaluate(() => window.__store.getState().edges);
 const selected = () => page.evaluate(() => [...window.__store.getState().selectedNodeIds].sort());
 const node = id => page.locator(`.react-flow__node[data-id="frame-test-${id}"]`);
-const field = name => page.locator(`[data-node-format-field="${name}"]`);
+const field = (name, kind) => page.locator(`${kind ? `[data-selection-section="${kind}"] ` : ''}[data-node-format-field="${name}"]`);
 const expandInspector = async () => {
-  await page.locator('[data-node-format-panel]').waitFor();
+  await page.locator('[data-selection-properties]').waitFor();
   const reopen = page.locator('[data-node-format-reopen]');
   if (await reopen.count()) await reopen.click();
+  await page.locator('[data-node-format-panel]').waitFor();
 };
 const geometry = nodes => nodes.map(({ id, position, width, height }) => ({ id, position, width, height }));
 const screenshot = name => page.screenshot({ path: `${outputDir}/${name}.png` });
@@ -103,7 +104,7 @@ const marquee = async (box, modifiers = []) => {
   for (const key of [...modifiers].reverse()) await page.keyboard.up(key);
   await page.waitForTimeout(120);
 };
-const commit = async (name, value) => { await field(name).fill(String(value)); await field(name).press('Enter'); await page.waitForTimeout(100); };
+const commit = async (name, value, kind) => { await field(name, kind).fill(String(value)); await field(name, kind).press('Enter'); await page.waitForTimeout(100); };
 const blur = () => page.evaluate(() => document.activeElement instanceof HTMLElement && document.activeElement.blur());
 const dragFrame = async (id, dx = 66, dy = 39) => {
   const b = await node(id).locator('.drag-handle').first().boundingBox();
@@ -116,11 +117,12 @@ const dragFrame = async (id, dx = 66, dy = 39) => {
 };
 const panelFits = async () => {
   await page.waitForFunction(() => {
-    const panel = document.querySelector('[data-node-format-panel]')?.getBoundingClientRect();
+    const panel = document.querySelector('[data-selection-properties]')?.getBoundingClientRect();
     const header = document.querySelector('[data-canvas-header]')?.getBoundingClientRect();
-    return panel && (!header || panel.top >= header.bottom + 4);
+    return panel && (!header || panel.top >= header.bottom + 4)
+      && panel.left >= 0 && panel.right <= innerWidth + 1 && panel.bottom <= innerHeight + 1;
   });
-  const b = await page.locator('[data-node-format-panel]').boundingBox();
+  const b = await page.locator('[data-selection-properties]').boundingBox();
   const h = await page.locator('[data-canvas-header]').boundingBox();
   const v = page.viewportSize();
   assert.ok(b && b.x >= 0 && b.y >= 0 && b.x + b.width <= v.width + 1 && b.y + b.height <= v.height + 1);
@@ -246,21 +248,22 @@ try {
   check('fit-to-content and numeric dimensions change only frame boundaries and support undo');
 
   await fixture(['f1', 'c']);
-  await page.locator('[data-format-scope="nodes"]').click();
-  assert.equal(await field('x').count(), 0, 'Mixed selection never exposes per-kind single coordinates');
-  await commit('width', 460);
+  assert.equal(await page.locator('[data-format-scope]').count(), 0, 'Type sections do not hide one another behind a scope switch');
+  assert.equal(await page.locator('[data-selection-section="nodes"]').count(), 1);
+  assert.equal(await page.locator('[data-selection-section="frames"]').count(), 1);
+  assert.equal(await field('x', 'nodes').count(), 1, 'A single node retains its own explicitly scoped coordinates');
+  assert.equal(await field('x', 'frames').count(), 1, 'A single frame retains its own explicitly scoped coordinates');
+  await commit('width', 460, 'nodes');
   let mixed = await readNodes();
   assert.equal(mixed.find(n => n.id === 'frame-test-c').width, 460);
   assert.equal(mixed[0].width, 1000);
-  await page.locator('[data-format-scope="frames"]').click();
-  assert.equal(await field('x').count(), 0);
-  await commit('width', 1100);
+  await commit('width', 1100, 'frames');
   mixed = await readNodes();
   assert.equal(mixed[0].width, 1100);
   assert.equal(mixed.find(n => n.id === 'frame-test-c').width, 460);
   assert.deepEqual(await selected(), ['frame-test-c', 'frame-test-f1']);
   await screenshot('desktop-mixed');
-  check('mixed selections edit explicit object types without unifying frame and card dimensions or coordinates');
+  check('mixed selections show both type sections and edit only the stated node or frame scope');
 
   await fixture(['f1', 'f2'], true);
   assert.equal(await title.count(), 0, 'Multiple frame names are not unified');
@@ -302,6 +305,21 @@ try {
   assert.ok(!exported.includes('研究分区'), 'Frame titles never masquerade as answers in Markdown export');
   assert.equal(exported.split('研究材料 C').length - 1, 1, 'Repeated selected IDs are exported once');
   check('Markdown export uses explicit content nodes and excludes frame metadata and duplicate IDs');
+
+  const mixedBeforeDelete = await readNodes();
+  await page.locator('[data-selection-delete-nodes]').click();
+  await page.getByRole('alertdialog').getByRole('button').last().click();
+  assert.ok((await readNodes()).some(node => node.id === 'frame-test-f1'), 'Node actions never delete the selected frame');
+  assert.ok(!(await readNodes()).some(node => node.id === 'frame-test-c'));
+  assert.equal((await readNodes()).length, mixedBeforeDelete.length - 1);
+  await blur(); await page.keyboard.press('Control+z');
+  assert.deepEqual(geometry(await readNodes()), geometry(mixedBeforeDelete), 'Scoped node deletion is one undo step');
+  await select(['f1', 'c']);
+  await page.locator('[data-frame-delete]').click();
+  await page.getByRole('alertdialog').getByRole('button').last().click();
+  assert.ok((await readNodes()).some(node => node.id === 'frame-test-c'), 'Frame actions never delete selected contents');
+  assert.ok(!(await readNodes()).some(node => node.id === 'frame-test-f1'));
+  check('node and frame deletion retain independent explicit scopes inside a mixed selection');
 
   await fixture(['f1']);
   const beforeDelete = await readNodes(), originalEdges = await readEdges();
@@ -347,23 +365,25 @@ try {
   await page.locator('[data-toolbar-more]').click();
   await page.getByRole('button', { name: 'English', exact: true }).click();
   await page.keyboard.press('Escape');
+  await select([]); await select(['f1']);
   await panelFits(); await screenshot('english-single');
   await page.locator('[data-toolbar-more]').click();
   await page.getByRole('button', { name: '中文', exact: true }).click();
   await page.keyboard.press('Escape');
+  await select([]); await select(['f1']);
   await page.evaluate(async () => (await import('/src/lib/appearance.ts')).useAppearance.getState().setLighting('light'));
   await page.setViewportSize({ width: 390, height: 844 });
   await panelFits(); await screenshot('mobile-single');
   await page.locator('[data-frame-delete]').scrollIntoViewIfNeeded();
   let deletionBox = await page.locator('[data-frame-delete]').boundingBox();
-  let panelBox = await page.locator('[data-node-format-panel]').boundingBox();
+  let panelBox = await page.locator('[data-selection-properties]').boundingBox();
   assert.ok(deletionBox.y + deletionBox.height <= panelBox.y + panelBox.height);
   await screenshot('mobile-actions');
   await page.setViewportSize({ width: 800, height: 500 });
   await panelFits();
   await page.locator('[data-frame-copy="contents"]').scrollIntoViewIfNeeded();
   deletionBox = await page.locator('[data-frame-copy="contents"]').boundingBox();
-  panelBox = await page.locator('[data-node-format-panel]').boundingBox();
+  panelBox = await page.locator('[data-selection-properties]').boundingBox();
   assert.ok(deletionBox.y >= panelBox.y && deletionBox.y + deletionBox.height <= panelBox.y + panelBox.height);
   await screenshot('short-actions');
   check('frame inspector remains usable across themes, languages, mobile and short viewport with all actions reachable');

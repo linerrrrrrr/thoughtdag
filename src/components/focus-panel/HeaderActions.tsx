@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import { useDismissableLayer } from '../../lib/use-dismissable-layer';
-import { Archive, ArchiveRestore, ClipboardCopy, Copy, Ellipsis, FileDown, GitFork, MessageSquarePlus, RefreshCw, Split, Square, Trash2, Undo2 } from 'lucide-react';
+import { Archive, ArchiveRestore, ClipboardCopy, Files, Ellipsis, FileDown, GitFork, MessageSquarePlus, RefreshCw, Split, Square, Trash2, Undo2 } from 'lucide-react';
 import { useStore } from '../../store';
 import { contextChainMarkdown, downloadMarkdown, copyText } from '../../lib/export';
 import ModelPicker from '../ui/ModelPicker';
@@ -79,7 +79,7 @@ export default function HeaderActions({ nodeId, isLoading }: { nodeId: string; i
         <button
           onClick={() => stopGeneration(nodeId)}
           data-agent-stop
-          title={t('actions.stop')}
+          aria-label={t('actions.stop')}
           className="text-white bg-red-500 hover:bg-red-600 rounded-control w-8 h-8 flex items-center justify-center transition-colors"
         >
           <Square size={12} strokeWidth={1.75} fill="currentColor" />
@@ -88,7 +88,7 @@ export default function HeaderActions({ nodeId, isLoading }: { nodeId: string; i
       {!agent && <ModelPicker compact value={nodeModel} onChange={(m) => setNodeModel(nodeId, m)} />}
 
       <div ref={menuRef} className="relative">
-        <button ref={menuButtonRef} onClick={() => setMenuOpen((v) => !v)} title={t('panel.more')} aria-label={t('panel.more')} aria-expanded={menuOpen} className={`${iconBtn} ${menuOpen ? 'bg-line/50 text-ink' : ''}`}>
+        <button ref={menuButtonRef} onClick={() => setMenuOpen((v) => !v)} aria-label={t('panel.more')} aria-expanded={menuOpen} className={`${iconBtn} ${menuOpen ? 'bg-line/50 text-ink' : ''}`}>
           <Ellipsis size={17} strokeWidth={1.75} />
         </button>
         {menuOpen && (
@@ -110,10 +110,10 @@ export default function HeaderActions({ nodeId, isLoading }: { nodeId: string; i
               <GitFork size={15} strokeWidth={1.75} /> {t('actions.regenBranch')}
             </button>
             <button className={menuItem} onClick={() => { setMenuOpen(false); duplicateNode(nodeId); }}>
-              <Copy size={15} strokeWidth={1.75} /> {t('common.duplicate')}
+              <Files size={15} strokeWidth={1.75} /> {t('common.duplicate')}
             </button>
             <button className={menuItem} onClick={() => { setMenuOpen(false); downloadMarkdown(contextChainMarkdown(nodeId)); }} title={t('actions.exportTitle')}>
-              <FileDown size={15} strokeWidth={1.75} /> {t('common.exportMd')}
+              <FileDown size={15} strokeWidth={1.75} /> {t('common.export')}
             </button>
             <button className={menuItem} onClick={() => { setMenuOpen(false); void copyText(contextChainMarkdown(nodeId)); }} title={t('actions.copyTitle')}>
               <ClipboardCopy size={15} strokeWidth={1.75} /> {t('actions.copyMd')}
@@ -125,7 +125,7 @@ export default function HeaderActions({ nodeId, isLoading }: { nodeId: string; i
             )}
             <div className="border-t border-line my-1" />
             <button
-              className="w-full text-left px-3 py-2 text-control text-red-500 hover:bg-red-50 transition-colors flex items-center gap-2"
+              className="w-full text-left px-3 py-2 text-control object-action-danger transition-colors flex items-center gap-2"
               onClick={() => { setMenuOpen(false); deleteNode(nodeId); }}
             >
               <Trash2 size={15} strokeWidth={1.75} /> {t('common.delete')}

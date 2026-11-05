@@ -81,6 +81,7 @@ export default function RecallSection({ nodeId, items, meta, recallOn, progress 
                   onClick={() => toggle(i.id)}
                   className="shrink-0 text-ink-faint hover:text-ink w-6 h-6 rounded-control flex items-center justify-center hover:bg-wash transition-colors"
                   title={i.excluded ? t('panel.recallInclude') : t('panel.recallExclude')}
+                  aria-label={i.excluded ? t('panel.recallInclude') : t('panel.recallExclude')}
                   data-recall-item-toggle
                 >
                   {i.excluded ? <RotateCcw size={12} strokeWidth={1.75} /> : <X size={12} strokeWidth={1.75} />}

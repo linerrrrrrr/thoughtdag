@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronDown, ChevronRight, Download, ExternalLink, Loader2, RefreshCw, Sparkles, Tags } from 'lucide-react';
+import { ChevronDown, ChevronRight, FileDown, ExternalLink, Loader2, RefreshCw, Sparkles, Tags } from 'lucide-react';
 import { useUiStore, toast } from '../../lib/ui-store';
 import { useInlineEditDismiss } from '../../lib/use-inline-edit-dismiss';
 import { whyBridge, hasWhy } from '../../lib/why-bridge';
@@ -62,7 +62,7 @@ function ProfileDrawer({ kind, onClose }: { kind: ProfileKind; onClose: () => vo
         {doc.updatedAt && <span className="text-meta text-ink-faint">{fmt(t('mp.updatedAt'), { d: day(doc.updatedAt) })}</span>}
         <span className="flex-1" />
         {!editing && <button onClick={() => { setText(useUiStore.getState().drafts[draftKey] ?? lines.join('\n')); setEditing(true); }} className="text-control px-2.5 py-1 rounded-control border border-line hover:bg-wash" data-mp-profile-edit>{t('mp.edit')}</button>}
-        {lines.length > 0 && <button onClick={() => downloadFile(`thoughtdag-${kind}.json`, JSON.stringify({ kind, lines, notes: doc.notes ?? [], updatedAt: doc.updatedAt, changelog: doc.changelog }, null, 2), 'application/json')} className="text-control px-2 py-1 rounded-control text-ink-faint hover:text-ink flex items-center gap-1" title={t('memory.exportTitle')}><Download size={12} strokeWidth={1.75} /> {t('mp.export')}</button>}
+        {lines.length > 0 && <button onClick={() => downloadFile(`thoughtdag-${kind}.json`, JSON.stringify({ kind, lines, notes: doc.notes ?? [], updatedAt: doc.updatedAt, changelog: doc.changelog }, null, 2), 'application/json')} title={t('mp.export')} className="text-control px-2 py-1 rounded-control text-ink-faint hover:text-ink flex items-center gap-1"><FileDown size={12} strokeWidth={1.75} /> {t('common.export')}</button>}
         <button onClick={onClose} className="text-control px-2 py-1 rounded-control text-ink-muted hover:bg-wash">{t('common.close')}</button>
       </div>
       {editing ? (
@@ -342,7 +342,7 @@ export default function MemoryPage({ query, onOpened }: { query: string; onOpene
                           {topicInfo.topics.map((tp) => <option key={tp.id} value={tp.id}>{tp.name}</option>)}
                         </select>
                       )}
-                      <button onClick={() => removeInbox(i.id)} className="text-control text-ink-faint hover:text-red-500 px-1.5 py-0.5 rounded-tag">{t('mp.discard')}</button>
+                      <button onClick={() => removeInbox(i.id)} aria-label={t('actions.deleteInboxItem')} className="text-control object-action-danger px-1.5 py-0.5 rounded-tag">{t('common.delete')}</button>
                     </div>
                   ))}
                 </div>

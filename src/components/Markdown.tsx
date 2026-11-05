@@ -9,7 +9,7 @@ import rehypeSanitize, { defaultSchema } from 'rehype-sanitize';
 import type { Schema } from 'hast-util-sanitize';
 import type { Element, ElementContent, Root, RootContent } from 'hast';
 import type { PluggableList } from 'unified';
-import { Check, Code2, Copy, Workflow } from 'lucide-react';
+import { Check, Code2, ClipboardCopy, Workflow } from 'lucide-react';
 import { fuzzyHighlightRegex, proseClipper } from '../lib/highlight-match';
 import { useT, fmt } from '../i18n';
 import { localPathOf, basenameOf } from '../lib/local-path';
@@ -86,10 +86,10 @@ function CodePre(props: React.HTMLAttributes<HTMLPreElement>) {
           setCopied(true);
           setTimeout(() => setCopied(false), 1600);
         }}
-        title={t('common.copyCode')}
+        aria-label={t('common.copyCode')}
         className="absolute top-1.5 right-1.5 w-6 h-6 rounded-control bg-card border border-line text-ink-faint hover:text-accent flex items-center justify-center opacity-0 group-hover/pre:opacity-100 transition-opacity nodrag nopan"
       >
-        {copied ? <Check size={12} strokeWidth={2} className="text-green-600" /> : <Copy size={12} strokeWidth={1.75} />}
+        {copied ? <Check size={12} strokeWidth={2} className="text-green-600" /> : <ClipboardCopy size={12} strokeWidth={1.75} />}
       </button>
     </div>
   );

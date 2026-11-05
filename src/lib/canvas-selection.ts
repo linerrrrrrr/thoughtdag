@@ -1,7 +1,20 @@
 import type { ThoughtNode } from '../types';
-import { nodeRect, type Rect } from './frames';
+import { isFrameNode, nodeRect, type Rect } from './frames';
 
-/** Marquees select each fully enclosed node. */
+export type SelectionTarget = 'nodes' | 'edges' | 'frames';
+
+/** Rendering nodes are storage carriers; frames are a separate product type. */
+export function partitionSpatialSelection(nodes: ThoughtNode[], ids: string[]) {
+  const selected = new Set(ids);
+  const nodeIds: string[] = [], frameIds: string[] = [];
+  for (const node of nodes) {
+    if (!selected.has(node.id) || node.hidden || node.selectable === false) continue;
+    (isFrameNode(node) ? frameIds : nodeIds).push(node.id);
+  }
+  return { nodeIds, frameIds };
+}
+
+/** Marquees find fully enclosed spatial objects before classifying them. */
 export function enclosedSelection(nodes: ThoughtNode[], rect: Rect, baseIds: string[] = []): string[] {
   const enclosed = new Set(nodes.filter(node => {
     if (node.hidden || node.selectable === false) return false;
@@ -17,8 +30,8 @@ export function enclosedSelection(nodes: ThoughtNode[], rect: Rect, baseIds: str
 type Point = { x: number; y: number };
 export type EdgeSelectionPath = { id: string; points: Point[] };
 
-/** The confirmed area keeps both object sets, including an empty active set. */
-export type SelectionRegion = { rect: Rect; nodeIds: string[]; edgeIds: string[] };
+/** The confirmed area keeps all three candidate sets, including empty types. */
+export type SelectionRegion = { rect: Rect; nodeIds: string[]; edgeIds: string[]; frameIds: string[] };
 
 /** Sample the rendered route once per marquee, including curves and detours. */
 export function snapshotEdgeSelectionPaths(root: Element): EdgeSelectionPath[] {

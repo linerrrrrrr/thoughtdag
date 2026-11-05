@@ -16,11 +16,11 @@ const browser = await chromium.launch({ executablePath, headless: true });
 const context = await browser.newContext({ locale: 'zh-CN', viewport: { width: 1800, height: 1100 }, reducedMotion: 'reduce' });
 const page = await context.newPage();
 page.setDefaultTimeout(18000);
-const checks = [], errors = [], blockedWrites = [];
+const checks = [], errors = [], blockedWrites = [], failures = [];
 page.on('pageerror', (error) => errors.push(error.message));
 await page.routeWebSocket('**', (socket) => socket.close());
 await context.route('**/api/**', (route) => {
-  if (['GET', 'HEAD', 'OPTIONS'].includes(route.request().method())) return route.continue();
+  if (['GET', 'HEAD', 'OPTIONS'].includes(route.request().method())) return route.fulfill({ json: { models: [], providers: [], sessions: [], topics: [] } });
   blockedWrites.push(route.request().url());
   return route.abort('blockedbyclient');
 });
@@ -97,7 +97,11 @@ const openEdge = async (id, throughCanvas = true) => {
     const item = (await geometry()).find((e) => e.id === id);
     assert.ok(item?.click, `${id} must be rendered`);
     await page.mouse.click(item.click.x, item.click.y);
-  } else await page.evaluate((id) => window.__canvasEditing.getState().setEdgeId(id), id);
+  } else await page.evaluate((id) => {
+    window.__store.getState().setSelectedNodeIds([]);
+    window.__store.setState(state => ({ edges: state.edges.map(edge => ({ ...edge, selected: edge.id === id })) }));
+    window.__canvasEditing.getState().requestProperties();
+  }, id);
   await page.locator('[data-edge-inspector]').waitFor();
 };
 const openLayout = async () => {
@@ -119,11 +123,7 @@ const assertNaturalS = (edge) => {
   assert.ok(edge.samples.every((p, i, all) => !i || p.x >= all[i - 1].x - 0.1), `${edge.id} must not reverse into a hook`);
   assert.deepEqual(edge.hits, [], `${edge.id} must clear visible node bodies`);
 };
-const labelInput = async () => {
-  const input = page.locator('[data-edge-inspector] input[data-edge-label]');
-  if (!await input.count()) await page.locator('[data-edge-label-add]').click();
-  return input;
-};
+const labelInput = async () => page.locator('[data-selection-properties] input[data-edge-label]');
 try {
   await page.goto(appUrl, { waitUntil: 'networkidle' });
   await page.waitForFunction(() => window.__store?.persist.hasHydrated() && window.__rf && window.__ui && window.__canvasEditing);
@@ -157,7 +157,7 @@ try {
   await page.locator('[data-layout-method]').locator('label:has(input[value="layers"])').click();
   await page.locator('[data-layout-route]').locator('label:has(input[value="orthogonal"])').click();
   await page.locator('[data-layout-preview]').click();
-  await page.waitForTimeout(450);
+  await page.waitForFunction(() => window.__canvasEditing.getState().layoutPreview && !window.__canvasEditing.getState().layoutBusy);
   assert.deepEqual(await storedGraph(), beforeLayout, 'preview must not mutate persisted graph or history');
   const preview = await page.evaluate(() => ({ draft: window.__canvasEditing.getState().layoutPreview,
     visible: window.__rf.getNodes().map((n) => ({ id: n.id, position: n.position })) }));
@@ -180,7 +180,7 @@ try {
   await page.locator('[data-layout-method]').locator('label:has(input[value="chains"])').click();
   await page.locator('[data-layout-route]').locator('label:has(input[value="orthogonal"])').click();
   await page.locator('[data-layout-apply]').click();
-  await page.waitForTimeout(450);
+  await page.waitForFunction(() => !window.__canvasEditing.getState().layoutBusy && !window.__canvasEditing.getState().layoutOpen);
   const appliedLayout = await storedGraph();
   assert.ok(appliedLayout.nodes.every((n) => n.direction === 'vertical' && n.route === 'orthogonal'));
   assert.equal(appliedLayout.nodes[0].position.x, appliedLayout.nodes[1].position.x);
@@ -214,13 +214,13 @@ try {
   await (await labelInput()).fill('整理后的上下文');
   await page.waitForTimeout(250);
   assert.deepEqual(await storedGraph(), beforeEdge, 'edge draft must not write to graph');
-  assert.equal(await page.evaluate(() => window.__canvasEditing.getState().edgePreview.data.label), '整理后的上下文');
+  assert.equal(await page.evaluate(() => window.__canvasEditing.getState().edgePreviews.find(edge => edge.id === 'edge-a-b').data.label), '整理后的上下文');
   assert.notEqual((await geometry()).find((e) => e.id === 'edge-a-b').d, oldPath);
   await inspector.locator('[data-edge-cancel]').click();
   await page.waitForTimeout(180);
   assert.deepEqual(await storedGraph(), beforeEdge);
   assert.equal(await (await labelInput()).inputValue(), '');
-  assert.equal(await page.evaluate(() => window.__canvasEditing.getState().edgePreview), null);
+  assert.equal(await page.evaluate(() => window.__canvasEditing.getState().edgePreviews), null);
   check('one click opens compact inspector; route/label drafts do not write until applied');
 
   await chooseRoute('orthogonal');
@@ -295,12 +295,21 @@ try {
   assert.deepEqual(await storedGraph(), beforeIme);
   await page.evaluate(() => window.__ui.getState().setApiKeyModalOpen(true));
   await page.locator('[data-apikey-tabs]').waitFor();
+  assert.equal(await inspector.count(), 0, 'another tool card closes the property card');
   await page.keyboard.press('Escape');
   await page.locator('[data-apikey-tabs]').waitFor({ state: 'detached' });
+  assert.equal(await inspector.count(), 0, 'closing the replacement never restores the old card');
+  await openEdge('edge-a-b', false);
   assert.equal(await (await labelInput()).inputValue(), '中文输入草稿');
+  await inspector.locator('[data-edge-delete]').click();
+  await page.getByRole('alertdialog').waitFor();
+  await page.keyboard.press('Escape');
+  await page.getByRole('alertdialog').waitFor({ state: 'detached' });
+  assert.equal(await (await labelInput()).inputValue(), '中文输入草稿');
+  assert.deepEqual(await storedGraph(), beforeIme);
   await inspector.locator('[data-edge-cancel]').click();
   await inspector.getByRole('button', { name: '关闭', exact: true }).click();
-  check('edge drafts survive close/switch including empty labels; cancel, IME and nested Escape stay isolated');
+  check('edge drafts survive close/switch and card replacement; empty labels, IME and nested Escape stay isolated');
 
   for (const destination of ['content', 'port']) {
     await fixture();
@@ -332,7 +341,8 @@ try {
 
   await page.evaluate(() => {
     window.__store.setState((s) => ({ edges: [...s.edges, { id: 'feedback', source: 'c', target: 'a', type: 'smoothstep', data: { isCrossLink: true } }] }));
-    window.__canvasEditing.getState().setEdgeId('feedback');
+    window.__store.setState(state => ({ edges: state.edges.map(edge => ({ ...edge, selected: edge.id === 'feedback' })) }));
+    window.__canvasEditing.getState().requestProperties();
   });
   await inspector.waitFor();
   assert.equal(await inspector.locator('[data-edge-relation="continue"]').isDisabled(), true);
@@ -345,7 +355,8 @@ try {
         edges: s.edges.map((e) => e.id === 'edge-a-b' ? { ...e, data: kind === 'watch' ? { isWatch: true, isCrossLink: true }
           : kind === 'branch' ? { isBranchFromSelection: true } : {} } : e),
       }));
-      window.__canvasEditing.getState().setEdgeId('edge-a-b');
+      window.__store.setState(state => ({ edges: state.edges.map(edge => ({ ...edge, selected: edge.id === 'edge-a-b' })) }));
+      window.__canvasEditing.getState().requestProperties();
     }, kind);
     await inspector.waitFor();
     assert.equal(await inspector.locator('[data-edge-relation]').count(), 0);
@@ -379,6 +390,7 @@ try {
   await page.locator('[data-layout-direction]').locator('label:has(input[value="horizontal"])').click();
   await page.locator('[data-layout-method]').locator('label:has(input[value="chains"])').click();
   await page.locator('[data-layout-preview]').click();
+  await page.waitForFunction(() => window.__canvasEditing.getState().layoutPreview && !window.__canvasEditing.getState().layoutBusy);
   await page.waitForTimeout(400);
   const narrowLayoutBox = await page.locator('[data-canvas-layout-panel]').boundingBox();
   const titleUncovered = await page.locator('#canvas-layout-title').evaluate((title) => {
@@ -452,16 +464,25 @@ try {
   assert.equal(fan.length, 2);
   for (const edge of fan) assert.deepEqual(edge.hits, [], `${edge.id} must clear every node`);
   const closeSamples = fan[0].samples.slice(20, -20).filter((point) => fan[1].samples.some((other) => Math.hypot(point.x - other.x, point.y - other.y) < 3));
-  assert.ok(closeSamples.length < 30, `shared edges must separate, found ${closeSamples.length} overlapping samples`);
+  // Keep the geometry failure visible while still checking selection, compact
+  // nodes, and the read-only viewer later in this integration run.
+  if (closeSamples.length >= 30) {
+    const failure = `shared edges must separate, found ${closeSamples.length} overlapping samples`;
+    failures.push(failure); console.error(`FAIL ${failure}`);
+  }
   const beforeSelect = fan.map((edge) => edge.d);
   await openEdge('fan-2');
   await page.waitForTimeout(250);
   assert.deepEqual((await geometry()).map((edge) => edge.d), beforeSelect, 'selection must not reorder shared lanes');
   const compactPanel = await inspector.boundingBox();
-  assert.ok(compactPanel && compactPanel.height < 700, 'editor should fit its content instead of occupying the whole viewport');
+  const compactContent = await inspector.locator('[data-selection-properties-scroll]').evaluate(element => ({
+    client: element.clientHeight, content: element.scrollHeight,
+  }));
+  assert.ok(compactPanel && compactPanel.y + compactPanel.height < 1100 - 16 && compactContent.content <= compactContent.client + 1,
+    'the unified property card should fit its content without filling the available viewport');
   assert.equal(await inspector.locator('[data-edge-scope], [data-edge-context-toggle], [data-edge-context-preview]').count(), 0);
   await page.screenshot({ path: `${outputDir}/shared-curves-dark.png` });
-  check('shared curved routes separate around obstacles and keep lanes stable while selected');
+  check('shared curved routes clear obstacles and keep lanes stable while selected');
 
   await page.evaluate(() => {
     window.__canvasEditing.getState().reset();
@@ -516,12 +537,13 @@ try {
   await page.screenshot({ path: `${outputDir}/viewer-readonly.png` });
   check('shared viewer keeps labels readable while edge editing and connection handles stay read-only');
   assert.deepEqual(errors, []);
+  assert.deepEqual(failures, [], 'All geometric regression checks must pass');
 } catch (error) {
   await page.screenshot({ path: `${outputDir}/failure.png` }).catch(() => {});
-  console.error(await page.evaluate(() => ({ editor: window.__canvasEditing?.getState().edgeId,
+  console.error(await page.evaluate(() => ({ selectedEdges: window.__store?.getState().edges.filter(edge => edge.selected).map(edge => edge.id),
     layout: window.__canvasEditing?.getState().layoutOpen, alerts: [...document.querySelectorAll('[role="alert"]')].map((e) => e.textContent) })).catch(() => ({})));
   throw error;
 } finally {
-  await writeFile(`${outputDir}/results.json`, JSON.stringify({ checks, errors, blockedWrites }, null, 2));
+  await writeFile(`${outputDir}/results.json`, JSON.stringify({ checks, errors, blockedWrites, failures }, null, 2));
   await browser.close();
 }

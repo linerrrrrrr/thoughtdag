@@ -19,7 +19,7 @@ export default function RoleTemplateChips({ onPick }: { onPick: (prompt: string)
           type="button"
           onClick={() => onPick(tpl.prompt)}
           className="text-control bg-wash hover:bg-accent/10 hover:text-accent text-ink-muted px-2 py-1 rounded-tag transition-colors"
-          title={tpl.prompt.slice(0, 140) + '…'}
+          title={tpl.prompt.length > 140 ? `${tpl.prompt.slice(0, 140)}…` : tpl.prompt}
         >
           {tpl.name}
         </button>
@@ -27,7 +27,6 @@ export default function RoleTemplateChips({ onPick }: { onPick: (prompt: string)
       <button
         type="button"
         onClick={() => setRoleManagerOpen(true)}
-        title={t('roles.manageTitle')}
         className="text-control text-ink-faint hover:text-accent px-2 py-1 rounded-tag border border-dashed border-line hover:border-accent/40 transition-colors flex items-center gap-1"
       >
         <Pencil size={10} strokeWidth={1.75} /> {t('roles.manage')}
