@@ -1,8 +1,7 @@
 import type { ThoughtNode } from '../types';
 import { nodeRect, type Rect } from './frames';
-import { canvasGroupId, expandGroupSelection } from './node-groups';
 
-/** Marquees enclose whole objects; a rigid group is one selection object. */
+/** Marquees select each fully enclosed node. */
 export function enclosedSelection(nodes: ThoughtNode[], rect: Rect, baseIds: string[] = []): string[] {
   const enclosed = new Set(nodes.filter(node => {
     if (node.hidden || node.selectable === false) return false;
@@ -11,14 +10,15 @@ export function enclosedSelection(nodes: ThoughtNode[], rect: Rect, baseIds: str
       && bounds.x + bounds.width <= rect.x + rect.width
       && bounds.y + bounds.height <= rect.y + rect.height;
   }).map(node => node.id));
-  const incompleteGroups = new Set(nodes.filter(node => canvasGroupId(node) && !enclosed.has(node.id)).map(canvasGroupId));
-  const base = new Set(expandGroupSelection(nodes, baseIds));
-  return nodes.filter(node => base.has(node.id)
-    || (enclosed.has(node.id) && !incompleteGroups.has(canvasGroupId(node)))).map(node => node.id);
+  const base = new Set(baseIds);
+  return nodes.filter(node => base.has(node.id) || enclosed.has(node.id)).map(node => node.id);
 }
 
 type Point = { x: number; y: number };
 export type EdgeSelectionPath = { id: string; points: Point[] };
+
+/** The confirmed area keeps both object sets, including an empty active set. */
+export type SelectionRegion = { rect: Rect; nodeIds: string[]; edgeIds: string[] };
 
 /** Sample the rendered route once per marquee, including curves and detours. */
 export function snapshotEdgeSelectionPaths(root: Element): EdgeSelectionPath[] {

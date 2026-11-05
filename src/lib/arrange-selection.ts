@@ -31,8 +31,9 @@ function bounds(rects: ArrangeRect[]): ArrangeRect {
 }
 
 function selectionUnits(nodes: ThoughtNode[], nodeIds: string[]): Unit[] {
+  const selected = new Set(nodeIds);
   const units: Set<string>[] = [];
-  for (const id of new Set(nodeIds)) {
+  for (const id of selected) {
     const members = new Set(resolveCarriedNodeIds(nodes, [id]));
     if (!members.size) continue;
     // Shared members cannot receive two different alignment translations.
@@ -48,7 +49,7 @@ function selectionUnits(nodes: ThoughtNode[], nodeIds: string[]): Unit[] {
   }));
 }
 
-/** Count rigid objects rather than group members for menu availability. */
+/** Each selected node is independent; linked frames deduplicate carried nodes. */
 export function arrangementUnitCount(nodes: ThoughtNode[], nodeIds: string[]): number {
   return selectionUnits(nodes, nodeIds).length;
 }
@@ -178,8 +179,8 @@ export function arrangeNodes(
     }
   }
 
-  // Frames intentionally contain nodes. Existing overlaps may be improved,
-  // and rigid groups may preserve them; newly increased overlaps are refused.
+  // Frames intentionally contain nodes. Existing overlaps may be improved
+  // or preserved; newly increased overlaps are refused.
   const solid = proposed.filter((node) => node.data.stepKind !== 'frame');
   const oldRects = new Map(solid.map((node) => [node.id, rectOf(before.get(node.id)!)]));
   const newRects = new Map(solid.map((node) => [node.id, rectOf(node)]));

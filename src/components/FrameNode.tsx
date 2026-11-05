@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import { NodeResizer, useStore as useRfStore, type NodeProps } from '@xyflow/react';
 import { Link2, Link2Off } from 'lucide-react';
 import type { ThoughtNode as ThoughtNodeType } from '../types';
@@ -8,6 +8,7 @@ import { FRAME_COLORS } from '../lib/constants';
 import { useT } from '../i18n';
 import { isViewerMode } from '../lib/viewer';
 import { useInlineEditDismiss } from '../lib/use-inline-edit-dismiss';
+import { frameHeaderScale, FRAME_HEADER_INSET, FRAME_MIN_WIDTH, FRAME_MIN_HEIGHT } from '../lib/frame-sizing';
 
 // Frame: a labeled background region — THE spatial annotation. No handles
 // (it can never be wired, so it can never touch context), ignored by
@@ -23,15 +24,52 @@ export default function FrameNode({ id, data, selected }: NodeProps<ThoughtNodeT
   const t = useT();
   const setFrameProperties = useStore((s) => s.setFrameProperties);
   const setSelectedNodeId = useStore((s) => s.setSelectedNodeId);
-  // High-level info stays SCREEN-size constant: the title and carry state
-  // counter-scale against zoom-out, so region
-  // names and their controls remain readable AND operable on the map.
-  // Quantized to 0.1 steps so zooming doesn't re-render every frame.
-  const barScale = useRfStore((s) => Math.min(5, Math.max(1, Math.round(10 / s.transform[2]) / 10)));
+  const zoom = useRfStore(s => s.transform[2]);
+  const width = useRfStore(s => {
+    const node = s.nodeLookup.get(id);
+    return node?.width ?? node?.measured.width ?? FRAME_MIN_WIDTH;
+  });
+  // Read rendered geometry so previews and manual resizing use the same
+  // header boundary, without writing any measurement back to the graph.
+  const topSpace = useRfStore(s => {
+    const frame = s.nodeLookup.get(id);
+    if (!frame) return FRAME_MIN_HEIGHT;
+    const origin = frame.internals.positionAbsolute;
+    const frameWidth = frame.width ?? frame.measured.width ?? FRAME_MIN_WIDTH;
+    const frameHeight = frame.height ?? frame.measured.height ?? FRAME_MIN_HEIGHT;
+    let space = frameHeight;
+    for (const node of s.nodeLookup.values()) {
+      if (node.id === id) continue;
+      const position = node.internals.positionAbsolute;
+      const w = node.width ?? node.measured.width ?? 0;
+      const h = node.height ?? node.measured.height ?? 0;
+      if (w > 0 && h > 0 && position.x >= origin.x && position.y >= origin.y
+        && position.x + w <= origin.x + frameWidth + 0.01 && position.y + h <= origin.y + frameHeight + 0.01) {
+        space = Math.min(space, position.y - origin.y);
+      }
+    }
+    return space;
+  });
 
   const [editing, setEditing] = useState(!isViewerMode && !data.question);
   const [draft, setDraft] = useState(data.question);
   const titleRef = useRef<HTMLInputElement>(null);
+  const measureRef = useRef<HTMLSpanElement>(null);
+  const [naturalSize, setNaturalSize] = useState({ width: 160, height: 24 });
+  const label = (editing ? draft : data.question) || t('frame.titlePlaceholder');
+  useLayoutEffect(() => {
+    const element = measureRef.current;
+    if (!element) return;
+    const measure = () => {
+      const next = { width: element.scrollWidth + (isViewerMode ? 0 : 32) + 8, height: Math.max(24, element.offsetHeight) };
+      setNaturalSize(previous => previous.width === next.width && previous.height === next.height ? previous : next);
+    };
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    measure();
+    return () => observer.disconnect();
+  }, [label, editing]);
+  const barScale = frameHeaderScale(zoom, width, topSpace, naturalSize.width, naturalSize.height);
 
   const color = FRAME_COLORS[data.frameColor ?? 'gray'] ?? FRAME_COLORS.gray;
   // Carry: dragging the frame moves the nodes inside it. Absent = linked
@@ -57,11 +95,12 @@ export default function FrameNode({ id, data, selected }: NodeProps<ThoughtNodeT
       }`}
       onClick={(event) => { if (!event.ctrlKey && !event.metaKey && !event.shiftKey) setSelectedNodeId(id); }}
     >
-      {/* Title bar — drag surface; counter-scaled width keeps it spanning the frame */}
+      <span ref={measureRef} aria-hidden="true" className={`absolute invisible pointer-events-none whitespace-nowrap font-semibold ${editing ? 'text-sm' : 'text-xs'}`}>{label}</span>
+      {/* The label adapts to existing space; it never expands the region. */}
       <div
         data-frame-header
-        className="drag-handle pointer-events-auto cursor-grab active:cursor-grabbing px-5 py-2 flex items-center gap-2 min-w-0"
-        style={barScale > 1 ? { transform: `scale(${barScale})`, transformOrigin: 'top left', width: `${100 / barScale}%` } : undefined}
+        className="absolute drag-handle pointer-events-auto cursor-grab active:cursor-grabbing flex items-center gap-2 min-w-0"
+        style={{ left: FRAME_HEADER_INSET, top: FRAME_HEADER_INSET, transform: `scale(${barScale})`, transformOrigin: 'top left', width: Math.max(0, width - FRAME_HEADER_INSET * 2) / barScale }}
       >
         {editing ? (
           <input
@@ -73,17 +112,14 @@ export default function FrameNode({ id, data, selected }: NodeProps<ThoughtNodeT
             onKeyDown={(e) => { if (e.key === 'Enter' && !isImeComposing(e)) { e.preventDefault(); e.stopPropagation(); commit(); } }}
             placeholder={t('frame.titlePlaceholder')}
             autoFocus
-            className="flex-1 min-w-24 bg-transparent text-sm font-semibold text-ink-muted focus:outline-none placeholder-ink-faint nodrag"
+            className="flex-1 min-w-0 bg-transparent text-sm font-semibold text-ink-muted focus:outline-none placeholder-ink-faint nodrag"
             data-frame-title-editor
           />
         ) : (
-          /* min-w floor: on a deep zoom-out the scaled controls must not squeeze
-             the region name to nothing — the row overflows the frame edge
-             instead (the title is the higher-value signal on the map) */
           <span
             onDoubleClick={() => { if (isViewerMode) return; setDraft(data.question); setEditing(true); }}
-            className={`flex-1 min-w-24 truncate font-semibold text-ink-muted/80 select-none text-xs ${barScale > 1 ? 'normal-case' : 'uppercase tracking-wider'}`}
-            title={t('content.noteEditTitle')}
+            className="flex-1 min-w-0 truncate font-semibold text-ink-muted/80 select-none text-xs"
+            title={data.question || t('frame.titlePlaceholder')}
           >
             {data.question || <span className="text-ink-faint normal-case tracking-normal">{t('frame.titlePlaceholder')}</span>}
           </span>
@@ -114,7 +150,7 @@ export default function FrameNode({ id, data, selected }: NodeProps<ThoughtNodeT
       {/* resize handles: NO manual scaling — React Flow's autoScale already
           counter-scales them (Math.max(1/zoom, 1)), so they keep a constant
           screen size; scaling here again would compound to huge squares */}
-      <NodeResizer isVisible={selected && !isViewerMode} minWidth={280} minHeight={180} keepAspectRatio={!!data.lockAspectRatio} onResizeStart={recordStep} onResizeEnd={recordStep} lineClassName="!border-accent/40 !pointer-events-auto" handleClassName="!bg-accent !w-2.5 !h-2.5 !rounded-[2px] !pointer-events-auto" />
+      <NodeResizer isVisible={selected && !isViewerMode} minWidth={FRAME_MIN_WIDTH} minHeight={FRAME_MIN_HEIGHT} keepAspectRatio={!!data.lockAspectRatio} onResizeStart={recordStep} onResizeEnd={recordStep} lineClassName="!border-accent/40 !pointer-events-auto" handleClassName="!bg-accent !w-2.5 !h-2.5 !rounded-[2px] !pointer-events-auto" />
     </div>
   );
 }

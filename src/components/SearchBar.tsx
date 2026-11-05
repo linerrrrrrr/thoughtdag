@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useDismissableLayer } from '../lib/use-dismissable-layer';
+import { useCanvasToolCard } from '../lib/use-canvas-tool-card';
+import { useCanvasPanelPosition } from '../lib/use-canvas-panel-position';
 import { Archive, FileText, Frame, Link2, MessageSquare, Minimize2, Search, StickyNote, X } from 'lucide-react';
 import { useStore } from '../store';
 import { useUiStore } from '../lib/ui-store';
@@ -22,7 +24,7 @@ const KIND_ICON = {
 const SHOW_LIMIT = 50;
 
 export default function SearchBar({
-  open,
+  open: requestedOpen,
   onClose,
   onLocate,
 }: {
@@ -31,6 +33,8 @@ export default function SearchBar({
   onLocate: (nodeId: string) => void;
 }) {
   const t = useT();
+  const open = useCanvasToolCard('search', requestedOpen, onClose);
+  const position = useCanvasPanelPosition(open);
   const nodes = useStore((s) => s.nodes);
   const setHitIds = useUiStore((s) => s.setSearchHitIds);
   const [query, setQuery] = useState('');
@@ -94,9 +98,9 @@ export default function SearchBar({
   };
 
   return (
-    <div ref={layerRef} className="canvas-search" data-canvas-search>
-      <div className="absolute inset-x-0 top-0 bg-card border border-line rounded-overlay shadow-lg overflow-hidden">
-        <div className="flex h-12 items-center gap-2 px-3 transition-shadow focus-within:ring-1 focus-within:ring-accent/40">
+    <div ref={layerRef} className="canvas-tool-panel flex flex-col shadow-lg" style={position} data-canvas-search>
+      <div className="min-h-0 flex flex-col">
+        <div className="flex h-12 shrink-0 items-center gap-2 px-3 transition-shadow focus-within:ring-1 focus-within:ring-accent/40">
           <Search size={15} strokeWidth={1.75} className="text-ink-faint shrink-0" />
           <input
             ref={inputRef}
@@ -123,7 +127,7 @@ export default function SearchBar({
         </div>
 
         {matches.length > 0 && (
-          <ul className="border-t border-line/60 max-h-72 overflow-y-auto py-1">
+          <ul className="border-t border-line/60 min-h-0 max-h-72 overflow-y-auto py-1">
             {matches.slice(0, SHOW_LIMIT).map((m, i) => {
               const Icon = KIND_ICON[m.kind];
               const node = nodes.find((n) => n.id === m.nodeId);

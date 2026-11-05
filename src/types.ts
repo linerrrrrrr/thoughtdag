@@ -329,11 +329,13 @@ export interface ThoughtData extends Record<string, unknown> {
   // processing step (fixed prompt, context only from upstream);
   // 'note' / 'file' / 'link' = CONTENT nodes (canvas material: markdown
   // text, attachments, or a stamped web snapshot) — they never generate,
-  // feed context only via OUTGOING edges, and are ignored by autoLayout.
+  // feed context only via OUTGOING edges. Legacy autoLayout leaves them in
+  // place; explicit canvas layout includes selected material cards.
   // Legacy v1 kinds ('step'|'fanout'|'review'|'synthesis') still
   // instantiate; 'fanout' also marks fan-out placeholders.
   // 'frame' = a labeled background region (spatial annotation) — no handles,
-  // never in context, ignored by layout; the wayfinding primitive.
+  // never in context; explicit canvas layout fits selected regions to their
+  // arranged contents, while legacy autoLayout leaves them in place.
   stepKind?: 'human' | 'prompt' | 'note' | 'file' | 'link' | 'frame' | 'step' | 'fanout' | 'review' | 'synthesis';
   /** Provenance of a node imported from an external runner session (the
       continuity layer's read direction). Source sessions stay read-only;
@@ -363,10 +365,8 @@ export interface ThoughtData extends Record<string, unknown> {
   linkSnapshotHtml?: string;
   frameColor?: string; // frame node: fixed-palette color token (wayfinding, not decoration)
   frameCarry?: boolean; // frame node: dragging carries contained nodes (absent = true; new frames start false so they can be adjusted into place first)
-  canvasGroupId?: string; // explicit canvas group; independent of context edges and frames
-  previousCanvasGroupId?: string; // ungrouped membership retained for regroup
   lockAspectRatio?: boolean; // preserve each card's ratio during numeric and handle resizing
-  keepOverviewHeight?: boolean; // explicit group heights remain visible in compact overviews
+  keepOverviewHeight?: boolean; // explicit card heights remain visible in compact overviews
   instruction?: string; // paradigm body: the prompt (prompt node) or operator guidance (human node)
   fanoutRoles?: { name: string; prompt: string }[]; // role list carried by fanout steps/placeholders
   autoRerunRounds?: number; // max auto-triggered runs per user action (default 1); >1 enables loops

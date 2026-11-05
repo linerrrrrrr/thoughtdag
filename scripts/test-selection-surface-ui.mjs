@@ -177,7 +177,7 @@ try {
     assert.deepEqual(await geometry(), after); await selected(['a', 'b']);
     await dragPoint(await gapPoint(), -16, 20, 'pointer');
     assert.deepEqual(await geometry(), after); await selected(['a', 'b']);
-    check(`Escape and pointer cancellation restore the entire moving group at ${zoom} zoom`);
+    check(`Escape and pointer cancellation restore the entire moving selection at ${zoom} zoom`);
     await page.screenshot({ path: `${output}/group-move-${zoom}.png` });
 
     await fixture({ zoom, preselect: true });
@@ -218,6 +218,19 @@ try {
   }
 
   await fixture({ zoom: 0.6, preselect: true });
+  const memberBefore = await geometry();
+  const memberPoint = await cardPoint('a'); await colorRegionAt(memberPoint);
+  await page.mouse.click(memberPoint.x, memberPoint.y); await selected(['a']);
+  assert.deepEqual(await geometry(), memberBefore, 'Drilling into a member must not move any object');
+  assert.equal(await page.locator('[data-selection-move]').count(), 0);
+  assert.equal(await page.locator('[data-select-whole-group], [data-selection-group]').count(), 0);
+  await selectPair(); await selected(['a', 'b']);
+  await page.locator('[data-selection-move]').waitFor();
+  const gap = await gapPoint(); await page.mouse.click(gap.x, gap.y); await selected(['a', 'b']);
+  assert.deepEqual(await geometry(), memberBefore, 'A click in the selection gap retains the selection without moving it');
+  check('a plain click on a covered node selects it alone, and ordinary multi-selection restores the movable region');
+
+  await fixture({ zoom: 0.6, preselect: true });
   await page.mouse.click(1080, 850); await selected([]);
   await selectPair(); await page.locator('[data-selection-move]').waitFor();
   await node('c').locator('.drag-handle').first().click({ position: { x: 80, y: 20 } });
@@ -231,16 +244,18 @@ try {
   });
   await page.mouse.click(line.x, line.y); await selected([]);
   await page.locator('[data-edge-inspector]').waitFor();
-  check('clicking an outside line cancels the group and opens that line editor');
+  check('clicking an outside line clears the node selection and opens that line editor');
 
-  await page.evaluate(() => window.__canvasEditing.getState().setEdgeId(null));
-  await selectPair(); await page.locator('[data-selection-move]').waitFor();
-  await page.locator('[data-toolbar-more]').click();
-  await selected([]); await page.locator('[data-toolbar-more-panel]').waitFor();
-  await page.keyboard.press('Escape');
-  check('an outside toolbar click cancels the old group and still opens its own menu');
+  await probe('the toolbar overflow menu preserves selection for its contained selection actions', async () => {
+    await page.evaluate(() => window.__canvasEditing.getState().setEdgeId(null));
+    await selectPair(); await page.locator('[data-selection-move]').waitFor();
+    await page.locator('[data-toolbar-more]').click();
+    await selected(['a', 'b']); await page.locator('[data-toolbar-more-panel]').waitFor();
+    await page.keyboard.press('Escape');
+  });
 
   await fixture({ zoom: 0.6, preselect: true });
+  await page.locator('[data-node-format-reopen]').click();
   await page.locator('[data-node-format-field="width"]').fill('520');
   await page.keyboard.press('Enter'); await selected(['a', 'b']);
   for (const current of (await geometry()).filter(item => ['a', 'b'].includes(item.id))) assert.equal(current.width, 520);
@@ -275,10 +290,10 @@ try {
       await page.keyboard.down(modifier); await page.mouse.click(point.x, point.y); await page.keyboard.up(modifier);
       await selected(['a', 'b', 'd']);
       assert.deepEqual(await geometry(), before);
-      // Toggling a member of a real group must remove its siblings together.
+      // Obsolete metadata cannot expand a modifier toggle to another node.
       const grouped = await cardPoint('a'); await colorRegionAt(grouped);
       await page.keyboard.down(modifier); await page.mouse.click(grouped.x, grouped.y); await page.keyboard.up(modifier);
-      await selected(['d']);
+      await selected(['b', 'd']);
       assert.deepEqual(await geometry(), before);
     });
   }
@@ -353,7 +368,8 @@ try {
   }
 
   for (const target of ['blank', 'node', 'toolbar', 'reading panel']) {
-    await probe(`with a reading panel open, an outside ${target} click cancels the old multi-selection`, async () => {
+    await probe(target === 'toolbar' ? 'the toolbar overflow preserves selection while the reading panel remains open'
+      : `with a reading panel open, an outside ${target} click cancels the old multi-selection`, async () => {
       await fixture({ zoom: 0.4, preselect: true });
       await page.evaluate(() => window.__ui.getState().setPanelOpen(true, 'c'));
       await page.locator('[data-focus-panel]').waitFor();
@@ -365,7 +381,7 @@ try {
         await selected(['c']);
       } else if (target === 'toolbar') {
         await page.locator('[data-toolbar-more]').click();
-        await selected([]); await page.locator('[data-toolbar-more-panel]').waitFor();
+        await selected(['a', 'b']); await page.locator('[data-toolbar-more-panel]').waitFor();
       } else {
         await page.locator('[data-reading-node-name]').click(); await selected([]);
       }
@@ -399,9 +415,9 @@ try {
   const frameBefore = await geometry();
   const surface = await page.locator('[data-selection-move]').boundingBox(); assert.ok(surface);
   await dragPoint({ x: surface.x + 30, y: surface.y + surface.height * 0.5 }, 30, 25);
-  assertMoved(frameBefore, await geometry(), ['frame', 'inside', 'inside-two'], 60, 50);
+  assertMoved(frameBefore, await geometry(), ['frame', 'inside', 'inside-two', 'partial-in'], 60, 50);
   await undo(); assert.deepEqual(await geometry(), frameBefore);
-  check('a linked frame carries its contents once, even when explicitly selected, and leaves a cross-boundary group untouched');
+  check('a linked frame carries each contained node once and ignores obsolete group metadata across its boundary');
   await page.screenshot({ path: `${output}/frame-move.png` });
 
   assert.deepEqual(errors, [], 'No runtime errors'); assert.deepEqual(writes, [], 'No model or external write requests');

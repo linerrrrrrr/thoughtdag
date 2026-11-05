@@ -70,6 +70,7 @@ try {
   assert.equal(await reading(), 'a'); assert.deepEqual(await selected(), ['b']);
   assert.match(await format.locator('[data-format-node-name]').textContent(), /节点 B/);
   assert.match(await reader.locator('[data-reading-node-name]').textContent(), /节点 A/);
+  await format.locator('[data-node-format-reopen]').click();
   await format.locator('[data-node-format-field="width"]').fill('450');
   await page.keyboard.press('Escape');
   assert.equal(await reading(), 'a'); assert.equal(await reader.count(), 1);
@@ -79,7 +80,7 @@ try {
 
   await reader.locator('[data-node-details-close]').click();
   assert.deepEqual(await selected(), ['b']); assert.equal(await format.count(), 1);
-  await format.locator('[data-node-details="b"]').click();
+  await open('b');
   assert.equal(await reading(), 'b');
   const follow = reader.getByPlaceholder('继续追问…');
   await follow.fill('保留在 B 的追问草稿');
@@ -114,7 +115,7 @@ try {
   await page.keyboard.press('Escape');
   await page.evaluate(() => window.__ui.getState().setCanvasDetail('compact'));
   await format.waitFor();
-  assert.equal(await format.getByRole('button', { name: 'View details', exact: true }).count(), 1);
+  assert.equal(await format.getByRole('button', { name: 'View details', exact: true }).count(), 0);
   await assertPanelsFit();
   await node('a').locator('[data-node-details]').click(); assert.equal(await reading(), 'a');
   assert.deepEqual(await selected(), ['b']);

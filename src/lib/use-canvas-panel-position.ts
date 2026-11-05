@@ -1,6 +1,6 @@
 import { useLayoutEffect, useState, type CSSProperties } from 'react';
 
-/** Canvas tools share the format inspector's dock, including wrapped headers. */
+/** Canvas tools share the format inspector's dock below the fixed header row. */
 export function useCanvasPanelPosition(open = true): CSSProperties {
   const [position, setPosition] = useState<CSSProperties>({ top: 82, right: 16 });
   useLayoutEffect(() => {

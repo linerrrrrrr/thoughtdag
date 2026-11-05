@@ -14,6 +14,8 @@ const outputDir = 'local-tests/node-format';
 await mkdir(outputDir, { recursive: true });
 const browser = await chromium.launch({ executablePath, headless: true });
 const context = await browser.newContext({ locale: 'zh-CN', viewport: { width: 1600, height: 1000 }, reducedMotion: 'reduce' });
+// Keep concurrent development edits from replacing a store during a gesture.
+await context.routeWebSocket(/.*/, socket => socket.close());
 const page = await context.newPage();
 page.setDefaultTimeout(15000);
 const errors = [], writes = [], checks = [];
@@ -39,7 +41,21 @@ const assertSelectionSync = async expected => {
 };
 const node = id => page.locator(`.react-flow__node[data-id="format-${id}"]`);
 const field = name => page.locator(`[data-node-format-field="${name}"]`);
-const select = ids => page.evaluate(ids => window.__store.getState().setSelectedNodeIds(ids.map(id => `format-${id}`)), ids);
+const expandInspector = async () => {
+  await page.locator('[data-node-format-panel]').waitFor();
+  const reopen = page.locator('[data-node-format-reopen]');
+  if (await reopen.count()) await reopen.click();
+};
+const select = async ids => {
+  const changed = await page.evaluate(ids => {
+    const state = window.__store.getState();
+    const next = ids.map(id => `format-${id}`);
+    const changed = [...state.selectedNodeIds].sort().join('\n') !== [...next].sort().join('\n');
+    state.setSelectedNodeIds(next);
+    return changed;
+  }, ids);
+  if (changed && ids.length) await page.locator('[data-node-format-reopen]').waitFor();
+};
 const geometry = nodes => nodes.map(({ id, width, height, position, data }) => ({ id, width, height, position, lock: !!data.lockAspectRatio }));
 const screenshot = name => page.screenshot({ path: `${outputDir}/${name}.png` });
 const fixture = async (ids = []) => {
@@ -72,7 +88,15 @@ const fixture = async (ids = []) => {
   await page.evaluate(() => window.__rf.setViewport({ x: 30, y: 30, zoom: 1 }, { duration: 0 }));
   await page.waitForTimeout(120);
 };
-const clickNode = (id, modifiers = []) => node(id).locator('.drag-handle').first().click({ modifiers, position: { x: 100, y: 18 } });
+// Use actual hit testing: a selected card may be covered by the multi-selection
+// surface, whose modifier and click handling is part of the behavior under test.
+const clickAt = async (locator, position, modifiers = []) => {
+  const bounds = await locator.boundingBox(); assert.ok(bounds);
+  for (const modifier of modifiers) await page.keyboard.down(modifier);
+  try { await page.mouse.click(bounds.x + position.x, bounds.y + position.y); }
+  finally { for (const modifier of [...modifiers].reverse()) await page.keyboard.up(modifier); }
+};
+const clickNode = (id, modifiers = []) => clickAt(node(id).locator('.drag-handle').first(), { x: 100, y: 18 }, modifiers);
 const marquee = async (box, modifiers = []) => {
   for (const key of modifiers) await page.keyboard.down(key);
   await page.mouse.move(box.x1, box.y1);
@@ -87,7 +111,7 @@ const enclose = async id => {
   assert.ok(b);
   return { x1: b.x - 14, y1: b.y - 14, x2: b.x + b.width + 14, y2: b.y + b.height + 14 };
 };
-const commit = async (name, value) => { await field(name).fill(String(value)); await field(name).press('Enter'); await page.waitForTimeout(100); };
+const commit = async (name, value) => { await expandInspector(); await field(name).fill(String(value)); await field(name).press('Enter'); await page.waitForTimeout(100); };
 const blur = () => page.evaluate(() => document.activeElement instanceof HTMLElement && document.activeElement.blur());
 const assertPanelFits = async () => {
   const b = await page.locator('[data-node-format-panel]').boundingBox();
@@ -135,9 +159,9 @@ try {
   check('plain and additive marquees select nodes only, while direct edge clicks still open the edge editor');
   await fixture(['a']);
 
-  await node('b').locator('.markdown-body').first().click({ modifiers: ['Control'], position: { x: 20, y: 15 } });
+  await clickAt(node('b').locator('.markdown-body').first(), { x: 20, y: 15 }, ['Control']);
   assert.deepEqual(await selected(), ['format-a', 'format-b'], 'Ctrl-click works in the node body as well as its header');
-  await node('b').locator('.markdown-body').first().click({ modifiers: ['Control'], position: { x: 20, y: 15 } });
+  await clickAt(node('b').locator('.markdown-body').first(), { x: 20, y: 15 }, ['Control']);
   assert.deepEqual(await selected(), ['format-a'], 'Ctrl-click in body toggles an existing selection');
   check('node body and header share modifier selection semantics');
 
@@ -186,24 +210,40 @@ try {
   await page.keyboard.press('Shift+Tab');
   assert.deepEqual(await selected(), ['format-a']);
   await clickNode('a');
+  await expandInspector();
   await field('width').focus();
   await field('width').press('Control+a');
   assert.deepEqual(await selected(), ['format-a'], 'Ctrl+A in an input does not select canvas objects');
   check('Ctrl+A, Escape and forward/backward Tab selection apply only at canvas focus');
 
   await fixture(['a', 'b']);
-  await page.evaluate(() => window.__store.getState().groupSelection(['format-a', 'format-b']));
+  await page.evaluate(() => window.__store.setState(state => ({ nodes: state.nodes.map((node, index) => index < 2
+    ? { ...node, data: { ...node.data, canvasGroupId: 'legacy-format' } } : node) })));
   await select([]);
   await marquee(await enclose('a'));
-  await assertSelectionSync([]);
+  await assertSelectionSync(['format-a']);
+  assert.equal(await page.locator('[data-select-whole-group], [data-selection-group]').count(), 0);
+  await select(['a', 'b']);
+  await assertSelectionSync(['format-a', 'format-b']);
+  const groupedCard = await node('a').boundingBox(); assert.ok(groupedCard);
+  await page.mouse.click(groupedCard.x + 100, groupedCard.y + 18);
+  await assertSelectionSync(['format-a']);
+  await commit('width', 450);
+  assert.equal((await readNodes())[0].width, 450);
+  assert.equal((await readNodes())[1].width, 480, 'Editing a selected member never changes its unselected sibling');
+  await select([]);
   const ga = await enclose('a'), gb = await enclose('b');
   await marquee({ x1: ga.x1, y1: ga.y1, x2: gb.x2, y2: Math.max(ga.y2, gb.y2) });
-  assert.deepEqual(await selected(), ['format-a', 'format-b']);
-  check('group is an atomic marquee object requiring complete bounds coverage');
+  await assertSelectionSync(['format-a', 'format-b']);
+  check('legacy group metadata is inert during single selection, ordinary multi-selection and independent editing');
   }
 
   await fixture(['a']);
   await page.locator('[data-node-format-panel]').waitFor();
+  assert.equal(await page.locator('[data-node-format-reopen]').getAttribute('aria-expanded'), 'false');
+  assert.equal(await field('width').count(), 0, 'A new selection starts with the object inspector collapsed');
+  check('object inspector is collapsed by default and expands only on explicit request');
+  await expandInspector();
   assert.equal(await field('width').inputValue(), '400');
   assert.equal(await field('height').inputValue(), '260');
   assert.equal(await field('x').inputValue(), '100');
@@ -234,6 +274,7 @@ try {
   check('single geometry supports width, height, signed coordinates and atomic undo/redo');
 
   await fixture(['a']);
+  await expandInspector();
   await field('width').fill('700');
   await field('width').evaluate(input => input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', isComposing: true, bubbles: true })));
   assert.equal((await readNodes())[0].width, 400, 'IME Enter does not commit');
@@ -249,6 +290,7 @@ try {
   check('IME confirmation, invalid values and empty dimensions never commit accidental geometry');
 
   await fixture(['a', 'b']);
+  await expandInspector();
   assert.equal(await field('width').inputValue(), '');
   assert.equal(await field('height').inputValue(), '');
   assert.equal(await field('x').count(), 0);
@@ -266,6 +308,7 @@ try {
   check('multi-selection shows mixed sizes, edits selected dimensions uniformly and never unifies coordinates');
 
   await fixture(['a', 'b']);
+  await expandInspector();
   const beforeRatio = await readNodes();
   await page.locator('[data-node-format-lock]').check();
   assert.ok((await readNodes()).slice(0, 2).every(n => n.data.lockAspectRatio));
@@ -274,12 +317,15 @@ try {
   locked.slice(0, 2).forEach((n, i) => closeTo(n.width / n.height, beforeRatio[i].width / beforeRatio[i].height, 'Each original ratio is retained'));
   assert.ok(locked[0].height !== locked[1].height, 'Different ratios are not flattened');
   await select(['a']);
+  await expandInspector();
   await page.locator('[data-node-format-lock]').uncheck();
   await select(['a', 'b']);
+  await expandInspector();
   assert.ok(await page.locator('[data-node-format-lock]').evaluate(el => el.indeterminate), 'Mixed lock values are represented');
   check('aspect lock applies to every selected object and preserves each object’s own ratio');
 
   await fixture(['a']);
+  await expandInspector();
   await page.locator('[data-node-format-lock]').check();
   const beforeResize = (await readNodes())[0];
   const corner = await node('a').locator('.thought-resize-corner').boundingBox();
@@ -310,6 +356,7 @@ try {
   check('corner and side resize honor aspect lock and geometry persists across reload');
 
   await fixture(['a']);
+  await expandInspector();
   await page.evaluate(() => window.__rf.setViewport({ x: 70, y: 70, zoom: 0.45 }, { duration: 0 }));
   await page.waitForTimeout(300);
   assert.equal(await field('width').inputValue(), '400');
@@ -320,9 +367,10 @@ try {
   check('format values use logical canvas units even when semantic zoom changes the preview');
 
   await fixture(['a']);
+  await expandInspector();
   await assertPanelFits();
   assert.equal(await page.locator('[data-node-format-content]').evaluate(element => element.tagName), 'DIV', 'Content actions have no collapse toggle');
-  assert.ok(await page.locator('[data-node-format-panel]').getByRole('button', { name: '合并摘要', exact: true }).isVisible(), 'Content actions are expanded by default');
+  assert.ok(await page.locator('[data-node-format-panel]').getByRole('button', { name: '合并摘要', exact: true }).isVisible(), 'Content actions are visible after explicitly expanding the inspector');
   await page.locator('[data-node-format-panel]').getByRole('button', { name: '探索', exact: true }).click();
   const exploreDraft = page.locator('[data-node-format-panel] input:not([data-node-format-field]):not([type="checkbox"])');
   await exploreDraft.fill('保留这份探索草稿，不调用模型');
@@ -342,21 +390,31 @@ try {
   check('collapsing and reopening the inspector preserves selection and saved geometry');
   await screenshot('desktop-single');
   await select(['a', 'b']);
+  await page.locator('[data-node-format-reopen]').waitFor();
+  assert.equal(await field('width').count(), 0, 'Changing the selected objects collapses the inspector again');
+  assert.equal(await page.locator('[data-node-format-reopen]').getAttribute('aria-expanded'), 'false');
+  await expandInspector();
   await assertPanelFits();
   await screenshot('desktop-multi');
   await page.evaluate(async () => (await import('/src/lib/appearance.ts')).useAppearance.getState().setLighting('dark'));
   await screenshot('dark-multi');
-  await page.getByRole('button', { name: 'EN', exact: true }).click();
+  await page.locator('[data-toolbar-more]').click();
+  await page.locator('[data-menu-language]').getByRole('button', { name: 'English', exact: true }).click();
+  await page.keyboard.press('Escape');
+  await page.locator('[data-node-format-panel]').waitFor();
   await assertPanelFits();
   await screenshot('english-multi');
   await screenshot('english-content');
-  await page.getByRole('button', { name: '中', exact: true }).click();
+  await page.locator('[data-toolbar-more]').click();
+  await page.locator('[data-menu-language]').getByRole('button', { name: '中文', exact: true }).click();
+  await page.keyboard.press('Escape');
+  await page.locator('[data-node-format-panel]').waitFor();
   await page.evaluate(async () => (await import('/src/lib/appearance.ts')).useAppearance.getState().setLighting('light'));
   await page.setViewportSize({ width: 390, height: 844 });
   await assertPanelFits();
   await screenshot('mobile-multi');
-  await page.locator('[data-selection-group]').click();
-  const menu = await page.getByRole('menu', { name: '组合', exact: true }).boundingBox();
+  await page.locator('[data-selection-align]').click();
+  const menu = await page.getByRole('menu', { name: '对齐', exact: true }).boundingBox();
   assert.ok(menu && menu.x >= 0 && menu.y >= 0 && menu.x + menu.width <= 390 && menu.y + menu.height <= 844);
   await page.keyboard.press('Escape');
   assert.deepEqual(await selected(), ['format-a', 'format-b'], 'Closing a child menu does not clear selection');
@@ -376,11 +434,9 @@ try {
   await lastAlign.scrollIntoViewIfNeeded();
   assert.ok(await lastAlign.isVisible());
   await page.keyboard.press('Escape');
-  await page.locator('[data-selection-group]').click();
-  const shortGroup = await page.getByRole('menu', { name: '组合', exact: true }).boundingBox();
-  assert.ok(shortGroup && shortGroup.height >= 180 && shortGroup.y >= 0 && shortGroup.y + shortGroup.height <= 500, 'Short viewport group menu has usable room');
+  assert.equal(await page.locator('[data-selection-group]').count(), 0);
   await page.locator('[data-create-selection-frame]').click();
-  assert.equal((await readNodes()).filter(n => n.data.stepKind === 'frame').length, 1, 'The final group menu command is reachable in a short viewport');
+  assert.equal((await readNodes()).filter(n => n.data.stepKind === 'frame').length, 1, 'Direct partition creation is reachable in a short viewport');
   check('desktop, narrow and short viewports, both themes and languages keep the panel and menus accessible');
   assert.deepEqual(errors, [], 'No runtime errors');
   assert.deepEqual(writes, [], 'No external writes or model calls');

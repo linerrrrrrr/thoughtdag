@@ -1,5 +1,5 @@
-import { useMemo, useRef, useState } from 'react';
-import { Trash2, X } from 'lucide-react';
+import { useId, useMemo, useRef, useState } from 'react';
+import { LockKeyhole, RotateCcw, Tag, Trash2, X } from 'lucide-react';
 import type { ThoughtEdge } from '../types';
 import { useStore } from '../store';
 import { useProjects } from '../store/projects';
@@ -7,15 +7,18 @@ import { applyBatchEdgeSettings, edgeEditRestriction, readEdgeSettings, type Edg
 import { useSessionDraft } from '../lib/use-session-draft';
 import { useDismissableLayer } from '../lib/use-dismissable-layer';
 import { useCanvasPanelPosition } from '../lib/use-canvas-panel-position';
+import { useCanvasEditing } from '../lib/canvas-editing';
 import { confirmDialog, useUiStore } from '../lib/ui-store';
 import { useT, fmt } from '../i18n';
 import { isImeComposing } from '../utils';
+import { EdgeRelationOptions, EdgeRouteOptions } from './EdgeInspectorControls';
 import './EdgeInspector.css';
 
 function BatchEdgeForm({ selected, draftKey }: { selected: ThoughtEdge[]; draftKey: string }) {
   const t = useT();
   const nodes = useStore(state => state.nodes);
   const edges = useStore(state => state.edges);
+  const titleId = useId();
   const ref = useRef<HTMLElement>(null);
   const position = useCanvasPanelPosition();
   const [text, setText] = useSessionDraft(draftKey, '{}');
@@ -24,9 +27,13 @@ function BatchEdgeForm({ selected, draftKey }: { selected: ThoughtEdge[]; draftK
   const ids = selected.map(edge => edge.id);
   const dirty = Object.keys(patch).length > 0;
   const result = applyBatchEdgeSettings(nodes, edges, ids, patch);
+  const continuationCheck = applyBatchEdgeSettings(nodes, edges, ids, { ...patch, relation: 'continue' });
   const restricted = selected.some(edge => edgeEditRestriction(edge, nodes));
   const clear = () => { useUiStore.getState().setDraft(draftKey, ''); setError(null); };
-  const close = () => useStore.setState(state => ({ edges: state.edges.map(edge => ({ ...edge, selected: false })) }));
+  const close = () => {
+    useCanvasEditing.getState().setSelectionRegion(null);
+    useStore.setState(state => ({ edges: state.edges.map(edge => ({ ...edge, selected: false })) }));
+  };
   const { isTopLayer } = useDismissableLayer({ open: true, refs: [ref], dismissOnOutside: false,
     onDismiss: () => { if (dirty) clear(); else close(); } });
   const change = <K extends keyof EdgeEditSettings>(key: K, value: EdgeEditSettings[K] | undefined) => {
@@ -45,12 +52,19 @@ function BatchEdgeForm({ selected, draftKey }: { selected: ThoughtEdge[]; draftK
     return effective === 'orthogonal' ? 'orthogonal' : 'curve';
   });
   const routeValue = routes.every(route => route === routes[0]) ? routes[0] : '';
+  const relationValue = value('relation');
+  const mixedLabels = patch.label === undefined && selected.some(edge => readEdgeSettings(edge).label !== readEdgeSettings(selected[0]).label);
   const message = (code: string) => t(`edgeEditor.error.${code === 'missing-node' ? 'missingNode' : code === 'self-loop' ? 'selfLoop' : code === 'invalid-settings' ? 'invalidSettings' : code as Exclude<EdgeEditError, 'missing-node' | 'self-loop' | 'invalid-settings'>}`);
   const apply = () => {
     const saved = useStore.getState().updateSelectedEdges(ids, patch);
     if (saved.ok) clear(); else setError(saved.error ? message(saved.error) : t('edgeEditor.error.saveFailed'));
   };
-  return <aside ref={ref} style={position} className="canvas-tool-panel edge-inspector nodrag nopan nowheel" data-batch-edge-inspector aria-label={t('selection.editEdges')}
+  const resetField = (field: keyof EdgeEditSettings) => patch[field] !== undefined && <button type="button"
+    className="edge-inspector-inherit" data-batch-edge-reset={field} onClick={() => change(field, undefined)}>
+    <RotateCcw size={12} aria-hidden="true" />{t('selection.keepEach')}
+  </button>;
+  const mixed = <span className="edge-inspector-mixed">{t('selection.mixedValue')}</span>;
+  return <aside ref={ref} style={position} className="canvas-tool-panel edge-inspector nodrag nopan nowheel" data-batch-edge-inspector aria-labelledby={titleId}
     onPointerDown={event => event.stopPropagation()}
     onKeyDown={event => {
       if (isImeComposing(event)) { event.stopPropagation(); return; }
@@ -58,27 +72,36 @@ function BatchEdgeForm({ selected, draftKey }: { selected: ThoughtEdge[]; draftK
       event.stopPropagation();
       if (isTopLayer() && (event.ctrlKey || event.metaKey) && event.key === 'Enter' && dirty && result.ok) { event.preventDefault(); apply(); }
     }}>
-    <header className="edge-inspector-header"><div><h2>{t('selection.editEdges')}</h2><p className="text-xs text-ink-muted mt-1">{fmt(t('selection.edgesSelected'), { n: selected.length })}</p></div>
-      <button type="button" className="edge-inspector-icon" onClick={close} aria-label={t('common.close')}><X size={16} /></button>
+    <header className="edge-inspector-header"><div><h2 id={titleId}>{t('selection.editEdges')}</h2><p className="edge-inspector-summary">{fmt(t('selection.edgesSelected'), { n: selected.length })}</p></div>
+      <button type="button" className="edge-inspector-icon" onClick={close} title={t('common.close')} aria-label={t('common.close')}><X size={17} /></button>
     </header>
-    <div className="edge-inspector-body">
-      <label className="edge-inspector-note"><span>{t('edgeEditor.relation')}</span>
-        <select data-batch-edge-relation disabled={restricted} value={value('relation')} onChange={event => change('relation', event.target.value ? event.target.value as EdgeEditSettings['relation'] : undefined)}
-          className="h-9 w-full rounded-control border border-line bg-card px-2 text-ink focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-50">
-          <option value="">{t('selection.keepEach')}</option><option value="continue">{t('edgeEditor.continue')}</option><option value="reference">{t('edgeEditor.reference')}</option>
-        </select>
-        {restricted && <p className="edge-inspector-hint">{t('selection.restrictedEdges')}</p>}
-      </label>
-      <label className="edge-inspector-note"><span>{t('edgeEditor.route')}</span>
-        <select data-batch-edge-route value={routeValue} onChange={event => change('route', event.target.value ? event.target.value as EdgeEditSettings['route'] : undefined)}
-          className="h-9 w-full rounded-control border border-line bg-card px-2 text-ink focus-visible:outline-2 focus-visible:outline-accent">
-          <option value="">{t('selection.keepEach')}</option><option value="curve">{t('edgeEditor.routeCurve')}</option><option value="orthogonal">{t('edgeEditor.routeOrthogonal')}</option>
-        </select>
-      </label>
-      <label className="edge-inspector-note"><span>{t('edgeEditor.label')}</span>
-        <input data-batch-edge-label value={value('label')} maxLength={120} placeholder={t('selection.keepEach')} onChange={event => change('label', event.target.value)} />
-      </label>
-      <button type="button" className="edge-inspector-inherit" data-batch-edge-clear-label onClick={() => change('label', '')}>{t('selection.clearLabels')}</button>
+    <div className="edge-inspector-body" data-batch-edge-inspector-fields>
+      <p className="edge-inspector-batch-hint">{t('selection.batchEdgeHint')}</p>
+      <fieldset className="edge-inspector-section">
+        <legend>{t('edgeEditor.relation')}{!restricted && !relationValue && mixed}</legend>
+        {restricted ? <div className="edge-inspector-fixed-purpose">
+          <LockKeyhole size={16} aria-hidden="true" /><div><strong>{t('selection.keepEach')}</strong><p>{t('selection.restrictedEdges')}</p></div>
+        </div> : <>
+          <EdgeRelationOptions batch value={relationValue} canContinue={continuationCheck.ok} onChange={relation => change('relation', relation)} />
+          {!continuationCheck.ok && <p className="edge-inspector-hint">{message(continuationCheck.error)}</p>}
+        </>}
+        {resetField('relation')}
+      </fieldset>
+      <fieldset className="edge-inspector-section">
+        <legend>{t('edgeEditor.route')}{!routeValue && mixed}</legend>
+        <EdgeRouteOptions batch value={routeValue} onChange={route => change('route', route)} />
+        {resetField('route')}
+      </fieldset>
+      <div className="edge-inspector-note-section">
+        <label className="edge-inspector-note"><span><Tag size={13} aria-hidden="true" />{t('edgeEditor.label')}{mixedLabels && mixed}</span>
+          <input data-batch-edge-label value={value('label')} maxLength={120}
+            placeholder={t(mixedLabels ? 'selection.keepEach' : 'edgeEditor.labelPlaceholder')} onChange={event => change('label', event.target.value)} />
+        </label>
+        <div className="edge-inspector-note-actions">
+          <button type="button" className="edge-inspector-inherit" data-batch-edge-clear-label onClick={() => change('label', '')}>{t('selection.clearLabels')}</button>
+          {resetField('label')}
+        </div>
+      </div>
     </div>
     <footer className="edge-inspector-footer">
       {(error || !result.ok) && <p role="alert" className="edge-inspector-error">{error || (!result.ok && message(result.error))}</p>}
@@ -86,7 +109,7 @@ function BatchEdgeForm({ selected, draftKey }: { selected: ThoughtEdge[]; draftK
         <button type="button" className="edge-inspector-delete" onClick={() => {
           void confirmDialog({ title: t('selection.deleteEdges'), message: fmt(t('selection.deleteEdgesConfirm'), { n: ids.length }), confirmLabel: t('common.delete'), danger: true })
             .then(ok => { if (ok) { useStore.getState().deleteEdges(ids); clear(); } });
-        }}><Trash2 size={14} />{t('common.delete')}</button>
+        }}><Trash2 size={14} aria-hidden="true" />{t('common.delete')}</button>
         <button type="button" className="edge-inspector-cancel" disabled={!dirty} onClick={clear}>{t('common.cancel')}</button>
         <button type="button" data-batch-edge-apply className="edge-inspector-apply" disabled={!dirty || !result.ok} onClick={apply}>{t('edgeEditor.apply')}</button>
       </div>

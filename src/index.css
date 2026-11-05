@@ -277,35 +277,26 @@ code, pre {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: var(--spacing-related) var(--spacing-surface-inset);
   pointer-events: none;
   transition: right 0.2s ease;
 }
 .canvas-header > * { pointer-events: auto; }
+.canvas-header > [data-project-switcher] { flex: none; }
 .canvas-header-actions {
   display: flex;
   align-items: flex-start;
   flex-direction: row-reverse;
   justify-content: flex-start;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  flex: none;
   gap: var(--spacing-related);
   margin-left: auto;
   min-width: 0;
-  max-width: 100%;
   pointer-events: none;
 }
 .canvas-header-actions > * { pointer-events: auto; }
-.canvas-search {
-  position: relative;
-  z-index: 20;
-  order: 1;
-  flex: 1 1 280px;
-  width: 320px;
-  min-width: min(240px, 100%);
-  max-width: 100%;
-  height: calc(var(--spacing-control-size) + var(--spacing-toolbar-inset) * 2 + 2px);
-}
 .canvas-toolbar {
   display: flex;
   align-items: center;
@@ -319,8 +310,80 @@ code, pre {
 }
 .canvas-toolbar > * { flex-shrink: 0; }
 .canvas-toolbar > .canvas-project-button { flex-shrink: 1; min-width: 0; max-width: 240px; }
+.canvas-header .canvas-toolbar { flex-wrap: nowrap; max-width: none; padding: 4px 6px; white-space: nowrap; }
+/* Space communicates groups; quiet controls share the toolbar's outer surface. */
+.canvas-toolbar-main { gap: 12px; }
+.canvas-toolbar-group { display: flex; align-items: center; gap: 2px; }
+.canvas-toolbar-group:empty { display: none; }
+.canvas-toolbar-context { gap: 4px; }
+.canvas-toolbar-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: var(--spacing-control-size);
+  height: var(--spacing-control-size);
+  gap: 4px;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--color-ink-muted);
+  font-size: var(--text-2xs);
+  line-height: 1.35;
+  transition: color 0.15s, background-color 0.15s;
+}
+.canvas-toolbar-button:hover:not(:disabled) { background: var(--color-wash); color: var(--color-ink); }
+.canvas-toolbar-button:is([aria-expanded="true"], [aria-pressed="true"]) { background: color-mix(in srgb, var(--color-accent) 9%, transparent); color: var(--color-accent); }
+.canvas-toolbar-button:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+.canvas-toolbar-button:disabled { opacity: 0.3; cursor: not-allowed; }
+.canvas-toolbar-button.canvas-toolbar-icon { width: auto; padding-inline: 8px; }
+.canvas-selection-control { display: flex; align-items: center; height: 32px; gap: 6px; white-space: nowrap; }
+.canvas-selection-label { padding-left: 4px; color: var(--color-ink-faint); font-size: 12px; }
+.canvas-selection-segments { display: flex; align-items: center; height: 32px; gap: 2px; padding: 2px; border-radius: var(--radius-control); background: var(--color-wash); }
+.canvas-selection-segments .canvas-toolbar-button { width: auto; height: 28px; padding-inline: 8px; }
+.canvas-selection-segments .canvas-toolbar-button[aria-pressed="true"] { background: var(--color-card); color: var(--color-accent); }
+.canvas-toolbar-overflow, .canvas-toolbar-minimal-menu, .canvas-selection-picker { display: none; }
+.canvas-header:not([data-toolbar-density="full"]) .canvas-project-button { max-width: 140px; }
+.canvas-header:not([data-toolbar-density="full"]) .canvas-toolbar-label,
+.canvas-header:not([data-toolbar-density="full"]) [data-project-switcher] [data-model-picker-trigger] > span,
+.canvas-header:not([data-toolbar-density="full"]) [data-project-switcher] [data-model-picker-trigger] > .lucide-chevron-down { display: none; }
+.canvas-header:not([data-toolbar-density="full"]) [data-model-picker-trigger],
+.canvas-header:not([data-toolbar-density="full"]) .canvas-toolbar-icon { width: 32px; padding-inline: 0; justify-content: center; }
+.canvas-header:is([data-toolbar-density="overflow"], [data-toolbar-density="minimal"]) .canvas-toolbar-secondary,
+.canvas-header:is([data-toolbar-density="overflow"], [data-toolbar-density="minimal"]) .canvas-selection-segments { display: none; }
+.canvas-header:is([data-toolbar-density="overflow"], [data-toolbar-density="minimal"]) .canvas-toolbar-overflow { display: block; }
+.canvas-header:is([data-toolbar-density="overflow"], [data-toolbar-density="minimal"]) .canvas-selection-picker { display: flex; }
+.canvas-header:is([data-toolbar-density="overflow"], [data-toolbar-density="minimal"]) .canvas-project-button { max-width: 110px; }
+.canvas-header[data-toolbar-density="minimal"] { column-gap: 8px; }
+.canvas-header:is([data-toolbar-density="overflow"], [data-toolbar-density="minimal"]) .canvas-toolbar-main { gap: 8px; }
+/* The triggers collapse, but their open cards must stay mounted and visible. */
+.canvas-header[data-toolbar-density="minimal"] .canvas-toolbar-context { display: contents; }
+.canvas-header[data-toolbar-density="minimal"] .canvas-project-button { width: 32px; padding-inline: 0; justify-content: center; }
+.canvas-header[data-toolbar-density="minimal"] .canvas-project-button > span,
+.canvas-header[data-toolbar-density="minimal"] .canvas-project-button > .lucide-chevron-down,
+.canvas-header[data-toolbar-density="minimal"] .canvas-selection-picker > span,
+.canvas-header[data-toolbar-density="minimal"] .canvas-selection-picker > .lucide-chevron-down,
+.canvas-header[data-toolbar-density="minimal"] .canvas-toolbar-minimal-secondary,
+.canvas-header[data-toolbar-density="minimal"] .canvas-toolbar-history { display: none; }
+.canvas-header[data-toolbar-density="minimal"] .canvas-selection-picker { width: 32px; padding-inline: 0; justify-content: center; }
+.canvas-header[data-toolbar-density="minimal"] .canvas-selection-picker select { width: 32px; padding: 0; color: transparent; }
+.canvas-header[data-toolbar-density="minimal"] .canvas-selection-picker option { color: var(--color-ink); }
+.canvas-header[data-toolbar-density="minimal"] .canvas-toolbar-minimal-menu { display: block; }
+.canvas-header[data-toolbar-density="minimal"]:has([data-waiting-pill]) [data-toolbar-more]::after {
+  content: '';
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-amber-500);
+}
+.canvas-header:not([data-toolbar-density="full"]) :is([data-agent-cwd], [data-agent-permission-chip]) { width: 32px; padding-inline: 0; justify-content: center; }
+.canvas-header:not([data-toolbar-density="full"]) :is([data-agent-cwd], [data-agent-permission-chip]) > :is(span, .lucide-chevron-down) { display: none; }
 /* Shared dock for canvas tools; only the active card occupies this slot. */
 .canvas-tool-panel {
+  white-space: normal;
   position: fixed;
   z-index: 20;
   width: 320px;

@@ -18,6 +18,7 @@ const stubs = {
   streaming: 'export const activeAbortControllers = new Map();',
   canonical: 'export const unsubscribeOrphanedSessions = () => {};',
   'stale-judge': 'export const judgeStaleness = () => {};',
+  projects: 'export const useProjects = { getState: () => ({ activeId: "test-project" }), subscribe: () => () => {} };',
 };
 let failures = 0, passes = 0;
 function test(label, run) {
@@ -37,7 +38,7 @@ try {
     bundle: true, platform: 'node', format: 'esm', outfile: bundle, logLevel: 'silent',
     define: { 'import.meta.env.VITE_API_BASE': '""', 'import.meta.env.DEV': 'false' },
     plugins: [{ name: 'unrelated-runtime-stubs', setup(builder) {
-      builder.onResolve({ filter: /(condense-guard|ui-store|i18n|context-builder|streaming|atlas\/canonical|stale-judge)$/ }, args => ({ path: args.path.split('/').pop(), namespace: 'stub' }));
+      builder.onResolve({ filter: /(condense-guard|ui-store|i18n|context-builder|streaming|atlas\/canonical|stale-judge|projects)$/ }, args => ({ path: args.path.split('/').pop(), namespace: 'stub' }));
       builder.onLoad({ filter: /.*/, namespace: 'stub' }, args => ({ contents: stubs[args.path], loader: 'js' }));
     } }],
   });
@@ -60,6 +61,29 @@ try {
     assert.deepEqual(sizes(next), [[720, 300], [600, 300]]);
     assert.equal(next[0].position, nodes[0].position);
     assert.equal(next[1], nodes[1]);
+  });
+  test('retired metadata does not expand single-node formatting or positioning', () => {
+    const nodes = [node('a', 600, 300, { canvasGroupId: 'g' }, 85, -40),
+      node('b', 600, 300, { canvasGroupId: 'g' }, 800, 400)];
+    const next = apply(nodes, ['a'], { width: 720, height: 360, x: 100, y: 50 });
+    assert.deepEqual(sizes(next), [[720, 360], [600, 300]]);
+    assert.deepEqual(next[0].position, { x: 100, y: 50 });
+    assert.equal(next[1], nodes[1]);
+    assert.equal(next[0].data.canvasGroupId, 'g');
+    assert.deepEqual(sizes(apply(nodes, ['a', 'b'], { width: 720 })), [[720, 300], [720, 300]]);
+  });
+  test('frame movement ignores retired metadata shared by inside and outside cards', () => {
+    const nodes = [node('f', 1200, 1000, { stepKind: 'frame', frameCarry: true }),
+      node('a', 400, 300, { canvasGroupId: 'g' }, 100, 100),
+      node('b', 400, 300, { canvasGroupId: 'g' }, 1500, 100)];
+    const next = apply(nodes, ['f'], { x: 50, y: -20 });
+    assert.deepEqual(next[0].position, { x: 50, y: -20 });
+    assert.deepEqual(next[1].position, { x: 150, y: 80 });
+    assert.equal(next[2], nodes[2]);
+    assert.equal(next[1].data.canvasGroupId, 'g');
+    const resized = apply(nodes, ['f'], { width: 1300, height: 900 });
+    assert.equal(resized[1], nodes[1]);
+    assert.equal(resized[2], nodes[2]);
   });
   test('locked width and height edits preserve each original ratio', () => {
     const nodes = [node('a', 600, 300, { lockAspectRatio: true }), node('b', 600, 450, { lockAspectRatio: true })];
@@ -105,9 +129,9 @@ try {
     assert.deepEqual(next.map(n => n.position), nodes.map(n => n.position));
     assert.deepEqual(sizes(next), [[700, 400], [700, 400]]);
   });
-  test('group edits expand membership, retain relative positions, and cannot set member coordinates', () => {
+  test('batch size edits ignore retired metadata and preserve positions', () => {
     const nodes = [node('a', 600, 300, { canvasGroupId: 'g' }, 10, 20), node('b', 600, 300, { canvasGroupId: 'g' }, 700, 800)];
-    const next = apply(nodes, ['a'], { width: 700, x: 500 });
+    const next = apply(nodes, ['a', 'b'], { width: 700, x: 500 });
     assert.deepEqual(next.map(n => n.position), nodes.map(n => n.position));
     assert.deepEqual(sizes(next), [[700, 300], [700, 300]]);
     assert.ok(next.every(n => n.data.canvasGroupId === 'g'));

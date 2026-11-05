@@ -145,7 +145,8 @@ export default function ModelPicker({ value, onChange, compact }: PickerProps) {
           : noModels
             ? 'bg-accent/10 border border-accent/40 rounded-control h-8 px-2.5 flex items-center gap-1.5 hover:bg-accent/20 transition-colors text-accent max-w-[190px]'
             : 'bg-card border border-line rounded-control h-8 px-2.5 flex items-center gap-1.5 hover:bg-wash transition-colors text-ink-muted max-w-[190px]'}
-        title={noModels ? t('apikey.entryTitle') : nodeMode && !value ? t('model.inherit') : t('toolbar.model')}
+        title={noModels ? t('apikey.entryTitle') : nodeMode && !value ? t('model.inherit') : `${t('toolbar.model')} · ${label ?? t('model.none')}`}
+        aria-label={noModels ? t('apikey.entryTitle') : `${t('toolbar.model')} · ${label ?? t('model.none')}`}
         data-apikey-entry={noModels || undefined}
         aria-expanded={open}
         data-model-picker-trigger

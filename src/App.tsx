@@ -17,8 +17,9 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import 'highlight.js/styles/github.css';
-import { ArrowRight, BookOpen, Bot, Brain, CircleHelp, Download, Drama, Eye, FileText, FolderSync, Frame, GitBranch, Hand, Highlighter, History as HistoryIcon, ImageDown, KeyRound, LayoutGrid, ListRestart, Loader2, MessageCircleQuestion, Minimize2, MoreHorizontal, Paperclip, Redo2, Rewind, Scissors, Search, Share2, SquareTerminal, Star, Stethoscope, StickyNote, Trash2, Undo2, Workflow, X } from 'lucide-react';
+import { ArrowRight, BookOpen, Bot, Brain, CircleHelp, Download, Drama, Eye, FileText, FolderSync, Frame, GitBranch, Hand, Highlighter, History as HistoryIcon, ImageDown, KeyRound, ListRestart, Loader2, MessageCircleQuestion, Minimize2, MoreHorizontal, Paperclip, Redo2, Rewind, Scissors, Search, Share2, SlidersHorizontal, SquareTerminal, Star, Stethoscope, StickyNote, Trash2, Undo2, Workflow, X } from 'lucide-react';
 import './index.css';
+import { ListFilter } from 'lucide-react';
 import ThoughtNode from './components/ThoughtNode';
 import CanvasWheelZoom from './components/CanvasWheelZoom';
 import CanvasDetailControl from './components/CanvasDetailControl';
@@ -30,8 +31,11 @@ import ThoughtEdgeView from './components/ThoughtEdgeView';
 import EdgeInspector from './components/EdgeInspector';
 import CanvasLayoutPanel from './components/CanvasLayoutPanel';
 import { canvasToolViewport, useCanvasPanelPosition } from './lib/use-canvas-panel-position';
+import { CanvasToolbarOverflowContext, restoreCanvasToolbarFocus, useResponsiveCanvasHeader } from './lib/use-responsive-canvas-header';
+import CanvasToolbarOverflowAction from './components/CanvasToolbarOverflowAction';
 import { useCanvasToolCard, useCanvasToolCards } from './lib/use-canvas-tool-card';
 import { useCanvasEditing } from './lib/canvas-editing';
+import { CanvasQuickLayoutContext, quickCanvasLayout } from './lib/canvas-layout-preferences';
 import { createEdgeAnchorResolver } from './lib/edge-anchors';
 import { createEdgeRoutingContext } from './lib/edge-path';
 import { CanvasEdgeRouting } from './lib/edge-routing-context';
@@ -40,6 +44,7 @@ import SelectionToolbar from './components/SelectionToolbar';
 import SelectionTargetControl from './components/SelectionTargetControl';
 import BatchEdgeInspector from './components/BatchEdgeInspector';
 import SelectionResizeControls from './components/SelectionResizeControls';
+import SelectionRegion from './components/SelectionRegion';
 import NodeContextMenu from './components/NodeContextMenu';
 import HighlightsOverviewModal from './components/ui/HighlightsOverviewModal';
 import MaterialsOverviewModal from './components/ui/MaterialsOverviewModal';
@@ -54,8 +59,7 @@ import { useStore } from './store';
 import { undoState } from './store/slices/history';
 import { shownStaleIds } from './lib/stale-judge';
 import { resolveCarriedNodeIds } from './lib/frames';
-import { applyGroupSelectionChanges, canvasGroupId, expandGroupSelection } from './lib/node-groups';
-import { enclosedSelection, intersectingEdgeSelection, snapshotEdgeSelectionPaths, type EdgeSelectionPath } from './lib/canvas-selection';
+import { enclosedSelection, intersectingEdgeSelection, snapshotEdgeSelectionPaths, type EdgeSelectionPath, type SelectionRegion as SelectionRegionState } from './lib/canvas-selection';
 import type { ArrangeRect } from './lib/arrange-selection';
 import { useProjects, adoptImportedProject, markInstantiatedFrom } from './store/projects';
 import { projectStorageKey } from './store/projects';
@@ -244,6 +248,7 @@ function Canvas() {
   }, [editingEdgeId, editingEdge]);
   const openEdgeEditor = useCallback((id: string) => {
     if (isViewerMode) return;
+    useCanvasEditing.getState().setSelectionRegion(null);
     useStore.getState().setSelectedNodeIds([]);
     useStore.setState((state) => ({ edges: state.edges.map((edge) => ({ ...edge, selected: edge.id === id })) }));
     useCanvasEditing.getState().setEdgeId(id);
@@ -273,6 +278,7 @@ function Canvas() {
   const materialCount = useStore((s) => s.nodes.reduce((sum, n) =>
     sum + (n.data.attachments?.length ?? 0) + (['note', 'link'].includes(n.data.stepKind ?? '') ? 1 : 0), 0));
   const rfInstance = useRef<ReactFlowInstance<ThoughtNodeType, ThoughtEdge> | null>(null);
+  const quickLayout = useCallback((ids?: string[]) => quickCanvasLayout(rfInstance.current, ids), []);
   const getViewportRect = useCallback((): ArrangeRect | undefined => {
     const viewport = rfInstance.current?.getViewport();
     const canvas = document.querySelector<HTMLElement>('.react-flow');
@@ -602,8 +608,16 @@ function Canvas() {
   // and emits a selection change in the same tick would otherwise clobber
   // the mutation with the stale pre-render snapshot.
   // Keep the additive baseline before React Flow clears its internal selection.
-  // The rectangle uses measured canvas footprints, including complete groups.
-  const marquee = useRef<{ start: { x: number; y: number }; base: string[]; ids: string[]; active: boolean; target: 'nodes' | 'edges'; paths: EdgeSelectionPath[] } | null>(null);
+  // The rectangle selects measured node footprints independently of groups.
+  const marquee = useRef<{ start: { x: number; y: number }; baseNodes: string[]; baseEdges: string[]; ids: string[]; active: boolean; target: 'nodes' | 'edges'; paths: EdgeSelectionPath[]; region: SelectionRegionState | null } | null>(null);
+  const marqueeClickPending = useRef(false);
+  const isRetainedSelectionPane = useCallback((event: Pick<React.MouseEvent, 'target' | 'clientX' | 'clientY'>) => {
+    if (!(event.target instanceof Element) || !event.target.classList.contains('react-flow__pane')) return false;
+    const region = useCanvasEditing.getState().selectionRegion;
+    const point = rfInstance.current?.screenToFlowPosition({ x: event.clientX, y: event.clientY }, { snapToGrid: false });
+    return !!region && !!point && point.x >= region.rect.x && point.x <= region.rect.x + region.rect.width
+      && point.y >= region.rect.y && point.y <= region.rect.y + region.rect.height;
+  }, []);
   const syncMarqueeSelection = useCallback((ids: string[]) => {
     const selected = new Set(ids);
     useCanvasEditing.getState().setEdgeId(null);
@@ -611,7 +625,7 @@ function Canvas() {
       selectedNodeIds: marquee.current?.target === 'edges' ? [] : ids,
       selectedNodeId: marquee.current?.target !== 'edges' && ids.length === 1 ? ids[0] : null,
       // React Flow mutates its lookup before notifying onNodesChange. Fresh
-      // objects force it to adopt our full group/additive selection as well.
+      // objects force it to adopt our additive selection as well.
       nodes: state.nodes.map(node => ({ ...node, selected: marquee.current?.target !== 'edges' && selected.has(node.id) })),
       edges: state.edges.map(edge => ({ ...edge, selected: marquee.current?.target === 'edges' && selected.has(edge.id) })),
     }));
@@ -619,12 +633,17 @@ function Canvas() {
   const onNodesChange: OnNodesChange = useCallback(
     (changes) => {
       const current = useStore.getState().nodes;
-      const accepted = marquee.current ? changes.filter(change => change.type !== 'select') : changes;
+      // Preview dimensions belong to the rendered overlay, not to the saved
+      // graph. Keep the rendered flag through dismissal until React Flow has
+      // received the original geometry again; its observer may still be queued.
+      const previewing = layoutPreview || useCanvasEditing.getState().layoutPreview;
+      const accepted = changes.filter(change => !(marquee.current && change.type === 'select')
+        && !(previewing && (change.type === 'dimensions' || change.type === 'position')));
       if (!accepted.length) return;
       const next = applyNodeChanges(accepted, current) as typeof current;
-      setNodes(applyGroupSelectionChanges(next, accepted.filter((change) => change.type === 'select')));
+      setNodes(next);
     },
-    [setNodes]
+    [setNodes, layoutPreview]
   );
 
   const onEdgesChange: OnEdgesChange = useCallback(
@@ -636,10 +655,11 @@ function Canvas() {
     [setEdges]
   );
 
-  // Freeze group/frame membership at drag start. React Flow moves the
+  // Freeze frame membership at drag start. React Flow moves the
   // directly dragged nodes; only the extra carried members are moved here.
   const carriedDrag = useRef<{ anchorId: string; start: { x: number; y: number }; members: { id: string; start: { x: number; y: number } }[] } | null>(null);
   const startCarry = useCallback((anchor: ThoughtNodeType, dragged: ThoughtNodeType[]) => {
+    useCanvasEditing.getState().setSelectionRegion(null);
     useStore.getState().pushHistory();
     const st = useStore.getState();
     const direct = new Set(dragged.length ? dragged.map((n) => n.id) : [anchor.id]);
@@ -807,6 +827,7 @@ function Canvas() {
   }, [showFormatPanel]);
   const occupiedPanelWidth = panelOpen ? livePanelWidth : 0;
   const toolbarPanelPosition = useCanvasPanelPosition();
+  const canvasHeaderRef = useResponsiveCanvasHeader();
   useEffect(() => {
     // a selection that names no node is stale; drop it so nothing else keys off it
     if (selectedNodeId && !selectedNode) useStore.getState().setSelectedNodeId(null);
@@ -832,6 +853,7 @@ function Canvas() {
       const inField = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable;
       if ((e.metaKey || e.ctrlKey) && !e.altKey && key === 'a' && !inField) {
         e.preventDefault();
+        useCanvasEditing.getState().setSelectionRegion(null);
         const st = useStore.getState();
         if (useCanvasEditing.getState().selectionTarget === 'edges') {
           const shownEdges = new Set((rfInstance.current?.getEdges() ?? st.edges).filter(edge => !edge.hidden && edge.selectable !== false).map(edge => edge.id));
@@ -848,13 +870,7 @@ function Canvas() {
       if (e.key === 'Tab' && !e.metaKey && !e.ctrlKey && !e.altKey
         && (target === document.body || target.matches('.react-flow, .react-flow__pane, .react-flow__node, .react-flow__nodesselection-rect'))) {
         const st = useStore.getState();
-        const seen = new Set<string>();
-        const selectable = (rfInstance.current?.getNodes() ?? st.nodes).filter(node => {
-          const object = canvasGroupId(node) ? `group:${canvasGroupId(node)}` : `node:${node.id}`;
-          if (node.hidden || node.selectable === false || seen.has(object)) return false;
-          seen.add(object);
-          return true;
-        });
+        const selectable = (rfInstance.current?.getNodes() ?? st.nodes).filter(node => !node.hidden && node.selectable !== false);
         if (selectable.length) {
           e.preventDefault();
           const selected = new Set(st.selectedNodeIds);
@@ -862,20 +878,12 @@ function Canvas() {
           if (!e.shiftKey) selectable.forEach((node, i) => { if (selected.has(node.id)) index = i; });
           const next = index < 0 ? (e.shiftKey ? selectable.length - 1 : 0)
             : (index + (e.shiftKey ? -1 : 1) + selectable.length) % selectable.length;
+          useCanvasEditing.getState().setSelectionRegion(null);
+          useCanvasEditing.getState().setEdgeId(null);
+          st.setEdges(st.edges.map(edge => edge.selected ? { ...edge, selected: false } : edge));
           st.setSelectedNodeId(selectable[next].id);
           (document.activeElement as HTMLElement | null)?.blur();
         }
-        return;
-      }
-      if ((e.metaKey || e.ctrlKey) && key === 'g' && !isParadigm) {
-        const field = e.target as HTMLElement;
-        if (field.tagName === 'INPUT' || field.tagName === 'TEXTAREA' || field.isContentEditable) return;
-        const st = useStore.getState();
-        if (st.selectedNodeIds.length < 2) return;
-        e.preventDefault();
-        if (e.shiftKey) st.ungroupSelection(st.selectedNodeIds);
-        else if (e.altKey) st.regroupSelection(st.selectedNodeIds);
-        else st.groupSelection(st.selectedNodeIds);
         return;
       }
       if ((e.metaKey || e.ctrlKey) && !e.altKey && (key === 'z' || (key === 'y' && e.ctrlKey && !e.metaKey))) {
@@ -928,6 +936,7 @@ function Canvas() {
             }
             if (nextId) {
               e.preventDefault();
+              useCanvasEditing.getState().setSelectionRegion(null);
               setSelectedNodeId(nextId);
               const target2 = ns.find((n) => n.id === nextId);
               if (target2) centerNode(target2, { zoom: 1, duration: 300 });
@@ -1008,13 +1017,13 @@ function Canvas() {
 
   const onSelectionChange = useCallback(({ nodes: selectedNodes }: { nodes: { id: string }[] }) => {
     if (marquee.current) return;
-    const ids = expandGroupSelection(useStore.getState().nodes, selectedNodes.map((n) => n.id));
+    const ids = selectedNodes.map((n) => n.id);
     if (ids.length > 1) {
       setSelectedNodeIds(ids);
     } else if (ids.length === 1) {
       setSelectedNodeId(ids[0]);
     } else if (useStore.getState().nodes.every((node) => !node.selected)) {
-      // Shift-click can clear a whole group without a pane click. Ignore
+      // Shift-click can clear the selection without a pane click. Ignore
       // stale empty callbacks while a programmatic selection is pending.
       setSelectedNodeIds([]);
     }
@@ -1026,16 +1035,24 @@ function Canvas() {
   const [frameNavRequested, setFrameNavOpen] = useState(false);
   const frameNavOpen = useCanvasToolCard('frames', frameNavRequested, () => setFrameNavOpen(false));
   const frameNavRef = useRef<HTMLDivElement>(null);
-  useDismissableLayer({ open: frameNavOpen, refs: [frameNavRef], onDismiss: () => setFrameNavOpen(false), dismissOnFocusOutside: true });
+  const frameNavPanelRef = useRef<HTMLDivElement>(null);
+  useEffect(() => { if (frameNavOpen) frameNavPanelRef.current?.focus({ preventScroll: true }); }, [frameNavOpen]);
+  useDismissableLayer({ open: frameNavOpen, refs: [frameNavRef], onDismiss: reason => {
+    setFrameNavOpen(false);
+    if (reason === 'escape') restoreCanvasToolbarFocus(frameNavRef.current?.querySelector('[data-frame-nav-trigger]') ?? null);
+  }, dismissOnFocusOutside: true, restoreFocus: false });
 
   // Toolbar overflow menu: low-frequency actions live behind one ⋯ button
   // so the top-right row stays short in both languages and with the panel
   // dragged wide.
   const [moreRequested, setMoreOpen] = useState(false);
+  const [overflowMenu, setOverflowMenu] = useState<HTMLDivElement | null>(null);
+  const overflowContext = useMemo(() => ({ target: overflowMenu, close: () => setMoreOpen(false) }), [overflowMenu]);
   const moreOpen = useCanvasToolCard('more', moreRequested, () => setMoreOpen(false));
   const pluginUpdate = useUiStore((s) => s.pluginUpdate);
   const harnessDesktop = useUiStore((s) => !!s.harnessHost?.desktop);
   const [diagPing, setDiagPing] = useState(0);
+  const [detailPing, setDetailPing] = useState(0);
   const searching = useUiStore((s2) => s2.searchHitIds !== null);
   const moreRef = useRef<HTMLDivElement>(null);
   useDismissableLayer({ open: moreOpen, refs: [moreRef], onDismiss: () => setMoreOpen(false), dismissOnFocusOutside: true });
@@ -1074,7 +1091,8 @@ function Canvas() {
     const planned = new Map(layoutPreview.map((node) => [node.id, node]));
     return nodes.map((node) => {
       const draft = planned.get(node.id);
-      return draft ? { ...node, position: draft.position, data: { ...node.data,
+      return draft ? { ...node, position: draft.position, width: draft.width, height: draft.height,
+        measured: draft.measured, style: { ...node.style, width: draft.style?.width, height: draft.style?.height }, data: { ...node.data,
         layoutDirection: draft.data.layoutDirection, edgeRouteDefault: draft.data.edgeRouteDefault } } : node;
     });
   }, [nodes, layoutPreview]);
@@ -1333,17 +1351,35 @@ function Canvas() {
       >
       <CanvasEdgeRouting.Provider value={routingContext}>
       <ReactFlow
+        onClickCapture={event => {
+          // Let React Flow consume the release click and reset its gesture flag.
+          if (marqueeClickPending.current) { marqueeClickPending.current = false; return; }
+          if (isRetainedSelectionPane(event)) event.stopPropagation();
+        }}
         onPointerDownCapture={(event) => {
+          marqueeClickPending.current = false;
           const target = event.target as HTMLElement;
           if (isViewerMode || event.button !== 0 || !target.classList.contains('react-flow__pane') || !target.classList.contains('selection')) return;
+          const state = useStore.getState();
+          const previous = useCanvasEditing.getState().selectionRegion;
+          const additive = event.ctrlKey || event.metaKey || event.shiftKey;
+          if (!additive && isRetainedSelectionPane(event)) {
+            event.stopPropagation();
+            return;
+          }
+          const selectedNodes = new Set(state.selectedNodeIds);
+          const selectedLines = state.edges.filter(edge => edge.selected);
           marquee.current = {
             start: { x: event.clientX, y: event.clientY },
-            base: event.ctrlKey || event.metaKey || event.shiftKey ? selectionTarget === 'nodes' ? [...useStore.getState().selectedNodeIds] : useStore.getState().edges.filter(edge => edge.selected).map(edge => edge.id) : [],
+            baseNodes: additive ? previous?.nodeIds ?? [...new Set([...selectedNodes, ...selectedLines.flatMap(edge => [edge.source, edge.target])])] : [],
+            baseEdges: additive ? previous?.edgeIds ?? state.edges.filter(edge => edge.selected || selectedNodes.has(edge.source) && selectedNodes.has(edge.target)).map(edge => edge.id) : [],
             ids: [],
             active: false,
             target: selectionTarget,
-            paths: selectionTarget === 'edges' ? snapshotEdgeSelectionPaths(event.currentTarget).filter(path => useStore.getState().edges.some(edge => edge.id === path.id && !edge.hidden && edge.selectable !== false)) : [],
+            paths: snapshotEdgeSelectionPaths(event.currentTarget).filter(path => state.edges.some(edge => edge.id === path.id && !edge.hidden && edge.selectable !== false)),
+            region: null,
           };
+          useCanvasEditing.getState().setSelectionRegion(null);
         }}
         onPointerMoveCapture={(event) => {
           const gesture = marquee.current;
@@ -1353,20 +1389,28 @@ function Canvas() {
           gesture.active = true;
           const start = flow.screenToFlowPosition(gesture.start, { snapToGrid: false });
           const end = flow.screenToFlowPosition({ x: event.clientX, y: event.clientY }, { snapToGrid: false });
-          gesture.ids = gesture.target === 'edges' ? intersectingEdgeSelection(gesture.paths, {
+          const edgeIds = intersectingEdgeSelection(gesture.paths, {
             x: Math.min(gesture.start.x, event.clientX), y: Math.min(gesture.start.y, event.clientY),
             width: Math.abs(event.clientX - gesture.start.x), height: Math.abs(event.clientY - gesture.start.y),
-          }, gesture.base) : enclosedSelection(flow.getNodes(), {
+          }, gesture.baseEdges);
+          const rect = {
             x: Math.min(start.x, end.x), y: Math.min(start.y, end.y),
             width: Math.abs(end.x - start.x), height: Math.abs(end.y - start.y),
-          }, gesture.base);
+          };
+          const nodeIds = enclosedSelection(flow.getNodes(), rect, gesture.baseNodes);
+          gesture.region = { rect, nodeIds, edgeIds };
+          gesture.ids = gesture.target === 'edges' ? edgeIds : nodeIds;
           syncMarqueeSelection(gesture.ids);
         }}
         onPointerCancel={() => { marquee.current = null; }}
         onPointerUpCapture={() => {
           const gesture = marquee.current;
+          marqueeClickPending.current = !!gesture?.active;
           queueMicrotask(() => {
-            if (gesture?.active) syncMarqueeSelection(gesture.ids);
+            if (gesture?.active) {
+              syncMarqueeSelection(gesture.ids);
+              useCanvasEditing.getState().setSelectionRegion(gesture.region);
+            }
             marquee.current = null;
           });
         }}
@@ -1404,6 +1448,7 @@ function Canvas() {
         onEdgeContextMenu={onEdgeContextMenu}
         onEdgeClick={(event, edge) => {
           if (isViewerMode) return;
+          useCanvasEditing.getState().setSelectionRegion(null);
           if (selectionTarget === 'edges' || event.ctrlKey || event.metaKey || event.shiftKey) {
             useStore.getState().setSelectedNodeIds([]);
             useCanvasEditing.getState().setEdgeId(null);
@@ -1411,6 +1456,7 @@ function Canvas() {
         }}
         onEdgeDoubleClick={(_event, edge) => openEdgeEditor(edge.id)}
         onNodeClick={() => {
+          useCanvasEditing.getState().setSelectionRegion(null);
           useCanvasEditing.getState().setEdgeId(null);
           useStore.setState(state => ({ edges: state.edges.map(edge => edge.selected ? { ...edge, selected: false } : edge) }));
         }}
@@ -1455,7 +1501,13 @@ function Canvas() {
         zoomOnDoubleClick={false}
         connectionLineStyle={{ stroke: themePalette.accent, strokeDasharray: '8 4', strokeWidth: 2 }}
         onSelectionChange={onSelectionChange}
-        onPaneClick={() => { marquee.current = null; useCanvasEditing.getState().setEdgeId(null); if (!layoutOpen) { setSelectedNodeId(null); setSelectedNodeIds([]); } setNodeMenu(null); }}
+        onPaneClick={() => {
+          marquee.current = null;
+          useCanvasEditing.getState().setSelectionRegion(null);
+          useCanvasEditing.getState().setEdgeId(null);
+          if (!layoutOpen) { setSelectedNodeId(null); setSelectedNodeIds([]); }
+          setNodeMenu(null);
+        }}
       >
         {paperTexture === 'grid' ? (
           <>
@@ -1468,6 +1520,7 @@ function Canvas() {
         )}
         <ZoomTierTag />
         <CanvasWheelZoom />
+        {!isViewerMode && <SelectionRegion hasNodeSurface={!layoutOpen && !edgeEditorOpen && !batchEdgeOpen && selectedNodeIds.length > 1} />}
         {!isViewerMode && !layoutOpen && !edgeEditorOpen && !batchEdgeOpen && <SelectionResizeControls onNodeContextMenu={onNodeContextMenu} />}
         <ThoughtMapPill panelShiftWidth={occupiedPanelWidth} />
         <TimelineBar />
@@ -1828,14 +1881,15 @@ function Canvas() {
         </div>
       )}
 
-      <div className="canvas-header" data-canvas-header
-        style={{ right: occupiedPanelWidth ? occupiedPanelWidth + PANEL_INSET * 2 : undefined }}>
+      <div ref={canvasHeaderRef} className="canvas-header" data-canvas-header
+        style={{ right: occupiedPanelWidth ? `calc(min(${occupiedPanelWidth}px, 70vw) + ${PANEL_INSET * 2}px)` : undefined }}>
+      <CanvasToolbarOverflowContext.Provider value={overflowContext}>
       {!isViewerMode && <ProjectSwitcher onSwitched={afterProjectSwitch}>
         {!isParadigm && <ModelPicker />}
       </ProjectSwitcher>}
 
       <div className="canvas-header-actions">
-      {/* Search shares the toolbar row and stays open while browsing results. */}
+      {/* Search floats below the fixed row and stays open while browsing results. */}
       <SearchBar
         open={searchOpen}
         onClose={() => setSearchOpen(false)}
@@ -1855,8 +1909,8 @@ function Canvas() {
           className="canvas-toolbar relative z-10"
           data-top-toolbar
         >
-          <span className="bg-card border border-line rounded-control h-8 px-3 flex items-center gap-1.5 text-ink-muted text-xs font-medium" data-viewer-badge>
-            <Eye size={14} strokeWidth={1.75} /> {t('viewer.badge')}
+          <span className="canvas-toolbar-icon bg-card border border-line rounded-control h-8 px-3 flex items-center gap-1.5 text-ink-muted text-xs font-medium" title={t('viewer.badge')} aria-label={t('viewer.badge')} data-viewer-badge>
+            <Eye size={14} strokeWidth={1.75} /><span className="canvas-toolbar-label">{t('viewer.badge')}</span>
           </span>
           <button
             onClick={() => setSearchOpen(true)}
@@ -1878,9 +1932,10 @@ function Canvas() {
             href="https://github.com/chenxiachan/thoughtdag"
             target="_blank"
             rel="noreferrer"
-            className="bg-ink text-card rounded-control h-8 px-3 flex items-center gap-1.5 hover:bg-ink/85 transition-colors text-xs font-medium"
+            title={t('viewer.openApp')} aria-label={t('viewer.openApp')}
+            className="canvas-toolbar-icon bg-ink text-card rounded-control h-8 px-3 flex items-center gap-1.5 hover:bg-ink/85 transition-colors text-xs font-medium"
           >
-            {t('viewer.openApp')}
+            <ArrowRight size={14} /><span className="canvas-toolbar-label">{t('viewer.openApp')}</span>
           </a>
         </div>
       )}
@@ -1890,23 +1945,29 @@ function Canvas() {
           is open it slides left instead of hiding underneath. */}
       {!isViewerMode && (
       <div
-        className="canvas-toolbar relative z-10"
+        className="canvas-toolbar canvas-toolbar-main relative z-10"
         data-top-toolbar
       >
+        <div className="canvas-toolbar-group canvas-toolbar-context">
         {isParadigm && (
           <>
+            <CanvasToolbarOverflowAction label={t('paradigm.addHuman')} icon={<MessageCircleQuestion size={14} />}>
             <button
               onClick={() => addStep('human')}
               className="bg-card border border-warm/40 rounded-control h-8 px-3 flex items-center gap-1.5 hover:bg-warm/10 transition-colors text-warm text-xs font-medium"
             >
               <MessageCircleQuestion size={14} strokeWidth={1.75} /> {t('paradigm.addHuman')}
             </button>
+            </CanvasToolbarOverflowAction>
+            <CanvasToolbarOverflowAction label={t('paradigm.addPrompt')} icon={<SquareTerminal size={14} />}>
             <button
               onClick={() => addStep('prompt')}
               className="bg-card border border-accent/40 rounded-control h-8 px-3 flex items-center gap-1.5 hover:bg-accent/10 transition-colors text-accent text-xs font-medium"
             >
               <SquareTerminal size={14} strokeWidth={1.75} /> {t('paradigm.addPrompt')}
             </button>
+            </CanvasToolbarOverflowAction>
+            <CanvasToolbarOverflowAction label={t('paradigm.instantiate')} icon={<ArrowRight size={14} />}>
             <button
               onClick={() => void instantiate()}
               title={t('paradigm.instantiateTitle')}
@@ -1914,22 +1975,17 @@ function Canvas() {
             >
               ▶ {t('paradigm.instantiate')}
             </button>
+            </CanvasToolbarOverflowAction>
           </>
         )}
         {!isParadigm && <WaitingPill />}
         {!isParadigm && <AgentCwdChip />}
         {!isParadigm && <AgentPermissionChip />}
-        {hasNodes && !layoutOpen && <SelectionTargetControl />}
-        {hasNodes && <button type="button" data-canvas-layout-entry
-          onClick={() => useCanvasEditing.getState().setLayoutOpen(true)}
-          className={`bg-card border rounded-control h-8 px-2.5 flex items-center justify-center gap-1.5 text-xs hover:bg-wash transition-colors ${layoutOpen ? 'border-accent/40 text-accent' : 'border-line text-ink-muted'}`}
-          title={t('canvasLayout.title')} aria-expanded={layoutOpen}>
-          <LayoutGrid size={15} strokeWidth={1.75} />{t('canvasLayout.title')}
-        </button>}
         {/* Batch replay: visible only when something is stale. Price at the
             decision point — N generations is the one many-calls-per-click
             action in the app, so it confirms with a token estimate. */}
         {staleCount > 0 && !isParadigm && (
+          <CanvasToolbarOverflowAction label={`${t('replay.chipTitle')} · ${staleCount}`} icon={<ListRestart size={14} />}>
           <button
             onClick={() => {
               const { nodes: ns, edges: es } = useStore.getState();
@@ -1951,22 +2007,37 @@ function Canvas() {
           >
             <ListRestart size={14} strokeWidth={1.75} /> {staleCount}
           </button>
+          </CanvasToolbarOverflowAction>
         )}
+        {/* Keep transient status separate from the canvas view controls. */}
+        {condenseBuilding && !isViewerMode && (
+          <CanvasToolbarOverflowAction label={fmt(t('condense.entryBuilding'), { i: String(condenseRunState.current), n: String(condenseRunState.total) })} icon={<Loader2 size={14} className="animate-spin" />}>
+          <button
+            onClick={() => useUiStore.getState().setCondenseDialogOpen(true)}
+            className="bg-card border border-accent/50 rounded-control h-8 px-2 flex items-center justify-center gap-1.5 hover:bg-wash transition-colors text-accent"
+            title={fmt(t('condense.entryBuilding'), { i: String(condenseRunState.current), n: String(condenseRunState.total) })}
+            data-condense-entry
+          >
+            <Loader2 size={14} strokeWidth={1.75} className="animate-spin" /><span className="text-2xs font-mono">{condenseRunState.current}/{condenseRunState.total}</span>
+          </button>
+          </CanvasToolbarOverflowAction>
+        )}
+        </div>
+        {hasNodes && !layoutOpen && <SelectionTargetControl />}
+        {hasNodes && <div className="canvas-toolbar-group">
         {hasNodes && frames.length > 0 && (
-          <div ref={frameNavRef} className="relative">
+          <div ref={frameNavRef} className="contents">
             <button
               onClick={() => setFrameNavOpen((v) => !v)}
-              className={`bg-card border rounded-control w-8 h-8 flex items-center justify-center transition-colors ${
-                frameNavOpen ? 'border-accent/40 text-accent' : 'border-line text-ink-faint hover:bg-wash'
-              }`}
+              className="canvas-toolbar-button canvas-toolbar-secondary"
               title={t('toolbar.frames')}
               aria-expanded={frameNavOpen}
               data-frame-nav-trigger
             >
-              <Frame size={15} strokeWidth={1.75} />
+              <Frame size={16} strokeWidth={1.75} />
             </button>
             {frameNavOpen && (
-              <div className="canvas-tool-panel canvas-tool-menu py-1" style={toolbarPanelPosition} data-frame-nav-panel>
+              <div ref={frameNavPanelRef} tabIndex={-1} className="canvas-tool-panel canvas-tool-menu py-1" style={toolbarPanelPosition} data-frame-nav-panel>
                 {frames.map((f) => (
                   <button
                     key={f.id}
@@ -1990,21 +2061,23 @@ function Canvas() {
         {hasNodes && (
           <button
             onClick={() => setChatOpen((v) => !v)}
-            className={`bg-card border border-line rounded-control w-8 h-8 flex items-center justify-center hover:bg-wash transition-colors ${chatOpen ? 'text-accent' : 'text-ink-faint hover:text-accent'}`}
+            className="canvas-toolbar-button canvas-toolbar-secondary"
+            aria-pressed={chatOpen}
             title={t('chat.entryTitle')}
             data-chat-entry
           >
-            <MessageCircleQuestion size={15} strokeWidth={1.75} />
+            <MessageCircleQuestion size={16} strokeWidth={1.75} />
           </button>
         )}
         {hasNodes && (
           <button
             onClick={() => setSearchOpen(true)}
-            className="bg-card border border-line rounded-control w-8 h-8 flex items-center justify-center hover:bg-wash transition-colors text-ink-faint hover:text-accent"
+            className="canvas-toolbar-button"
+            aria-expanded={searchOpen}
             title={t('search.entryTitle')}
             data-search-entry
           >
-            <Search size={15} strokeWidth={1.75} />
+            <Search size={16} strokeWidth={1.75} />
           </button>
         )}
         {hasNodes && !isParadigm && (
@@ -2016,45 +2089,67 @@ function Canvas() {
             }
           }} />
         )}
-        {/* Condense while RUNNING is a status badge (click reopens progress);
-            the launch entry lives in the ⋯ menu with the other tools. */}
-        {condenseBuilding && !isViewerMode && (
-          <button
-            onClick={() => useUiStore.getState().setCondenseDialogOpen(true)}
-            className="bg-card border border-accent/50 rounded-control h-8 px-2 flex items-center justify-center gap-1.5 hover:bg-wash transition-colors text-accent"
-            title={fmt(t('condense.entryBuilding'), { i: String(condenseRunState.current), n: String(condenseRunState.total) })}
-            data-condense-entry
-          >
-            <Loader2 size={14} strokeWidth={1.75} className="animate-spin" /><span className="text-2xs font-mono">{condenseRunState.current}/{condenseRunState.total}</span>
-          </button>
-        )}
+        <CanvasDetailControl openPing={detailPing} />
+        </div>}
+        <div className="canvas-toolbar-group">
         {backupCapable() && (
           <button
             onClick={() => useUiStore.getState().setBackupDialogOpen(true)}
-            className="bg-card border border-line rounded-control w-8 h-8 flex items-center justify-center hover:bg-wash transition-colors text-ink-muted hover:text-accent"
+            className="canvas-toolbar-button canvas-toolbar-secondary"
             title={t('backup.dialogTitle')}
             data-backup-entry
           >
-            <FolderSync size={15} strokeWidth={1.75} />
+            <FolderSync size={16} strokeWidth={1.75} />
           </button>
         )}
-        {hasNodes && <CanvasDetailControl />}
         {/* ⋯ overflow: share, memory, annotations, relayout, tutorial —
             one slot regardless of language or panel width. */}
-        <div ref={moreRef} className="relative">
+        <div ref={moreRef} className="relative" data-selection-menu>
           <button
             onClick={() => setMoreOpen((v) => !v)}
-            className={`bg-card border rounded-control w-8 h-8 flex items-center justify-center transition-colors ${
-              moreOpen ? 'border-accent/40 text-accent' : 'border-line text-ink-faint hover:bg-wash'
-            }`}
+            className="canvas-toolbar-button"
             title={t('toolbar.more')}
             aria-expanded={moreOpen}
             data-toolbar-more
           >
-            <MoreHorizontal size={15} strokeWidth={1.75} />
+            <MoreHorizontal size={16} strokeWidth={1.75} />
           </button>
           {moreOpen && (
             <div className="canvas-tool-panel canvas-tool-menu py-1" style={toolbarPanelPosition} data-toolbar-more-panel>
+              <div className="canvas-toolbar-overflow">
+                {hasNodes && <button type="button" data-menu-detail
+                  onClick={() => { setMoreOpen(false); setDetailPing(value => value + 1); }}
+                  className="w-full text-left px-3 py-2 text-xs text-ink hover:bg-wash flex items-center gap-2.5">
+                  <ListFilter size={14} className="text-ink-faint shrink-0" />{t('detail.title')}
+                </button>}
+                {hasNodes && frames.length > 0 && <button type="button" data-menu-frames
+                  onClick={() => { setMoreOpen(false); setFrameNavOpen(true); }}
+                  className="w-full text-left px-3 py-2 text-xs text-ink hover:bg-wash flex items-center gap-2.5">
+                  <Frame size={14} className="text-ink-faint shrink-0" />{t('toolbar.frames')}
+                </button>}
+                {hasNodes && <button type="button" data-menu-chat aria-pressed={chatOpen}
+                  onClick={() => { setMoreOpen(false); setChatOpen(value => !value); }}
+                  className="w-full text-left px-3 py-2 text-xs text-ink hover:bg-wash flex items-center gap-2.5">
+                  <MessageCircleQuestion size={14} className="text-ink-faint shrink-0" />{t('chat.entryTitle')}
+                </button>}
+                {backupCapable() && <button type="button" data-menu-backup
+                  onClick={() => { setMoreOpen(false); useUiStore.getState().setBackupDialogOpen(true); }}
+                  className="w-full text-left px-3 py-2 text-xs text-ink hover:bg-wash flex items-center gap-2.5">
+                  <FolderSync size={14} className="text-ink-faint shrink-0" />{t('backup.dialogTitle')}
+                </button>}
+              </div>
+              <div ref={setOverflowMenu} className="canvas-toolbar-minimal-menu">
+                <button type="button" data-menu-undo disabled={!undoable.canUndo}
+                  onClick={() => { setMoreOpen(false); undo(); }}
+                  className="w-full text-left px-3 py-2 text-xs text-ink hover:bg-wash disabled:opacity-30 flex items-center gap-2.5">
+                  <Undo2 size={14} className="text-ink-faint shrink-0" />{t('canvas.undo')}
+                </button>
+                <button type="button" data-menu-redo disabled={!undoable.canRedo}
+                  onClick={() => { setMoreOpen(false); redo(); }}
+                  className="w-full text-left px-3 py-2 text-xs text-ink hover:bg-wash disabled:opacity-30 flex items-center gap-2.5">
+                  <Redo2 size={14} className="text-ink-faint shrink-0" />{t('canvas.redo')}
+                </button>
+              </div>
               {hasNodes && (
                 <button
                   onClick={() => { setMoreOpen(false); setAnnotationsHidden(!annotationsHidden); }}
@@ -2082,7 +2177,7 @@ function Canvas() {
                   data-layout-entry
                   className="w-full text-left px-3 py-2 text-xs text-ink hover:bg-wash transition-colors flex items-center gap-2.5"
                 >
-                  <LayoutGrid size={14} strokeWidth={1.75} className="text-ink-faint shrink-0" /> {t('toolbar.relayout')}
+                  <SlidersHorizontal size={14} strokeWidth={1.75} className="text-ink-faint shrink-0" /> {t('canvasLayout.title')}
                 </button>
               )}
               {highlightCount > 0 && (
@@ -2247,10 +2342,12 @@ function Canvas() {
             </div>
           )}
         </div>
+        </div>
+        <div className="canvas-toolbar-group canvas-toolbar-history">
         <button
           onClick={undo}
           disabled={!undoable.canUndo}
-          className="bg-card border border-line rounded-control w-8 h-8 flex items-center justify-center hover:bg-wash transition-colors disabled:opacity-20 disabled:cursor-not-allowed"
+          className="canvas-toolbar-button"
           title={t('canvas.undo')}
         >
           <Undo2 size={16} strokeWidth={1.75} />
@@ -2258,20 +2355,24 @@ function Canvas() {
         <button
           onClick={redo}
           disabled={!undoable.canRedo}
-          className="bg-card border border-line rounded-control w-8 h-8 flex items-center justify-center hover:bg-wash transition-colors disabled:opacity-20 disabled:cursor-not-allowed"
+          className="canvas-toolbar-button"
           title={t('canvas.redo')}
         >
           <Redo2 size={16} strokeWidth={1.75} />
         </button>
+        </div>
       </div>
       )}
 
       </div>
 
+      </CanvasToolbarOverflowContext.Provider>
       </div>
 
       {/* Multi-select toolbar */}
-      {showFormatPanel && formatPanelReady && !isViewerMode && <SelectionToolbar getViewportRect={getViewportRect} withDetails={panelOpen} />}
+      {showFormatPanel && formatPanelReady && !isViewerMode && <CanvasQuickLayoutContext.Provider value={quickLayout}>
+        <SelectionToolbar getViewportRect={getViewportRect} withDetails={panelOpen} />
+      </CanvasQuickLayoutContext.Provider>}
       {batchEdgeOpen && !toolCardOpen && <BatchEdgeInspector selected={selectedEdges} />}
 
       {/* Ask the canvas: the outline-reading dialog, bottom right */}

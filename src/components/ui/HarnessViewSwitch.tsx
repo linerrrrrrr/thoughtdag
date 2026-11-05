@@ -1,6 +1,8 @@
 import { useT } from '../../i18n';
 import { IN_HARNESS_FRAME } from '../../lib/embedded';
 import { useUiStore } from '../../lib/ui-store';
+import CanvasToolbarOverflowAction from '../CanvasToolbarOverflowAction';
+import { MessageSquare } from 'lucide-react';
 
 // The 对话 | 思维图 switch, as the canvas shows it while it runs inside the
 // harness: one control in the canvas's own top bar, right after the canvas
@@ -18,7 +20,8 @@ export default function HarnessViewSwitch() {
   if (!IN_HARNESS_FRAME || hostBar || hostPanel) return null;
   const close = () => window.parent.postMessage({ source: 'dsh-thoughtdag', type: 'td:close' }, window.location.origin);
   return (
-    <div className="bg-card border border-line rounded-control h-8 p-0.5 flex items-center" role="group" aria-label="view switch" data-harness-view-switch>
+    <div className="canvas-toolbar-minimal-secondary bg-card border border-line rounded-control h-8 p-0.5 flex items-center" role="group" aria-label="view switch" data-harness-view-switch>
+      <CanvasToolbarOverflowAction label={t('harness.viewChat')} icon={<MessageSquare size={14} />}>
       <button
         type="button"
         onClick={close}
@@ -28,6 +31,7 @@ export default function HarnessViewSwitch() {
       >
         {t('harness.viewChat')}
       </button>
+      </CanvasToolbarOverflowAction>
       <button
         type="button"
         className="h-full px-3 rounded-tag text-xs font-semibold bg-ink text-card whitespace-nowrap cursor-default"

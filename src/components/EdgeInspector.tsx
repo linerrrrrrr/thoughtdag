@@ -12,6 +12,7 @@ import { useProjects } from '../store/projects';
 import type { ThoughtEdge } from '../types';
 import './EdgeInspector.css';
 import { useCanvasPanelPosition } from '../lib/use-canvas-panel-position';
+import { EdgeRelationOptions, EdgeRouteOptions } from './EdgeInspectorControls';
 
 export interface EdgeInspectorProps {
   edgeId: string;
@@ -32,10 +33,6 @@ const restrictionKeys = {
   watch: ['edgeEditor.watch', 'edgeEditor.watchHint'],
   frame: ['edgeEditor.frame', 'edgeEditor.frameHint'],
 } as const;
-const routes = [
-  { value: 'curve', label: 'edgeEditor.routeCurve', path: 'M8 25 C30 25 30 7 52 7' },
-  { value: 'orthogonal', label: 'edgeEditor.routeOrthogonal', path: 'M8 25 H25 Q30 25 30 20 V12 Q30 7 35 7 H52' },
-] as const;
 const equal = (a: EdgeEditSettings, b: EdgeEditSettings) => a.relation === b.relation && a.route === b.route && a.label === b.label;
 
 function readSessionSettings(value: string, fallback: EdgeEditSettings): EdgeEditSettings {
@@ -54,7 +51,6 @@ function readSessionSettings(value: string, fallback: EdgeEditSettings): EdgeEdi
 function EdgeInspectorForm({ edgeId, onClose, onLocateNode, draftKey }: EdgeInspectorProps & { draftKey: string }) {
   const t = useT();
   const titleId = useId();
-  const relationName = useId();
   const nodes = useStore((s) => s.nodes);
   const edges = useStore((s) => s.edges);
   const updateEdgeSettings = useStore((s) => s.updateEdgeSettings);
@@ -148,31 +144,14 @@ function EdgeInspectorForm({ edgeId, onClose, onLocateNode, draftKey }: EdgeInsp
         {restrictionText ? <div className="edge-inspector-fixed-purpose">
           <LockKeyhole size={16} aria-hidden="true" /><div><strong>{t(restrictionText[0])}</strong><p>{t(restrictionText[1])}</p></div>
         </div> : <>
-          <div className="edge-inspector-relations">
-            {(['continue', 'reference'] as const).map((relation) => <label key={relation} className="edge-inspector-relation"
-              data-selected={draft.relation === relation} data-disabled={relation === 'continue' && !canContinue}>
-              <input type="radio" name={relationName} value={relation} checked={draft.relation === relation}
-                disabled={relation === 'continue' && !canContinue} data-edge-relation={relation}
-                onChange={() => change('relation', relation)} />
-              <span><strong>{t(relation === 'continue' ? 'edgeEditor.continue' : 'edgeEditor.reference')}</strong>
-                <span className="edge-inspector-relation-hint">{t(relation === 'continue' ? 'edgeEditor.continueHint' : 'edgeEditor.referenceHint')}</span></span>
-            </label>)}
-          </div>
+          <EdgeRelationOptions value={draft.relation} canContinue={canContinue} onChange={relation => change('relation', relation)} />
           {!canContinue && continuationCheck && !continuationCheck.ok && <p className="edge-inspector-hint">{messageFor(continuationCheck.error)}</p>}
         </>}
       </fieldset>
 
       <fieldset className="edge-inspector-section">
         <legend>{t('edgeEditor.route')}</legend>
-        <div className="edge-inspector-routes" role="group" aria-label={t('edgeEditor.route')}>
-          {routes.map(({ value, label, path }) => <button type="button" key={value} data-edge-route={value}
-            aria-pressed={effectiveRoute === value} onClick={() => change('route', value)}>
-            <svg width="60" height="32" viewBox="0 0 60 32" fill="none" aria-hidden="true">
-              <path d={path} stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
-              <circle cx="8" cy="25" r="2.5" fill="currentColor" /><circle cx="52" cy="7" r="2.5" fill="currentColor" />
-            </svg><span>{t(label)}</span>
-          </button>)}
-        </div>
+        <EdgeRouteOptions value={effectiveRoute} onChange={route => change('route', route)} />
       </fieldset>
 
       {labelExpanded || draft.label ? <label className="edge-inspector-note">

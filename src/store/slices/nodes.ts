@@ -11,12 +11,19 @@ import { t, fmt, type MessageKey } from '../../i18n';
 import type { StoreState, NodeSlice } from '../types';
 import { condenseGuard } from '../../lib/condense-guard';
 import { activeAbortControllers } from '../streaming';
-import { canGroup, canvasGroupId, expandGroupSelection, regroupCandidates } from '../../lib/node-groups';
 import { arrangeNodes } from '../../lib/arrange-selection';
-import { fittedFrameRect, frameContentIds, isFrameNode, nodesRect } from '../../lib/frames';
+import { fitFrameNodes, frameContentIds, isFrameNode, nodesRect } from '../../lib/frames';
 import { applySelectionGeometry } from '../../lib/node-geometry';
 import { applyEdgeSettings, applyBatchEdgeSettings } from '../../lib/edge-edit';
-import { planCanvasLayout } from '../../lib/canvas-layout';
+import { canvasLayoutInputKey, planCanvasLayout } from '../../lib/canvas-layout';
+
+/** Do not propagate retired metadata when copying older saved documents. */
+function copiedNodeData(data: ThoughtNode['data']): ThoughtNode['data'] {
+  const copy = { ...data };
+  Reflect.deleteProperty(copy, 'canvasGroupId');
+  Reflect.deleteProperty(copy, 'previousCanvasGroupId');
+  return copy;
+}
 
 // A node that goes while it is still generating takes its stream with it:
 // the Stop button went with the card, so the only way to end the call is
@@ -30,7 +37,7 @@ const abortGenerations = (ids: Iterable<string>): void => {
   }
 };
 
-export const createNodeSlice: StateCreator<StoreState, [], [], NodeSlice> = (set, get) => ({
+export const createNodeSlice: StateCreator<StoreState, [], [], NodeSlice> = (set, get, api) => ({
   nodes: [],
   edges: [],
   selectedNodeId: null,
@@ -38,22 +45,23 @@ export const createNodeSlice: StateCreator<StoreState, [], [], NodeSlice> = (set
 
   setNodes: (nodes) => set({ nodes }),
   setEdges: (edges) => set({ edges }),
-  setSelectedNodeId: (id, options) => {
-    const ids = id ? expandGroupSelection(get().nodes, [id]) : [];
+  setSelectedNodeId: (id) => {
+    const ids = id && get().nodes.some(node => node.id === id) ? [id] : [];
     const selected = new Set(ids);
     set((state) => ({
-      selectedNodeId: options?.focus && id && ids.includes(id) ? id : ids.length === 1 ? ids[0] : null,
+      selectedNodeId: ids.length === 1 ? ids[0] : null,
       selectedNodeIds: ids,
       // Programmatic selection and React Flow outlines share one selection.
       nodes: state.nodes.map((n) => !!n.selected === selected.has(n.id) ? n : { ...n, selected: selected.has(n.id) }),
     }));
   },
   setSelectedNodeIds: (ids) => {
-    const expanded = expandGroupSelection(get().nodes, ids);
-    const selected = new Set(expanded);
+    const requested = new Set(ids);
+    const selectedIds = get().nodes.filter(node => requested.has(node.id)).map(node => node.id);
+    const selected = new Set(selectedIds);
     set((state) => ({
-      selectedNodeIds: expanded,
-      selectedNodeId: expanded.length === 1 ? expanded[0] : null,
+      selectedNodeIds: selectedIds,
+      selectedNodeId: selectedIds.length === 1 ? selectedIds[0] : null,
       nodes: state.nodes.map((n) => !!n.selected === selected.has(n.id) ? n : { ...n, selected: selected.has(n.id) }),
     }));
   },
@@ -188,9 +196,7 @@ export const createNodeSlice: StateCreator<StoreState, [], [], NodeSlice> = (set
       position: { x: 0, y: 0 },
       dragHandle: '.drag-handle',
       data: {
-        ...node.data,
-        canvasGroupId: undefined,
-        previousCanvasGroupId: undefined,
+        ...copiedNodeData(node.data),
         isCollapsed: true,
         isEditing: false,
         isEditingResponse: false,
@@ -396,13 +402,52 @@ export const createNodeSlice: StateCreator<StoreState, [], [], NodeSlice> = (set
     return { ok: true };
   },
 
-  applyCanvasLayout: (options, selectedIds) => {
+  applyCanvasLayout: async (options, selectedIds, isCurrent) => {
     const state = get();
-    const result = planCanvasLayout(state.nodes, state.edges, options, selectedIds);
+    const input = canvasLayoutInputKey(state.nodes, state.edges);
+    const selection = [...state.selectedNodeIds].sort().join('\0');
+    // Project boot depends on the main store; load this guard only after the
+    // store has initialized instead of creating a module-evaluation cycle.
+    const { useProjects } = await import('../projects');
+    const current = get();
+    if (isCurrent?.() === false || current.history !== state.history || current.historyIndex !== state.historyIndex
+      || [...current.selectedNodeIds].sort().join('\0') !== selection
+      || canvasLayoutInputKey(current.nodes, current.edges) !== input) return { ok: false, error: 'stale-layout' };
+    const project = useProjects.getState().activeId;
+    let stale = false;
+    // A layout must not undo edits made while its worker was computing. Keep
+    // even transient edits/undo/project switches invalidating the request.
+    const stopGraph = api.subscribe((next) => {
+      if (stale) return;
+      stale = next.history !== state.history || next.historyIndex !== state.historyIndex
+        || [...next.selectedNodeIds].sort().join('\0') !== selection
+        || canvasLayoutInputKey(next.nodes, next.edges) !== input;
+    });
+    const stopProject = useProjects.subscribe((next) => { if (next.activeId !== project) stale = true; });
+    let result;
+    try { result = await planCanvasLayout(state.nodes, state.edges, options, selectedIds); }
+    catch { return { ok: false, error: 'layout-failed' }; }
+    finally { stopGraph(); stopProject(); }
+    if (stale || isCurrent?.() === false) return { ok: false, error: 'stale-layout' };
     if (result.error) return { ok: false, error: result.error };
     if (result.nodes === state.nodes) return { ok: true };
+    const planned = new Map(result.nodes.map((node) => [node.id, node]));
+    let changed = false;
+    const nodes = get().nodes.map((node) => {
+      const draft = planned.get(node.id);
+      if (!draft || (draft.position.x === node.position.x && draft.position.y === node.position.y
+        && draft.width === node.width && draft.height === node.height
+        && draft.data.layoutDirection === node.data.layoutDirection && draft.data.edgeRouteDefault === node.data.edgeRouteDefault)) return node;
+      changed = true;
+      const resized = draft.width !== node.width || draft.height !== node.height;
+      return { ...node, position: draft.position, width: draft.width, height: draft.height,
+        measured: resized ? draft.measured : node.measured,
+        style: resized ? { ...node.style, width: draft.style?.width, height: draft.style?.height } : node.style,
+        data: { ...node.data, layoutDirection: draft.data.layoutDirection, edgeRouteDefault: draft.data.edgeRouteDefault } };
+    });
+    if (!changed) return { ok: true };
     get().pushHistory();
-    set({ nodes: result.nodes });
+    set({ nodes });
     get().pushHistory();
     return { ok: true };
   },
@@ -463,10 +508,6 @@ export const createNodeSlice: StateCreator<StoreState, [], [], NodeSlice> = (set
   },
 
   relayout: () => {
-    if (get().nodes.some((node) => canvasGroupId(node))) {
-      toast('info', t('arrange.ungroupLayoutFirst'));
-      return;
-    }
     if (condenseGuard()) return;
     get().pushHistory();
     set((state) => {
@@ -515,26 +556,10 @@ export const createNodeSlice: StateCreator<StoreState, [], [], NodeSlice> = (set
     get().pushHistory();
   },
 
-  groupSelection: (nodeIds) => {
-    if (condenseGuard() || !canGroup(get().nodes, nodeIds)) return;
-    const ids = expandGroupSelection(get().nodes, nodeIds);
-    const selected = new Set(ids);
-    const group = generateId();
-    get().pushHistory();
-    set((state) => ({
-      nodes: state.nodes.map((n) => selected.has(n.id)
-        ? { ...n, selected: true, data: { ...n.data, canvasGroupId: group, previousCanvasGroupId: undefined } }
-        : n.selected ? { ...n, selected: false } : n),
-      selectedNodeId: null,
-      selectedNodeIds: ids,
-    }));
-    get().pushHistory();
-  },
-
   createFrameFromSelection: (nodeIds) => {
     if (condenseGuard()) return undefined;
     const state = get();
-    const ids = new Set(expandGroupSelection(state.nodes, nodeIds));
+    const ids = new Set(nodeIds);
     const members = state.nodes.filter((node) => ids.has(node.id));
     if (!members.length || members.some((node) => node.data.stepKind === 'frame')) return undefined;
     const bounds = nodesRect(members)!;
@@ -602,17 +627,8 @@ export const createNodeSlice: StateCreator<StoreState, [], [], NodeSlice> = (set
   fitFramesToContents: (frameIds) => {
     if (condenseGuard()) return;
     const state = get();
-    const selected = new Set(frameIds);
-    let changed = false;
-    const nodes = state.nodes.map(node => {
-      if (!isFrameNode(node) || !selected.has(node.id)) return node;
-      const bounds = fittedFrameRect(node, state.nodes);
-      if (!bounds || (bounds.x === node.position.x && bounds.y === node.position.y
-        && bounds.width === node.width && bounds.height === node.height)) return node;
-      changed = true;
-      return { ...node, position: { x: bounds.x, y: bounds.y }, width: bounds.width, height: bounds.height };
-    });
-    if (!changed) return;
+    const nodes = fitFrameNodes(state.nodes, frameIds);
+    if (nodes === state.nodes) return;
     state.pushHistory();
     set({ nodes });
     get().pushHistory();
@@ -627,57 +643,22 @@ export const createNodeSlice: StateCreator<StoreState, [], [], NodeSlice> = (set
     get().duplicateSelection(nodes.filter(node => selected.has(node.id)).map(node => node.id));
   },
 
-  ungroupSelection: (nodeIds) => {
-    if (condenseGuard()) return;
-    const selected = new Set(nodeIds);
-    const groups = new Set(get().nodes.filter((n) => selected.has(n.id) && canvasGroupId(n)).map(canvasGroupId));
-    if (!groups.size) return;
-    get().pushHistory();
-    set((state) => ({ nodes: state.nodes.map((n) => n.data.canvasGroupId && groups.has(n.data.canvasGroupId)
-      ? { ...n, data: { ...n.data, previousCanvasGroupId: n.data.canvasGroupId, canvasGroupId: undefined } }
-      : n) }));
-    get().pushHistory();
-  },
-
-  regroupSelection: (nodeIds) => {
-    if (condenseGuard()) return;
-    const candidates = regroupCandidates(get().nodes, nodeIds);
-    if (!candidates.size) return;
-    const memberships = new Map([...candidates].flatMap(([group, ids]) => ids.map((id) => [id, group] as const)));
-    get().pushHistory();
-    set((state) => ({
-      nodes: state.nodes.map((n) => memberships.has(n.id)
-        ? { ...n, selected: true, data: { ...n.data, canvasGroupId: memberships.get(n.id), previousCanvasGroupId: undefined } }
-        : n.selected ? { ...n, selected: false } : n),
-      selectedNodeId: null,
-      selectedNodeIds: [...memberships.keys()],
-    }));
-    get().pushHistory();
-  },
-
-  alignSelection: (nodeIds: string[]) => {
+  alignSelection: async (nodeIds: string[]) => {
     if (nodeIds.length < 2) return;
     const selected = new Set(nodeIds);
-    const { nodes, edges } = get();
+    const { nodes } = get();
     if (nodes.filter(node => selected.has(node.id)).length < 2) return;
     if (nodes.some((node) => selected.has(node.id) && node.data.stepKind === 'frame')) {
       toast('info', t('arrange.nodesOnly'));
       return;
     }
-    if (nodes.some((node) => selected.has(node.id) && canvasGroupId(node))) {
-      toast('info', t('arrange.ungroupFirst'));
-      return;
-    }
 
     const first = nodes.find((node) => selected.has(node.id));
-    const result = planCanvasLayout(nodes, edges, {
+    const result = await get().applyCanvasLayout({
       method: 'chains', direction: first?.data.layoutDirection ?? 'vertical',
       density: 'standard', route: first?.data.edgeRouteDefault ?? 'auto',
     }, nodeIds);
-    if (result.error) { toast('info', t('canvasLayout.boundaryBlocked')); return; }
-    get().pushHistory();
-    set({ nodes: result.nodes });
-    get().pushHistory();
+    if (!result.ok) toast('info', t(result.error === 'stale-layout' ? 'canvasLayout.stale' : 'canvasLayout.boundaryBlocked'));
   },
 
   batchDelete: (nodeIds: string[]) => {
@@ -740,13 +721,6 @@ export const createNodeSlice: StateCreator<StoreState, [], [], NodeSlice> = (set
     // would entangle the copy with its source.
     const idMap = new Map<string, string>();
     const attIdMap = new Map<string, string>();
-    const groupIdMap = new Map<string, string>();
-    for (const n of originals) {
-      const group = canvasGroupId(n);
-      if (group && !groupIdMap.has(group) && nodes.filter((member) => canvasGroupId(member) === group).every((member) => selected.has(member.id))) {
-        groupIdMap.set(group, generateId());
-      }
-    }
     for (const n of originals) {
       idMap.set(n.id, generateId());
       for (const a of n.data.attachments ?? []) attIdMap.set(a.id, generateId());
@@ -759,9 +733,7 @@ export const createNodeSlice: StateCreator<StoreState, [], [], NodeSlice> = (set
       position: { x: n.position.x + offset.dx, y: n.position.y + offset.dy },
       selected: true,
       data: {
-        ...n.data,
-        canvasGroupId: canvasGroupId(n) ? groupIdMap.get(canvasGroupId(n)!) : undefined,
-        previousCanvasGroupId: undefined,
+        ...copiedNodeData(n.data),
         attachments: (n.data.attachments ?? []).map((a) => ({ ...a, id: attIdMap.get(a.id)! })),
         excludedAttachmentIds: remapAttIds(n.data.excludedAttachmentIds),
         includedAttachmentIds: remapAttIds(n.data.includedAttachmentIds),

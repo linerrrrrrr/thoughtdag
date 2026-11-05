@@ -14,6 +14,7 @@ import { useT, t as ti, fmt } from '../i18n';
 import { useDismissableLayer } from '../lib/use-dismissable-layer';
 import { useInlineEditDismiss } from '../lib/use-inline-edit-dismiss';
 import { useCanvasToolCard } from '../lib/use-canvas-tool-card';
+import CanvasToolbarOverflowAction from './CanvasToolbarOverflowAction';
 
 function relativeTime(ts: number): string {
   const diff = Date.now() - ts;
@@ -104,6 +105,7 @@ export default function ProjectSwitcher({ onSwitched, children }: { onSwitched: 
       <div className="canvas-toolbar">
         <button
           onClick={() => setOpen(!open)}
+          title={active?.name} aria-label={active?.name} aria-expanded={open}
           disabled={switching}
           className="canvas-project-button bg-card border border-line rounded-control h-8 px-3 hover:bg-wash transition-colors flex items-center gap-2 text-xs leading-none text-ink disabled:opacity-60"
         >
@@ -127,6 +129,7 @@ export default function ProjectSwitcher({ onSwitched, children }: { onSwitched: 
           // (assume live: never a false alarm)
           const unreachable = knownSessionIds.size > 0 && !knownSessionIds.has(active.sourceSession.sessionId);
           return (
+            <CanvasToolbarOverflowAction label={unreachable ? ti('switcher.mirrorBadgeGone') : fmt(ti('switcher.mirrorBadge'), { runner: active.sourceSession!.runner })} icon={<span aria-hidden="true">⇄</span>}>
             <button
               title={unreachable
                 ? ti('switcher.mirrorBadgeGone')
@@ -137,6 +140,7 @@ export default function ProjectSwitcher({ onSwitched, children }: { onSwitched: 
             >
               ⇄ {active.sourceSession!.runner}
             </button>
+            </CanvasToolbarOverflowAction>
           );
         })()}
         {children}

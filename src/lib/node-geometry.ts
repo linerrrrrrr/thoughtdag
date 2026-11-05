@@ -1,7 +1,6 @@
 import type { ThoughtNode } from '../types';
 import { estimateNodeHeight } from './layout';
 import { isFrameNode, resolveCarriedNodeIds } from './frames';
-import { expandGroupSelection } from './node-groups';
 
 export interface NodeGeometryPatch {
   width?: number;
@@ -58,7 +57,7 @@ export function resizeSelectionBy(nodes: ThoughtNode[], originals: ThoughtNode[]
   });
 }
 
-/** One local formatting operation. Groups expand before editing; only a single
+/** One local formatting operation uses the exact selection; only a single
  * selected object has coordinates. Moving a carrying frame uses the same
  * membership snapshot as dragging it, whereas resizing never moves contents. */
 export function applySelectionGeometry(nodes: ThoughtNode[], nodeIds: string[], patch: NodeGeometryPatch): ThoughtNode[] {
@@ -66,7 +65,7 @@ export function applySelectionGeometry(nodes: ThoughtNode[], nodeIds: string[], 
   if (fields.some(key => patch[key] !== undefined && !Number.isFinite(patch[key]))) return nodes;
   if ((patch.width !== undefined && patch.width <= 0) || (patch.height !== undefined && patch.height <= 0)) return nodes;
   if (patch.lockAspectRatio !== undefined && typeof patch.lockAspectRatio !== 'boolean') return nodes;
-  const ids = new Set(expandGroupSelection(nodes, nodeIds));
+  const ids = new Set(nodeIds);
   const selected = nodes.filter(node => ids.has(node.id));
   if (!selected.length) return nodes;
 

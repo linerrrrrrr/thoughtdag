@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Check, ListFilter, LockKeyhole, LockKeyholeOpen } from 'lucide-react';
 import { useStore } from '../store';
@@ -8,6 +8,7 @@ import { getNodeDisplayName } from '../lib/node-display-name';
 import { useDismissableLayer } from '../lib/use-dismissable-layer';
 import { useCanvasPanelPosition } from '../lib/use-canvas-panel-position';
 import { useCanvasToolCard } from '../lib/use-canvas-tool-card';
+import { restoreCanvasToolbarFocus } from '../lib/use-responsive-canvas-header';
 import { useT } from '../i18n';
 import { isViewerMode } from '../lib/viewer';
 
@@ -37,25 +38,31 @@ export function NodeDetailControls({ nodeId }: { nodeId: string }) {
   </fieldset>;
 }
 
-export default function CanvasDetailControl() {
+export default function CanvasDetailControl({ openPing = 0 }: { openPing?: number }) {
   const t = useT();
   const [requestedOpen, setOpen] = useState(false);
+  const [seenPing, setSeenPing] = useState(openPing);
+  if (seenPing !== openPing) { setSeenPing(openPing); setOpen(true); }
   const open = useCanvasToolCard('detail', requestedOpen, () => setOpen(false));
   const trigger = useRef<HTMLButtonElement>(null);
   const panel = useRef<HTMLDivElement>(null);
+  useEffect(() => { if (open) panel.current?.focus({ preventScroll: true }); }, [open]);
   const detail = useUiStore((state) => state.canvasDetail);
   const setDetail = useUiStore((state) => state.setCanvasDetail);
   const selectedId = useStore((state) => state.selectedNodeId);
   const position = useCanvasPanelPosition(open);
-  useDismissableLayer({ open, refs: [trigger, panel], onDismiss: () => setOpen(false), dismissOnFocusOutside: true, restoreFocusRef: trigger });
+  useDismissableLayer({ open, refs: [trigger, panel], onDismiss: reason => {
+    setOpen(false);
+    if (reason === 'escape') restoreCanvasToolbarFocus(trigger.current);
+  }, dismissOnFocusOutside: true, restoreFocus: false });
   return <>
     <button ref={trigger} type="button" onClick={() => setOpen((value) => !value)} aria-expanded={open}
       aria-controls="canvas-detail-panel" aria-label={t('detail.title')} title={`${t('detail.global')} · ${t(`detail.${detail}`)}`}
-      className={`h-8 px-2 flex items-center gap-1.5 rounded-control border bg-card text-xs transition-colors ${open || detail !== 'auto' ? 'border-accent/40 text-accent' : 'border-line text-ink-muted hover:bg-wash'}`}
+      className="canvas-toolbar-button canvas-toolbar-secondary canvas-toolbar-icon"
       data-canvas-detail-trigger>
-      <ListFilter size={15} strokeWidth={1.75} /><span>{t('detail.title')}</span>
+      <ListFilter size={16} strokeWidth={1.75} className={detail !== 'auto' ? 'text-accent' : undefined} /><span className="canvas-toolbar-label">{t('detail.title')}</span>
     </button>
-    {open && createPortal(<div ref={panel} id="canvas-detail-panel" role="dialog" aria-label={t('detail.title')}
+    {open && createPortal(<div ref={panel} tabIndex={-1} id="canvas-detail-panel" role="dialog" aria-label={t('detail.title')}
       className="canvas-tool-panel canvas-tool-menu p-3 space-y-3" style={position} data-canvas-detail-panel>
       <fieldset className="space-y-2">
         <legend className="text-xs font-medium text-ink">{t('detail.global')}</legend>

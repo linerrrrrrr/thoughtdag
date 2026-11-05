@@ -10,6 +10,8 @@ import { isAgentModel, runtimeOf, setGuardMode, allowLocation } from '../../lib/
 import { isHarnessAgentModel } from '../../lib/atlas/dsh-bridge';
 import { IN_HARNESS } from '../../lib/embedded';
 import { API_BASE } from '../../lib/constants';
+import CanvasToolbarOverflowAction from '../CanvasToolbarOverflowAction';
+import { restoreCanvasToolbarFocus } from '../../lib/use-responsive-canvas-header';
 import type { AgentPermissionMode } from '../../types';
 
 // How freely the agents this canvas starts may act, on the toolbar beside
@@ -41,11 +43,16 @@ export default function AgentPermissionChip() {
   // inside the harness: whether its Auto review is installed (null = not asked yet)
   const [hostAuto, setHostAuto] = useState<boolean | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  useEffect(() => { if (open) panelRef.current?.focus({ preventScroll: true }); }, [open]);
   const harness = IN_HARNESS && !!window.desktopSessions && isHarnessAgentModel(selectedModel);
   const visible = !!window.desktopAgents && (isAgentModel(selectedModel) || harness);
   const lane: Lane = harness ? 'harness' : (runtimeOf(selectedModel) ?? 'pi');
 
-  useDismissableLayer({ dismissOnFocusOutside: true, open, refs: [rootRef], onDismiss: () => setOpen(false) });
+  useDismissableLayer({ dismissOnFocusOutside: true, open, refs: [rootRef], restoreFocus: false, onDismiss: reason => {
+    setOpen(false);
+    if (reason === 'escape') restoreCanvasToolbarFocus(rootRef.current?.querySelector('[data-agent-permission-chip]') ?? null);
+  } });
 
   useEffect(() => {
     if (!open || lane !== 'harness') return;
@@ -80,7 +87,8 @@ export default function AgentPermissionChip() {
   };
 
   return (
-    <div ref={rootRef} className="relative">
+    <div ref={rootRef} className="contents">
+      <CanvasToolbarOverflowAction label={`${t('agent.perm')} · ${t(LABEL[shown])}`} icon={<Icon size={14} />}>
       <button
         onClick={(e) => { e.stopPropagation(); setOpen((v) => !v); }}
         className={`bg-card border rounded-control h-8 px-2.5 flex items-center gap-1.5 hover:bg-wash transition-colors text-xs ${shown === 'allow' ? 'border-amber-400/70 text-amber-700 dark:text-amber-300' : 'border-line text-ink'}`}
@@ -92,8 +100,9 @@ export default function AgentPermissionChip() {
         <span className="whitespace-nowrap">{t(LABEL[shown])}</span>
         <ChevronDown size={12} strokeWidth={1.75} className="text-ink-faint shrink-0" />
       </button>
+      </CanvasToolbarOverflowAction>
       {open && (
-        <div className="canvas-tool-panel canvas-tool-menu py-1.5" style={panelPosition} onClick={(e) => e.stopPropagation()} data-agent-permission-menu>
+        <div ref={panelRef} tabIndex={-1} className="canvas-tool-panel canvas-tool-menu py-1.5" style={panelPosition} onClick={(e) => e.stopPropagation()} data-agent-permission-menu>
           <p className="text-2xs text-ink-faint uppercase tracking-wider font-medium px-3 pt-1 pb-1">{t('agent.perm')} · {t('agent.permScope')}</p>
           {row('ask', ASK_HINT[lane])}
           {row('auto', lane === 'harness' && hostAuto === false ? 'agent.permAutoHarnessOff' : AUTO_HINT[lane], autoOff)}

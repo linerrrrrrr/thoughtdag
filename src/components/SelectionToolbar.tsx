@@ -12,9 +12,7 @@ import { isImeComposing } from '../utils';
 import { useT, t as ti, fmt } from '../i18n';
 import SelectionArrangeMenu, { type ViewportRectGetter } from './SelectionArrangeMenu';
 import FrameSettings, { FrameObjectActions } from './FrameSettings';
-import NodeDetailsButton from './NodeDetailsButton';
 import { getNodeDisplayName } from '../lib/node-display-name';
-import { isContentKind } from '../lib/content';
 
 type PendingAction = 'explore' | 'merge' | 'mergeDelete' | 'weave' | null;
 type GeometryField = 'width' | 'height' | 'x' | 'y';
@@ -166,7 +164,7 @@ export default function SelectionToolbar({ getViewportRect, withDetails = false 
   const t = useT();
   const [pending, setPending] = useState<PendingAction>(null);
   const [input, setInput] = useState('');
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState(true);
   const [formatScope, setFormatScope] = useState<'nodes' | 'frames'>('nodes');
   const panelPosition = useCanvasPanelPosition();
   const panel = useRef<HTMLElement>(null);
@@ -183,7 +181,7 @@ export default function SelectionToolbar({ getViewportRect, withDetails = false 
   const [prevSelectionKey, setPrevSelectionKey] = useState(selectionKey);
   if (prevSelectionKey !== selectionKey) {
     setPrevSelectionKey(selectionKey);
-    setPending(null); setInput(''); setCollapsed(false); setFormatScope('nodes');
+    setPending(null); setInput(''); setCollapsed(true); setFormatScope('nodes');
   }
 
   const selected = new Set(selectedNodeIds);
@@ -192,7 +190,6 @@ export default function SelectionToolbar({ getViewportRect, withDetails = false 
   const contentNodes = selectedNodes.filter(node => node.data.stepKind !== 'frame');
   const frames = selectedNodes.filter(node => node.data.stepKind === 'frame');
   const contentIds = contentNodes.map(node => node.id);
-  const groupCount = new Set(contentNodes.map(node => node.data.canvasGroupId).filter(Boolean)).size;
   const hasFrames = contentNodes.length !== selectedNodes.length;
   const framesOnly = hasFrames && contentNodes.length === 0;
   const mixedTypes = hasFrames && contentNodes.length > 0;
@@ -225,12 +222,10 @@ export default function SelectionToolbar({ getViewportRect, withDetails = false 
         <p className="text-xs text-ink-muted mt-1 leading-4">
           {mixedTypes ? fmt(t('frame.mixedSelection'), { frames: frames.length, nodes: contentNodes.length })
             : fmt(t(framesOnly ? 'frame.framesSelected' : 'toolbar.nodesSelected'), { n: selectedNodes.length })}
-          {groupCount > 0 && <span className="ml-1">{fmt(t('toolbar.groupCount'), { n: groupCount })}</span>}
         </p>
-        {selectedNodes.length === 1 && <p className="text-xs text-ink-muted mt-1 truncate" data-format-node-name title={getNodeDisplayName(selectedNodes[0].data, t('ctx.unnamedNode'))}>
+        {selectedNodes.length === 1 && !framesOnly && <p className="text-xs text-ink-muted mt-1 truncate" data-format-node-name title={getNodeDisplayName(selectedNodes[0].data, t('ctx.unnamedNode'))}>
           {getNodeDisplayName(selectedNodes[0].data, t('ctx.unnamedNode'))}
         </p>}
-        {selectedNodes.length === 1 && !framesOnly && !isContentKind(selectedNodes[0].data.stepKind) && <NodeDetailsButton nodeId={selectedNodes[0].id} label className="mt-2 -ml-2" />}
       </div>
       <button type="button" onClick={() => setCollapsed(!collapsed)} aria-expanded={!collapsed}
         data-node-format-close={!collapsed ? '' : undefined} data-node-format-reopen={collapsed ? '' : undefined}
@@ -241,7 +236,7 @@ export default function SelectionToolbar({ getViewportRect, withDetails = false 
       </button>
     </header>
     {!collapsed && <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain" data-node-format-scroll>
-      {mixedTypes && <div className="px-4 py-3 border-b border-line space-y-2">
+      {mixedTypes && <div className="px-4 py-3 border-b border-line">
         <div className="flex gap-1 rounded-control bg-wash p-1" role="group" aria-label={t('frame.formatScope')}>
           {(['nodes', 'frames'] as const).map(scope => <button type="button" key={scope} data-format-scope={scope}
             aria-pressed={formatScope === scope} onClick={() => setFormatScope(scope)}
@@ -249,7 +244,6 @@ export default function SelectionToolbar({ getViewportRect, withDetails = false 
             {fmt(t(scope === 'nodes' ? 'frame.nodeScope' : 'frame.frameScope'), { n: scope === 'nodes' ? contentNodes.length : frames.length })}
           </button>)}
         </div>
-        <p className="text-xs text-ink-faint leading-relaxed">{t('frame.formatScopeHint')}</p>
       </div>}
       {editingFrames ? <FrameSettings key={`${selectionKey}:frames`} frames={frames}>
         <GeometryEditor key={`${selectionKey}:frames`} selectedNodes={formatNodes} allowPosition={selectedNodes.length === 1} />
@@ -275,7 +269,6 @@ export default function SelectionToolbar({ getViewportRect, withDetails = false 
             <button type="button" onClick={() => setArchived(contentIds, true)} disabled={!contentIds.length} className={buttonClass} title={t('archive.batchTitle')}><Archive size={14} className="shrink-0" />{t('archive.label')}</button>
             <button type="button" onClick={() => { void updateSummaries(contentIds); }} disabled={!contentIds.length} className={buttonClass} title={t('toolbar.reselectLaddersTitle')} data-batch-reselect><Layers size={14} className="shrink-0" />{t('toolbar.reselectLadders')}</button>
           </div>
-          {hasFrames && <p className="px-2 text-xs text-ink-muted leading-relaxed">{t('toolbar.framesExcluded')}</p>}
           {pending && <div className="px-2 space-y-2">
             <input ref={inputRef} type="text" value={input}
               onChange={event => { setInput(event.target.value); useUiStore.getState().setDraft(draftKey(pending), event.target.value, true); }}

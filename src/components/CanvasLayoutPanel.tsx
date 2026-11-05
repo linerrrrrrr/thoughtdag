@@ -1,41 +1,30 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { ReactFlowInstance } from '@xyflow/react';
-import { X } from 'lucide-react';
+import { LayoutGrid, Loader2, X } from 'lucide-react';
 import { useStore } from '../store';
 import { useT } from '../i18n';
 import { useCanvasEditing } from '../lib/canvas-editing';
-import { planCanvasLayout, type CanvasLayoutOptions } from '../lib/canvas-layout';
+import { canvasLayoutInputKey, planCanvasLayout, type CanvasLayoutOptions } from '../lib/canvas-layout';
 import { useDismissableLayer } from '../lib/use-dismissable-layer';
-import { nodesRect } from '../lib/frames';
+import { restoreCanvasToolbarFocus } from '../lib/use-responsive-canvas-header';
 import { useUiStore } from '../lib/ui-store';
 import { useProjects } from '../store/projects';
 import { isImeComposing } from '../utils';
 import type { ThoughtNode, ThoughtEdge } from '../types';
 import './CanvasLayoutPanel.css';
 import { canvasToolViewport, useCanvasPanelPosition } from '../lib/use-canvas-panel-position';
-
-const KEY = 'thoughtdag.canvasLayout';
-const DEFAULTS: CanvasLayoutOptions = { method: 'chains', direction: 'vertical', density: 'standard', route: 'curve' };
-function initialOptions(): CanvasLayoutOptions {
-  let stored: Partial<CanvasLayoutOptions> = {};
-  try { stored = JSON.parse(localStorage.getItem(KEY) || '{}'); } catch { /* Use defaults. */ }
-  const state = useStore.getState();
-  const first = state.nodes.find((node) => state.selectedNodeIds.includes(node.id) && node.data.stepKind !== 'frame')
-    ?? state.nodes.find((node) => node.data.stepKind !== 'frame');
-  return {
-    method: ['manual', 'chains', 'layers'].includes(stored.method ?? '') ? stored.method! : DEFAULTS.method,
-    direction: first?.data.layoutDirection ?? (stored.direction === 'horizontal' ? 'horizontal' : 'vertical'),
-    density: ['compact', 'standard', 'relaxed'].includes(stored.density ?? '') ? stored.density! : DEFAULTS.density,
-    route: (first?.data.edgeRouteDefault ?? stored.route) === 'orthogonal' ? 'orthogonal' : 'curve',
-  };
-}
+import { beginCanvasLayoutTask, canvasLayoutBounds, canvasLayoutErrorKey, fitCanvasLayout, readCanvasLayoutOptions, saveCanvasLayoutOptions } from '../lib/canvas-layout-preferences';
 
 export default function CanvasLayoutPanel({ flow: rf }: { flow: ReactFlowInstance<ThoughtNode, ThoughtEdge> }) {
   const t = useT();
   const nodes = useStore((s) => s.nodes);
   const edges = useStore((s) => s.edges);
   const selectedIds = useStore((s) => s.selectedNodeIds);
-  const draftKey = `canvas-layout:${useProjects((state) => state.activeId)}`;
+  const projectId = useProjects((state) => state.activeId);
+  const draftKey = `canvas-layout:${projectId}`;
+  const busy = useCanvasEditing((state) => state.layoutBusy);
+  const pending = useRef<ReturnType<typeof beginCanvasLayoutTask>>(undefined);
+  const previewInput = useRef<string | undefined>(undefined);
   const panel = useRef<HTMLDivElement>(null);
   const panelPosition = useCanvasPanelPosition();
   const originalViewport = useRef(rf.getViewport());
@@ -47,30 +36,55 @@ export default function CanvasLayoutPanel({ flow: rf }: { flow: ReactFlowInstanc
         return { ...draft, route: draft.route === 'orthogonal' ? 'orthogonal' : 'curve' } as CanvasLayoutOptions;
       }
     } catch { /* Ignore obsolete session drafts. */ }
-    return initialOptions();
+    return readCanvasLayoutOptions();
   });
-  const [scope, setScope] = useState<'all' | 'selection'>(selectedIds.length > 1 ? 'selection' : 'all');
+  const [scope, setScope] = useState<'all' | 'selection'>(selectedIds.length ? 'selection' : 'all');
   const [error, setError] = useState<string>();
   const ids = scope === 'selection' ? selectedIds : undefined;
-  const result = useMemo(() => planCanvasLayout(nodes, edges, options, ids), [nodes, edges, options, ids]);
+  const selectionKey = [...selectedIds].sort().join('\0');
+  const invalidate = () => {
+    pending.current?.cancel();
+    pending.current = undefined;
+    previewInput.current = undefined;
+    useCanvasEditing.getState().setLayoutPreview(null);
+  };
   const close = () => {
+    invalidate();
     useCanvasEditing.getState().setLayoutOpen(false);
     void rf.setViewport(originalViewport.current, { duration: 150 });
   };
   const cancel = () => { useUiStore.getState().setDraft(draftKey, ''); close(); };
-  useDismissableLayer({ open: true, refs: [panel], onDismiss: cancel, dismissOnOutside: false });
-  useEffect(() => () => useCanvasEditing.getState().setLayoutPreview(null), []);
+  useDismissableLayer({ open: true, refs: [panel], onDismiss: reason => {
+    cancel();
+    if (reason === 'escape') restoreCanvasToolbarFocus(null);
+  }, dismissOnOutside: false, restoreFocus: false });
+  useEffect(() => {
+    pending.current?.cancel();
+    pending.current = undefined;
+    previewInput.current = undefined;
+    useCanvasEditing.getState().setLayoutPreview(null);
+  }, [selectionKey, projectId]);
+  useEffect(() => {
+    if (previewInput.current && previewInput.current !== canvasLayoutInputKey(nodes, edges)) {
+      previewInput.current = undefined;
+      useCanvasEditing.getState().setLayoutPreview(null);
+    }
+  }, [nodes, edges]);
+  useEffect(() => () => {
+    pending.current?.cancel();
+    useCanvasEditing.getState().setLayoutPreview(null);
+  }, []);
   const change = <K extends keyof CanvasLayoutOptions>(key: K, value: CanvasLayoutOptions[K]) => {
     const next = { ...options, [key]: value };
     setOptions(next);
     useUiStore.getState().setDraft(draftKey, JSON.stringify(next), true);
     setError(undefined);
-    useCanvasEditing.getState().setLayoutPreview(null);
+    invalidate();
   };
   const show = (planned: ThoughtNode[], reservePanel = true) => {
     const shown = ids ? planned.filter((node) => ids.includes(node.id)) : planned;
     if (!shown.length) return;
-    const bounds = nodesRect(shown);
+    const bounds = canvasLayoutBounds(shown);
     if (!bounds) return;
     const canvas = document.querySelector<HTMLElement>('.react-flow');
     if (reservePanel && canvas && panel.current) {
@@ -80,32 +94,68 @@ export default function CanvasLayoutPanel({ flow: rf }: { flow: ReactFlowInstanc
         y: y + height / 2 - (bounds.y + bounds.height / 2) * zoom, zoom }, { duration: 250 });
     } else void rf.fitBounds(bounds, { duration: 250, padding: 0.22 });
   };
-  const preview = () => {
-    if (result.error) { setError(result.error); return; }
+  const preview = async () => {
+    const task = beginCanvasLayoutTask();
+    if (!task) return;
+    pending.current = task;
+    const state = useStore.getState();
+    const input = canvasLayoutInputKey(state.nodes, state.edges);
+    let stale = false;
+    const stop = useStore.subscribe((next) => {
+      if (next.history !== state.history || next.historyIndex !== state.historyIndex
+        || canvasLayoutInputKey(next.nodes, next.edges) !== input) stale = true;
+    });
     setError(undefined);
-    useCanvasEditing.getState().setLayoutPreview(result.nodes);
-    show(result.nodes);
+    try {
+      const result = await planCanvasLayout(state.nodes, state.edges, options, ids);
+      if (!task.isCurrent()) return;
+      if (stale) { setError('stale-layout'); return; }
+      if (result.error) { setError(result.error); return; }
+      previewInput.current = input;
+      useCanvasEditing.getState().setLayoutPreview(result.nodes);
+      show(result.nodes);
+    } catch { if (task.isCurrent()) setError('layout-failed'); }
+    finally { stop(); task.finish(); if (pending.current === task) pending.current = undefined; }
   };
-  const apply = () => {
-    const applied = useStore.getState().applyCanvasLayout(options, ids);
-    if (!applied.ok) { setError(applied.error); return; }
-    try { localStorage.setItem(KEY, JSON.stringify(options)); } catch { /* Graph preferences are still saved. */ }
-    useUiStore.getState().setDraft(draftKey, '');
-    useCanvasEditing.getState().setLayoutOpen(false);
-    show(useStore.getState().nodes, false);
+  const apply = async (quick = false) => {
+    const task = beginCanvasLayoutTask();
+    if (!task) return;
+    pending.current = task;
+    setError(undefined);
+    const appliedIds = quick ? (selectedIds.length ? selectedIds : undefined) : ids;
+    const saved = quick ? readCanvasLayoutOptions(appliedIds) : options;
+    const appliedOptions = quick && saved.method === 'manual' ? { ...saved, method: 'chains' as const } : saved;
+    try {
+      const applied = await useStore.getState().applyCanvasLayout(appliedOptions, appliedIds, task.isCurrent);
+      if (!task.isCurrent()) return;
+      if (!applied.ok) { setError(applied.error); return; }
+      if (!quick) {
+        saveCanvasLayoutOptions(options);
+        useUiStore.getState().setDraft(draftKey, '');
+      }
+      useCanvasEditing.getState().setLayoutOpen(false);
+      fitCanvasLayout(rf, appliedIds);
+    } catch { if (task.isCurrent()) setError('layout-failed'); }
+    finally { task.finish(); if (pending.current === task) pending.current = undefined; }
   };
-  const errorMessage = t(error === 'grouped-nodes' ? 'canvasLayout.groupBlocked'
-    : error === 'empty-selection' ? 'canvasLayout.emptySelection' : error === 'cycle' ? 'canvasLayout.cycleBlocked'
-    : error === 'obstacle-conflict' ? 'canvasLayout.obstacleBlocked' : 'canvasLayout.boundaryBlocked');
-  return <div ref={panel} style={panelPosition} className="canvas-tool-panel canvas-layout-panel nodrag nopan nowheel" role="dialog" aria-labelledby="canvas-layout-title" data-canvas-layout-panel
+  const errorMessage = t(canvasLayoutErrorKey(error));
+  return <div ref={panel} style={panelPosition} className="canvas-tool-panel canvas-layout-panel nodrag nopan nowheel" role="dialog" aria-labelledby="canvas-layout-title" aria-busy={busy} data-canvas-layout-panel
     onKeyDown={(event) => { if (event.key !== 'Escape' || isImeComposing(event)) event.stopPropagation(); }}>
     <div className="flex shrink-0 items-center justify-between gap-3 px-4 py-3 border-b border-line">
       <h2 id="canvas-layout-title" className="text-sm font-medium">{t('canvasLayout.title')}</h2>
       <button type="button" onClick={close} className="p-1 rounded-control hover:bg-wash" aria-label={t('common.close')}><X size={16} /></button>
     </div>
+    <div className="shrink-0 border-b border-line px-4 py-3 space-y-2">
+      <button type="button" data-layout-quick disabled={busy} onClick={() => apply(true)}
+        className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-control bg-action text-white text-xs hover:bg-action-strong disabled:opacity-50 disabled:cursor-wait">
+        <LayoutGrid size={14} aria-hidden="true" />{t('canvasLayout.quick')}
+      </button>
+      <p className="text-xs text-ink-muted leading-relaxed">{t(selectedIds.length ? 'canvasLayout.quickSelection' : 'canvasLayout.quickAll')}</p>
+    </div>
     <div className="canvas-layout-fields">
+    <p className="text-xs text-ink-muted leading-relaxed">{t('canvasLayout.hint')}</p>
     <label>{t('canvasLayout.scope')}<select value={scope} data-layout-scope onChange={(event) => {
-      setScope(event.target.value as typeof scope); setError(undefined); useCanvasEditing.getState().setLayoutPreview(null);
+      setScope(event.target.value as typeof scope); setError(undefined); invalidate();
     }}><option value="all">{t('canvasLayout.all')}</option><option value="selection" disabled={!selectedIds.length}>{t('canvasLayout.selection')}</option></select></label>
     <label>{t('canvasLayout.method')}<select value={options.method} data-layout-method onChange={(event) => change('method', event.target.value as CanvasLayoutOptions['method'])}>
       <option value="manual">{t('canvasLayout.manual')}</option><option value="chains">{t('canvasLayout.chains')}</option><option value="layers">{t('canvasLayout.layers')}</option>
@@ -120,11 +170,12 @@ export default function CanvasLayoutPanel({ flow: rf }: { flow: ReactFlowInstanc
       <option value="curve">{t('canvasLayout.curve')}</option><option value="orthogonal">{t('canvasLayout.orthogonal')}</option>
     </select></label>
     {error && <p className="text-xs text-red-600" role="alert">{errorMessage}</p>}
+    {busy && <p className="flex items-center gap-2 text-xs text-ink-muted" role="status"><Loader2 size={14} className="animate-spin" />{t('canvasLayout.busy')}</p>}
     </div>
     <div className="flex shrink-0 flex-wrap justify-end gap-2 border-t border-line px-4 py-3">
       <button type="button" className="px-3 py-1.5 rounded-control border border-line hover:bg-wash text-xs" onClick={cancel} data-layout-cancel>{t('canvasLayout.cancel')}</button>
-      <button type="button" className="px-3 py-1.5 rounded-control border border-line hover:bg-wash text-xs" onClick={preview} data-layout-preview>{t('canvasLayout.preview')}</button>
-      <button type="button" className="px-3 py-1.5 rounded-control bg-action text-white text-xs hover:bg-action-strong" onClick={apply} data-layout-apply>{t('canvasLayout.apply')}</button>
+      <button type="button" disabled={busy} className="px-3 py-1.5 rounded-control border border-line hover:bg-wash text-xs disabled:opacity-50" onClick={preview} data-layout-preview>{t('canvasLayout.preview')}</button>
+      <button type="button" disabled={busy} className="px-3 py-1.5 rounded-control bg-action text-white text-xs hover:bg-action-strong disabled:opacity-50" onClick={() => apply()} data-layout-apply>{t('canvasLayout.apply')}</button>
     </div>
   </div>;
 }

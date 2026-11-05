@@ -17,6 +17,7 @@ const { arrangeNodes, arrangementUnitCount } = await import(pathToFileURL(bundle
 const framesBundle = join(temp, 'frames.mjs');
 execFileSync(process.execPath, [join(root, 'node_modules/esbuild/bin/esbuild'),
   join(root, 'src/lib/frames.ts'), '--bundle', '--format=esm', '--platform=node', `--outfile=${framesBundle}`,
+  '--define:import.meta.env={}',
 ], { stdio: ['ignore', 'ignore', 'pipe'] });
 const { resolveCarriedNodeIds } = await import(pathToFileURL(framesBundle).href);
 const node = (id, x, y, width = 100, height = 80, data = {}) => ({
@@ -97,21 +98,43 @@ try {
     const nodes = [node('a', 0, 0, 300), node('b', 30, 200, 300), node('c', 60, 400, 300)];
     assert.equal(all(nodes, 'distribute-horizontal').reason, 'overlap');
   });
-  test('one selected group member expands to a rigid unit', () => {
+  test('legacy metadata never expands the selected alignment scope', () => {
     const nodes = [node('g1', 200, 0, 100, 80, { canvasGroupId: 'group' }),
       node('g2', 300, 120, 100, 80, { canvasGroupId: 'group' }), node('other', 0, 400)];
     const result = arrangeNodes(nodes, [], ['g1', 'other'], 'left');
     assert.equal(result.changed, true);
     close(position(result, 'g1').x, 0);
-    close(position(result, 'g2').x, 100);
+    assert.equal(result.nodes[1], nodes[1]);
     close(position(result, 'g2').y - position(result, 'g1').y, 120);
-    assert.equal(arrangementUnitCount(nodes, ['g1', 'g2']), 1);
+    assert.equal(result.nodes[0].data.canvasGroupId, 'group');
+    assert.equal(arrangementUnitCount(nodes, ['g1', 'g2']), 2);
+    assert.equal(arrangementUnitCount(nodes, ['g1', 'other']), 2);
   });
-  test('a rigid group moves to viewport center by its bounding box', () => {
+  test('nodes sharing retired metadata always remain independent alignment objects', () => {
+    const nodes = [node('g1', 200, 0, 100, 80, { canvasGroupId: 'group' }),
+      node('g2', 300, 120, 100, 80, { canvasGroupId: 'group' }),
+      node('g3', 600, 300, 100, 80, { canvasGroupId: 'group' })];
+    const result = arrangeNodes(nodes, [], ['g1', 'g2'], 'left');
+    assert.equal(result.changed, true);
+    close(position(result, 'g1').x, 200);
+    close(position(result, 'g2').x, 200);
+    assert.equal(result.nodes[2], nodes[2]);
+    assert.equal(arrangementUnitCount(nodes, ['g1', 'g2']), 2);
+    assert.equal(arrangementUnitCount(nodes, ['g1', 'g2', 'g3']), 3);
+  });
+  test('centering ignores retired metadata and centers each selected card', () => {
     const nodes = [node('a', 0, 0, 100, 80, { canvasGroupId: 'g' }), node('b', 150, 150, 100, 80, { canvasGroupId: 'g' })];
     const result = all(nodes, 'center', 'viewport', { x: 0, y: 0, width: 1000, height: 800 });
-    close(position(result, 'a').x, 375);
-    close(position(result, 'b').x, 525);
+    close(position(result, 'a').x, 450);
+    close(position(result, 'b').x, 450);
+  });
+  test('distribution treats imported nodes with matching retired metadata independently', () => {
+    const nodes = [node('a', 0, 0, 100, 80, { canvasGroupId: 'retired' }),
+      node('b', 350, 150, 100, 80, { canvasGroupId: 'retired' }),
+      node('c', 600, 300, 100, 80, { canvasGroupId: 'retired' })];
+    const result = all(nodes, 'distribute-horizontal');
+    assert.equal(result.changed, true);
+    close(position(result, 'a').x, 0); close(position(result, 'b').x, 300); close(position(result, 'c').x, 600);
   });
   test('unselected nodes remain identical and block new collisions', () => {
     const nodes = [node('a', 0, 0), node('b', 400, 200), node('fixed', 0, 200)];
@@ -229,11 +252,11 @@ try {
     assert.equal(result.nodes[3], nodes[3]);
     assert.equal(result.nodes[4], nodes[4]);
   });
-  test('moving an imperfect chain as a rigid group does not worsen it', () => {
+  test('retired metadata does not freeze relative positions when improving an imperfect chain', () => {
     const nodes = [node('a', 0, 100, 100, 80, { canvasGroupId: 'g' }), node('b', 200, 50, 100, 80, { canvasGroupId: 'g' })];
     const result = all(nodes, 'bottom', 'viewport', { x: 0, y: 0, width: 1000, height: 800 }, [edge('a', 'b')]);
     assert.equal(result.changed, true);
-    close(position(result, 'b').y - position(result, 'a').y, -50);
+    close(position(result, 'b').y - position(result, 'a').y, 0);
   });
   test('idempotent arrangement is not an undo step and preserves references', () => {
     const nodes = [node('a', 0, 0), node('b', 0, 200)];
@@ -259,7 +282,7 @@ try {
       else assert.equal(result.nodes.find(n => n.id === original.id), original);
     }
   });
-  test('an unlinked frame aligns alone and a cross-boundary group stays outside its carrying set', () => {
+  test('an unlinked frame aligns alone and a linked frame carries only contained nodes', () => {
     const nodes = [
       node('frame', 100, 100, 500, 500, { stepKind: 'frame', frameCarry: false }),
       node('a', 150, 180, 100, 80, { canvasGroupId: 'g' }),
@@ -271,10 +294,10 @@ try {
     assert.equal(result.changed, true);
     assert.ok(result.nodes.slice(1).every((n, i) => n === nodes[i + 1]));
     const linked = nodes.map(n => n.id === 'frame' ? { ...n, data: { ...n.data, frameCarry: true } } : n);
-    assert.deepEqual(resolveCarriedNodeIds(linked, ['frame']), ['frame', 'single']);
+    assert.deepEqual(resolveCarriedNodeIds(linked, ['frame']), ['frame', 'a', 'single']);
     const moved = arrangeNodes(linked, [], ['frame'], 'left', 'viewport', viewport);
     assert.equal(moved.changed, true);
-    assert.equal(moved.nodes[1], linked[1]);
+    close(position(moved, 'a').x, 50);
     assert.equal(moved.nodes[2], linked[2]);
     close(position(moved, 'single').x, 200);
   });

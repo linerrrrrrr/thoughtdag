@@ -75,6 +75,7 @@ try {
   assert.equal(await card('top-toolbar').locator('[data-model-picker-trigger]').count(), 0);
   check('model connection entry is in the left project toolbar');
 
+  await card('node-format-reopen').click();
   await page.locator('[data-node-format-field="width"]').fill('420');
   await card('canvas-detail-trigger').click(); await one('canvas-detail-panel');
   assert.equal(await page.evaluate(() => window.__store.getState().nodes.find(node => node.id === 'a').width), 420);
@@ -103,12 +104,15 @@ try {
   await page.keyboard.press('Escape'); await one('node-format-panel');
   check('switching cards preserves connection drafts, including empty values');
 
-  await card('canvas-layout-entry').click(); await one('canvas-layout-panel');
+  await card('toolbar-more').click();
+  await card('layout-entry').click(); await one('canvas-layout-panel');
   await card('layout-direction').selectOption('horizontal');
   await card('canvas-detail-trigger').click(); await one('canvas-detail-panel');
   await page.keyboard.press('Escape'); await one('canvas-layout-panel');
   assert.equal(await card('layout-direction').inputValue(), 'horizontal');
-  await card('canvas-layout-panel').getByRole('button', { name: '关闭', exact: true }).click();
+  await page.keyboard.press('Escape');
+  await card('canvas-layout-panel').waitFor({ state: 'detached' });
+  assert.equal(await card('toolbar-more').evaluate(el => el === document.activeElement), true);
   await page.evaluate(() => window.__canvasEditing.getState().setEdgeId('ab'));
   await one('edge-inspector');
   await card('edge-label-add').click();
@@ -133,11 +137,13 @@ try {
   await one('node-format-panel');
   check('layout and edge inspectors suspend while a toolbar card is open');
 
-  await card('node-format-panel').locator('[data-node-details="a"]').click();
+  await page.locator('.react-flow__node[data-id="a"] [data-node-details="a"]').click();
   await card('focus-panel').waitFor();
   for (const width of [1760, 760, 390]) {
     await page.setViewportSize({ width, height: 1000 });
-    await card('canvas-detail-trigger').click();
+    await page.waitForTimeout(300);
+    if (await card('canvas-detail-trigger').isVisible()) await card('canvas-detail-trigger').click();
+    else { await card('toolbar-more').click(); await card('menu-detail').click(); }
     await one('canvas-detail-panel');
     await page.waitForTimeout(400);
     const panel = await card('canvas-detail-panel').boundingBox();

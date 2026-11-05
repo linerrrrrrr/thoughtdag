@@ -15,6 +15,7 @@ await mkdir(outputDir, { recursive: true });
 const browser = await chromium.launch({ executablePath, headless: true });
 const context = await browser.newContext({ locale: 'zh-CN', viewport: { width: 1600, height: 1000 }, reducedMotion: 'reduce' });
 const page = await context.newPage();
+await page.routeWebSocket('**', socket => socket.close());
 page.setDefaultTimeout(15000);
 const errors = [], writes = [], checks = [];
 page.on('pageerror', error => errors.push(error.message));
@@ -35,11 +36,23 @@ const readEdges = () => page.evaluate(() => window.__store.getState().edges);
 const selected = () => page.evaluate(() => [...window.__store.getState().selectedNodeIds].sort());
 const node = id => page.locator(`.react-flow__node[data-id="frame-test-${id}"]`);
 const field = name => page.locator(`[data-node-format-field="${name}"]`);
+const expandInspector = async () => {
+  await page.locator('[data-node-format-panel]').waitFor();
+  const reopen = page.locator('[data-node-format-reopen]');
+  if (await reopen.count()) await reopen.click();
+};
 const geometry = nodes => nodes.map(({ id, position, width, height }) => ({ id, position, width, height }));
 const screenshot = name => page.screenshot({ path: `${outputDir}/${name}.png` });
 const select = async ids => {
-  await page.evaluate(ids => window.__store.getState().setSelectedNodeIds(ids.map(id => `frame-test-${id}`)), ids);
-  if (ids.length) await page.locator('[data-node-format-panel]').waitFor();
+  const changed = await page.evaluate(ids => {
+    const state = window.__store.getState();
+    const next = ids.map(id => `frame-test-${id}`);
+    const changed = [...state.selectedNodeIds].sort().join('\n') !== [...next].sort().join('\n');
+    state.setSelectedNodeIds(next);
+    return changed;
+  }, ids);
+  if (changed && ids.length) await page.locator('[data-node-format-reopen]').waitFor();
+  if (ids.length) await expandInspector();
 };
 const fixture = async (ids = [], extraFrame = false) => {
   await page.mouse.click(1160, 950);
@@ -73,6 +86,8 @@ const fixture = async (ids = [], extraFrame = false) => {
   await page.waitForTimeout(550);
   await page.evaluate(() => window.__rf.setViewport({ x: 20, y: 30, zoom: 0.75 }, { duration: 0 }));
   await page.waitForTimeout(120);
+  // These fixtures exercise inspector controls after an explicit expansion.
+  if (ids.length) await expandInspector();
 };
 const enclose = async id => {
   const b = await node(id).boundingBox();
@@ -123,11 +138,14 @@ try {
   await marquee(c);
   assert.deepEqual(await selected(), ['frame-test-c'], 'Marquee can start on empty space inside a frame');
   const a = await enclose('a'), b = await enclose('b');
-  await marquee({ x1: a.x1, y1: a.y1, x2: b.x2, y2: Math.max(a.y2, b.y2) }, ['Control']);
-  assert.deepEqual(await selected(), ['frame-test-a', 'frame-test-b', 'frame-test-c'], 'Ctrl marquee inside frame adds a complete rigid group');
+  await marquee(a, ['Control']);
+  assert.deepEqual(await selected(), ['frame-test-a', 'frame-test-c'], 'Ctrl marquee adds exactly the enclosed node despite obsolete group metadata');
+  await marquee(b, ['Control']);
+  assert.deepEqual(await selected(), ['frame-test-a', 'frame-test-b', 'frame-test-c'], 'A second marquee can explicitly include the remaining member');
   assert.ok((await readEdges()).every(edge => !edge.selected), 'Internal marquee selects no edges');
   await node('f1').locator('.drag-handle').first().click({ position: { x: 100, y: 14 } });
   assert.deepEqual(await selected(), ['frame-test-f1'], 'Title selects only the frame');
+  await expandInspector();
   await page.locator('[data-frame-name]').waitFor();
   assert.equal(await page.locator('[data-node-format-content]').count(), 0, 'Frame-only panel has no node content generation section');
   assert.equal(await page.locator('[data-frame-select-contents]').count(), 1);
@@ -162,14 +180,22 @@ try {
 
   await fixture(['f1']);
   const count = await page.locator('[data-frame-content-count]').innerText();
-  assert.ok(count.includes('3') && count.includes('1'), `Count identifies three nodes including one group: ${count}`);
+  assert.ok(count.includes('3') && !count.includes('组合'), `Count identifies contained nodes without grouping: ${count}`);
   await page.locator('[data-frame-select-contents]').click();
   assert.deepEqual(await selected(), ['frame-test-a', 'frame-test-b', 'frame-test-c']);
   await select(['f1']);
   await page.locator('[data-frame-select-all]').click();
   assert.deepEqual(await selected(), ['frame-test-a', 'frame-test-b', 'frame-test-c', 'frame-test-f1']);
   assert.ok(!(await selected()).includes('frame-test-d'), 'A node whose center is inside but edge crosses the frame is excluded');
-  check('content count and explicit content selection share full containment and preserve complete groups');
+  check('content count and explicit content selection share full containment and ignore obsolete group metadata');
+
+  await fixture(['f1']);
+  await commit('width', 500);
+  await page.locator('[data-frame-select-contents]').click();
+  assert.deepEqual(await selected(), ['frame-test-a', 'frame-test-c'], 'A narrower region includes only contained nodes despite obsolete group metadata');
+  assert.equal((await readNodes()).find(n => n.id === 'frame-test-a').data.canvasGroupId, 'frame-test-group');
+  assert.equal((await readNodes()).find(n => n.id === 'frame-test-b').data.canvasGroupId, 'frame-test-group');
+  check('region content selection follows geometry and leaves obsolete metadata inert');
 
   await fixture(['f1']);
   const beforeFrameDrag = await readNodes();
@@ -263,15 +289,12 @@ try {
   const newNodes = copied.filter(n => !sourceIds.has(n.id));
   assert.equal(newNodes.length, 4, 'Copy partition includes one frame and its three complete content nodes');
   assert.equal(newNodes.filter(n => n.data.stepKind === 'frame').length, 1);
-  const copiedGroup = newNodes.filter(n => n.data.canvasGroupId);
-  assert.equal(copiedGroup.length, 2);
-  assert.equal(copiedGroup[0].data.canvasGroupId, copiedGroup[1].data.canvasGroupId);
-  assert.notEqual(copiedGroup[0].data.canvasGroupId, 'frame-test-group');
+  assert.ok(newNodes.every(n => !n.data.canvasGroupId && !n.data.previousCanvasGroupId), 'Copies do not inherit obsolete group metadata');
   const newIds = new Set(newNodes.map(n => n.id));
   const newEdges = (await readEdges()).filter(e => newIds.has(e.source) || newIds.has(e.target));
   assert.equal(newEdges.length, 1, 'Only the internal edge is copied');
   assert.ok(newEdges.every(e => newIds.has(e.source) && newIds.has(e.target)));
-  check('copy-frame and copy-with-content have distinct scopes and copies preserve independent groups and internal edges');
+  check('copy-frame and copy-with-content have distinct scopes and copy only internal edges without obsolete group metadata');
 
   await fixture(['f1', 'c']);
   const exported = await page.evaluate(async () => (await import('/src/lib/export.ts')).selectionMarkdown(['frame-test-f1', 'frame-test-c', 'frame-test-c']));
@@ -321,9 +344,13 @@ try {
   await panelFits(); await screenshot('desktop-single');
   await page.evaluate(async () => (await import('/src/lib/appearance.ts')).useAppearance.getState().setLighting('dark'));
   await screenshot('dark-single');
-  await page.getByRole('button', { name: 'EN', exact: true }).click();
+  await page.locator('[data-toolbar-more]').click();
+  await page.getByRole('button', { name: 'English', exact: true }).click();
+  await page.keyboard.press('Escape');
   await panelFits(); await screenshot('english-single');
-  await page.getByRole('button', { name: '中', exact: true }).click();
+  await page.locator('[data-toolbar-more]').click();
+  await page.getByRole('button', { name: '中文', exact: true }).click();
+  await page.keyboard.press('Escape');
   await page.evaluate(async () => (await import('/src/lib/appearance.ts')).useAppearance.getState().setLighting('light'));
   await page.setViewportSize({ width: 390, height: 844 });
   await panelFits(); await screenshot('mobile-single');

@@ -31,6 +31,7 @@ await page.addInitScript(() => {
 });
 const check = (name) => { checks.push(name); console.log(`PASS ${name}`); };
 const near = (a, b, name, tolerance = 1.5) => assert.ok(Math.abs(a - b) <= tolerance, `${name}: ${a} != ${b}`);
+const disjoint = (a, b) => a.x + a.width <= b.x || b.x + b.width <= a.x || a.y + a.height <= b.y || b.y + b.height <= a.y;
 const storedGraph = () => page.evaluate(() => {
   const state = window.__store.getState();
   return {
@@ -363,10 +364,15 @@ try {
   await page.waitForTimeout(400);
   const located = await page.locator('.react-flow__node[data-id="b"]').boundingBox();
   const locatedPanel = await inspector.boundingBox();
-  assert.ok(located && locatedPanel && located.y >= 0 && located.y + 56 < locatedPanel.y, 'located title and side ports must remain above bottom panel');
+  assert.ok(located && locatedPanel && located.x >= 0 && located.y >= 0 && located.x + located.width <= 640 && located.y + located.height <= 900
+    && disjoint(located, locatedPanel), 'the located card must stay fully inside the viewport and outside the actual inspector bounds');
   const canvasHeader = await page.locator('[data-canvas-header]').boundingBox();
-  const locatedTitle = await page.locator('.react-flow__node[data-id="b"] .thought-node-header').boundingBox();
+  const locatedTitle = await page.locator('.react-flow__node[data-id="b"] [data-node-name]:visible').first().boundingBox();
   assert.ok(canvasHeader && locatedTitle && locatedTitle.y > canvasHeader.y + canvasHeader.height, 'located title must clear the global toolbar');
+  const locatedPorts = await page.locator('.react-flow__node[data-id="b"] [data-connection-side="left"].tdag-port-used, .react-flow__node[data-id="b"] [data-connection-side="right"].tdag-port-used')
+    .evaluateAll(ports => ports.map(port => { const rect = port.getBoundingClientRect(); return { x: rect.x, y: rect.y, width: rect.width, height: rect.height }; }));
+  assert.ok(locatedPorts.length > 0 && locatedPorts.every(port => port.x >= 0 && port.y > canvasHeader.y + canvasHeader.height
+    && port.x + port.width <= 640 && port.y + port.height <= 900 && disjoint(port, locatedPanel)), 'located side ports must remain on canvas and outside the inspector and toolbar');
   await page.screenshot({ path: `${outputDir}/edge-inspector-narrow-locate.png` });
   await inspector.getByRole('button', { name: '关闭', exact: true }).click();
   await openLayout();
@@ -381,12 +387,13 @@ try {
   });
   assert.equal(titleUncovered, true, 'layout panel title must not be covered by the material palette');
   const previewCards = await page.locator('.react-flow__node').evaluateAll((elements) => elements.map((element) => {
-    const rect = element.getBoundingClientRect(); return { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom };
+    const rect = element.getBoundingClientRect(); return { id: element.getAttribute('data-id'), x: rect.x, y: rect.y, width: rect.width, height: rect.height };
   }));
-  assert.ok(narrowLayoutBox && previewCards.every((rect) => rect.top >= 0 && rect.bottom < narrowLayoutBox.y && rect.left >= 0 && rect.right <= 640), 'all preview cards must stay above the bottom layout panel');
-  assert.ok(previewCards.every((rect) => rect.top > canvasHeader.y + canvasHeader.height), 'preview nodes must clear the global toolbar');
+  assert.ok(narrowLayoutBox && previewCards.length === 3 && previewCards.every(rect => rect.y >= 0 && rect.y + rect.height <= 900
+    && rect.x >= 0 && rect.x + rect.width <= 640 && disjoint(rect, narrowLayoutBox)), 'all preview cards must fit the viewport outside the actual layout panel bounds');
+  assert.ok(previewCards.every(rect => rect.y > canvasHeader.y + canvasHeader.height), 'preview nodes must clear the global toolbar');
   await page.screenshot({ path: `${outputDir}/layout-preview-narrow.png` });
-  check('narrow locate keeps header/ports visible and layout preview fits the complete graph above panel');
+  check('narrow locate keeps title/ports visible and layout preview fits the graph outside the actual tool panel');
 
   const disabledPorts = await page.locator('[data-connection-role="source"]').evaluateAll((ports) => ports.every((port) => getComputedStyle(port).pointerEvents === 'none'));
   assert.equal(disabledPorts, true, 'preview must disable wire starts');

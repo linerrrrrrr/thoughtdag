@@ -12,6 +12,8 @@ import { isHarnessAgentModel } from '../../lib/atlas/dsh-bridge';
 import { IN_HARNESS } from '../../lib/embedded';
 import { parseAgentCwd } from '../../lib/agents/cwd-path';
 import { isImeComposing } from '../../utils';
+import CanvasToolbarOverflowAction from '../CanvasToolbarOverflowAction';
+import { restoreCanvasToolbarFocus } from '../../lib/use-responsive-canvas-header';
 
 // Where the agent works, on the toolbar, whenever an agent model is the
 // pick: the chosen folder, the mirrored project, or the canvas's own
@@ -36,6 +38,8 @@ export default function AgentCwdChip() {
   const pathErrorId = useId();
   const [, rerender] = useState(0);
   const rootRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  useEffect(() => { if (open) panelRef.current?.focus({ preventScroll: true }); }, [open]);
   // the runtimes the canvas launches itself, and inside the harness its own
   // agent too: a fresh harness session runs where this says
   const harness = IN_HARNESS && !!window.desktopSessions && isHarnessAgentModel(selectedModel);
@@ -49,7 +53,10 @@ export default function AgentCwdChip() {
     return () => { alive = false; };
   }, [visible, harness, activeId, projects, nodeCount]);
 
-  useDismissableLayer({ dismissOnFocusOutside: true, open, refs: [rootRef], onDismiss: () => setOpen(false) });
+  useDismissableLayer({ dismissOnFocusOutside: true, open, refs: [rootRef], restoreFocus: false, onDismiss: reason => {
+    setOpen(false);
+    if (reason === 'escape') restoreCanvasToolbarFocus(rootRef.current?.querySelector('[data-agent-cwd]') ?? null);
+  } });
 
   if (!visible || !choice) return null;
   const meta = projects.find((p) => p.id === activeId);
@@ -74,7 +81,8 @@ export default function AgentCwdChip() {
   };
 
   return (
-    <div ref={rootRef} className="relative">
+    <div ref={rootRef} className="contents">
+      <CanvasToolbarOverflowAction label={`${t('agent.cwd')} · ${choice.kind === 'workspace' ? t('agent.cwdWorkspace') : tail(choice.cwd)}`} icon={<FolderOpen size={14} />}>
       <button
         onClick={(e) => { e.stopPropagation(); setOpen((v) => !v); }}
         className="bg-card border border-line rounded-control h-8 px-2.5 flex items-center gap-1.5 hover:bg-wash transition-colors text-xs text-ink max-w-[220px]"
@@ -86,8 +94,9 @@ export default function AgentCwdChip() {
         <span className="truncate">{choice.kind === 'workspace' ? t('agent.cwdWorkspace') : tail(choice.cwd)}</span>
         <ChevronDown size={12} strokeWidth={1.75} className="text-ink-faint shrink-0" />
       </button>
+      </CanvasToolbarOverflowAction>
       {open && (
-        <div className="canvas-tool-panel canvas-tool-menu py-1.5" style={panelPosition} onClick={(e) => e.stopPropagation()} data-agent-cwd-menu>
+        <div ref={panelRef} tabIndex={-1} className="canvas-tool-panel canvas-tool-menu py-1.5" style={panelPosition} onClick={(e) => e.stopPropagation()} data-agent-cwd-menu>
           <p className="text-2xs text-ink-faint uppercase tracking-wider font-medium px-3 pt-1 pb-1">{t('agent.cwd')}</p>
           <button onClick={() => void choose(undefined)} className="w-full text-left px-3 py-2 text-xs hover:bg-wash flex items-center gap-2">
             <span className="flex-1 min-w-0">

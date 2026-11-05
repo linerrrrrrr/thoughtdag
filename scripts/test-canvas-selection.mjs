@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Marquee containment is measured, inclusive, and atomic for rigid groups.
+// Marquee containment is measured, inclusive, and independent of retired metadata.
 import assert from 'node:assert/strict';
 import { build } from 'esbuild';
 import { mkdtempSync, unlinkSync, rmdirSync } from 'node:fs';
@@ -16,7 +16,7 @@ function test(name, run) {
   catch (error) { failed++; console.error(`FAIL ${name}\n${error.stack}`); }
 }
 try {
-  await build({ entryPoints: [join(root, 'src/lib/canvas-selection.ts')], bundle: true, platform: 'node', format: 'esm', outfile: output, logLevel: 'silent' });
+  await build({ entryPoints: [join(root, 'src/lib/canvas-selection.ts')], bundle: true, platform: 'node', format: 'esm', outfile: output, logLevel: 'silent', define: { 'import.meta.env': '{}' } });
   const { enclosedSelection: enclosed } = await import(pathToFileURL(output).href);
   const node = (id, x, y, extra = {}) => ({ id, type: 'thought', position: { x, y }, width: 200, height: 100, data: {}, ...extra });
   const rect = (x, y, width, height) => ({ x, y, width, height });
@@ -34,9 +34,9 @@ try {
     assert.deepEqual(enclosed(nodes, rect(100, 100, 200, 100)), []);
     assert.deepEqual(enclosed(nodes, rect(100, 100, 300, 180)), ['a']);
   });
-  test('a rigid group enters only when every member is enclosed', () => {
+  test('retired metadata never enlarges the marquee selection', () => {
     const nodes = [node('a', 100, 100, { data: { canvasGroupId: 'g' } }), node('b', 500, 100, { data: { canvasGroupId: 'g' } })];
-    assert.deepEqual(enclosed(nodes, rect(100, 100, 200, 100)), []);
+    assert.deepEqual(enclosed(nodes, rect(100, 100, 200, 100)), ['a']);
     assert.deepEqual(enclosed(nodes, rect(100, 100, 600, 100)), ['a', 'b']);
   });
   test('additive marquee preserves its baseline without toggling overlapping objects', () => {
@@ -45,15 +45,15 @@ try {
     assert.deepEqual(enclosed(nodes, rect(100, 100, 200, 100), ['a']), ['a']);
     assert.deepEqual(enclosed(nodes, rect(900, 100, 200, 100), ['a']), ['a']);
   });
-  test('additive baseline expands groups and omits deleted IDs', () => {
+  test('additive baseline preserves exact members and omits deleted IDs', () => {
     const nodes = [node('a', 100, 100, { data: { canvasGroupId: 'g' } }), node('b', 500, 100, { data: { canvasGroupId: 'g' } })];
-    assert.deepEqual(enclosed(nodes, rect(900, 900, 50, 50), ['a', 'a', 'missing']), ['a', 'b']);
+    assert.deepEqual(enclosed(nodes, rect(900, 900, 50, 50), ['a', 'a', 'missing']), ['a']);
   });
   test('hidden and non-selectable objects cannot newly enter the marquee', () => {
     const nodes = [node('a', 0, 0, { hidden: true }), node('b', 0, 0, { selectable: false }), node('c', 0, 0)];
     assert.deepEqual(enclosed(nodes, rect(0, 0, 200, 100)), ['c']);
   });
-  test('legacy frame group metadata does not enlarge a frame selection', () => {
+  test('retired metadata never enlarges a frame selection', () => {
     const nodes = [node('f', 0, 0, { data: { stepKind: 'frame', canvasGroupId: 'g' } }), node('a', 500, 0, { data: { canvasGroupId: 'g' } })];
     assert.deepEqual(enclosed(nodes, rect(0, 0, 200, 100)), ['f']);
   });

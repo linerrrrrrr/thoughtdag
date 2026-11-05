@@ -50,6 +50,7 @@
     "cors": "^2.8.6",
     "defuddle": "^0.19.2",
     "dompurify": "^3.4.13",
+    "elkjs": "^0.12.1",
     "express": "^5.2.1",
     "highlight.js": "^11.11.1",
     "html-to-image": "^1.11.13",
@@ -70,6 +71,7 @@
     "remark-math": "^6.0.0",
     "tailwindcss": "^4.1.18",
     "turndown": "^7.2.4",
+    "webcola": "^3.4.0",
     "zhipu-ai-provider": "^0.3.1",
     "zustand": "^5.0.11"
   },

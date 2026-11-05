@@ -3,8 +3,7 @@ import { Check, Copy, Frame, Maximize, MousePointer2, Trash2, X } from 'lucide-r
 import type { ThoughtNode } from '../types';
 import { useStore } from '../store';
 import { FRAME_COLORS } from '../lib/constants';
-import { frameContentIds, frameMembers, resolveCarriedNodeIds } from '../lib/frames';
-import { canvasGroupId } from '../lib/node-groups';
+import { frameContentIds, frameMembers } from '../lib/frames';
 import { useInlineEditDismiss } from '../lib/use-inline-edit-dismiss';
 import { confirmDialog } from '../lib/ui-store';
 import { isImeComposing } from '../utils';
@@ -52,11 +51,8 @@ export default function FrameSettings({ frames, children }: { frames: ThoughtNod
   const ids = frames.map(frame => frame.id);
   const contentIds = new Set(frameContentIds(nodes, ids));
   const content = nodes.filter(node => contentIds.has(node.id));
-  const groups = new Set(content.map(canvasGroupId).filter(Boolean));
   const allMemberIds = new Set(frameContentIds(nodes, ids, true));
   const nestedFrames = nodes.filter(node => allMemberIds.has(node.id) && node.data.stepKind === 'frame').length;
-  const movingIds = new Set(resolveCarriedNodeIds(nodes, ids));
-  const movingCount = nodes.filter(node => movingIds.has(node.id) && node.data.stepKind !== 'frame').length;
   const carried = frames.filter(frame => frame.data.frameCarry !== false);
   const mixedCarry = carried.length > 0 && carried.length < frames.length;
   const allCarry = carried.length === frames.length;
@@ -92,16 +88,14 @@ export default function FrameSettings({ frames, children }: { frames: ThoughtNod
           className="h-3.5 w-3.5 mt-0.5 shrink-0 accent-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent" />
         <span>{t('frame.moveContents')}{mixedCarry && <span className="ml-1 text-ink-faint">{t('frame.partlyLinked')}</span>}</span>
       </label>
-      <p className="text-xs text-ink-muted" data-frame-moving-count>{fmt(t('frame.movingCount'), { n: movingCount })}</p>
-      <p className="text-xs text-ink-faint leading-relaxed">{t('frame.resizeBoundaryHint')}</p>
     </section>
     <section className="px-4 py-3 border-t border-line space-y-2" aria-label={t('frame.settingsRange')}>
       <h3 className="text-xs font-medium text-ink">{t('frame.settingsRange')}</h3>
+      <p className="text-xs text-ink-muted leading-relaxed" data-frame-range-hint>{t('frame.rangeHint')}</p>
       <p className="text-xs text-ink-muted leading-relaxed" data-frame-content-count>
-        {fmt(t('frame.contentCount'), { nodes: content.length, groups: groups.size })}
+        {fmt(t('frame.contentCount'), { nodes: content.length })}
         {nestedFrames > 0 && <span className="block">{fmt(t('frame.nestedCount'), { n: nestedFrames })}</span>}
       </p>
-      <p className="text-xs text-ink-faint leading-relaxed">{t('frame.fullContainmentHint')}</p>
       <div className="-mx-2 space-y-0.5">
         <button type="button" className={actionClass} data-frame-select-contents disabled={!content.length}
           onClick={() => useStore.getState().selectFrameContents(ids, false)}><MousePointer2 size={14} className="shrink-0" />{t('frame.selectContents')}</button>

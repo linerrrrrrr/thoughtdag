@@ -1,4 +1,4 @@
-// Arrange/group regression using a fresh browser context. No model calls or user data.
+// Arrangement and partition regression using an isolated browser context.
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
@@ -15,6 +15,7 @@ await mkdir(outputDir, { recursive: true });
 const browser = await chromium.launch({ executablePath, headless: true });
 const context = await browser.newContext({ locale: 'zh-CN', viewport: { width: 1600, height: 1000 }, reducedMotion: 'reduce' });
 const page = await context.newPage();
+await page.routeWebSocket('**', socket => socket.close());
 page.setDefaultTimeout(15000);
 const errors = [], writes = [], checks = [];
 page.on('pageerror', (error) => errors.push(error.message));
@@ -34,6 +35,17 @@ const readNodes = () => page.evaluate(() => window.__store.getState().nodes);
 const positions = (nodes) => nodes.map(({ id, position }) => ({ id, position }));
 const size = (node) => ({ w: node.measured?.width ?? node.width, h: node.measured?.height ?? node.height });
 const select = (ids) => page.evaluate((ids) => window.__store.getState().setSelectedNodeIds(ids), ids);
+const expandFormat = async () => {
+  const reopen = page.locator('[data-node-format-reopen]');
+  if (await reopen.isVisible()) await reopen.click();
+};
+const pointerClickHandle = async (node, modifiers = []) => {
+  const box = await node.locator('.drag-handle').first().boundingBox();
+  assert.ok(box);
+  for (const key of modifiers) await page.keyboard.down(key);
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+  for (const key of [...modifiers].reverse()) await page.keyboard.up(key);
+};
 const closeMenus = async () => { await page.keyboard.press('Escape'); };
 const fixture = async (ids = ['arrange-a', 'arrange-b', 'arrange-c']) => {
   await closeMenus();
@@ -62,12 +74,9 @@ const fixture = async (ids = ['arrange-a', 'arrange-b', 'arrange-c']) => {
   await page.waitForFunction(() => window.__store.getState().nodes.every((node) => node.measured?.width && node.measured?.height));
 };
 const arrangeMenu = async () => {
+  await expandFormat();
   await page.locator('[data-selection-align]').click();
   await page.getByRole('menu', { name: '对齐', exact: true }).waitFor();
-};
-const groupMenu = async () => {
-  await page.locator('[data-selection-group]').click();
-  await page.getByRole('menu', { name: '组合', exact: true }).waitFor();
 };
 const action = async (name, reference = 'selection') => {
   await arrangeMenu();
@@ -86,9 +95,9 @@ try {
   await page.goto(appUrl, { waitUntil: 'networkidle' });
   await page.waitForFunction(() => window.__store?.persist.hasHydrated() && window.__rf && window.__ui && window.__store.getState().arrangeSelection);
   await fixture();
-  for (const selector of ['[data-selection-align]', '[data-selection-group]']) {
+  await expandFormat();
+  for (const selector of ['[data-selection-align]']) {
     const trigger = page.locator(selector);
-    assert.equal(await trigger.getAttribute('title'), null);
     await trigger.hover();
     await page.waitForTimeout(450);
     assert.equal(await page.getByRole('tooltip').count(), 0, 'Spatial buttons do not show hover annotations');
@@ -97,22 +106,27 @@ try {
   const inspectorBox = await page.locator('[data-node-format-panel]').boundingBox();
   assert.ok(entryBox && inspectorBox && inspectorBox.x > page.viewportSize().width / 2 && inspectorBox.y < 200, 'Inspector is at upper right');
   await select(['arrange-a']);
+  await expandFormat();
   assert.equal(await page.locator('[data-selection-align]').count(), 1, 'Single objects retain viewport alignment in the format panel');
   await select([]);
   assert.equal(await page.locator('[data-selection-align]').count(), 0, 'No object tools appear without a selection');
   await select(['arrange-a', 'arrange-b', 'arrange-c']);
-  await page.locator('[data-selection-group]').waitFor();
-  assert.equal(await page.locator('[data-selection-group]').count(), 1);
-  const groupBox = await page.locator('[data-selection-group]').boundingBox();
-  assert.ok(groupBox && groupBox.x > entryBox.x && Math.abs(groupBox.y - entryBox.y) < 2, 'Align and Group are adjacent in task order');
+  await expandFormat();
+  await page.locator('[data-create-selection-frame]').waitFor();
+  const frameEntryBox = await page.locator('[data-create-selection-frame]').boundingBox();
+  assert.ok(frameEntryBox && frameEntryBox.x > entryBox.x && Math.abs(frameEntryBox.y - entryBox.y) < 2, 'Alignment and direct partition creation are adjacent');
+  assert.equal(await page.locator('[data-selection-group], [data-group-action], [data-select-whole-group]').count(), 0, 'No grouping controls remain');
   await arrangeMenu();
   assert.equal(await page.locator('[data-group-action]').count(), 0, 'Alignment menu contains no grouping actions');
-  await groupMenu();
-  assert.equal(await page.getByRole('menu').count(), 1, 'Only one menu opens at a time');
-  assert.equal(await page.locator('[data-arrange-action]').count(), 0, 'Group menu contains no alignment actions');
   assert.equal(await page.locator('[data-create-selection-frame]').count(), 1);
   await closeMenus();
-  check('selected objects show separate, mutually exclusive Align and Group menus in the upper-right format panel');
+  await page.evaluate(() => document.activeElement instanceof HTMLElement && document.activeElement.blur());
+  const beforeRemovedShortcuts = await page.evaluate(() => ({ nodes: window.__store.getState().nodes, edges: window.__store.getState().edges, history: window.__store.getState().historyIndex }));
+  for (const shortcut of ['Control+g', 'Control+Shift+g', 'Control+Alt+g']) {
+    await page.keyboard.press(shortcut);
+    assert.deepEqual(await page.evaluate(() => ({ nodes: window.__store.getState().nodes, edges: window.__store.getState().edges, history: window.__store.getState().historyIndex })), beforeRemovedShortcuts, `${shortcut} never changes the canvas`);
+  }
+  check('grouping controls and shortcuts are absent while alignment and direct partition creation remain available');
   for (const command of ['left', 'center', 'right', 'top', 'middle', 'bottom']) {
     await fixture();
     const before = await readNodes();
@@ -165,40 +179,18 @@ try {
   assert.ok(await page.locator('[data-selection-align]').evaluate((node) => node === document.activeElement));
   check('distribution disabled states and keyboard focus follow selection and reference');
 
-  await groupMenu();
-  await page.locator('[data-group-action="group"]').click();
-  let grouped = await readNodes();
-  const groupId = grouped[0].data.canvasGroupId;
-  assert.ok(groupId);
-  assert.equal(grouped[1].data.canvasGroupId, groupId);
-  assert.equal(grouped[2].data.canvasGroupId, undefined);
-  await page.evaluate(() => window.__store.getState().undo());
-  assert.equal((await readNodes())[0].data.canvasGroupId, undefined);
-  await page.evaluate(() => window.__store.getState().redo());
-  assert.equal((await readNodes())[0].data.canvasGroupId, groupId);
-  await groupMenu();
-  assert.ok(await page.locator('[data-group-action="group"]').isDisabled());
-  await page.locator('[data-group-action="ungroup"]').click();
-  assert.equal((await readNodes())[0].data.canvasGroupId, undefined);
-  await groupMenu();
-  await page.locator('[data-group-action="regroup"]').click();
-  grouped = await readNodes();
-  assert.ok(grouped[0].data.canvasGroupId);
-  assert.equal(grouped[0].data.canvasGroupId, grouped[1].data.canvasGroupId);
-  check('group, ungroup, regroup, undo and redo preserve group membership');
-
   await select([]);
   const a = page.locator('.react-flow__node[data-id="arrange-a"]');
   await a.locator('.drag-handle').first().click();
   const selection = await page.evaluate(() => window.__store.getState().selectedNodeIds);
-  assert.deepEqual([...selection].sort(), ['arrange-a', 'arrange-b']);
+  assert.deepEqual([...selection].sort(), ['arrange-a']);
   const c = page.locator('.react-flow__node[data-id="arrange-c"]');
-  await c.locator('.drag-handle').first().click({ modifiers: ['Control'] });
-  assert.equal(await page.evaluate(() => window.__store.getState().selectedNodeIds.length), 3, 'Ctrl-click adds another node to the grouped selection');
-  await c.locator('.drag-handle').first().click({ modifiers: ['Control'] });
-  assert.deepEqual([...(await page.evaluate(() => window.__store.getState().selectedNodeIds))].sort(), ['arrange-a', 'arrange-b']);
-  await a.locator('.drag-handle').first().click({ modifiers: ['Control'] });
-  assert.equal(await page.locator('[data-selection-align]').count(), 0, 'Ctrl-deselecting a group hides the arrangement entry');
+  await pointerClickHandle(c, ['Control']);
+  assert.equal(await page.evaluate(() => window.__store.getState().selectedNodeIds.length), 2, 'Ctrl-click adds only the clicked node');
+  await pointerClickHandle(c, ['Control']);
+  assert.deepEqual([...(await page.evaluate(() => window.__store.getState().selectedNodeIds))].sort(), ['arrange-a']);
+  await pointerClickHandle(a, ['Control']);
+  assert.equal(await page.locator('[data-selection-align]').count(), 0, 'Ctrl-deselecting the final node hides the arrangement entry');
   await a.locator('.drag-handle').first().click();
   const beforeDrag = await readNodes();
   const handle = await a.locator('.drag-handle').first().boundingBox();
@@ -210,10 +202,25 @@ try {
   const afterDrag = await readNodes();
   const delta = (index, axis) => afterDrag[index].position[axis] - beforeDrag[index].position[axis];
   assert.ok(Math.abs(delta(0, 'x')) > 20);
-  near(delta(0, 'x'), delta(1, 'x'), 'Group members move equally on x');
-  near(delta(0, 'y'), delta(1, 'y'), 'Group members move equally on y');
+  assert.deepEqual(afterDrag[1].position, beforeDrag[1].position, 'The unselected member remains fixed');
   assert.deepEqual(afterDrag[2].position, beforeDrag[2].position);
-  check('click selects a whole group and a real pointer drag moves it rigidly');
+  check('click selects one node and a real pointer drag moves only that node');
+
+  await select(['arrange-a', 'arrange-b']);
+  assert.deepEqual([...(await page.evaluate(() => window.__store.getState().selectedNodeIds))].sort(), ['arrange-a', 'arrange-b']);
+  const wholeBefore = await readNodes();
+  const wholeHandle = await a.locator('.drag-handle').first().boundingBox();
+  assert.ok(wholeHandle);
+  await page.mouse.move(wholeHandle.x + wholeHandle.width / 2, wholeHandle.y + wholeHandle.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(wholeHandle.x + wholeHandle.width / 2 + 55, wholeHandle.y + wholeHandle.height / 2 + 20, { steps: 10 });
+  await page.mouse.up();
+  const wholeAfter = await readNodes();
+  const wholeDelta = (index, axis) => wholeAfter[index].position[axis] - wholeBefore[index].position[axis];
+  assert.ok(Math.abs(wholeDelta(0, 'x')) > 20);
+  for (const axis of ['x', 'y']) near(wholeDelta(0, axis), wholeDelta(1, axis), 'Multi-selection moves every selected node equally');
+  assert.deepEqual(wholeAfter[2].position, wholeBefore[2].position);
+  check('ordinary multi-selection supports collective dragging');
 
   await select([]);
   const boxA = await a.boundingBox();
@@ -229,7 +236,7 @@ try {
   await page.mouse.move(selectionBox.right, selectionBox.bottom, { steps: 10 });
   await page.mouse.up();
   assert.deepEqual([...(await page.evaluate(() => window.__store.getState().selectedNodeIds))].sort(), ['arrange-a', 'arrange-b']);
-  const selectionRect = page.locator('.react-flow__nodesselection-rect');
+  const selectionRect = page.locator('[data-selection-move]');
   await selectionRect.waitFor();
   const dragBox = await a.locator('.drag-handle').first().boundingBox();
   assert.ok(dragBox);
@@ -241,26 +248,22 @@ try {
   const afterSelectionDrag = await readNodes();
   const selectionDelta = (index, axis) => afterSelectionDrag[index].position[axis] - beforeSelectionDrag[index].position[axis];
   assert.ok(Math.abs(selectionDelta(0, 'x')) > 20);
-  near(selectionDelta(0, 'x'), selectionDelta(1, 'x'), 'Dragging a selected card moves group members equally on x');
-  near(selectionDelta(0, 'y'), selectionDelta(1, 'y'), 'Dragging a selected card moves group members equally on y');
+  near(selectionDelta(0, 'x'), selectionDelta(1, 'x'), 'Dragging a selected card moves selected nodes equally on x');
+  near(selectionDelta(0, 'y'), selectionDelta(1, 'y'), 'Dragging a selected card moves selected nodes equally on y');
   assert.deepEqual(afterSelectionDrag[2].position, beforeSelectionDrag[2].position);
-  check('marquee selection and dragging a selected card preserve rigid groups without an intercepting overlay');
+  check('marquee selection and dragging through the selection surface preserve relative positions');
 
   await page.evaluate(async () => (await import('/src/lib/persistence.ts')).flushPendingWrites());
-  const groupBeforeReload = (await readNodes())[0].data.canvasGroupId;
+  const positionsBeforeReload = positions(await readNodes());
   await page.reload({ waitUntil: 'networkidle' });
   await page.waitForFunction(() => window.__store?.persist.hasHydrated() && window.__rf);
-  assert.equal((await readNodes())[0].data.canvasGroupId, groupBeforeReload);
-  assert.equal((await readNodes())[1].data.canvasGroupId, groupBeforeReload);
-  check('explicit groups survive reload');
+  assert.deepEqual(positions(await readNodes()), positionsBeforeReload);
+  check('ordinary node geometry survives reload');
 
   await fixture(['arrange-a', 'arrange-b']);
-  await groupMenu();
-  await page.locator('[data-group-action="group"]').click();
   const frameSource = await readNodes();
-  const frameSourceGroup = frameSource[0].data.canvasGroupId;
   const edgesBeforeFrame = await page.evaluate(() => window.__store.getState().edges);
-  await groupMenu();
+  await expandFormat();
   await page.locator('[data-create-selection-frame]').click();
   await page.waitForFunction(() => window.__store.getState().nodes.some(node => node.data.stepKind === 'frame'));
   let framed = await readNodes();
@@ -269,7 +272,6 @@ try {
   assert.equal(frame.data.frameCarry, true);
   assert.deepEqual(positions(framed.filter(node => node.id !== frameId)), positions(frameSource));
   assert.deepEqual(await page.evaluate(() => window.__store.getState().edges), edgesBeforeFrame);
-  assert.equal(framed[0].data.canvasGroupId, frameSourceGroup);
   for (const node of framed.filter(node => ['arrange-a', 'arrange-b'].includes(node.id))) {
     assert.ok(frame.position.x < node.position.x && frame.position.y < node.position.y, 'Frame has leading padding');
     assert.ok(frame.position.x + frame.width > node.position.x + size(node).w, 'Frame has trailing padding');
@@ -277,7 +279,6 @@ try {
   }
   await page.evaluate(() => window.__store.getState().undo());
   assert.ok(!(await readNodes()).some(node => node.id === frameId));
-  assert.equal((await readNodes())[0].data.canvasGroupId, frameSourceGroup);
   await page.evaluate(() => window.__store.getState().redo());
   await page.waitForFunction(frameId => window.__store.getState().nodes.some(node => node.id === frameId), frameId);
   const frameNode = page.locator(`.react-flow__node[data-id="${frameId}"]`);
@@ -299,7 +300,7 @@ try {
   const frameDelta = axis => afterFrameDrag.find(node => node.id === frameId).position[axis] - beforeFrameDrag.find(node => node.id === frameId).position[axis];
   assert.ok(Math.abs(frameDelta('x')) > 20, 'Dragging the title moves the frame');
   for (const id of ['arrange-a', 'arrange-b']) {
-    for (const axis of ['x', 'y']) near(afterFrameDrag.find(node => node.id === id).position[axis] - beforeFrameDrag.find(node => node.id === id).position[axis], frameDelta(axis), 'Frame carries a complete group rigidly');
+    for (const axis of ['x', 'y']) near(afterFrameDrag.find(node => node.id === id).position[axis] - beforeFrameDrag.find(node => node.id === id).position[axis], frameDelta(axis), 'Frame carries its contained nodes equally');
   }
   assert.deepEqual(afterFrameDrag.find(node => node.id === 'arrange-c').position, beforeFrameDrag.find(node => node.id === 'arrange-c').position);
   await page.waitForFunction(() => ['arrange-a', 'arrange-b'].every(id => {
@@ -309,7 +310,7 @@ try {
   const memberOpacities = await page.locator('.react-flow__node[data-id="arrange-a"], .react-flow__node[data-id="arrange-b"]').evaluateAll(nodes => nodes.map(node => Number(getComputedStyle(node).opacity)));
   assert.ok(memberOpacities.every(opacity => opacity >= 0.9), 'Selecting a partition keeps its contents readable');
   await page.screenshot({ path: `${outputDir}/partition.png` });
-  check('selection creates a padded named partition without changing nodes, groups or edges; undo and frame dragging preserve it');
+  check('direct creation makes a padded named partition without changing nodes or edges; undo and dragging preserve it');
   await select([frameId, 'arrange-c']);
   const beforeFrameAlign = await readNodes();
   await action('right');
@@ -317,24 +318,36 @@ try {
   const alignFrameDx = afterFrameAlign.find(node => node.id === frameId).position.x - beforeFrameAlign.find(node => node.id === frameId).position.x;
   assert.ok(Math.abs(alignFrameDx) > 20);
   for (const id of ['arrange-a', 'arrange-b']) near(afterFrameAlign.find(node => node.id === id).position.x - beforeFrameAlign.find(node => node.id === id).position.x, alignFrameDx, 'Frame alignment carries the same rigid members as dragging');
-  check('alignment and dragging use the same partition members and preserve group offsets');
+  check('alignment and dragging use the same partition members and preserve relative positions');
 
   await select([frameId, 'arrange-a', 'arrange-b']);
-  await groupMenu();
-  assert.ok(await page.locator('[data-group-action="group"]').isDisabled(), 'Frames cannot be included in rigid groups');
-  await closeMenus();
+  await expandFormat();
+  assert.ok(await page.locator('[data-create-selection-frame]').isDisabled(), 'A selection containing a partition cannot create another partition');
   await arrangeMenu();
-  assert.ok(await page.locator('[data-arrange-chain]').isDisabled(), 'Legacy chain layout cannot split a frame and its contents');
-  await closeMenus();
+  assert.equal(await page.locator('[data-arrange-chain]').isDisabled(), false, 'A selected partition and its contents remain eligible for automatic layout');
+  const beforeRegionLayout = await readNodes();
+  await page.locator('[data-arrange-chain]').click();
+  await page.waitForFunction(() => !window.__canvasEditing.getState().layoutBusy);
+  const afterRegionLayout = await readNodes();
+  assert.deepEqual(afterRegionLayout.find(n => n.id === 'arrange-c').position, beforeRegionLayout.find(n => n.id === 'arrange-c').position);
+  const laidOutFrame = afterRegionLayout.find(n => n.id === frameId);
+  for (const id of ['arrange-a', 'arrange-b']) {
+    const member = afterRegionLayout.find(n => n.id === id);
+    assert.ok(member.position.x >= laidOutFrame.position.x && member.position.y >= laidOutFrame.position.y);
+    assert.ok(member.position.x + size(member).w <= laidOutFrame.position.x + size(laidOutFrame).w + 1);
+    assert.ok(member.position.y + size(member).h <= laidOutFrame.position.y + size(laidOutFrame).h + 1);
+  }
+  check('automatic layout arranges partition contents and preserves their containment and outside nodes');
   await page.evaluate(() => {
     window.__originalBatchMerge = window.__store.getState().batchMergeSummarize;
     window.__store.setState({ batchMergeSummarize: ids => { window.__capturedBatchIds = ids; } });
   });
+  await expandFormat();
   await page.getByRole('button', { name: '合并摘要', exact: true }).click();
   await page.locator('[data-selection-toolbar]').getByRole('button', { name: '提问', exact: true }).click();
   assert.deepEqual([...(await page.evaluate(() => window.__capturedBatchIds))].sort(), ['arrange-a', 'arrange-b']);
   await page.evaluate(() => window.__store.setState({ batchMergeSummarize: window.__originalBatchMerge }));
-  check('partition frames are excluded from rigid groups and batch content sources');
+  check('partition frames are excluded from new partition creation and batch content sources');
   const beforeFrameOnly = await page.evaluate(() => ({ ids: window.__store.getState().nodes.map(node => node.id), edges: window.__store.getState().edges }));
   await page.evaluate(async frameId => {
     const store = window.__store.getState();
@@ -361,21 +374,23 @@ try {
   await page.mouse.move(partialHandle.x + 155, partialHandle.y + partialHandle.height / 2 + 35, { steps: 10 });
   await page.mouse.up();
   const afterPartialDrag = await readNodes();
-  for (const id of ['arrange-a', 'arrange-b']) assert.deepEqual(afterPartialDrag.find(node => node.id === id).position, beforePartialDrag.find(node => node.id === id).position, 'A partially contained group stays behind as a whole');
+  assert.deepEqual(afterPartialDrag.find(node => node.id === 'arrange-b').position, beforePartialDrag.find(node => node.id === 'arrange-b').position, 'The outside node remains fixed');
+  for (const axis of ['x', 'y']) near(
+    afterPartialDrag.find(node => node.id === 'arrange-a').position[axis] - beforePartialDrag.find(node => node.id === 'arrange-a').position[axis],
+    afterPartialDrag.find(node => node.id === frameId).position[axis] - beforePartialDrag.find(node => node.id === frameId).position[axis],
+    'The contained member moves with its partition');
   assert.notDeepEqual(afterPartialDrag.find(node => node.id === frameId).position, beforePartialDrag.find(node => node.id === frameId).position);
-  check('moving a partition never pulls an outside member of a partially contained group');
+  check('moving a partition carries contained nodes and never pulls outside nodes');
 
   await page.evaluate(async () => (await import('/src/lib/persistence.ts')).flushPendingWrites());
   await page.reload({ waitUntil: 'networkidle' });
   await page.waitForFunction(() => window.__store?.persist.hasHydrated() && window.__rf);
   assert.equal((await readNodes()).find(node => node.id === frameId).data.question, '研究分区');
-  assert.equal((await readNodes())[0].data.canvasGroupId, frameSourceGroup);
-  check('named partitions and their independent groups survive reload');
+  check('named partitions survive reload');
 
   await fixture(['arrange-a', 'arrange-b']);
   await page.evaluate(() => {
     window.__store.setState(state => ({ nodes: state.nodes.map((node, index) => index < 2 ? { ...node, height: 280, measured: undefined, data: { ...node.data, stepKind: undefined, response: 'A complete independent answer.', responses: ['A complete independent answer.'] } } : node) }));
-    window.__store.getState().groupSelection(['arrange-a', 'arrange-b']);
     window.__store.getState().setSelectedNodeIds([]);
     window.__rf.setViewport({ x: 70, y: 50, zoom: 1 }, { duration: 0 });
   });
@@ -384,9 +399,21 @@ try {
   await page.locator('.react-flow__node[data-id="arrange-a"] [data-node-details]').click();
   await page.locator('[data-focus-panel]').waitFor();
   assert.equal(await page.evaluate(() => window.__ui.getState().panelNodeId), 'arrange-a');
-  assert.deepEqual([...(await page.evaluate(() => window.__store.getState().selectedNodeIds))].sort(), ['arrange-a', 'arrange-b']);
+  assert.deepEqual([...(await page.evaluate(() => window.__store.getState().selectedNodeIds))].sort(), ['arrange-a']);
   await page.evaluate(() => window.__ui.getState().setPanelOpen(false));
-  check('a grouped thought can still open its own reading panel without dissolving the group');
+  check('a selected thought opens its own reading panel without changing the selection');
+  await select(['arrange-a', 'arrange-b']);
+  await page.evaluate(() => window.__rf.setViewport({ x: 70, y: 50, zoom: 1 }, { duration: 0 }));
+  const menuHandle = await page.locator('.react-flow__node[data-id="arrange-a"] .drag-handle').first().boundingBox();
+  assert.ok(menuHandle);
+  await page.mouse.click(menuHandle.x + 120, menuHandle.y + 28, { button: 'right' });
+  await page.locator('[data-rename-node]').locator('..').getByRole('button', { name: '查看详情', exact: true }).click();
+  await page.locator('[data-focus-panel]').waitFor();
+  assert.deepEqual([...(await page.evaluate(() => window.__store.getState().selectedNodeIds))].sort(), ['arrange-a', 'arrange-b']);
+  assert.equal(await page.evaluate(() => window.__ui.getState().panelNodeId), 'arrange-a');
+  await page.locator('[data-node-details-close]').click();
+  assert.deepEqual([...(await page.evaluate(() => window.__store.getState().selectedNodeIds))].sort(), ['arrange-a', 'arrange-b']);
+  check('opening and closing one node from the context menu keeps the existing multi-selection');
 
   await fixture();
   assert.equal(await page.locator('.react-flow__node .node-selected').count(), 3, 'Every selected node exposes a visible selection outline');
@@ -396,10 +423,7 @@ try {
   await menuWithinViewport('对齐');
   await page.screenshot({ path: `${outputDir}/desktop-align.png` });
   await closeMenus();
-  await groupMenu();
-  await menuWithinViewport('组合');
-  await page.screenshot({ path: `${outputDir}/desktop-group.png` });
-  await closeMenus();
+  assert.equal(await page.locator('[data-selection-group], [data-group-action]').count(), 0);
   await page.locator('[data-toolbar-more]').click();
   await page.getByRole('button', { name: 'English', exact: true }).click();
   await page.locator('[data-appearance-lighting]').getByRole('button', { name: 'Dark', exact: true }).click();
@@ -418,8 +442,7 @@ try {
   await menuWithinViewport('对齐');
   await page.screenshot({ path: `${outputDir}/mobile.png` });
   await closeMenus();
-  await groupMenu();
-  await menuWithinViewport('组合');
+  assert.ok(await page.locator('[data-create-selection-frame]').isVisible());
   check('desktop, narrow viewport, dark theme and English menus remain accessible');
   await closeMenus();
   for (const width of [390, 800]) {
@@ -427,35 +450,36 @@ try {
     await fixture(['arrange-a', 'arrange-b']);
     await page.evaluate(() => {
       window.__store.setState(state => ({ nodes: state.nodes.map((node, index) => index < 2 ? { ...node, height: 280, measured: undefined, data: { ...node.data, stepKind: undefined, response: 'A complete independent answer.', responses: ['A complete independent answer.'] } } : node) }));
-      window.__store.getState().groupSelection(['arrange-a', 'arrange-b']);
       window.__store.getState().setSelectedNodeIds([]);
       window.__rf.setViewport({ x: -60, y: 40, zoom: 1 }, { duration: 0 });
     });
     await page.waitForTimeout(300);
-    const readingGroupId = (await readNodes())[0].data.canvasGroupId;
     await page.locator('.react-flow__node[data-id="arrange-a"] .drag-handle').first().click({ position: { x: 120, y: 28 } });
+    await expandFormat();
+    await page.locator('[data-node-format-close]').click();
     await page.locator('.react-flow__node[data-id="arrange-a"] [data-node-details]').click();
     const readingPanel = page.locator('[data-focus-panel]');
     await readingPanel.waitFor();
     await page.locator('[data-selection-toolbar]').waitFor();
-    assert.equal(await page.locator('[data-selection-toolbar]').count(), 1, 'Reading and formatting a group remain available together');
+    assert.equal(await page.locator('[data-selection-toolbar]').count(), 1, 'Reading and formatting remain available together');
     const panelBox = await readingPanel.boundingBox();
     assert.ok(panelBox && panelBox.x >= 0 && panelBox.x + panelBox.width <= width, 'Reading panel remains in the viewport');
-    assert.deepEqual([...(await page.evaluate(() => window.__store.getState().selectedNodeIds))].sort(), ['arrange-a', 'arrange-b']);
+    assert.deepEqual([...(await page.evaluate(() => window.__store.getState().selectedNodeIds))].sort(), ['arrange-a']);
     if (width === 390) await page.screenshot({ path: `${outputDir}/reading-mobile.png` });
     await readingPanel.getByTitle('关闭面板', { exact: true }).click();
     await page.locator('[data-selection-toolbar]').waitFor();
     const closedNodes = await readNodes();
-    assert.equal(closedNodes[0].data.canvasGroupId, readingGroupId);
-    assert.equal(closedNodes[1].data.canvasGroupId, readingGroupId);
-    assert.deepEqual([...(await page.evaluate(() => window.__store.getState().selectedNodeIds))].sort(), ['arrange-a', 'arrange-b']);
-    assert.equal(await page.evaluate(() => window.__store.getState().selectedNodeId), null);
+    assert.equal(closedNodes.length, 3);
+    assert.deepEqual([...(await page.evaluate(() => window.__store.getState().selectedNodeIds))].sort(), ['arrange-a']);
+    assert.equal(await page.evaluate(() => window.__store.getState().selectedNodeId), 'arrange-a');
+    await page.locator('[data-node-format-reopen]').click();
     const toolbarBox = await page.locator('[data-selection-toolbar]').boundingBox();
     assert.ok(toolbarBox && toolbarBox.x >= 0 && toolbarBox.x + toolbarBox.width <= width, 'Restored selection toolbar remains in the viewport');
     assert.equal(await page.locator('[data-selection-align]').count(), 1);
-    assert.equal(await page.locator('[data-selection-group]').count(), 1);
+    assert.equal(await page.locator('[data-selection-group]').count(), 0);
+    assert.ok(await page.locator('[data-create-selection-frame]').isVisible());
     if (width === 390) await page.screenshot({ path: `${outputDir}/reading-closed-mobile.png` });
-    check(`group reading at ${width}px coexists with formatting and closing keeps the same group within the viewport`);
+    check(`reading at ${width}px coexists with formatting and closing preserves the selection within the viewport`);
   }
   assert.deepEqual(errors, [], 'No runtime errors');
   assert.deepEqual(writes, [], 'No external write/model requests');

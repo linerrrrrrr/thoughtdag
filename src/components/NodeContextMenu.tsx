@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useDismissableLayer } from '../lib/use-dismissable-layer';
 import { useInlineEditDismiss } from '../lib/use-inline-edit-dismiss';
 import { createPortal } from 'react-dom';
@@ -38,6 +38,8 @@ export default function NodeContextMenu({ x, y, nodeId, onClose }: {
     onClose();
   };
   useDismissableLayer({ dismissOnFocusOutside: true, open: !!node, refs: [ref], onDismiss: onClose });
+  // Own focus before deferred outside-focus checks from the canvas settle.
+  useEffect(() => { ref.current?.focus({ preventScroll: true }); }, [nodeId]);
   const renameDismiss = useInlineEditDismiss({ active: renaming, ref, onOutside: commitRename, onCancel: () => setRenaming(false) });
 
   if (!node) return null;
@@ -60,7 +62,7 @@ export default function NodeContextMenu({ x, y, nodeId, onClose }: {
   const run = (fn: () => void) => () => { onClose(); fn(); };
 
   return createPortal((
-    <div ref={ref} onBlur={renaming ? renameDismiss.onBlur : undefined} className="fixed z-[70] bg-card border border-line rounded-overlay shadow-lg py-1 overflow-y-auto animate-fade-in" style={{ left, top, width: MENU_W, maxHeight: `calc(100dvh - ${top + 8}px)` }}>
+    <div ref={ref} tabIndex={-1} data-selection-menu onBlur={renaming ? renameDismiss.onBlur : undefined} className="fixed z-[70] bg-card border border-line rounded-overlay shadow-lg py-1 overflow-y-auto animate-fade-in" style={{ left, top, width: MENU_W, maxHeight: `calc(100dvh - ${top + 8}px)` }}>
       {renaming ? (
         <form className="p-3 space-y-2.5" onSubmit={(e) => {
           e.preventDefault();
@@ -88,7 +90,6 @@ export default function NodeContextMenu({ x, y, nodeId, onClose }: {
       )}
       {!isContent && (
         <button className={item} onClick={run(() => {
-          useStore.getState().setSelectedNodeId(nodeId, { focus: true });
           useUiStore.getState().setPanelOpen(true, nodeId);
         })}>
           <BookOpen size={14} strokeWidth={1.75} className={icon} /> {t('ctx.openPanel')}
