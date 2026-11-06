@@ -75,7 +75,7 @@ export function HitCards({ hits, onOpened, extra, cards }: { hits: WhyFindHit[];
         return (
           <div key={k} className="border border-line rounded-content px-3 py-2 bg-card hover:bg-wash/60 transition-colors" data-recall-hit={h.kind}>
             <div className="flex items-start gap-2">
-              <button onClick={() => void open(h)} className="flex-1 min-w-0 text-left" title={h.kind === 'memory' ? h.file : h.open} data-recall-open>
+              <button onClick={() => void open(h)} className="flex-1 min-w-0 text-left" data-tooltip={h.kind === 'memory' ? h.file : h.open} data-recall-open>
                 <div className="text-control text-ink break-words">{card ?? <><span className="text-ink-faint">{h.where}: </span>{h.snippet}</>}</div>
                 <div className="text-control text-ink-faint font-mono flex items-center gap-1.5 flex-wrap mt-0.5">
                   <span className="border border-line rounded-tag px-1 py-px">{h.runner}</span>

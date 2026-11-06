@@ -67,7 +67,7 @@ export default function RecallChip({ nodeId }: { nodeId?: string } = {}) {
   };
   const seg = (key: string, active: boolean, disabled: boolean, label: string, onClick: () => void, title?: string) => (
     // greyed, not disabled: a disabled button gets no hover, and the hover is where the reason lives
-    <button key={key} type="button" aria-disabled={disabled || undefined} onClick={disabled ? undefined : onClick} title={title} className={`px-2 py-0.5 rounded-tag text-control whitespace-nowrap transition-colors ${active ? 'bg-action text-white' : disabled ? 'text-ink-faint opacity-50 cursor-default' : 'text-ink-muted hover:bg-wash'}`} data-recall-menu-option={key}>{label}</button>
+    <button key={key} type="button" aria-disabled={disabled || undefined} onClick={disabled ? undefined : onClick} data-tooltip={title} className={`px-2 py-0.5 rounded-tag text-control whitespace-nowrap transition-colors ${active ? 'bg-action text-white' : disabled ? 'text-ink-faint opacity-50 cursor-default' : 'text-ink-muted hover:bg-wash'}`} data-recall-menu-option={key}>{label}</button>
   );
   return (
     <div ref={root} className="relative shrink-0">
@@ -76,7 +76,7 @@ export default function RecallChip({ nodeId }: { nodeId?: string } = {}) {
         // inside a card the click must not select the node (that opens the panel and swaps the composer away)
         onClick={(e) => { e.stopPropagation(); const r = e.currentTarget.getBoundingClientRect(); setOpen((v) => (v ? null : { left: Math.max(8, Math.min(r.right - 296, window.innerWidth - 304)), bottom: window.innerHeight - r.top + 8 })); }}
         aria-expanded={!!open}
-        title={on ? t('toolbar.recall') : t('toolbar.recallOff')}
+
         className={`h-8 px-2.5 rounded-control flex items-center gap-1.5 text-control font-medium transition-colors ${on ? 'text-accent bg-accent/15 ring-1 ring-accent/40 hover:bg-accent/25' : 'text-ink-muted opacity-60 hover:opacity-100 hover:bg-line'}`}
         data-recall-toggle
         data-recall-on={on ? 'on' : 'off'}
@@ -95,13 +95,13 @@ export default function RecallChip({ nodeId }: { nodeId?: string } = {}) {
             </button>
           </div>
           <div className="flex items-center justify-between gap-2">
-            <span className="text-ink-faint whitespace-nowrap cursor-help" tabIndex={0} title={t('recall.reachHint')}>{t('recall.menuReach')}</span>
+            <span className="text-ink-faint whitespace-nowrap">{t('recall.menuReach')}</span>
             <div className="flex gap-0.5" data-recall-menu-reach>
               {(['light', 'deep', 'full'] as RecallReach[]).map((r) => seg(r, reach === r, !on || (!judged && r !== 'light'), reachLabel(r), () => void pickReach(r), on && !judged && r !== 'light' ? t('recall.menuNeedsJudge') : undefined))}
             </div>
           </div>
           <div className="flex items-center justify-between gap-2">
-            <span className="text-ink-faint whitespace-nowrap cursor-help" tabIndex={0} title={t('recall.scaleHint')}>{t('recall.menuScale')}</span>
+            <span className="text-ink-faint whitespace-nowrap">{t('recall.menuScale')}</span>
             <div className="flex gap-0.5" data-recall-menu-scale>
               {(['lean', 'standard', 'generous'] as RecallScale[]).map((s) => seg(s, scale === s, !on, `${scaleLabel(s)} ${RECALL_SCALES[s].budget / 1000}k`, () => apply({ scale: s })))}
             </div>

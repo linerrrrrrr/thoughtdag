@@ -101,6 +101,41 @@ export function resolveEdgeAnchors(
   return cost(horizontal) < cost(vertical) ? horizontal : vertical;
 }
 
+/** Place a new card with its automatically resolved input at the released wire tip. */
+export function positionNodeAtConnectionEnd(
+  source: ThoughtNode, target: ThoughtNode, end: { x: number; y: number },
+  targetHandles?: readonly { id?: string | null; x: number; y: number; width: number; height: number }[],
+): { x: number; y: number } {
+  const box = { ...rect(target), x: 0, y: 0 };
+  const edge: ThoughtEdge = { id: '', source: source.id, target: target.id };
+  const preferred = nodeLayoutDirection(source);
+  const offsetFor = (side: AnchorSide) => {
+    const handle = targetHandles?.find(item => item.id === anchorHandle('target', side));
+    // React Flow ends a line at the outer edge of its measured handle.
+    // Include the real border and port dimensions once the card has mounted.
+    return handle ? {
+      x: handle.x + (side === 'left' ? 0 : side === 'right' ? handle.width : handle.width / 2),
+      y: handle.y + (side === 'top' ? 0 : side === 'bottom' ? handle.height : handle.height / 2),
+    } : pointFor(box, side);
+  };
+  const candidates = (['top', 'left', 'bottom', 'right'] as const).map(side => {
+    const offset = offsetFor(side);
+    const position = { x: end.x - offset.x, y: end.y - offset.y };
+    const anchors = resolveEdgeAnchors(edge, [source, { ...target, position }])!;
+    const resolvedOffset = offsetFor(anchors.targetSide);
+    return {
+      position,
+      error: Math.hypot(position.x + resolvedOffset.x - end.x, position.y + resolvedOffset.y - end.y),
+      cost: Math.abs(anchors.sourceAnchor.x - end.x) + Math.abs(anchors.sourceAnchor.y - end.y)
+        + (anchors.axis === preferred ? 0 : AXIS_BIAS),
+    };
+  });
+  // Resolve each candidate through the normal facing rules; placement never
+  // pins an edge to a port or changes its continuation/reference meaning.
+  candidates.sort((a, b) => a.error - b.error || a.cost - b.cost);
+  return candidates[0].position;
+}
+
 interface CachedAnchors {
   sourceId: string; targetId: string;
   sx: number; sy: number; tx: number; ty: number;

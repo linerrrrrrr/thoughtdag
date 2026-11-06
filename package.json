@@ -33,6 +33,7 @@
     "test:subagents": "node scripts/test-subagents.mjs",
     "test:turn-context": "node scripts/test-turn-context.mjs",
     "test:codex-stream": "node scripts/test-codex-stream.mjs",
+    "test:agent-discovery": "node scripts/test-agent-discovery.mjs",
     "test:codex-import": "node scripts/test-codex-session-kind.mjs && node scripts/test-codex-approval.mjs && node scripts/test-internal-session-repair.mjs && node scripts/test-live-import-refresh.mjs && node scripts/test-browser-session-repair.mjs && node scripts/test-codex-index-migration.mjs",
     "test:agent-activity": "node scripts/test-agent-activity.mjs",
     "test:agent-activity-ui": "node scripts/test-agent-activity-ui.mjs",

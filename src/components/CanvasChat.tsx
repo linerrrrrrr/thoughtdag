@@ -118,7 +118,7 @@ export default function CanvasChat({ open, onClose, onLocate }: { open: boolean;
   const questionOf = (i: number): string => { for (let k = i - 1; k >= 0; k--) if (turns[k].role === 'user') return turns[k].text; return ''; };
   const chip = (id: string, alias: string, key: string) => {
     const n = nodes.find((x) => x.id === id);
-    return <button key={key} type="button" className="cite-chip" title={n ? nodeLabel(n.data, lang) : undefined} onClick={() => onLocate(id)} onMouseEnter={() => beacon(id)} onMouseLeave={() => beacon(null)} data-cite={id}>{alias}</button>;
+    return <button key={key} type="button" className="cite-chip" data-tooltip={n ? nodeLabel(n.data, lang) : undefined} onClick={() => onLocate(id)} onMouseEnter={() => beacon(id)} onMouseLeave={() => beacon(null)} data-cite={id}>{alias}</button>;
   };
   // the answer is markdown with its citations as explore marks: one click handler locates the node a mark names,
   // and hovering a mark lights that node on the canvas with the beacon the "continue last thought" button uses
@@ -145,7 +145,7 @@ export default function CanvasChat({ open, onClose, onLocate }: { open: boolean;
             <div className="flex items-center gap-1 flex-wrap text-control">
               <span className="text-ink-faint mr-0.5">{t('chat.sug')}</span>
               {SUGGESTIONS.map(({ k }) => (
-                <button key={k} type="button" onClick={() => suggest(t(`chat.sug${k}Q`))} title={t(`chat.sug${k}Q`)} className="px-2 py-0.5 rounded-tag bg-wash text-ink-muted hover:text-accent hover:bg-accent/10 transition-colors" data-chat-suggest={k.toLowerCase()}>{t(`chat.sug${k}`)}</button>
+                <button key={k} type="button" onClick={() => suggest(t(`chat.sug${k}Q`))}  className="px-2 py-0.5 rounded-tag bg-wash text-ink-muted hover:text-accent hover:bg-accent/10 transition-colors" data-chat-suggest={k.toLowerCase()}>{t(`chat.sug${k}`)}</button>
               ))}
             </div>
           </div>
@@ -178,13 +178,13 @@ export default function CanvasChat({ open, onClose, onLocate }: { open: boolean;
         {turns.length > 0 && (
           <div className="flex items-center gap-1 flex-wrap text-control" data-chat-suggestions>
             {SUGGESTIONS.map(({ k }) => (
-              <button key={k} type="button" onClick={() => suggest(t(`chat.sug${k}Q`))} title={t(`chat.sug${k}Q`)} className="px-2 py-0.5 rounded-tag bg-wash text-ink-muted hover:text-accent hover:bg-accent/10 transition-colors" data-chat-suggest={k.toLowerCase()}>{t(`chat.sug${k}`)}</button>
+              <button key={k} type="button" onClick={() => suggest(t(`chat.sug${k}Q`))}  className="px-2 py-0.5 rounded-tag bg-wash text-ink-muted hover:text-accent hover:bg-accent/10 transition-colors" data-chat-suggest={k.toLowerCase()}>{t(`chat.sug${k}`)}</button>
             ))}
           </div>
         )}
         <div className="flex items-center gap-1.5 text-control text-ink-faint min-w-0" data-chat-focus>
           {focusNode
-            ? <><span className="shrink-0">{t('chat.focus')}</span><button type="button" onClick={() => onLocate(focusNode.id)} className="text-accent truncate min-w-0 hover:underline">{nodeLabel(focusNode.data, lang).split('：')[0]}</button><button type="button" onClick={() => setFocusCleared(true)} className="shrink-0 w-5 h-5 rounded-control hover:bg-wash flex items-center justify-center" title={t('chat.focusAll')}><X size={11} /></button></>
+            ? <><span className="shrink-0">{t('chat.focus')}</span><button type="button" onClick={() => onLocate(focusNode.id)} className="text-accent truncate min-w-0 hover:underline">{nodeLabel(focusNode.data, lang).split('：')[0]}</button><button type="button" onClick={() => setFocusCleared(true)} className="shrink-0 w-5 h-5 rounded-control hover:bg-wash flex items-center justify-center" aria-label={t('chat.focusAll')}><X size={11} /></button></>
             : <span className="truncate min-w-0"><span className="text-ink-muted">{t('chat.focusAll')}</span> · {t('chat.focusAllHint')}</span>}
         </div>
         <div className="flex items-end gap-1.5">

@@ -128,12 +128,12 @@ export default function HighlightsOverviewModal({ onLocate }: { onLocate: (nodeI
                     <mark className="bg-amber-100 text-amber-800 px-0.5 rounded-tag">{e.text}</mark>
                   </span>
                   {sort === 'time' && (
-                    <button className={chip} onClick={() => { close(); onLocate(e.nodeId); }} title={t('hlov.locateTitle')}>
+                    <button className={chip} onClick={() => { close(); onLocate(e.nodeId); }} data-tooltip={t('hlov.locateTitle')}>
                       {e.nodeTitle.slice(0, 14)}{e.nodeTitle.length > 14 ? '…' : ''}
                     </button>
                   )}
                   {sort === 'node' && (
-                    <button className={chip} onClick={() => { close(); onLocate(e.nodeId); }} title={t('hlov.locateTitle')} aria-label={t('hlov.locateTitle')}>
+                    <button className={chip} onClick={() => { close(); onLocate(e.nodeId); }} data-tooltip={t('hlov.locateTitle')} aria-label={t('hlov.locateTitle')}>
                       ↦
                     </button>
                   )}
@@ -171,7 +171,7 @@ export default function HighlightsOverviewModal({ onLocate }: { onLocate: (nodeI
             <span className="text-control text-ink-faint">{picked.size > 0 ? fmt(t('hlov.picked'), { n: picked.size }) : t('hlov.pickHint')}</span>
             <div className="flex-1" />
             {entries.length > 0 && (
-              <button onClick={exportMd} className="flex items-center gap-1.5 text-control text-ink-faint hover:text-ink-muted transition-colors" title={t('hlov.exportTitle')}>
+              <button onClick={exportMd} className="flex items-center gap-1.5 text-control text-ink-faint hover:text-ink-muted transition-colors" data-tooltip={t('hlov.exportTitle')}>
                 <FileDown size={12} strokeWidth={1.75} /> {t('common.export')}
               </button>
             )}

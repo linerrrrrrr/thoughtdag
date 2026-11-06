@@ -1,10 +1,10 @@
-import { useEffect, useId, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { History } from 'lucide-react';
 import { useReactFlow, useStore as useRfStore } from '@xyflow/react';
 import { useStore } from '../../store';
 import { useUiStore } from '../../lib/ui-store';
 import { useZoomTier } from '../../lib/use-map-mode';
-import { useDateLocale, useT } from '../../i18n';
+import { useT } from '../../i18n';
 import { collectTimeline } from '../../lib/timeline';
 import { panelShift } from '../../lib/panel-shift';
 
@@ -29,15 +29,13 @@ const tickWidth = (i: number, hoverIdx: number | null, badged: boolean) => {
 };
 
 export function TimelineBar() {
-  const previewId = useId();
   const tier = useZoomTier();
   const nodes = useStore((s) => s.nodes);
   const setSelectedNodeId = useStore((s) => s.setSelectedNodeId);
   const setOverviewOpen = useUiStore((s) => s.setTimelineOverviewOpen);
   const rf = useReactFlow();
   const t = useT();
-  const dateLocale = useDateLocale();
-  const [hover, setHover] = useState<{ id: string; idx: number; y: number } | null>(null);
+  const [hover, setHover] = useState<{ id: string; idx: number } | null>(null);
   // Clock for the "recently edited" glow — a state tick keeps the memo pure
   // and lets stale glows actually fade out during long sessions.
   const [now, setNow] = useState(() => Date.now());
@@ -66,8 +64,6 @@ export function TimelineBar() {
 
   const dayOf = (iso?: string) => (iso ? iso.slice(0, 10) : '');
   const fmtDay = (iso: string) => iso.slice(5).replace('-', '/');
-  const fmtTime = (iso?: string) => (iso ? new Date(iso).toLocaleString(dateLocale) : '');
-  const hovered = hover ? entries.find((e) => e.id === hover.id) : null;
 
   return (
     // One left-side axis group with the content palette: the rail hangs just
@@ -81,29 +77,9 @@ export function TimelineBar() {
       role="navigation"
       aria-label={t('timeline.label')}
     >
-      {hovered && hover && (
-        <div
-          id={previewId}
-          role="tooltip"
-          className="fixed left-[124px] max-w-[320px] bg-card border border-line rounded-overlay shadow-lg px-3 py-2 text-control pointer-events-none z-20"
-          style={{ top: hover.y - 14 }}
-        >
-          <div className="font-medium text-ink break-words">
-            {hovered.topic && <span className="text-accent">{hovered.topic} · </span>}
-            {hovered.label || '…'}
-          </div>
-          {hovered.createdAt && (
-            <div className="text-ink-faint mt-0.5">{t('timeline.created')} {fmtTime(hovered.createdAt)}</div>
-          )}
-          {hovered.modifiedAt && hovered.modifiedAt !== hovered.createdAt && (
-            <div className="text-ink-faint">{t('timeline.modified')} {fmtTime(hovered.modifiedAt)}</div>
-          )}
-          <div className="text-meta text-ink-faint/80 mt-1">{t('timeline.clickHint')}</div>
-        </div>
-      )}
       <button
         onClick={() => setOverviewOpen(true)}
-        title={t('timeline.openOverview')} aria-label={t('timeline.openOverview')}
+        data-tooltip={t('timeline.openOverview')} aria-label={t('timeline.openOverview')}
         data-timeline-overview-btn
         className="pointer-events-auto self-start ml-[9px] w-control-size h-control-size rounded-control flex items-center justify-center text-ink-faint/70 hover:text-accent hover:bg-accent/10 transition-colors"
       >
@@ -122,9 +98,9 @@ export function TimelineBar() {
               <button
                 key={e.id}
                 data-timeline-dot={e.id}
-                onMouseEnter={(ev) => setHover({ id: e.id, idx: i, y: ev.currentTarget.getBoundingClientRect().top })}
+                onMouseEnter={() => setHover({ id: e.id, idx: i })}
                 onMouseLeave={(ev) => { if (document.activeElement !== ev.currentTarget) setHover((h) => (h?.id === e.id ? null : h)); }}
-                onFocus={(ev) => { if (ev.currentTarget.matches(':focus-visible')) setHover({ id: e.id, idx: i, y: ev.currentTarget.getBoundingClientRect().top }); }}
+                onFocus={(ev) => { if (ev.currentTarget.matches(':focus-visible')) setHover({ id: e.id, idx: i }); }}
                 onBlur={() => setHover((h) => (h?.id === e.id ? null : h))}
                 onKeyDown={(ev) => { if (ev.key === 'Escape' && !ev.nativeEvent.isComposing) setHover(null); }}
                 onPointerDown={() => setHover(null)}
@@ -146,7 +122,6 @@ export function TimelineBar() {
                 }}
                 className="relative flex items-center w-full h-[14px] shrink-0 pl-[17px] cursor-pointer"
                 aria-label={e.label}
-                aria-describedby={hover?.id === e.id ? previewId : undefined}
               >
                 <span
                   className={`rounded-tag ${e.recentlyEdited ? 'tdag-timeline-pulse' : ''}`}

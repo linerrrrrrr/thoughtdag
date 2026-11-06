@@ -86,7 +86,7 @@ export interface NodeSlice {
 
 export interface AddQuestionOptions {
   parentId?: string;
-  /** Selected text this node explores; also marks the node as an orange branch. */
+  /** Quoted passage for a reading question or a saved branch. */
   branchContext?: string;
   branchYRatio?: number;
   /** false → the new node starts with roleMode 'reset' (no inherited role). */
@@ -105,8 +105,6 @@ export interface LlmSlice {
   /** A paradigm human turn: record the question WITHOUT generating (the
    *  answers belong to downstream prompt nodes), then advance the cascade. */
   submitHumanTurn: (nodeId: string, question: string) => void;
-  /** Multi-select explore: new node with a REAL edge from every selected node. */
-  exploreFrom: (nodeIds: string[], question: string) => Promise<void>;
   /** Fan out N perspectives: once = blind candidate branches; follow = reviewers that auto-rerun with the thread. */
   fanOut: (parentId: string, question: string, roles: { name: string; prompt: string }[], opts?: { follow?: boolean; rounds?: number }) => Promise<void>;
   regenerate: (nodeId: string) => void;

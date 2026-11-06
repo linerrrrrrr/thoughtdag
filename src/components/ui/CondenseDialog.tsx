@@ -116,7 +116,7 @@ export default function CondenseDialog({ onFocusSegment }: { onFocusSegment?: (n
         <div className="text-title font-semibold text-ink flex items-center gap-2">
           <Minimize2 size={15} strokeWidth={1.75} className="text-accent" /> {t('condense.title')}
         </div>
-        <button onClick={close} title={run.status === 'building' ? t('condense.runningBg') : undefined} aria-label={t('common.close')}
+        <button onClick={close}  aria-label={t('common.close')}
           className="cursor-pointer text-ink-faint hover:text-ink rounded-control w-7 h-7 flex items-center justify-center hover:bg-wash transition-colors"><X size={15} /></button>
       </div>
 
@@ -127,7 +127,7 @@ export default function CondenseDialog({ onFocusSegment }: { onFocusSegment?: (n
               <p className="text-control text-ink-faint leading-snug">{t('condense.copyIntroFull')}</p>
               <button
                 onClick={() => setRefreshTick((v) => v + 1)}
-                title={t('condense.rescanTitle')}
+
                 data-condense-rescan
                 className="text-control text-ink-muted hover:text-accent px-2 py-1 rounded-tag hover:bg-wash transition-colors shrink-0"
               >

@@ -491,7 +491,7 @@ export default function ThoughtMapDialog() {
                 </div>
               ))}
               <div className="flex-1" />
-              <button onClick={() => { void downloadPng().then((ok) => { if (ok) setStep('share'); }); }} disabled={busy} data-tmap-download aria-label={t('tmap.download')} title={t('tmap.download')}
+              <button onClick={() => { void downloadPng().then((ok) => { if (ok) setStep('share'); }); }} disabled={busy} data-tmap-download aria-label={t('tmap.download')} data-tooltip={t('tmap.download')}
                 className="flex items-center justify-center gap-1.5 text-control font-semibold bg-action text-white hover:bg-action-strong rounded-control px-3 py-2.5 transition-colors disabled:opacity-50">
                 {busy ? <Loader2 size={13} className="animate-spin" /> : <FileDown size={13} strokeWidth={1.75} />}
                 {t('common.export')}

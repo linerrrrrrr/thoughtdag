@@ -133,7 +133,7 @@ export default function TopicsPanel({ onOpened, onChanged }: { onOpened?: () => 
       ) : (
         <div className="flex flex-wrap gap-1.5" data-topics-list>
           {topics.map((x) => (
-            <button key={x.id} onClick={() => void open(x.id)} title={x.description} className={`text-control px-2.5 py-1 rounded-tag border transition-colors ${browse?.id === x.id ? 'bg-accent/10 border-accent/40 text-accent' : 'border-line text-ink hover:bg-wash'}`} data-topic-chip={x.id}>
+            <button key={x.id} onClick={() => void open(x.id)}  className={`text-control px-2.5 py-1 rounded-tag border transition-colors ${browse?.id === x.id ? 'bg-accent/10 border-accent/40 text-accent' : 'border-line text-ink hover:bg-wash'}`} data-topic-chip={x.id}>
               {x.name} <span className="text-ink-faint font-mono">{fmt(t('topics.count'), { n: x.count })}</span>
             </button>
           ))}
@@ -145,7 +145,7 @@ export default function TopicsPanel({ onOpened, onChanged }: { onOpened?: () => 
           <div className="text-control text-ink-muted mb-1">{proposed.length ? t('topics.proposed') : t('topics.proposedNone')}</div>
           <div className="flex flex-wrap gap-1.5 items-center">
             {proposed.map((p) => (
-              <button key={p.name} onClick={() => void addProposed([p])} title={p.description} className="text-control px-2.5 py-1 rounded-tag border border-dashed border-accent/50 text-accent hover:bg-accent/10" data-topic-proposed>+ {p.name}</button>
+              <button key={p.name} onClick={() => void addProposed([p])}  className="text-control px-2.5 py-1 rounded-tag border border-dashed border-accent/50 text-accent hover:bg-accent/10" data-topic-proposed>+ {p.name}</button>
             ))}
             {proposed.length > 1 && <button onClick={() => void addProposed(proposed)} className="text-control text-accent hover:underline ml-1" data-topics-add-all>{t('topics.addAll')}</button>}
           </div>

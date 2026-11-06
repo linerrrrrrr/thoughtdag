@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
-import { Archive, Check, ClipboardList, Files, FileDown, GitBranch, Highlighter, Layers, Trash2, X } from 'lucide-react';
+import { Archive, Check, ClipboardList, Files, FileDown, Highlighter, Layers, Trash2, X } from 'lucide-react';
 import { useStore } from '../store';
 import { useProjects } from '../store/projects';
 import type { ThoughtNode } from '../types';
@@ -16,7 +16,7 @@ import { getNodeDisplayName } from '../lib/node-display-name';
 import { useSessionDraft } from '../lib/use-session-draft';
 import { useSelectionDraftBoundary } from '../lib/selection-panel-context';
 
-type PendingAction = 'explore' | 'merge' | 'mergeDelete' | 'weave' | null;
+type PendingAction = 'merge' | 'mergeDelete' | 'weave' | null;
 type GeometryField = 'width' | 'height' | 'x' | 'y';
 type GeometryDraft = Partial<Record<GeometryField, string>>;
 const fieldLabels = { width: 'format.width', height: 'format.height', x: 'format.x', y: 'format.y' } as const;
@@ -176,7 +176,7 @@ function GeometryEditor({ selectedNodes, allowPosition }: { selectedNodes: Thoug
 }
 
 export default function SelectionToolbar({ getViewportRect }: { getViewportRect: ViewportRectGetter; withDetails?: boolean }) {
-  const { selectedNodeIds, nodes, batchDelete, batchMergeSummarize, weaveHighlights, exploreFrom, setArchived, duplicateSelection } = useStore();
+  const { selectedNodeIds, nodes, batchDelete, batchMergeSummarize, weaveHighlights, setArchived, duplicateSelection } = useStore();
   const project = useProjects(state => state.activeId);
   const t = useT();
   const [pending, setPending] = useState<PendingAction>(null);
@@ -210,8 +210,7 @@ export default function SelectionToolbar({ getViewportRect }: { getViewportRect:
   const run = () => {
     if (!contentIds.length) return;
     const text = input.trim();
-    if (pending === 'explore') { if (!text) return; void exploreFrom(contentIds, text); }
-    else if (pending === 'merge') batchMergeSummarize(contentIds, false, text || undefined);
+    if (pending === 'merge') batchMergeSummarize(contentIds, false, text || undefined);
     else if (pending === 'mergeDelete') batchMergeSummarize(contentIds, true, text || undefined);
     else if (pending === 'weave') void weaveHighlights(contentIds, text || undefined);
     if (pending) useUiStore.getState().setDraft(draftKey(pending), '');
@@ -228,7 +227,7 @@ export default function SelectionToolbar({ getViewportRect }: { getViewportRect:
       <div className="px-4 pt-3">
         <h3 className="text-title font-semibold text-ink">{fmt(t('frame.nodeScope'), { n: contentNodes.length })}</h3>
         {contentNodes.length === 1 && <p className="text-control text-ink-muted mt-1 truncate" data-format-node-name
-          title={getNodeDisplayName(contentNodes[0].data, t('ctx.unnamedNode'))} data-tooltip-overflow>
+          data-tooltip={getNodeDisplayName(contentNodes[0].data, t('ctx.unnamedNode'))} data-tooltip-overflow>
           {getNodeDisplayName(contentNodes[0].data, t('ctx.unnamedNode'))}
         </p>}
       </div>
@@ -241,30 +240,29 @@ export default function SelectionToolbar({ getViewportRect }: { getViewportRect:
         <div className="px-2 pb-3 space-y-2">
           <div className="grid grid-cols-2 gap-1">
             <button type="button" onClick={() => toggle('merge')} disabled={contentIds.length < 2} className={actionClass('merge')} ><ClipboardList size={14} className="shrink-0" />{t('toolbar.mergeSummary')}</button>
-            <button type="button" onClick={() => toggle('mergeDelete')} disabled={contentIds.length < 2} className={actionClass('mergeDelete')} title={t('toolbar.mergeDeleteTitle')}><ClipboardList size={14} className="shrink-0" />{t('toolbar.mergeDelete')}</button>
-            <button type="button" onClick={() => toggle('explore')} disabled={!contentIds.length} className={actionClass('explore')} title={t('toolbar.exploreTitle')}><GitBranch size={14} className="shrink-0" />{t('common.explore')}</button>
-            {allHighlights.length > 0 && <button type="button" onClick={() => toggle('weave')} className={actionClass('weave')} title={t('toolbar.weaveTitle')}><Highlighter size={14} className="shrink-0" />{t('toolbar.weave')}</button>}
-            <button type="button" onClick={() => setArchived(contentIds, true)} disabled={!contentIds.length} className={buttonClass} title={t('archive.batchTitle')}><Archive size={14} className="shrink-0" />{t('archive.label')}</button>
-            <button type="button" onClick={() => { void updateSummaries(contentIds); }} disabled={!contentIds.length} className={buttonClass} title={t('toolbar.reselectLaddersTitle')} data-batch-reselect><Layers size={14} className="shrink-0" />{t('toolbar.reselectLadders')}</button>
+            <button type="button" onClick={() => toggle('mergeDelete')} disabled={contentIds.length < 2} className={actionClass('mergeDelete')} ><ClipboardList size={14} className="shrink-0" />{t('toolbar.mergeDelete')}</button>
+            {allHighlights.length > 0 && <button type="button" onClick={() => toggle('weave')} className={actionClass('weave')} ><Highlighter size={14} className="shrink-0" />{t('toolbar.weave')}</button>}
+            <button type="button" onClick={() => setArchived(contentIds, true)} disabled={!contentIds.length} className={buttonClass} ><Archive size={14} className="shrink-0" />{t('archive.label')}</button>
+            <button type="button" onClick={() => { void updateSummaries(contentIds); }} disabled={!contentIds.length} className={buttonClass}  data-batch-reselect><Layers size={14} className="shrink-0" />{t('toolbar.reselectLadders')}</button>
           </div>
           {pending && <div className="px-2 space-y-2">
             <input ref={inputRef} type="text" value={input}
               onChange={event => { setInput(event.target.value); useUiStore.getState().setDraft(draftKey(pending), event.target.value, true); }}
-              onKeyDown={event => { if (event.key === 'Enter' && !isImeComposing(event) && (pending !== 'explore' || input.trim())) { event.preventDefault(); run(); } }}
-              aria-label={pending === 'explore' ? t('toolbar.explorePlaceholder') : t('toolbar.intentPlaceholder')}
-              placeholder={pending === 'explore' ? t('toolbar.explorePlaceholder') : t('toolbar.intentPlaceholder')}
+              onKeyDown={event => { if (event.key === 'Enter' && !isImeComposing(event)) { event.preventDefault(); run(); } }}
+              aria-label={t('toolbar.intentPlaceholder')}
+              placeholder={t('toolbar.intentPlaceholder')}
               className="w-full text-control border border-line rounded-control px-2.5 py-2 focus:outline-none focus:ring-1 focus:ring-accent bg-card min-w-0" />
             <div className="flex justify-end gap-2">
               <button type="button" onClick={cancelInput} className={buttonClass}>{t('common.cancel')}</button>
-              <button type="button" onClick={run} disabled={!contentIds.length || (pending === 'explore' && !input.trim())}
+              <button type="button" onClick={run} disabled={!contentIds.length}
                 className="text-control bg-action text-white px-3 min-h-8 rounded-control hover:bg-action-strong transition-colors disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent">{t('common.go')}</button>
             </div>
           </div>}
         </div>
       </div>
       <footer className="border-t border-line px-2 py-2 flex flex-wrap gap-1 [&>button]:px-2 [&>button]:gap-1.5 [&_svg]:shrink-0">
-        <button type="button" onClick={() => duplicateSelection(contentIds)} className={buttonClass} title={t('toolbar.duplicateTitle')}><Files size={14} strokeWidth={1.75} />{t('common.duplicate')}</button>
-        <button type="button" onClick={() => downloadMarkdown(selectionMarkdown(contentIds))} className={buttonClass} aria-label={t('common.exportMd')} title={t('toolbar.exportTitle')}><FileDown size={14} strokeWidth={1.75} />{t('common.export')}</button>
+        <button type="button" onClick={() => duplicateSelection(contentIds)} className={buttonClass} ><Files size={14} strokeWidth={1.75} />{t('common.duplicate')}</button>
+        <button type="button" onClick={() => downloadMarkdown(selectionMarkdown(contentIds))} className={buttonClass} aria-label={t('common.exportMd')} data-tooltip={t('toolbar.exportTitle')}><FileDown size={14} strokeWidth={1.75} />{t('common.export')}</button>
         <button type="button" data-selection-delete-nodes onClick={() => {
           void confirmDialog({ title: ti('confirm.deleteNodesTitle'), message: fmt(ti('confirm.deleteNodes'), { n: contentIds.length }), confirmLabel: ti('common.delete'), danger: true })
             .then(ok => { if (ok) batchDelete(contentIds); });

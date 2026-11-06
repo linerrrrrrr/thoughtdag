@@ -39,17 +39,13 @@ Choose how to run a question in the canvas model picker:
 
 Selecting a regular model is not the same as running the Harness Agent. Choose **DeepSeek Harness · Agent** when you want tool execution and a recorded harness turn.
 
-## Example: explore an answer
-
-This is a recording of the actual interface:
-
-<video controls playsinline muted preload="metadata" src="/media/harness-user-take-en.mp4" style="width:100%;border-radius:8px" aria-label="Switch to the thought graph, ask a follow-up, and explore selected text in Harness"></video>
+## Example: continue from an answer
 
 1. Select **ThoughtDAG** in the Harness sidebar and open an existing node.
 2. Double-click the first question-and-answer node to read its full answer in the right panel.
-3. Type a follow-up in the panel's lower input and send it. The answer grows into a second, connected node.
-4. Select a passage in the second answer and choose **Explore**.
-5. The new question and answer form a third node. Check its incoming wires to decide what the next question receives.
+3. Drag a connection from the first node to empty canvas, then enter and send a question in the new node.
+4. To discuss a detail further, drag another connection from the second node to empty canvas, then enter and send the next question.
+5. Check the incoming wires to decide what the next question receives.
 
 Both regular models and Agent mode can create canvas nodes. Whether a turn enters the Harness log depends on the execution mode above, not on whether a node appears.
 

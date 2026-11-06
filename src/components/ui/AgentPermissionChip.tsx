@@ -92,7 +92,7 @@ export default function AgentPermissionChip() {
       <button
         onClick={(e) => { e.stopPropagation(); setOpen((v) => !v); }}
         className={`bg-card border rounded-control h-8 px-2.5 flex items-center gap-1.5 hover:bg-wash transition-colors text-control ${shown === 'allow' ? 'border-amber-400/70 text-amber-700 dark:text-amber-300' : 'border-line text-ink'}`}
-        title={`${t('agent.perm')} · ${t(LABEL[shown])}`} aria-label={`${t('agent.perm')} · ${t(LABEL[shown])}`} data-tooltip-icon-only
+        data-tooltip={`${t('agent.perm')} · ${t(LABEL[shown])}`} aria-label={`${t('agent.perm')} · ${t(LABEL[shown])}`} data-tooltip-icon-only
         data-agent-permission-chip={shown}
         aria-expanded={open}
       >
@@ -113,8 +113,8 @@ export default function AgentPermissionChip() {
               <p className="text-control text-ink-faint px-3 pt-1 pb-1">{t('agent.guardAllowed')}</p>
               {allowed.map((a) => (
                 <div key={a} className="px-3 py-1 text-control flex items-center gap-2 min-w-0" data-agent-guard-allowed={a}>
-                  <span className="flex-1 min-w-0 truncate text-ink-muted font-mono" title={a} data-tooltip-overflow>{a}</span>
-                  <button onClick={() => void allowLocation(a, true)} className="text-ink-faint hover:text-red-500 shrink-0" title={t('agent.guardRemove')} aria-label={t('agent.guardRemove')}>
+                  <span className="flex-1 min-w-0 truncate text-ink-muted font-mono" data-tooltip={a} data-tooltip-overflow>{a}</span>
+                  <button onClick={() => void allowLocation(a, true)} className="text-ink-faint hover:text-red-500 shrink-0" data-tooltip={t('agent.guardRemove')} aria-label={t('agent.guardRemove')}>
                     <X size={12} strokeWidth={2} />
                   </button>
                 </div>

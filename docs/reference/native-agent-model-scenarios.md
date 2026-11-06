@@ -368,7 +368,7 @@ Codex 的状态根目录默认是 `~/.codex`，可由 `CODEX_HOME` 指定；这�
 6. Harness 的续接/分支判断不完全等同 Codex 的上下文修改检查，不能承诺各运行时已统一。
 7. 原生续问当前仍会优先节点显式模型，再使用此前回答模型或同运行时的全局模型；默认标记也会从目录解析后显式发给运行时。本轮 effort 读取全局设置。因此“无覆盖时真正沿用原生会话模型/强度”还需改实际分派，不能只改 GUI 标签。
 
-依据：[Agent 请求编译和发送](../../src/lib/agents/agent-runtime.ts)、[生成前后处理](../../src/store/streaming.ts)、[Harness 插件](../../dsh/lib/index.js)。
+依据：[Agent 请求编译和发送](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/lib/agents/agent-runtime.ts)、[生成前后处理](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/store/streaming.ts)、[Harness 插件](https://github.com/linerrrrrrr/thoughtdag/blob/main/dsh/lib/index.js)。
 
 ### 9.2 当前按钮调用谁
 
@@ -388,7 +388,7 @@ Codex 的状态根目录默认是 `~/.codex`，可由 `CODEX_HOME` 指定；这�
 | 相关性/分类/批量标注 | 独立 judge 配置；部分可用 API 代答 | 不是原生 Agent；批量标注等并非任意 API 都能替代 |
 | 多角色、选区综合、高光串联 | 正式 `runNodeGeneration` | 可以执行 Agent；持续评审具有用户启用的 watch/autoRerun |
 
-当前通用辅助候选为：**调用方 prefer → 当前选择（仅 API）→ 上次 API → 目录默认 → 其他 API**；过滤 Agent，失败者暂时后移，每次最多尝试 3 个。故现在标题、摘要一般不会“继续调用 Codex”，但可能调用用户上次选过的另一个 API。这正是需要独立用途配置与可见来源的原因。[辅助路由](../../src/lib/background-model.ts)
+当前通用辅助候选为：**调用方 prefer → 当前选择（仅 API）→ 上次 API → 目录默认 → 其他 API**；过滤 Agent，失败者暂时后移，每次最多尝试 3 个。故现在标题、摘要一般不会“继续调用 Codex”，但可能调用用户上次选过的另一个 API。这正是需要独立用途配置与可见来源的原因。[辅助路由](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/lib/background-model.ts)
 
 ### 9.3 原生 compact 与现有凝练
 
@@ -411,7 +411,7 @@ OpenAI 的公开 app-server 提供 `thread/compact/start`；这说明可以针�
 | API 固定模型不可用时可回退全局选择 | 全局是 Agent 时可能跨执行方式 | 不跨方式自动回退，等待用户重选 |
 | 已有持续评审自动重跑 | 仅说“所有边都绝不执行”不准确 | 普通上下文边不自动执行；显式自动流程单独展示和控制 |
 
-本次没有读取任何实际密钥。以上凭据结论来自类型与存取代码，见 [runtime-providers](../../src/lib/runtime-providers.ts)；索引记录与备份见 [canvas-record](../../src/lib/canvas-record.ts)、[local-backup](../../src/lib/local-backup.ts)、[export](../../src/lib/export.ts)。
+本次没有读取任何实际密钥。以上凭据结论来自类型与存取代码，见 [runtime-providers](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/lib/runtime-providers.ts)；索引记录与备份见 [canvas-record](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/lib/canvas-record.ts)、[local-backup](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/lib/local-backup.ts)、[export](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/lib/export.ts)。
 
 ## 10. 建议先落实的功能与验收
 
@@ -447,14 +447,14 @@ OpenAI 的公开 app-server 提供 `thread/compact/start`；这说明可以针�
 
 ## 11. 主要证据索引
 
-- [background-model.ts](../../src/lib/background-model.ts)：辅助模型过滤与候选顺序。
-- [node-metadata.ts](../../src/lib/node-metadata.ts)、[NodeMetadataEditor.tsx](../../src/components/NodeMetadataEditor.tsx)：AI 标题/摘要只写草稿。
-- [CondenseDialog.tsx](../../src/components/ui/CondenseDialog.tsx)、[condense.ts](../../src/lib/condense.ts)：API 凝练与副本树。
-- [streaming.ts](../../src/store/streaming.ts)：主执行、记忆回忆、结束后辅助任务、自动重跑。
-- [agent-runtime.ts](../../src/lib/agents/agent-runtime.ts)：会话路由、上下文编译、材料、guard 与原生发送。
-- [runtime/agents](../../runtime/agents/README.md)：各运行时能力和统一事件接口。
-- [content.ts](../../src/lib/content.ts)、[judge.ts](../../src/lib/judge.ts)：视觉与判断的独立调用路径。
-- [dsh-bridge.ts](../../src/lib/atlas/dsh-bridge.ts)、[Harness 插件](../../dsh/lib/index.js)：宿主会话、工具及提示扩展。
-- [desktop/main.js](../../desktop/main.js)、[HTTP bridge](../../runtime/agents/http.cjs)、[ops.cjs](../../runtime/agents/ops.cjs)：扫描、工作区、材料和权限文件。
-- [projects.ts](../../src/store/projects.ts)、[persistence.ts](../../src/lib/persistence.ts)：画布与附件持久化。
+- [background-model.ts](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/lib/background-model.ts)：辅助模型过滤与候选顺序。
+- [node-metadata.ts](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/lib/node-metadata.ts)、[NodeMetadataEditor.tsx](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/components/NodeMetadataEditor.tsx)：AI 标题/摘要只写草稿。
+- [CondenseDialog.tsx](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/components/ui/CondenseDialog.tsx)、[condense.ts](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/lib/condense.ts)：API 凝练与副本树。
+- [streaming.ts](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/store/streaming.ts)：主执行、记忆回忆、结束后辅助任务、自动重跑。
+- [agent-runtime.ts](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/lib/agents/agent-runtime.ts)：会话路由、上下文编译、材料、guard 与原生发送。
+- [runtime/agents](https://github.com/linerrrrrrr/thoughtdag/blob/main/runtime/agents/README.md)：各运行时能力和统一事件接口。
+- [content.ts](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/lib/content.ts)、[judge.ts](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/lib/judge.ts)：视觉与判断的独立调用路径。
+- [dsh-bridge.ts](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/lib/atlas/dsh-bridge.ts)、[Harness 插件](https://github.com/linerrrrrrr/thoughtdag/blob/main/dsh/lib/index.js)：宿主会话、工具及提示扩展。
+- [desktop/main.js](https://github.com/linerrrrrrr/thoughtdag/blob/main/desktop/main.js)、[HTTP bridge](https://github.com/linerrrrrrr/thoughtdag/blob/main/runtime/agents/http.cjs)、[ops.cjs](https://github.com/linerrrrrrr/thoughtdag/blob/main/runtime/agents/ops.cjs)：扫描、工作区、材料和权限文件。
+- [projects.ts](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/store/projects.ts)、[persistence.ts](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/lib/persistence.ts)：画布与附件持久化。
 - [OpenAI App Server](https://learn.chatgpt.com/docs/app-server)、[Codex 环境变量](https://learn.chatgpt.com/docs/config-file/environment-variables)：公开能力与状态目录，不替代本项目实测。

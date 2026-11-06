@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Info, Loader2, Scale } from 'lucide-react';
+import { Loader2, Scale } from 'lucide-react';
 import { useUiStore } from '../../lib/ui-store';
 import { judgeSelfTest, storedOpenRouterKey, judgeConfigured, judgeTripped, effectiveProvider, type JudgeProviderId, type JudgeResult } from '../../lib/judge';
 import { useT, fmt } from '../../i18n';
@@ -62,7 +62,6 @@ export default function JudgeSettings() {
       <div className="flex items-center gap-2">
         <Scale size={14} strokeWidth={1.75} className="text-accent" />
         <span className="text-title font-semibold text-ink flex-1">{t('judge.title')}</span>
-        <span className="text-ink-faint cursor-help" title={t('judge.does')} data-judge-info><Info size={13} strokeWidth={1.75} /></span>
       </div>
       <p className="text-control text-ink-faint mt-1">{t('judge.oneLine')}</p>
 

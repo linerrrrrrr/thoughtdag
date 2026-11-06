@@ -178,7 +178,6 @@ export function answerForCanvas(text: string, byAlias: Map<string, string>, node
     const n = nodes.find((x) => x.id === p.id);
     const full = n ? nodeLabel(n.data, lang) : p.alias;
     const shown = label === 'alias' ? p.alias : one(clip(full.split('：')[0], 40));
-    const title = full !== shown ? ` title="${esc(full)}"` : '';
-    return `<mark class="explore-mark" data-explore-target="${esc(p.id)}"${title}>${esc(shown)}</mark>`;
+    return `<mark class="explore-mark" data-explore-target="${esc(p.id)}">${esc(shown)}</mark>`;
   }).join('');
 }

@@ -266,7 +266,7 @@ export default function ContentNode({ id, data, selected }: NodeProps<ThoughtNod
           {clipSourceName && (
             <button
               onClick={openClipSource}
-              title={t('content.clipSourceTitle')}
+              data-tooltip={t('content.clipSourceTitle')}
               data-clip-source
               className="nodrag nopan text-control font-mono text-warm bg-warm/10 hover:bg-warm/20 px-1.5 py-0.5 rounded-tag truncate max-w-[180px] transition-colors shrink"
             >
@@ -274,7 +274,7 @@ export default function ContentNode({ id, data, selected }: NodeProps<ThoughtNod
             </button>
           )}
           {!isLinked && (
-            <span className="text-control text-ink-faint bg-wash px-1.5 py-0.5 rounded-tag flex items-center gap-1 shrink-0" title={t('content.unlinkedTitle')}>
+            <span className="text-control text-ink-faint bg-wash px-1.5 py-0.5 rounded-tag flex items-center gap-1 shrink-0" >
               <Link2Off size={11} strokeWidth={1.75} /> {t('content.unlinked')}
             </span>
           )}
@@ -291,7 +291,7 @@ export default function ContentNode({ id, data, selected }: NodeProps<ThoughtNod
           </button>}
           <button
             onClick={(e) => { e.stopPropagation(); useUiStore.getState().setReaderNodeId(id); }}
-            title={t('reader.open')}
+            data-tooltip={t('reader.open')} aria-label={t('reader.open')}
             className="text-ink-faint hover:text-accent rounded-control w-6 h-6 flex items-center justify-center transition-colors"
           >
             <BookOpen size={13} strokeWidth={1.75} />
@@ -302,7 +302,7 @@ export default function ContentNode({ id, data, selected }: NodeProps<ThoughtNod
               target="_blank"
               rel="noreferrer"
               onClick={(e) => e.stopPropagation()}
-              title={t('content.linkOpen')}
+              data-tooltip={t('content.linkOpen')} aria-label={t('content.linkOpen')}
               className="text-ink-faint hover:text-accent rounded-control w-6 h-6 flex items-center justify-center transition-colors"
             >
               <ExternalLink size={13} strokeWidth={1.75} />
@@ -325,10 +325,10 @@ export default function ContentNode({ id, data, selected }: NodeProps<ThoughtNod
           scroll region (wheel scrolls text, not zoom) */}
       <div className="p-surface-inset nodrag flex-1 min-h-0 flex flex-col" style={kind === 'note' && !resized ? { maxHeight: NOTE_BODY_MAX } : undefined}>
       <div className="flex-1 min-h-0 overflow-y-auto nowheel cursor-text" data-content-body>
-        {data.displayName && <div className="mb-surface-inset text-title font-semibold text-ink" title={nodeNameSource} data-tooltip-overflow={nodeNameSource === nodeName || undefined} data-node-name>{nodeName}</div>}
+        {data.displayName && <div className="mb-surface-inset text-title font-semibold text-ink" data-tooltip={nodeNameSource} data-tooltip-overflow={nodeNameSource === nodeName || undefined} data-node-name>{nodeName}</div>}
         {/* a quote from the why layer says where it came from, above its text */}
         {kind === 'note' && data.recallSource && (
-          <div className="text-meta text-ink-faint font-mono truncate mb-1.5" title={data.recallSource.file} data-recall-source>
+          <div className="text-meta text-ink-faint font-mono truncate mb-1.5" data-tooltip={data.recallSource.file} data-recall-source>
             {fmt(t('node.recallSource'), { s: recallSourceLine(data.recallSource) })}
           </div>
         )}
@@ -414,7 +414,7 @@ export default function ContentNode({ id, data, selected }: NodeProps<ThoughtNod
                     <button
                       onClick={(e) => { e.stopPropagation(); setOpenExtract(openExtract === att.id ? null : att.id); }}
                       data-extract-toggle={att.id}
-                      title={t('content.editExtractTitle')}
+
                       className="absolute bottom-1.5 left-1.5 text-control bg-ink/60 hover:bg-ink/80 text-white px-2 py-0.5 rounded-tag transition-colors"
                     >
                       {useUiStore.getState().drafts[`extraction:${id}:${att.id}`] !== undefined
@@ -424,7 +424,7 @@ export default function ContentNode({ id, data, selected }: NodeProps<ThoughtNod
                   ) : (
                     <button
                       onClick={(e) => { e.stopPropagation(); void extractImage(id, att.id); }}
-                      title={t('content.reExtractTitle')}
+
                       className="absolute bottom-1.5 left-1.5 text-control bg-ink/60 hover:bg-ink/80 text-white px-2 py-0.5 rounded-tag opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1"
                     >
                       <RefreshCw size={11} strokeWidth={1.75} /> {t('content.reExtract')}
@@ -468,7 +468,7 @@ export default function ContentNode({ id, data, selected }: NodeProps<ThoughtNod
                 <div key={att.id} className="material-file-row group">
                   <FileIdentity name={att.name} />
                   <div className="min-w-0 flex-1">
-                    <button type="button" onClick={(e) => { e.stopPropagation(); useUiStore.getState().setReaderNodeId(id); }} className="material-file-name text-left hover:text-accent" title={att.name} data-tooltip-overflow>{att.name}</button>
+                    <button type="button" onClick={(e) => { e.stopPropagation(); useUiStore.getState().setReaderNodeId(id); }} className="material-file-name text-left hover:text-accent" data-tooltip={att.name} data-tooltip-overflow>{att.name}</button>
                     <div className="material-file-meta">
                       {fileSizeLabel(att.size) && <span>{fileSizeLabel(att.size)}</span>}
                       {att.isExtracting && <span className="text-accent">{t('attach.extracting')}</span>}

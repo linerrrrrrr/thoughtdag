@@ -1,4 +1,4 @@
-// Tooltips should supplement visible UI without removing accessible names.
+// Explicit short hints must never leak a native or legacy explanatory popup.
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
@@ -27,7 +27,7 @@ await page.addInitScript(() => {
   localStorage.setItem('thoughtdag.tutorialDone', '1');
   localStorage.setItem('thoughtdag.autoRefreshPaused', 'yes');
 });
-const output = 'local-tests/tooltip-audit';
+const output = 'local-tests/tooltip-cleanup';
 await mkdir(output, { recursive: true });
 const tip = page.locator('.tdag-tooltip');
 const reset = async () => {
@@ -66,7 +66,8 @@ try {
   assert.equal(await layout.getAttribute('title'), null, 'native tooltip is suppressed too');
   assert.ok(await layout.getAttribute('aria-label'), 'the accessible name survives suppression');
   await reset();
-  assert.ok(await layout.getAttribute('title'), 'the title is restored after leaving');
+  assert.equal(await layout.getAttribute('title'), null, 'native titles stay absent after leaving');
+  assert.ok(await layout.getAttribute('data-tooltip'), 'the explicit hint remains available');
 
   // Verify the real toolbar after its visible labels collapse to icons.
   let compactSeen = false;
@@ -98,28 +99,24 @@ try {
 
   const usage = page.locator('[data-node-token-usage]').first();
   await hover(usage);
-  assert.equal(await page.locator('.tooltip-details-row').count(), 4, 'token breakdown is preserved');
-  const descriptionId = await usage.getAttribute('aria-describedby');
-  assert.equal(descriptionId, await tip.getAttribute('id'));
-  await page.screenshot({ path: `${output}/token-details.png` });
+  await noTip('token metadata has no floating details');
+  for (const attribute of ['title', 'data-tooltip', 'data-tooltip-details', 'tabindex', 'aria-describedby']) {
+    assert.equal(await usage.getAttribute(attribute), null, `token metadata has no ${attribute} trigger`);
+  }
+  assert.match(await usage.innerText(), /tokens/);
+  await page.screenshot({ path: `${output}/token-without-popup.png` });
   await page.mouse.down();
-  await noTip('dragging immediately dismisses a tooltip');
+  await noTip('pressing the token estimate does not open a popup');
   await page.mouse.up();
   await reset();
-  await page.keyboard.press('Tab');
-  await usage.focus();
-  await tip.waitFor();
-  assert.equal(await page.locator('.tooltip-details-row').count(), 4, 'keyboard users can read the breakdown');
-  await page.keyboard.press('Escape');
-  await noTip('Escape dismisses the explanation');
 
   // Exercise variable-length user content in the actual global tooltip layer.
   await page.evaluate(() => {
     const fixture = document.createElement('div');
     fixture.id = 'tooltip-content-fixture';
     fixture.style.cssText = 'position:fixed;bottom:80px;right:30px;z-index:1000;background:white;padding:10px';
-    fixture.innerHTML = '<button id="tooltip-name" title="完整内容 Full content" aria-label="完整内容 Full content" data-tooltip-overflow style="width:300px"><span style="display:block;overflow:hidden;white-space:nowrap;text-overflow:ellipsis">完整内容 Full content</span></button>'
-      + '<button id="tooltip-both" title="模型名称" aria-label="模型名称" data-tooltip-overflow data-tooltip-icon-only style="width:120px"><span style="display:none">模型名称</span><svg width="16" height="16" aria-hidden="true"></svg></button>';
+    fixture.innerHTML = '<button id="tooltip-name" data-tooltip="完整内容 Full content" aria-label="完整内容 Full content" data-tooltip-overflow style="width:300px"><span style="display:block;overflow:hidden;white-space:nowrap;text-overflow:ellipsis">完整内容 Full content</span></button>'
+      + '<button id="tooltip-both" data-tooltip="模型名称" aria-label="模型名称" data-tooltip-overflow data-tooltip-icon-only style="width:120px"><span style="display:none">模型名称</span><svg width="16" height="16" aria-hidden="true"></svg></button>';
     document.body.append(fixture);
   });
   const name = page.locator('#tooltip-name');
@@ -132,6 +129,20 @@ try {
   await hover(page.locator('#tooltip-both'));
   assert.equal(await tip.innerText(), '模型名称', 'icon-only and overflow conditions are alternatives');
   await reset();
+  await page.keyboard.press('Tab');
+  await page.locator('#tooltip-both').focus();
+  await tip.waitFor();
+  assert.equal(await page.locator('#tooltip-both').getAttribute('aria-describedby'), await tip.getAttribute('id'));
+  await page.locator('#tooltip-both').dispatchEvent('keydown', { key: 'Escape', isComposing: true });
+  assert.equal(await tip.count(), 1, 'IME composition does not dismiss a hint');
+  await page.keyboard.press('Escape');
+  await noTip('Escape dismisses a retained short hint');
+  await hover(name);
+  await page.mouse.down();
+  await page.mouse.up();
+  await page.waitForTimeout(700);
+  await noTip('click and pointer focus do not reopen a hint');
+  assert.equal(await name.getAttribute('title'), null, 'clicking never restores a native title');
   await page.evaluate(() => document.querySelector('#tooltip-content-fixture').remove());
 
   // The new note affordance uses the existing content editor and draft route.
@@ -149,9 +160,31 @@ try {
   await page.waitForTimeout(100);
   await page.screenshot({ path: `${output}/canvas.png` });
 
+  await reset();
+  await more.click();
+  assert.equal(await page.locator('[data-toolbar-more-panel] [title]').count(), 0, 'More has no native hints');
+  await page.keyboard.press('Escape');
+  await page.evaluate(() => {
+    window.__ui.getState().setCanvasDetail('auto');
+    window.__rf.setViewport({ x: 100, y: 100, zoom: .4 });
+  });
+  const tick = page.locator('[data-timeline-dot]').first();
+  await hover(tick);
+  await noTip('timeline ticks no longer open a separate preview');
+  await tick.click();
+  await noTip('timeline click locates its node without an instruction popup');
+  assert.equal(await page.evaluate(() => window.__store.getState().selectedNodeId), await tick.getAttribute('data-timeline-dot'));
+  await page.locator('[data-timeline-overview-btn]').click();
+  assert.ok(await page.getByRole('dialog').count(), 'the full timeline remains usable');
+  await page.keyboard.press('Escape');
+  await reset();
+  assert.equal(await page.locator('[title]').count(), 0, 'rendered application controls have no native titles');
+  assert.equal(await page.locator('.react-flow__minimap-svg title:not(:empty)').count(), 0, 'minimap title cannot open a native window');
+  assert.ok(await page.locator('.react-flow__minimap-svg').getAttribute('aria-label'), 'minimap retains an accessible name');
+
   assert.deepEqual(writes, [], 'hover/focus and local edits never invoke remote actions');
   assert.deepEqual(errors, [], 'no browser errors');
-  console.log('PASS tooltip relevance, responsive controls, accessible names, token details, pointer/keyboard dismissal, and note editing');
+  console.log('PASS explicit hints, responsive controls, permanent accessible names, no token/timeline popups, keyboard dismissal, click safety, and note editing');
 } catch (error) {
   await page.screenshot({ path: `${output}/failure.png`, fullPage: true });
   throw error;

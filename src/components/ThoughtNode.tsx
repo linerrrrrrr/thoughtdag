@@ -2,7 +2,7 @@ import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { describeModel } from '../lib/use-models';
 import { conclusionOf } from '../lib/turn-insight';
 import { useReactFlow, useUpdateNodeInternals, type NodeProps } from '@xyflow/react';
-import { AlertTriangle, Archive, BookOpen, Check, ChevronDown, ChevronLeft, ChevronRight, ClipboardCopy, Eye, GitBranch, Globe, Hourglass, Minimize2, RefreshCw, Send, Split, Square, Star, Trash2, UserRound, X, Pencil } from 'lucide-react';
+import { AlertTriangle, Archive, BookOpen, Check, ChevronDown, ChevronLeft, ChevronRight, ClipboardCopy, Eye, GitBranch, Globe, Hourglass, Minimize2, RefreshCw, Send, Split, Square, Trash2, UserRound, X, Pencil } from 'lucide-react';
 import 'katex/dist/katex.min.css';
 
 /** A tool's status line standing in for the answer while it runs (see
@@ -18,7 +18,7 @@ import { copyText } from '../lib/export';
 import { isRunLocked } from '../lib/paradigm';
 import { collectExploreMarksKey, type ExploreMark } from '../lib/explore-marks';
 import { useTextHighlighter } from '../lib/use-text-highlighter';
-import HighlighterButton from './ui/HighlighterButton';
+import NodeHighlightsSection from './NodeHighlightsSection';
 import { useUiStore, toast } from '../lib/ui-store';
 import SearchToggles from './ui/SearchToggles';
 import { Markdown, HighlightedMarkdown } from './Markdown';
@@ -42,7 +42,6 @@ import { SquareTerminal } from 'lucide-react';
 import { useT, fmt } from '../i18n';
 import { isViewerMode } from '../lib/viewer';
 import { useInlineEditDismiss } from '../lib/use-inline-edit-dismiss';
-import { createQuestionDraft } from '../lib/question-draft';
 
 // Camera and resize controls change presentation, not the active editing task.
 const isGeometryControl = (target: EventTarget | null) => target instanceof Element
@@ -73,8 +72,6 @@ export default function ThoughtNode({ id, data, selected }: NodeProps<ThoughtNod
   const [fanoutOpen, setFanoutOpen] = useState(false);
   // fan-out placeholder shows its expand button until branches exist
   const hasFanoutChildren = useStore((s) => s.edges.some((e) => e.source === id && e.data?.isBranchFromSelection));
-  const [selectedText, setSelectedText] = useState('');
-  const [selectionPos, setSelectionPos] = useState<{ x: number; y: number } | null>(null);
   // An ask node's first question lives in shared drafts until sent:
   // undoing the node and redoing it brings the words back.
   const askDraftKey = `ask:${id}`;
@@ -181,52 +178,20 @@ export default function ThoughtNode({ id, data, selected }: NodeProps<ThoughtNod
   const { markSelection } = highlighter;
   const handleTextSelection = useCallback((event: MouseEvent) => {
     if (event.button !== 0 || (event.target instanceof Element && event.target.closest('button, input, textarea'))) return;
+    if (!(event.target instanceof Node) || !responseRef.current?.contains(event.target)) return;
     const selection = window.getSelection();
     const range = selection?.rangeCount ? selection.getRangeAt(0) : null;
     if (selection && range && selection.toString().trim().length > 0
       && responseRef.current?.contains(range.startContainer) && responseRef.current.contains(range.endContainer)) {
-      if (markSelection(selection, id)) {
-        setSelectedText('');
-        setSelectionPos(null);
-        return;
-      }
-      const text = selection.toString().trim();
-      setSelectedText(text);
-      const rangeRect = range.getBoundingClientRect();
-      const nodeRect = nodeRef.current?.getBoundingClientRect();
-      if (nodeRect) {
-        setSelectionPos({
-          x: rangeRect.left + rangeRect.width / 2 - nodeRect.left,
-          y: rangeRect.top - nodeRect.top - 48,
-        });
-      }
-    } else {
-      setSelectedText('');
-      setSelectionPos(null);
+      markSelection(selection, id);
     }
   }, [id, markSelection]);
 
   useEffect(() => {
-    if (isViewerMode) return; // no selection menu (branch/highlight are writes)
+    if (!highlighter.active) return;
     document.addEventListener('mouseup', handleTextSelection);
     return () => document.removeEventListener('mouseup', handleTextSelection);
-  }, [handleTextSelection]);
-
-  const handleBranch = () => {
-    if (!selectedText) return;
-    let branchYRatio = 0.5;
-    const selection = window.getSelection();
-    if (selection && selection.rangeCount > 0 && nodeRef.current) {
-      const range = selection.getRangeAt(0);
-      const selRect = range.getBoundingClientRect();
-      const nodeRect = nodeRef.current.getBoundingClientRect();
-      branchYRatio = Math.max(0.1, Math.min(0.9, (selRect.top + selRect.height / 2 - nodeRect.top) / nodeRect.height));
-    }
-    createQuestionDraft({ parentId: id, branchContext: selectedText, branchYRatio });
-    setSelectedText('');
-    setSelectionPos(null);
-    window.getSelection()?.removeAllRanges();
-  };
+  }, [handleTextSelection, highlighter.active]);
 
   const handleDoubleClickQuestion = (e: React.MouseEvent) => {
     e.stopPropagation(); // inline edit, not the panel
@@ -435,7 +400,7 @@ export default function ThoughtNode({ id, data, selected }: NodeProps<ThoughtNod
           gone (one centered seal), so the seal wears an amber ring instead
           of a dot floating where the card used to be */}
       {isStale && zoomedOut && !glyphTier && (
-        <span className="absolute top-2.5 right-2.5 w-3.5 h-3.5 rounded-full bg-amber-500 z-10" title={staleTitle} data-stale-dot />
+        <span className="absolute top-2.5 right-2.5 w-3.5 h-3.5 rounded-full bg-amber-500 z-10" role="img" aria-label={staleTitle} data-stale-dot />
       )}
       {glyphTier ? (
         <div
@@ -450,7 +415,7 @@ export default function ThoughtNode({ id, data, selected }: NodeProps<ThoughtNod
             source={nodeNameSource}
             compact
             variant={isRoot ? 'start' : 'thought'}
-            icon={data.generationFailed ? <AlertTriangle className="text-red-600" /> : data.isLoading ? <Hourglass /> : data.isEvaluator ? <Eye /> : data.digestOf ? <BookOpen /> : glyphSeal ? <span title={badgeTitle} className={glyphSeal.cls}>{glyphSeal.glyph}</span> : undefined}
+            icon={data.generationFailed ? <AlertTriangle className="text-red-600" /> : data.isLoading ? <Hourglass /> : data.isEvaluator ? <Eye /> : data.digestOf ? <BookOpen /> : glyphSeal ? <span role="img" aria-label={badgeTitle} className={glyphSeal.cls}>{glyphSeal.glyph}</span> : undefined}
           />
         </div>
       ) : (
@@ -483,7 +448,7 @@ export default function ThoughtNode({ id, data, selected }: NodeProps<ThoughtNod
                 rf.fitBounds({ x: Math.min(...xs), y: Math.min(...ys), width: Math.max(...xs) + 520 - Math.min(...xs), height: Math.max(...ys) + 240 - Math.min(...ys) }, { duration: 350, padding: 0.2 });
                 window.setTimeout(() => useUiStore.getState().setCondenseHighlightIds([]), 2600);
               }}
-              title={t('node.condensedFromTitle')}
+
               data-condensed-from
               className="nodrag nopan text-control bg-accent/10 text-accent hover:bg-accent/20 px-1.5 py-0.5 rounded-tag flex items-center gap-1 font-medium transition-colors"
             >
@@ -493,7 +458,7 @@ export default function ThoughtNode({ id, data, selected }: NodeProps<ThoughtNod
           {isStale && !data.isLoading && (
             <button
               onClick={(e) => { e.stopPropagation(); if (!isViewerMode) void rerunNode(id, {}); }}
-              title={staleTitle}
+
               data-stale-badge
               className="nodrag nopan text-control bg-amber-500/10 text-amber-600 hover:bg-amber-500/25 px-1.5 py-0.5 rounded-tag flex items-center gap-1 font-medium transition-colors"
             >
@@ -501,7 +466,7 @@ export default function ThoughtNode({ id, data, selected }: NodeProps<ThoughtNod
             </button>
           )}
           {data.archived && (
-            <span className="text-control bg-amber-500/10 text-amber-600 px-1.5 py-0.5 rounded-tag flex items-center gap-1 font-medium" title={t('archive.badgeTitle')}>
+            <span className="text-control bg-amber-500/10 text-amber-600 px-1.5 py-0.5 rounded-tag flex items-center gap-1 font-medium" data-tooltip={t('archive.badgeTitle')}>
               <Archive size={11} strokeWidth={1.75} /> {t('archive.badge')}
             </span>
           )}
@@ -520,7 +485,7 @@ export default function ThoughtNode({ id, data, selected }: NodeProps<ThoughtNod
               <Eye size={12} strokeWidth={1.75} /> {t('evaluator.badge')}
             </span>
           ) : data.appliedRole && (
-            <span className="text-control bg-accent/10 text-accent px-1.5 py-0.5 rounded-tag truncate max-w-[120px]" title={data.appliedRole} data-tooltip-overflow={data.appliedRole.length <= 20 || undefined}>
+            <span className="text-control bg-accent/10 text-accent px-1.5 py-0.5 rounded-tag truncate max-w-[120px]" data-tooltip={data.appliedRole} data-tooltip-overflow={data.appliedRole.length <= 20 || undefined}>
               {data.appliedRole.slice(0, 20)}{data.appliedRole.length > 20 ? '…' : ''}
             </span>
           )}
@@ -537,7 +502,7 @@ export default function ThoughtNode({ id, data, selected }: NodeProps<ThoughtNod
               ? `\n${fmt(t('node.pinnedModel'), { m: data.model })}`
               : '';
             return (
-              <span className="text-meta bg-wash text-ink-muted px-1.5 py-0.5 rounded-tag font-mono truncate max-w-[130px]" title={`${label}${pinNote}`}>
+              <span className="text-meta bg-wash text-ink-muted px-1.5 py-0.5 rounded-tag font-mono truncate max-w-[130px]" data-tooltip={`${label}${pinNote}`}>
                 {label.split('/').pop()}
               </span>
             );
@@ -566,6 +531,11 @@ export default function ThoughtNode({ id, data, selected }: NodeProps<ThoughtNod
         preview={versionSummary ?? (data.importSource ? conclusionOf(data.response) : data.response)}
         overview={zoomedOut || isCollapsed} open={metadataEditing} onOpenChange={setMetadataEditing} />
 
+      {!isCollapsed && !zoomedOut && (data.response || data.highlights.length > 0) && (
+        <NodeHighlightsSection nodeId={id} highlights={data.highlights} highlightMode={data.highlightMode}
+          highlighter={highlighter} canHighlight={!!data.response && !data.isLoading && !data.isEditingResponse} />
+      )}
+
       {!isCollapsed && !zoomedOut && (
         <div className={`p-surface-inset min-h-0 ${fixedHeight != null ? 'flex-1 overflow-y-auto nowheel' : ''} nodrag nopan`} data-thought-body>
           {/* The passage this branch explores: without it the user loses
@@ -581,7 +551,7 @@ export default function ThoughtNode({ id, data, selected }: NodeProps<ThoughtNod
               {data.anchor && anchorMaterialId && (
                 <button
                   onClick={openReaderAtAnchor}
-                  title={fmt(t('node.openAtPage'), { n: data.anchor.page })}
+                  data-tooltip={fmt(t('node.openAtPage'), { n: data.anchor.page })}
                   className="ml-auto shrink-0 text-control font-mono text-accent bg-accent/10 hover:bg-accent/20 rounded-tag px-1.5 py-0.5 transition-colors"
                 >
                   p.{data.anchor.page}
@@ -680,19 +650,7 @@ export default function ThoughtNode({ id, data, selected }: NodeProps<ThoughtNod
               {/* a question is markdown like an answer (lists, code, emphasis), set compact; the plaques above keep the plain text */}
               <Markdown base={data.agentSession?.cwd ?? data.importSource?.cwd} diagrams="placeholder">{originalQuestionBeforeInstructions(data.question, activity)}</Markdown>
             </div>
-            {!isViewerMode && <div className="conversation-question-tools"><button onClick={handleDoubleClickQuestion} aria-label={t(hasQuestionDraft ? 'edit.resumeDraft' : 'actions.editQuestion')} title={hasQuestionDraft ? t('edit.resumeDraft') : undefined} disabled={data.isLoading} data-edit-question className="w-6 h-6 shrink-0 rounded-control flex items-center justify-center text-ink-faint hover:text-accent hover:bg-wash disabled:opacity-30"><Pencil size={13} /></button></div>}
-            </div>
-          )}
-
-          {/* Highlights */}
-          {data.highlights.length > 0 && (
-            <div className="mb-3 flex flex-wrap gap-1">
-              {data.highlights.map((h) => (
-                <span key={h.id} className="inline-flex items-center gap-1 text-control bg-amber-100 text-amber-700 px-2 py-0.5 rounded-tag">
-                  <Star size={14} strokeWidth={1.75} />
-                  {h.text.slice(0, 30)}{h.text.length > 30 ? '…' : ''}
-                </span>
-              ))}
+            {!isViewerMode && <div className="conversation-question-tools"><button onClick={handleDoubleClickQuestion} aria-label={t(hasQuestionDraft ? 'edit.resumeDraft' : 'actions.editQuestion')} data-tooltip={hasQuestionDraft ? t('edit.resumeDraft') : undefined} disabled={data.isLoading} data-edit-question className="w-6 h-6 shrink-0 rounded-control flex items-center justify-center text-ink-faint hover:text-accent hover:bg-wash disabled:opacity-30"><Pencil size={13} /></button></div>}
             </div>
           )}
 
@@ -803,7 +761,7 @@ export default function ThoughtNode({ id, data, selected }: NodeProps<ThoughtNod
             <div className="mt-2">
               <button
                 onClick={(e) => { e.stopPropagation(); setFanoutOpen(true); }}
-                title={t('paradigm.expandTitle')}
+
                 className="w-full border-2 border-dashed border-warm/50 hover:border-warm hover:bg-warm/5 text-warm rounded-control py-3 flex items-center justify-center gap-2 text-control font-medium transition-colors"
               >
                 <Split size={16} strokeWidth={1.75} />
@@ -846,7 +804,8 @@ export default function ThoughtNode({ id, data, selected }: NodeProps<ThoughtNod
                 <button
                   onClick={(e) => { e.stopPropagation(); void rerunNode(id, {}); }}
                   className={`rounded-control w-6 h-6 flex items-center justify-center transition-colors ${data.isEvaluator ? 'hover:text-watch hover:bg-red-50' : 'hover:text-accent hover:bg-wash'}`}
-                  title={data.isEvaluator ? t('evaluator.rerun') : t('common.regenerate')}
+                  data-tooltip={data.isEvaluator ? t('evaluator.rerun') : t('common.regenerate')}
+                  aria-label={data.isEvaluator ? t('evaluator.rerun') : t('common.regenerate')}
                 >
                   <RefreshCw size={14} strokeWidth={1.75} />
                 </button>
@@ -855,20 +814,15 @@ export default function ThoughtNode({ id, data, selected }: NodeProps<ThoughtNod
                 onClick={(e) => { e.stopPropagation(); void copyText(data.response); }}
                 className="rounded-control w-6 h-6 flex items-center justify-center hover:text-accent hover:bg-wash transition-colors"
                 aria-label={t('actions.copyResponse')}
+                data-tooltip={t('actions.copyResponse')}
               >
                 <ClipboardCopy size={13} strokeWidth={1.75} />
               </button>
-              {!isViewerMode && <HighlighterButton
-                active={highlighter.active}
-                buttonRef={highlighter.buttonRef}
-                onClick={() => { setSelectedText(''); setSelectionPos(null); highlighter.toggle(); }}
-                className="w-6 h-6"
-              />}
               {!isViewerMode && (
                 <button
                   onClick={(e) => { e.stopPropagation(); startEditResponse(); }}
                   className="rounded-control w-6 h-6 flex items-center justify-center hover:text-accent hover:bg-wash transition-colors"
-                  aria-label={t(hasResponseDraft ? 'edit.resumeDraft' : 'actions.editResponse')} title={hasResponseDraft ? t('edit.resumeDraft') : undefined}
+                  aria-label={t(hasResponseDraft ? 'edit.resumeDraft' : 'actions.editResponse')} data-tooltip={t(hasResponseDraft ? 'edit.resumeDraft' : 'actions.editResponse')}
                   data-edit-response
                 >
                   <Pencil size={13} strokeWidth={1.75} />
@@ -876,36 +830,36 @@ export default function ThoughtNode({ id, data, selected }: NodeProps<ThoughtNod
               )}
               <AgentRerunButton nodeId={id} data={data} />
               {data.focusRole === 'ctx' && (
-                <span className="w-[7px] h-[7px] rounded-full bg-accent inline-block ml-1 shrink-0" title={t('focus.inContext')} data-focus-dot />
+                <span className="w-[7px] h-[7px] rounded-full bg-accent inline-block ml-1 shrink-0" data-tooltip={t('focus.inContext')} data-focus-dot />
               )}
               {(data.generatedBy?.[data.responseIndex]) && (
                 <span
                   className="text-meta text-ink-faint font-mono ml-1 truncate flex-1 min-w-0 max-w-[260px]"
-                  title={`${t('node.generatedByTitle')} · ${describeModel(data.generatedBy[data.responseIndex], data.generatedEfforts?.[data.responseIndex])}`}
+
                 >
                   {describeModel(data.generatedBy[data.responseIndex], data.generatedEfforts?.[data.responseIndex], { compact: true })}
                 </span>
               )}
               {data.agentSession?.continued && (
-                <span className="text-meta text-ink-faint ml-1 shrink-0" title={t('agent.continuedTitle')} data-agent-continued>↩ {t('agent.continued')}</span>
+                <span className="text-meta text-ink-faint ml-1 shrink-0"  data-agent-continued>↩ {t('agent.continued')}</span>
               )}
               {data.importSource?.runner === 'pi' && window.desktopSessions && (
                 <button
                   onClick={(e) => { e.stopPropagation(); void window.desktopSessions!.openInCli('pi', data.importSource!.cwd ?? '', data.importSource!.sessionId, 'terminal'); }}
                   className="rounded-control w-6 h-6 flex items-center justify-center hover:text-accent hover:bg-wash transition-colors"
-                  title={t('agent.openInTerminal')}
+                  data-tooltip={t('agent.openInTerminal')} aria-label={t('agent.openInTerminal')}
                   data-open-in-terminal
                 >
                   <SquareTerminal size={13} strokeWidth={1.75} />
                 </button>
               )}
               {data.gatewaySearches?.[data.responseIndex] && (
-                <span className="text-meta text-ink-faint ml-1 shrink-0" title={t('node.gatewaySearchedTitle')} data-gateway-searched>
+                <span className="text-meta text-ink-faint ml-1 shrink-0"  data-gateway-searched>
                   🌐 {t('node.gatewaySearched')}
                 </span>
               )}
               {data.generatedAts?.[data.responseIndex] && (
-                <span className="text-meta text-ink-faint font-mono ml-1 shrink-0" title={t('node.generatedAtTitle')} data-generated-at>
+                <span className="text-meta text-ink-faint font-mono ml-1 shrink-0"  data-generated-at>
                   {formatStamp(data.generatedAts[data.responseIndex]!)}
                 </span>
               )}
@@ -934,7 +888,7 @@ export default function ThoughtNode({ id, data, selected }: NodeProps<ThoughtNod
               <AlertTriangle size={14} strokeWidth={1.75} className="shrink-0" />
               {t('common.generationFailed')}
               {hasMultipleVersions && (
-                <span className="flex items-center gap-1 text-ink-muted shrink-0" title={t('node.backToVersionTitle')}>
+                <span className="flex items-center gap-1 text-ink-muted shrink-0" >
                   <button onClick={(e) => { e.stopPropagation(); navigateVersion(id, 'prev'); }} className="hover:text-accent rounded-control w-5 h-5 flex items-center justify-center"><ChevronLeft size={14} strokeWidth={1.75} /></button>
                   v{data.responseIndex + 1}/{data.responses.length}
                   <button onClick={(e) => { e.stopPropagation(); navigateVersion(id, 'next'); }} className="hover:text-accent rounded-control w-5 h-5 flex items-center justify-center"><ChevronRight size={14} strokeWidth={1.75} /></button>
@@ -957,28 +911,6 @@ export default function ThoughtNode({ id, data, selected }: NodeProps<ThoughtNod
       </>
       )}
 
-      {/* Floating toolbar for text selection */}
-      {!highlighter.active && selectedText && selectionPos && (
-        <div
-          style={{
-            position: 'absolute',
-            left: Math.max(0, Math.min(selectionPos.x, 400)),
-            top: Math.max(-40, selectionPos.y),
-            transform: 'translateX(-50%)',
-            zIndex: 9999,
-          }}
-          onMouseDown={(e) => e.preventDefault()}
-        >
-          <div className="flex gap-1 bg-card border border-line rounded-overlay p-1 animate-fade-in">
-            <button
-              onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); handleBranch(); }}
-              className="bg-action hover:bg-action-strong text-white text-control px-3 py-1.5 rounded-control transition-all whitespace-nowrap cursor-pointer"
-            >
-              <GitBranch size={14} strokeWidth={1.75} className="inline" /> {t('common.explore')}
-            </button>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

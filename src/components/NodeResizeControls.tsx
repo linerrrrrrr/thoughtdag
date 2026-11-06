@@ -5,6 +5,7 @@ import { useCanvasEditing } from '../lib/canvas-editing';
 import { condenseGuard } from '../lib/condense-guard';
 import { effectiveNodeGeometry, resizeSelectionBy } from '../lib/node-geometry';
 import { sideAnchorOffset } from '../lib/edge-anchors';
+import { RESIZE_HIT_SIZE, RESIZE_TARGET_GAP, resizeControlStyle } from '../lib/resize-controls';
 import { useDismissableLayer } from '../lib/use-dismissable-layer';
 import { useT } from '../i18n';
 import type { ThoughtNode } from '../types';
@@ -40,6 +41,7 @@ export default function NodeResizeControls({ id, widthOnly = false }: { id: stri
   const connecting = useFlowStore(state => state.connection.inProgress);
   const snapToGrid = useFlowStore(state => state.snapToGrid);
   const snapGrid = useFlowStore(state => state.snapGrid);
+  const width = useFlowStore(state => state.nodeLookup.get(id)?.measured?.width ?? 520);
   const height = useFlowStore(state => state.nodeLookup.get(id)?.measured?.height ?? 240);
   const multi = useStore(state => state.selectedNodeIds.length > 1);
   const locked = useStore(state => !!state.nodes.find(node => node.id === id)?.data.lockAspectRatio);
@@ -47,10 +49,21 @@ export default function NodeResizeControls({ id, widthOnly = false }: { id: stri
   const ref = useRef<HTMLDivElement>(null);
   const gesture = useRef<Gesture | null>(null);
   const [active, setActive] = useState<ResizeDirection | null>(null);
-  const hitSize = 32 / Math.min(1, Math.max(.35, zoom));
-  const widthGripMinimum = sideAnchorOffset(height) + 16 + hitSize / 2;
-  const widthGripMaximum = height - hitSize;
-  const widthGripTop = Math.max(height / 2, widthGripMinimum);
+  const hitSize = RESIZE_HIT_SIZE / zoom;
+  const gap = RESIZE_TARGET_GAP / zoom;
+  // The card's rounded contour grows on zoom-in; keep the small corner mark
+  // inside that contour without enlarging either the mark or its hit target.
+  const cornerInset = 4 * Math.max(0, zoom - 1) / zoom;
+  // Ports occupy 32 canvas units including their invisible target. Keep both
+  // edge controls clear of that target and the screen-sized corner control.
+  const widthGripMinimum = sideAnchorOffset(height) + 16 + gap + hitSize / 2;
+  const widthGripMaximum = height - cornerInset - hitSize - gap;
+  const widthGripTop = Math.min(widthGripMaximum, Math.max(height / 2, widthGripMinimum));
+  const heightGripMinimum = width / 2 + 16 + gap + hitSize / 2;
+  const heightGripMaximum = width - cornerInset - hitSize - gap;
+  const heightGripLeft = Math.min(heightGripMaximum, Math.max(width * .75, heightGripMinimum));
+  const cornerFits = width / 2 - cornerInset >= 16 + gap + hitSize / 2
+    && height - sideAnchorOffset(height) - cornerInset >= 16 + gap + hitSize / 2;
 
   const finish = (cancel = false) => {
     const drag = gesture.current;
@@ -109,12 +122,17 @@ export default function NodeResizeControls({ id, widthOnly = false }: { id: stri
   };
 
   return <div ref={ref} className="node-resize-controls" hidden={connecting || multi || (widthOnly && locked)}
+    style={resizeControlStyle(zoom, true)}
     data-node-resizing={active || undefined} data-resize-locked={locked || undefined}>
     {(['width', 'height', 'both'] as const).map(direction => {
       const label = t(direction === 'width' ? 'node.resizeWidth' : direction === 'height' ? 'node.resizeHeight' : 'node.resize');
       return <button key={direction} type="button" data-node-resize={direction} data-resize-active={active === direction || undefined}
-        hidden={(widthOnly && direction !== 'width') || (direction === 'width' && widthGripMinimum > widthGripMaximum && active !== 'width')}
-        style={direction === 'width' ? { top: widthGripTop } : undefined}
+        hidden={(widthOnly && direction !== 'width')
+          || (direction === 'width' && widthGripMinimum > widthGripMaximum && active !== 'width')
+          || (direction === 'height' && heightGripMinimum > heightGripMaximum && active !== 'height')
+          || (direction === 'both' && !cornerFits && active !== 'both')}
+        style={direction === 'width' ? { top: widthGripTop } : direction === 'height' ? { left: heightGripLeft }
+          : { marginLeft: -cornerInset, marginTop: -cornerInset }}
         className={`node-resize-handle node-resize-${direction} react-flow__resize-control thought-resize-${direction === 'width' ? 'side' : direction === 'height' ? 'bottom' : 'corner'} nodrag nopan`}
         aria-label={locked ? `${label} · ${t('format.lockAspectRatio')}` : label}
         onPointerDown={event => start(event, direction)} onPointerMove={move}

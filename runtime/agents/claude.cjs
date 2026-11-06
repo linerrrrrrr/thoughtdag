@@ -16,12 +16,11 @@ const { randomUUID } = require('node:crypto');
 const { snapshotDir, diffSnapshots } = require('./fs-diff.cjs');
 
 const fsp = fs.promises;
-const { locate, childEnv: envWith } = require('./where.cjs');
+const { createLocator, childEnv: envWith } = require('./where.cjs');
 const EXTRA_HOMES = [path.join(os.homedir(), '.claude', 'local')];   // the CLI's own install location, on top of the usual ones
 
 /** The claude binary and the directories walked to find it (see where.cjs). */
-let located = null;
-const findClaude = () => (located ??= locate('claude', EXTRA_HOMES));
+const findClaude = createLocator('claude', EXTRA_HOMES);
 const childEnv = () => envWith(EXTRA_HOMES);
 
 /** Claude Code has no model list; its aliases resolve to the newest model
@@ -111,20 +110,14 @@ async function permissionModeFor(cwd) {
 function createClaudeRuntime({ log } = {}) {
   const say = log || (() => {});
   const runs = new Map();     // runId → state
-  let binPromise = null;
-  const bin = () => {
-    if (!binPromise) binPromise = findClaude().then((r) => { if (!r.path) { located = null; binPromise = null; } return r.path; });
-    return binPromise;
-  };
-  /** Where the lookup walked, for the picker's "not found" note. */
-  const searched = async () => (await findClaude()).searched;
 
   return {
-    available: () => bin(),
+    available: async () => (await findClaude()).path,
 
     async models() {
-      const b = await bin();
-      if (!b) return { installed: false, models: [], default: null, searched: await searched() };
+      const found = await findClaude();
+      const b = found.path;
+      if (!b) return { installed: false, models: [], default: null, searched: found.searched, failures: found.failures, ...(found.error ? { error: found.error } : {}) };
       const [efforts, defaultEffort] = await Promise.all([effortsOf(b), configuredEffort()]);
       return { installed: true, models: MODELS.map((m) => ({ ...m, efforts, defaultEffort })), default: 'claude/claude-code/opus' };
     },
@@ -133,8 +126,9 @@ function createClaudeRuntime({ log } = {}) {
       const cwd = String(req.cwd || '');
       if (!cwd || !path.isAbsolute(cwd)) throw new Error('run needs an absolute cwd');
       await fsp.mkdir(cwd, { recursive: true });
-      const b = await bin();
-      if (!b) throw new Error('claude is not installed (no `claude` on PATH or in the usual places)');
+      const found = await findClaude();
+      const b = found.path;
+      if (!b) throw new Error(found.error || 'The local agent executable was not found on PATH or in the usual installation directories.');
       const runId = randomUUID();
       const emit = (event) => { try { onEvent({ runId, event }); } catch { /* renderer gone */ } };
       const state = { runId, proc: null, asks: new Map(), text: '', final: null, sessionId: null, waiting: false, ended: false, aborted: false,

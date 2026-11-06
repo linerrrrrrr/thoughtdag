@@ -3,7 +3,7 @@ import { useDismissableLayer } from '../../lib/use-dismissable-layer';
 import { useCanvasPanelPosition } from '../../lib/use-canvas-panel-position';
 import { useCanvasToolCard } from '../../lib/use-canvas-tool-card';
 import { isImeComposing } from '../../utils';
-import { Check, ChevronDown, Cpu, KeyRound, RefreshCw, Info, Loader2, ChevronRight, Scale } from 'lucide-react';
+import { Check, ChevronDown, Cpu, KeyRound, RefreshCw, Loader2, ChevronRight, Scale } from 'lucide-react';
 import { toast, useUiStore } from '../../lib/ui-store';
 import { profileLines } from '../../lib/profile';
 import { useModels, setModelsCache, ensureAgentsFresh, recheckAgents, type ModelInfo } from '../../lib/use-models';
@@ -145,7 +145,7 @@ export default function ModelPicker({ value, onChange, compact }: PickerProps) {
           : noModels
             ? 'bg-accent/10 border border-accent/40 rounded-control h-8 px-2.5 flex items-center gap-1.5 hover:bg-accent/20 transition-colors text-accent max-w-[190px]'
             : 'bg-card border border-line rounded-control h-8 px-2.5 flex items-center gap-1.5 hover:bg-wash transition-colors text-ink-muted max-w-[190px]'}
-        title={noModels ? t('apikey.entryTitle') : nodeMode && !value ? t('model.inherit') : `${t('toolbar.model')} · ${label ?? t('model.none')}`}
+        data-tooltip={noModels ? t('apikey.entryTitle') : nodeMode && !value ? t('model.inherit') : `${t('toolbar.model')} · ${label ?? t('model.none')}`}
         data-tooltip-icon-only={!(nodeMode && !value) || undefined}
         data-tooltip-overflow={!noModels && !(nodeMode && !value) || undefined}
         aria-label={noModels ? t('apikey.entryTitle') : `${t('toolbar.model')} · ${label ?? t('model.none')}`}
@@ -175,9 +175,8 @@ export default function ModelPicker({ value, onChange, compact }: PickerProps) {
           {!nodeMode && <p className="text-control text-ink-faint uppercase tracking-wider font-medium px-3 pt-2 pb-0.5" data-picker-answer-header>{t('model.answerGroup')}</p>}
           {providers.map((provider) => (
             <div key={provider}>
-              <p className="text-control text-ink-faint uppercase tracking-wider font-medium px-3 pt-2 pb-1 flex items-center gap-1.5" title={provider === AGENT_PROVIDER ? t('model.agentGroupHint') : undefined}>
+              <p className="text-control text-ink-faint uppercase tracking-wider font-medium px-3 pt-2 pb-1 flex items-center gap-1.5" >
                 {provider === AGENT_PROVIDER ? t('model.agentGroup') : provider}
-                {provider === AGENT_PROVIDER && <Info size={11} strokeWidth={1.75} className="text-ink-faint/70" data-agent-group-hint />}
                 {provider === AGENT_PROVIDER && data?.agentsPending && <Loader2 size={11} className="animate-spin text-ink-faint" data-agent-group-pending />}
               </p>
               {provider === AGENT_PROVIDER && data?.agentsPending && models.filter((m) => m.provider === AGENT_PROVIDER).length === 0 && (
@@ -191,13 +190,11 @@ export default function ModelPicker({ value, onChange, compact }: PickerProps) {
                 // runtimes the host looked for and did not find: named, with where it looked, and a way to ask again
                 const missing = LIVE_RUNTIMES.filter((rt) => data?.runtimes?.[rt] && !data.runtimes[rt]!.installed && !groups.has(AGENT_RUNTIMES[rt].label));
                 const missingRows = missing.map((rt) => {
-                  const st = data!.runtimes![rt]!; const def = AGENT_RUNTIMES[rt]; const bin = def.prefix.replace(/\/$/, '');
-                  const hint = fmt(t('model.runtimeMissingHint'), { bin, dirs: (st.searched ?? []).join('\n') || '—' });
+                  const def = AGENT_RUNTIMES[rt];
                   return (
-                    <div key={`missing-${rt}`} className="px-3 py-1.5 text-control flex items-center gap-2 text-ink-faint" title={st.error ? `${hint}\n${st.error}` : hint} data-runtime-missing={rt}>
+                    <div key={`missing-${rt}`} className="px-3 py-1.5 text-control flex items-center gap-2 text-ink-faint"  data-runtime-missing={rt}>
                       <span className="w-3 shrink-0" />
                       <span className="truncate">{fmt(t('model.runtimeMissing'), { name: def.label })}</span>
-                      <Info size={11} strokeWidth={1.75} className="shrink-0 text-ink-faint/70" />
                       <button onClick={(e) => { e.stopPropagation(); void recheckAgents(); }} className="ml-auto text-control text-accent hover:underline shrink-0" data-runtime-recheck={rt}>{t('model.recheck')}</button>
                     </div>
                   );
@@ -233,7 +230,7 @@ export default function ModelPicker({ value, onChange, compact }: PickerProps) {
                 <div key={m.id}>
                 <button
                   onClick={() => pick(m.id)}
-                  title={m.name} data-tooltip-overflow
+                  data-tooltip={m.name} data-tooltip-overflow
                   className={`w-full text-left px-3 py-1.5 text-control flex items-center gap-2 transition-colors hover:bg-wash ${
                     m.id === activeId ? 'text-accent font-medium' : 'text-ink'
                   }`}
@@ -270,7 +267,7 @@ export default function ModelPicker({ value, onChange, compact }: PickerProps) {
                   .finally(() => setRefreshing(false));
               }}
               disabled={refreshing}
-              title={t('model.refreshList')} aria-label={t('model.refreshList')}
+              data-tooltip={t('model.refreshList')} aria-label={t('model.refreshList')}
               className="w-6 h-6 rounded-control flex items-center justify-center text-ink-faint hover:text-accent hover:bg-wash transition-colors shrink-0"
               data-model-refresh
             >
@@ -297,7 +294,7 @@ function JudgeRow({ onOpen }: { onOpen: () => void }) {
   return (
     <div className="border-t border-line mt-1 pt-1" data-picker-judge-row data-judge-state={!on ? 'off' : !configured ? 'no-api' : tripped ? 'tripped' : 'on'}>
       <div className="px-3 py-1.5 flex items-center gap-2">
-        <button onClick={onOpen} className="flex-1 min-w-0 text-left flex items-center gap-2 group" title={t('judge.does')} data-picker-judge>
+        <button onClick={onOpen} className="flex-1 min-w-0 text-left flex items-center gap-2 group"  data-picker-judge>
           <Scale size={13} strokeWidth={1.75} className="shrink-0 text-accent" />
           <span className="min-w-0">
             <span className="block text-control text-ink font-medium group-hover:text-accent">{t('judge.rowTitle')}</span>
@@ -324,7 +321,7 @@ function EffortStep({ model, onDone }: { model: ModelInfo; onDone: () => void })
   const value = levels.includes(effort) ? effort : '';
   return (
     <div className="mx-3 mb-1.5 mt-0.5 rounded-content bg-wash/70 border border-line px-2 py-1.5 flex items-center gap-2" data-agent-effort>
-      <span className="text-control text-ink-faint uppercase tracking-wider font-medium shrink-0 cursor-help" tabIndex={0} title={t('model.effortHint')}>{t('model.effort')}</span>
+      <span className="text-control text-ink-faint uppercase tracking-wider font-medium shrink-0">{t('model.effort')}</span>
       <select
         value={value}
         onChange={(e) => setEffort(e.target.value)}
@@ -422,7 +419,7 @@ function GlobalCapabilities({ anysearchDraft, setAnysearchDraft }: { anysearchDr
               value={searchEnginePref}
               onChange={(e) => setSearchEnginePref(e.target.value)}
               onClick={(e) => e.stopPropagation()}
-              title={t('caps.enginePickTitle')}
+
               className="mt-1 w-full text-control text-ink-muted bg-wash border border-line rounded-control px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-accent/40"
             >
               <option value="server">{fmt(t('caps.engineServer'), { engine: caps.searchEngine })}</option>
@@ -462,7 +459,7 @@ function GlobalCapabilities({ anysearchDraft, setAnysearchDraft }: { anysearchDr
           </button>
           <button
             onClick={(e) => { e.stopPropagation(); setMemoryEnabled(!memoryEnabled); }}
-            title={t('caps.memoryTitle')}
+
             className={`text-control px-2 py-0.5 rounded-tag transition-colors shrink-0 ${memoryEnabled ? 'bg-accent/10 text-accent' : 'bg-wash text-ink-faint'}`}
           >
             {memoryEnabled ? t('caps.on') : t('caps.off')}
@@ -478,7 +475,7 @@ function GlobalCapabilities({ anysearchDraft, setAnysearchDraft }: { anysearchDr
               value={visionModels.some((m) => m.id === visionModelPref) ? visionModelPref : 'auto'}
               onChange={(e) => setVisionModelPref(e.target.value)}
               onClick={(e) => e.stopPropagation()}
-              title={t('caps.visionPickTitle')}
+
               className="mt-1 w-full text-control text-ink-muted bg-wash border border-line rounded-control px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-accent/40"
             >
               <option value="auto">{t('caps.visionAuto')}</option>

@@ -4,6 +4,7 @@ import { useViewport, useStore as useFlowStore } from '@xyflow/react';
 import { useStore } from '../store';
 import { nodesRect, resolveCarriedNodeIds } from '../lib/frames';
 import { resizeSelectionBy } from '../lib/node-geometry';
+import { RESIZE_HIT_SIZE, RESIZE_TARGET_GAP, resizeControlStyle } from '../lib/resize-controls';
 import { condenseGuard } from '../lib/condense-guard';
 import { useDismissableLayer } from '../lib/use-dismissable-layer';
 import { useCanvasEditing } from '../lib/canvas-editing';
@@ -162,7 +163,11 @@ export default function SelectionResizeControls({ onNodeContextMenu }: { onNodeC
         state.pushHistory();
       }} />
     {(['width', 'height', 'both'] as const).map(direction => <button key={direction} type="button"
-      hidden={connecting} data-resize-active={active === direction || undefined}
+      hidden={connecting || (active !== direction && (
+        direction === 'width' && bounds.height * zoom / 2 < RESIZE_HIT_SIZE + RESIZE_TARGET_GAP
+        || direction === 'height' && bounds.width * zoom / 4 < RESIZE_HIT_SIZE + RESIZE_TARGET_GAP
+        || direction === 'both' && Math.min(bounds.width, bounds.height) * zoom < RESIZE_HIT_SIZE))}
+      style={resizeControlStyle(zoom)} data-resize-active={active === direction || undefined}
       data-selection-resize={direction} className={`selection-resize-handle selection-resize-${direction} nodrag nopan`}
       aria-label={t(direction === 'width' ? 'selection.resizeWidth' : direction === 'height' ? 'selection.resizeHeight' : 'selection.resizeBoth')}
       onPointerDown={event => start(event, direction)} onPointerMove={move}

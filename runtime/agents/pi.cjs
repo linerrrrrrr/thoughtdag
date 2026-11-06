@@ -23,17 +23,17 @@ const fsp = fs.promises;
 const GUARD = path.join(__dirname, 'pi-guard.mjs');
 const IDLE_MS = Number(process.env.TD_AGENT_IDLE_MS) || 10 * 60 * 1000; // a Pi process (session or catalog) retires after this long without a listener
 const RESPONSE_MS = 30 * 1000;
-const { locate, childEnv: envWith } = require('./where.cjs');
+const { createLocator, childEnv: envWith } = require('./where.cjs');
 const EXTRA_HOMES = [path.join(os.homedir(), '.pi', 'bin')];   // pi's own home, on top of the usual ones (see where.cjs)
 
 /** The pi binary and the directories walked to find it (PATH, the login shell's PATH, the usual homes). */
-let located = null;
-const findPi = () => (located ??= locate('pi', EXTRA_HOMES));
+const findPi = createLocator('pi', EXTRA_HOMES);
 /** PATH for the child: the shell's plus the usual homes, so Pi's own bash tool finds git, node and friends even under a Finder launch. */
 const childEnv = () => envWith(EXTRA_HOMES);
 
 class PiProcess {
   constructor(bin, cwd, opts) {
+    this.bin = bin;
     this.cwd = cwd;
     this.log = opts.log || (() => {});
     this.onExit = opts.onExit || (() => {});
@@ -171,14 +171,6 @@ function createPiRuntime({ log } = {}) {
   const say = log || (() => {});
   const procs = new Map();     // cwd → PiProcess
   const runs = new Map();      // runId → { proc, abort() }
-  let binPromise = null;
-
-  const bin = () => {
-    if (!binPromise) binPromise = findPi().then((r) => { if (!r.path) { located = null; binPromise = null; } return r.path; });
-    return binPromise;
-  };
-  /** Where the lookup walked, for the picker's "not found" note. */
-  const searched = async () => (await findPi()).searched;
   // Pi's thinking levels in its own words, from its own `--help`
   // (`--thinking <level>  Set thinking level: off, minimal, …`); read once
   let levelsPromise = null;
@@ -195,8 +187,9 @@ function createPiRuntime({ log } = {}) {
   async function processFor(cwd) {
     const live = procs.get(cwd);
     if (live && !live.dead) return live;
-    const b = await bin();
-    if (!b) throw new Error('pi is not installed (no `pi` on PATH or in the usual places)');
+    const found = await findPi();
+    const b = found.path;
+    if (!b) throw new Error(found.error || 'The local agent executable was not found on PATH or in the usual installation directories.');
     const p = new PiProcess(b, cwd, { log: say, onExit: (dead) => { if (procs.get(cwd) === dead) procs.delete(cwd); } });
     procs.set(cwd, p);
     return p;
@@ -209,13 +202,14 @@ function createPiRuntime({ log } = {}) {
 
   return {
     /** Where pi is, or null. */
-    available: () => bin(),
+    available: async () => (await findPi()).path,
 
     /** Pi's configured models and its current default, asked of a
      *  sessionless process in the home directory. */
     async models() {
-      const b = await bin();
-      if (!b) return { installed: false, models: [], default: null, searched: await searched() };
+      const found = await findPi();
+      const b = found.path;
+      if (!b) return { installed: false, models: [], default: null, searched: found.searched, failures: found.failures, ...(found.error ? { error: found.error } : {}) };
       const key = '\0catalog';
       let p = procs.get(key);
       if (!p || p.dead) { p = new PiProcess(b, os.homedir(), { log: say, noSession: true, onExit: (d) => { if (procs.get(key) === d) procs.delete(key); } }); procs.set(key, p); }
@@ -276,7 +270,7 @@ function createPiRuntime({ log } = {}) {
           else if (!req.sessionPath) await proc.send({ type: 'new_session' });
           if (req.model && typeof req.model === 'object' && req.model.provider && req.model.id) await proc.send({ type: 'set_model', provider: req.model.provider, modelId: req.model.id });
           // only a level Pi itself lists; an explicit thinkingLevel still wins
-          const level = req.thinkingLevel || (req.effort && (await levelsOf(await bin())).includes(req.effort) ? req.effort : null);
+          const level = req.thinkingLevel || (req.effort && (await levelsOf(proc.bin)).includes(req.effort) ? req.effort : null);
           if (level) await proc.send({ type: 'set_thinking_level', level });
           const state = await proc.send({ type: 'get_state' });
           emit({ type: 'session', effort: typeof state?.thinkingLevel === 'string' ? state.thinkingLevel : null, sessionId: state?.sessionId ?? null, sessionFile: state?.sessionFile ?? null, model: state?.model ? { provider: state.model.provider, id: state.model.id, name: state.model.name } : null, cwd });

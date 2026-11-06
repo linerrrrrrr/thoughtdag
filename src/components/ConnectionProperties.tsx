@@ -114,7 +114,7 @@ function ConnectionForm({ selected, onLocateNode, draftKey }: ConnectionProperti
         {([{ node: source, label: 'edgeEditor.source', value: 'source' }, { node: target, label: 'edgeEditor.target', value: 'target' }] as const).map(({ node, label, value }, index) => <div key={value}>
           {index === 1 && <ArrowDown size={13} className="edge-inspector-direction" aria-hidden="true" />}
           <button type="button" disabled={!node} onClick={() => { if (node) onLocateNode(node.id); }}
-            className="edge-inspector-endpoint" title={fmt(t('edgeEditor.locateNode'), { name: name(node) })} data-edge-locate={value}>
+            className="edge-inspector-endpoint" data-tooltip={fmt(t('edgeEditor.locateNode'), { name: name(node) })} data-edge-locate={value}>
             <span className="edge-inspector-endpoint-label">{t(label)}</span><span className="edge-inspector-endpoint-name">{name(node)}</span><LocateFixed size={14} aria-hidden="true" />
           </button>
         </div>)}

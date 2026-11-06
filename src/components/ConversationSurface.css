@@ -81,7 +81,7 @@
 .conversation-node ::selection, [data-focus-panel] ::selection { background: color-mix(in srgb, var(--color-accent) 28%, transparent); }
 
 /* Metadata is a full-width section between the status header and conversation. */
-.node-metadata {
+.node-metadata, .node-highlights {
   flex-shrink: 0;
   padding: 0 var(--spacing-surface-inset);
   border-bottom: 1px solid var(--conversation-line);
@@ -105,6 +105,16 @@
 .node-metadata-toggle:focus-visible, .node-summary-preview:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; border-radius: 6px; }
 .node-metadata-toggle:disabled { opacity: .45; }
 .node-metadata-toggle > span:last-child:not(:first-of-type) { font-size: var(--text-meta); line-height: var(--text-meta--line-height); }
+.node-highlights { display: flex; flex-direction: column; flex-shrink: 1; min-height: 38px; }
+.node-highlights-header { display: flex; align-items: center; gap: var(--spacing-related); flex-shrink: 0; }
+.node-highlights-header .node-metadata-toggle { width: auto; flex: 1; min-width: 0; }
+.node-highlights-content { min-height: 0; max-height: 180px; overflow-y: auto; padding-bottom: var(--spacing-section-gap); scrollbar-width: thin; }
+.node-highlights-content[hidden] { display: none; }
+.node-highlight-list { display: flex; flex-direction: column; gap: var(--spacing-related); margin: 0; padding: var(--spacing-related) 0; list-style: none; }
+.node-highlight-item { display: flex; align-items: flex-start; gap: var(--spacing-related); padding-left: 10px; border-left: 2px solid color-mix(in srgb, var(--color-trace) 55%, transparent); }
+.node-highlight-text { flex: 1; min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--color-ink); font-size: var(--text-control); line-height: var(--text-control--line-height); }
+.node-highlight-modes { display: flex; flex-wrap: wrap; gap: var(--spacing-related); margin-top: var(--spacing-related); }
+.node-highlight-modes [aria-pressed="true"] { background: color-mix(in srgb, var(--color-accent) 10%, transparent); color: var(--color-accent); }
 .node-metadata-fields {
   display: flex;
   flex-direction: column;

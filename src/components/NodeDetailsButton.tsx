@@ -11,7 +11,7 @@ export default function NodeDetailsButton({ nodeId, label = false, className = '
   const isParadigm = useProjects((state) => state.projects.find((project) => project.id === state.activeId)?.kind === 'paradigm');
   if (isParadigm) return null;
   return <button type="button" data-node-details={nodeId} aria-pressed={active}
-    aria-label={t('ctx.openPanel')} title={t('ctx.openPanel')}
+    aria-label={t('ctx.openPanel')} data-tooltip={t('ctx.openPanel')}
     onPointerDown={(event) => event.stopPropagation()}
     onMouseDown={(event) => event.stopPropagation()}
     onFocus={(event) => event.stopPropagation()}

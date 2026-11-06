@@ -178,6 +178,7 @@ try {
     .replace(/import \{[^\n]+\} from '\.\.\/streaming';/, 'const activeAbortControllers = new Map(); const autoRunCounts = new Map(); const triggerParadigmCascade = () => {}; const runNodeGeneration = async (_set: unknown, _get: unknown, _id: string, opts: unknown) => { globalThis.__capturedGeneration = opts; };')
     .replace(/import \{[^\n]+\} from '\.\.\/\.\.\/lib\/ui-store';/, 'const useUiStore = { getState: () => ({ webSearchEnabled: false, scholarSearchEnabled: false }) }; const toast = () => {}; const recallSnapshot = () => ({});')
     .replace("import { shownStaleIds } from '../../lib/stale-judge';", 'const shownStaleIds = () => [];')
+    .replace("import { deriveFollowupModel, requestAgentStop } from '../../lib/agents/agent-runtime';", 'const deriveFollowupModel = () => undefined; const requestAgentStop = async () => {};')
     .replace("import { t, fmt } from '../../i18n';", 'const t = (key: string) => key; const fmt = (key: string) => key;')
     .replace("import { condenseGuard } from '../../lib/condense-guard';", 'const condenseGuard = () => false;');
   buildSync({ stdin: { contents: llmSource, resolveDir: join(root, 'src/store/slices'), loader: 'ts' },

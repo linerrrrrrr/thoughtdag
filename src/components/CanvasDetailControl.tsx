@@ -22,7 +22,7 @@ export function NodeDetailControls({ nodeId }: { nodeId: string }) {
   const locked = node.data.detailLevel;
   return <fieldset className="min-w-0 space-y-2" data-node-detail-controls={nodeId}>
     <legend className="text-control font-medium text-ink">{t('detail.node')}</legend>
-    <p className="truncate text-control text-ink-muted" title={getNodeDisplayName(node.data, t('ctx.unnamedNode'))} data-tooltip-overflow>{getNodeDisplayName(node.data, t('ctx.unnamedNode'))}</p>
+    <p className="truncate text-control text-ink-muted" data-tooltip={getNodeDisplayName(node.data, t('ctx.unnamedNode'))} data-tooltip-overflow>{getNodeDisplayName(node.data, t('ctx.unnamedNode'))}</p>
     <button type="button" className={`${optionClass} w-full ${optionState(!locked)}`} aria-pressed={!locked}
       onClick={() => setNodeDetail(nodeId)} data-node-detail="auto">
       <LockKeyholeOpen size={13} />{t('detail.follow')}
@@ -56,7 +56,7 @@ export default function CanvasDetailControl({ openPing = 0 }: { openPing?: numbe
   }, dismissOnFocusOutside: true, restoreFocus: false });
   return <>
     <button ref={trigger} type="button" onClick={() => setOpen((value) => !value)} aria-expanded={open}
-      aria-controls="canvas-detail-panel" aria-label={`${t('detail.title')} · ${t(`detail.${detail}`)}`} title={`${t('detail.global')} · ${t(`detail.${detail}`)}`}
+      aria-controls="canvas-detail-panel" aria-label={`${t('detail.title')} · ${t(`detail.${detail}`)}`} data-tooltip={`${t('detail.global')} · ${t(`detail.${detail}`)}`}
       className="canvas-toolbar-button canvas-toolbar-secondary canvas-toolbar-icon"
       data-setting-active={detail !== 'auto' || undefined}
       data-canvas-detail-trigger>

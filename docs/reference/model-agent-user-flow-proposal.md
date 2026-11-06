@@ -4,7 +4,7 @@
 
 执行归属已在 [原生 Agent、默认模型与辅助功能详案](native-agent-model-scenarios.md) 中进一步细化。原生 Agent 主任务、画布 API 问答、标题/摘要等辅助调用，以及初始化和文件归属，以该详案为准。本文与早期交互示意保留为操作走向参考，不代表已经具备“完全不附加 ThoughtDAG 能力”的纯原生模式。
 
-配套文件：[总流程图（SVG）](./model-agent-flow/model-agent-main-flow.svg) · [交互流程演示（HTML，可下载后离线打开）](./model-agent-flow/model-agent-flow.html)。
+配套文件：[总流程图（SVG）](./model-agent-flow/model-agent-main-flow.svg) · [交互流程演示（HTML，可下载后离线打开）](https://github.com/linerrrrrrr/thoughtdag/blob/main/docs/reference/model-agent-flow/model-agent-flow.html)。
 
 本方案回答四个问题：这一步由谁完成、怎样接入和选择、怎样把上一轮结果交给下一步、用户在哪里检查并明确开始执行。现有能力和待开发内容见第 10 节；图中的目标流程不能当作全部已经实现。
 
@@ -379,13 +379,13 @@ stateDiagram-v2
 
 - [交互标准](interaction-contract.md)：新节点输入、明确发送、草稿与退出、已完成阅读区边界。
 - [设计语言验收](design-acceptance.md)：工具卡片、阅读区、画布的验证范围。
-- [模型选择器](../../src/components/ui/ModelPicker.tsx)：API / Agent 分组与节点覆盖。
-- [API 接入表单](../../src/components/ui/ApiKeyModal.tsx)。
-- [Agent 目录控件](../../src/components/ui/AgentCwdChip.tsx)、[权限控件](../../src/components/ui/AgentPermissionChip.tsx)。
-- [Agent 运行与路由](../../src/lib/agents/agent-runtime.ts)：目录、继承、会话续接预览及实际运行。
-- [当前运行时约定](../../runtime/agents/README.md)、[Codex 活动边界](codex-activity.md)。
-- [API/Agent 请求分派](../../src/lib/api.ts)、[上下文编译](../../src/store/context-builder.ts)。
-- [Agent 对话地图](../../src/components/SessionAtlas.tsx)、[多会话合并](../../src/lib/atlas/canonical.ts)。
-- [本地网页扫描来源](../../runtime/sessions-fs.cjs)、[HTTP 会话桥](../../src/lib/atlas/dsh-bridge.ts)。
+- [模型选择器](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/components/ui/ModelPicker.tsx)：API / Agent 分组与节点覆盖。
+- [API 接入表单](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/components/ui/ApiKeyModal.tsx)。
+- [Agent 目录控件](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/components/ui/AgentCwdChip.tsx)、[权限控件](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/components/ui/AgentPermissionChip.tsx)。
+- [Agent 运行与路由](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/lib/agents/agent-runtime.ts)：目录、继承、会话续接预览及实际运行。
+- [当前运行时约定](https://github.com/linerrrrrrr/thoughtdag/blob/main/runtime/agents/README.md)、[Codex 活动边界](codex-activity.md)。
+- [API/Agent 请求分派](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/lib/api.ts)、[上下文编译](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/store/context-builder.ts)。
+- [Agent 对话地图](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/components/SessionAtlas.tsx)、[多会话合并](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/lib/atlas/canonical.ts)。
+- [本地网页扫描来源](https://github.com/linerrrrrrr/thoughtdag/blob/main/runtime/sessions-fs.cjs)、[HTTP 会话桥](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/lib/atlas/dsh-bridge.ts)。
 
 配套交互示意只模拟选择和状态，不连接模型、不运行 Agent、不保存凭据，也不能用其演示状态证明真实后端已实现。

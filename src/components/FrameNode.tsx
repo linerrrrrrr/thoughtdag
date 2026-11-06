@@ -119,7 +119,7 @@ export default function FrameNode({ id, data, selected }: NodeProps<ThoughtNodeT
           <span
             onDoubleClick={() => { if (isViewerMode) return; setDraft(data.question); setEditing(true); }}
             className="flex-1 min-w-0 truncate font-semibold text-ink-muted/80 select-none text-control"
-            title={data.question || t('frame.titlePlaceholder')} data-tooltip-overflow
+            data-tooltip={data.question || t('frame.titlePlaceholder')} data-tooltip-overflow
           >
             {data.question || <span className="text-ink-faint normal-case tracking-normal">{t('frame.titlePlaceholder')}</span>}
           </span>
@@ -128,7 +128,7 @@ export default function FrameNode({ id, data, selected }: NodeProps<ThoughtNodeT
             dragging doesn't require selecting first */}
         {!isViewerMode && <button
           onClick={(e) => { e.stopPropagation(); setFrameProperties([id], { carry: !carry }); }}
-          title={carry ? t('frame.carryOn') : t('frame.carryOff')}
+
           aria-label={carry ? t('frame.carryOn') : t('frame.carryOff')}
           aria-pressed={carry}
           data-frame-carry-toggle

@@ -70,7 +70,7 @@ export default function ParadigmNode({ id, data }: NodeProps<ThoughtNodeType>) {
             <button
               key={k}
               onClick={(e) => { e.stopPropagation(); patch({ stepKind: k }); }}
-              title={t(labelKey as Parameters<typeof t>[0])}
+              data-tooltip={t(labelKey as Parameters<typeof t>[0])} aria-label={t(labelKey as Parameters<typeof t>[0])}
               className={`nodrag nopan w-7 h-7 rounded-control flex items-center justify-center transition-colors ${
                 kind === k ? (k === 'human' ? 'bg-warm/15 text-warm' : 'bg-accent/10 text-accent') : 'text-ink-faint hover:bg-wash'
               }`}

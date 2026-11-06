@@ -17,7 +17,8 @@ import RecallSection from './RecallSection';
 import RelatedSection from './RelatedSection';
 import QuestionSection from './QuestionSection';
 import ResponseSection from './ResponseSection';
-import HighlightsSection from './HighlightsSection';
+import NodeHighlightsSection from '../NodeHighlightsSection';
+import { useTextHighlighter } from '../../lib/use-text-highlighter';
 import HeaderActions from './HeaderActions';
 import ContextChainSection from './ContextChainSection';
 import ContextOrderSection from './ContextOrderSection';
@@ -26,7 +27,6 @@ import { getNodeNameSource } from '../../lib/node-display-name';
 import NodeMetadataEditor from '../NodeMetadataEditor';
 import './FocusPanel.css';
 import { activeAgentActivity, originalQuestionBeforeInstructions } from '../../lib/agent-activity';
-import { createQuestionDraft } from '../../lib/question-draft';
 
 // The panel reads one turn and its context. Further questions belong to a
 // new linked node, whose own question editor opens before any request runs.
@@ -38,6 +38,7 @@ export default function FocusPanel({ nodeId, onFocusNode }: { nodeId: string; on
   } = useStore();
   const t = useT();
   const panelRef = useRef<HTMLDivElement>(null);
+  const responseRef = useRef<HTMLDivElement>(null);
   // This working panel can outlive its opener; restoring stale canvas focus would reselect it.
   useDismissableLayer({ open: true, refs: [panelRef], dismissOnOutside: false, restoreFocus: false,
     onDismiss: () => useUiStore.getState().setPanelOpen(false) });
@@ -84,6 +85,12 @@ export default function FocusPanel({ nodeId, onFocusNode }: { nodeId: string; on
   }
 
   const node = nodes.find((n) => n.id === nodeId);
+  const canHighlight = !!node && !isViewerMode && !!node.data.response && !node.data.isLoading && !node.data.isEditingResponse;
+  const highlighter = useTextHighlighter({
+    scopeKey: `${nodeId}:${node?.data.responseIndex}:${node?.data.response}`,
+    enabled: canHighlight,
+    surfaceRef: responseRef,
+  });
 
   if (!node) {
     return null;
@@ -93,14 +100,6 @@ export default function FocusPanel({ nodeId, onFocusNode }: { nodeId: string; on
   const hasMultipleVersions = data.responses.length > 1;
   // A draft node uses its own question editor.
   const awaiting = awaitingInput(data);
-
-  const exploreSelection = (text: string) => {
-    if (!text.trim() || isViewerMode) return;
-    const childId = createQuestionDraft({ parentId: nodeId, branchContext: text, editor: 'panel' });
-    if (!childId) return;
-    useUiStore.getState().setPanelOpen(true, childId);
-    onFocusNode?.(childId);
-  };
 
   // Inherited role for the status line: the SAME resolution buildContext
   // injects (structural mainline, legacy roleMode honored) — what the panel
@@ -140,7 +139,7 @@ export default function FocusPanel({ nodeId, onFocusNode }: { nodeId: string; on
       {/* Reading identity stays quiet; operational details follow the conversation. */}
       <div className="focus-panel-header flex items-center gap-related shrink-0">
         <div className="min-w-0 flex-1">
-          <h2 className="focus-panel-title" title={getNodeNameSource(data, t('ctx.unnamedNode'))} data-tooltip-overflow data-reading-node-name>{getNodeNameSource(data, t('ctx.unnamedNode'))}</h2>
+          <h2 className="focus-panel-title" data-tooltip={getNodeNameSource(data, t('ctx.unnamedNode'))} data-tooltip-overflow data-reading-node-name>{getNodeNameSource(data, t('ctx.unnamedNode'))}</h2>
         </div>
         <div className="flex items-center gap-1 shrink-0">
           {!isViewerMode && <HeaderActions key={nodeId} nodeId={nodeId!} isLoading={data.isLoading} />}
@@ -159,6 +158,9 @@ export default function FocusPanel({ nodeId, onFocusNode }: { nodeId: string; on
           name={getNodeNameSource(data, t('ctx.unnamedNode'))}
           preview={data.displaySummary ?? activeSummary(data)} overview={false}
           open={metadataOpen} onOpenChange={setMetadataOpen} variant="panel" />
+        {(data.response || data.highlights.length > 0) && <NodeHighlightsSection key={`h-${nodeId}`}
+          nodeId={nodeId} highlights={data.highlights} highlightMode={data.highlightMode}
+          highlighter={highlighter} canHighlight={canHighlight} />}
         <AgentSessionLine data={data} />
         <HandoffLine nodeId={nodeId!} data={data} />
         <QuestionSection
@@ -180,7 +182,8 @@ export default function FocusPanel({ nodeId, onFocusNode }: { nodeId: string; on
           data={data}
           hasMultipleVersions={hasMultipleVersions}
           highlightedTexts={highlightedTexts}
-          onExploreSelection={exploreSelection}
+          highlighter={highlighter}
+          responseRef={responseRef}
           onFocusNode={onFocusNode}
         />
 
@@ -205,13 +208,6 @@ export default function FocusPanel({ nodeId, onFocusNode }: { nodeId: string; on
 
         <RecallSection nodeId={nodeId!} items={data.recallItems} meta={data.recallMeta} recallOn={data.recall ?? recallEnabled} progress={data.recallProgress} />
         <RelatedSection key={`rel-${nodeId}`} question={data.question} answer={data.response ?? ''} />
-
-        <HighlightsSection
-          key={`h-${nodeId}`}
-          nodeId={nodeId!}
-          highlights={data.highlights}
-          highlightMode={data.highlightMode}
-        />
 
         <ContextOrderSection nodeId={node.id} />
         <ContextChainSection

@@ -6,12 +6,13 @@ import { condenseGuard } from './condense-guard';
 import { placeNewNodes } from './layout';
 import { useUiStore } from './ui-store';
 import { deriveFollowupModel } from './agents/agent-runtime';
+import { positionNodeAtConnectionEnd } from './edge-anchors';
 
 export interface QuestionDraftOptions {
   parentId?: string;
-  branchContext?: string;
-  branchYRatio?: number;
   position?: { x: number; y: number };
+  /** Released wire tip in canvas coordinates; anchors the new input when a parent exists. */
+  connectionEnd?: { x: number; y: number };
   editor?: 'canvas' | 'panel';
 }
 
@@ -22,7 +23,6 @@ export function createQuestionDraft(options: QuestionDraftOptions = {}): string 
   const parent = options.parentId ? state.nodes.find((node) => node.id === options.parentId) : undefined;
   if (options.parentId && (!parent || parent.data.stepKind === 'frame')) return null;
   const id = generateId();
-  const isBranch = !!options.branchContext;
   const node: ThoughtNode = {
     id, type: 'thought', position: options.position ?? { x: 0, y: 0 }, dragHandle: '.drag-handle', selected: true,
     data: {
@@ -31,26 +31,26 @@ export function createQuestionDraft(options: QuestionDraftOptions = {}): string 
       isCollapsed: false, isEditing: true, questionEditor: options.editor ?? 'canvas',
       isEditingResponse: false, isLoading: false, tokenCount: 0,
       highlights: [], highlightMode: 'tag', attachments: [], excludedAttachmentIds: [], includedAttachmentIds: [],
-      roleMode: 'inherit', isRoot: !parent, isBranch, branchContext: options.branchContext,
+      roleMode: 'inherit', isRoot: !parent, isBranch: false,
       model: deriveFollowupModel(parent?.data, useUiStore.getState().selectedModel),
       layoutDirection: parent?.data.layoutDirection, edgeRouteDefault: parent?.data.edgeRouteDefault,
       // Search and recall choices are snapshotted only by an explicit send.
     },
   };
-  const color = isBranch ? COLORS.warm : COLORS.accent;
   const edge: ThoughtEdge | undefined = parent ? {
     id: `edge-${parent.id}-${id}`, source: parent.id, target: id,
-    sourceHandle: isBranch ? 'branch' : 'continue', targetHandle: isBranch ? 'left' : 'top',
-    type: 'smoothstep', style: { stroke: color, strokeWidth: 2 }, animated: false,
-    markerEnd: { type: 'arrowclosed', color, ...EDGE_ARROW_GEOMETRY },
-    data: isBranch ? { isBranchFromSelection: true, branchYRatio: options.branchYRatio ?? 0.5 } : {},
+    sourceHandle: 'continue', targetHandle: 'top',
+    type: 'smoothstep', style: { stroke: COLORS.accent, strokeWidth: 2 }, animated: false,
+    markerEnd: { type: 'arrowclosed', color: COLORS.accent, ...EDGE_ARROW_GEOMETRY },
+    data: {},
   } : undefined;
+  if (parent && options.connectionEnd) node.position = positionNodeAtConnectionEnd(parent, node, options.connectionEnd);
   const deselectedEdges = state.edges.map((existing) => existing.selected ? { ...existing, selected: false } : existing);
   const edges = edge ? [...deselectedEdges, edge] : deselectedEdges;
   const nodes = [...state.nodes.map((existing) => existing.selected ? { ...existing, selected: false } : existing), node];
   state.pushHistory();
   useStore.setState({
-    nodes: options.position ? nodes : placeNewNodes(nodes, edges, [id]), edges,
+    nodes: options.position || (parent && options.connectionEnd) ? nodes : placeNewNodes(nodes, edges, [id]), edges,
     selectedNodeId: id, selectedNodeIds: [id],
   });
   useStore.getState().pushHistory();

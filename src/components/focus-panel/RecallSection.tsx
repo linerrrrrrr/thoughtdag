@@ -72,7 +72,7 @@ export default function RecallSection({ nodeId, items, meta, recallOn, progress 
                   <div className="text-meta text-ink-faint mt-0.5 flex items-center gap-1.5 flex-wrap">
                     {i.dossier
                       ? <span>{t('dossier.updated')} {i.dossier.updatedAt.slice(0, 10)}</span>
-                      : <span className="font-mono border border-line rounded-tag px-1 py-px" title={i.file}>{i.runner} · {day(i.at)}</span>}
+                      : <span className="font-mono border border-line rounded-tag px-1 py-px" data-tooltip={i.file}>{i.runner} · {day(i.at)}</span>}
                     <span className="font-mono">{i.card ? i.cardTokens ?? 0 : i.tokens} tokens</span>
                     {i.relevance !== undefined && <span className="sr-only" data-recall-relevance>{i.relevance.toFixed(2)}</span>}
                   </div>
@@ -80,7 +80,7 @@ export default function RecallSection({ nodeId, items, meta, recallOn, progress 
                 <button
                   onClick={() => toggle(i.id)}
                   className="shrink-0 text-ink-faint hover:text-ink w-6 h-6 rounded-control flex items-center justify-center hover:bg-wash transition-colors"
-                  title={i.excluded ? t('panel.recallInclude') : t('panel.recallExclude')}
+                  data-tooltip={i.excluded ? t('panel.recallInclude') : t('panel.recallExclude')}
                   aria-label={i.excluded ? t('panel.recallInclude') : t('panel.recallExclude')}
                   data-recall-item-toggle
                 >

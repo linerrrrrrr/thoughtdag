@@ -62,7 +62,7 @@ function ProfileDrawer({ kind, onClose }: { kind: ProfileKind; onClose: () => vo
         {doc.updatedAt && <span className="text-meta text-ink-faint">{fmt(t('mp.updatedAt'), { d: day(doc.updatedAt) })}</span>}
         <span className="flex-1" />
         {!editing && <button onClick={() => { setText(useUiStore.getState().drafts[draftKey] ?? lines.join('\n')); setEditing(true); }} className="text-control px-2.5 py-1 rounded-control border border-line hover:bg-wash" data-mp-profile-edit>{t('mp.edit')}</button>}
-        {lines.length > 0 && <button onClick={() => downloadFile(`thoughtdag-${kind}.json`, JSON.stringify({ kind, lines, notes: doc.notes ?? [], updatedAt: doc.updatedAt, changelog: doc.changelog }, null, 2), 'application/json')} title={t('mp.export')} className="text-control px-2 py-1 rounded-control text-ink-faint hover:text-ink flex items-center gap-1"><FileDown size={12} strokeWidth={1.75} /> {t('common.export')}</button>}
+        {lines.length > 0 && <button onClick={() => downloadFile(`thoughtdag-${kind}.json`, JSON.stringify({ kind, lines, notes: doc.notes ?? [], updatedAt: doc.updatedAt, changelog: doc.changelog }, null, 2), 'application/json')} data-tooltip={t('mp.export')} className="text-control px-2 py-1 rounded-control text-ink-faint hover:text-ink flex items-center gap-1"><FileDown size={12} strokeWidth={1.75} /> {t('common.export')}</button>}
         <button onClick={onClose} className="text-control px-2 py-1 rounded-control text-ink-muted hover:bg-wash">{t('common.close')}</button>
       </div>
       {editing ? (
@@ -84,7 +84,7 @@ function ProfileDrawer({ kind, onClose }: { kind: ProfileKind; onClose: () => vo
             return (
               <li key={i}>
                 <span>{l}</span>
-                {n && <span className="ml-1.5 align-baseline inline-flex font-mono text-meta text-ink-faint border border-line rounded-tag px-1 whitespace-nowrap" title={n.was ? fmt(t('mp.lineWas'), { t: n.was }) : undefined} data-mp-line-note={n.evidence}>{[n.from, day(n.at), t(EVIDENCE_KEY[n.evidence])].filter(Boolean).join(' · ')}</span>}
+                {n && <span className="ml-1.5 align-baseline inline-flex font-mono text-meta text-ink-faint border border-line rounded-tag px-1 whitespace-nowrap"  data-mp-line-note={n.evidence}>{[n.from, day(n.at), t(EVIDENCE_KEY[n.evidence])].filter(Boolean).join(' · ')}</span>}
               </li>
             );
           })}
@@ -196,7 +196,7 @@ function DossierDrawer({ topicId, name, onClose, onChanged, onOpened }: { topicI
                     {lines.map((s, i) => (
                       <li key={i} className="flex flex-wrap items-baseline gap-x-1.5">
                         <span>{s.text}</span>
-                        {s.src.map((k) => { const src = d!.sources[k]; return src ? <button key={k} onClick={() => void openSource(k)} title={`${src.title} · ${t('mp.sourceOpen')}`} className="inline-flex items-center gap-0.5 font-mono text-control text-ink-faint border border-line rounded-tag px-1 hover:text-accent hover:border-accent/40" data-mp-source>{src.runner} · {day(src.at)}{src.kind === 'turn' && <ExternalLink size={9} />}</button> : k.startsWith('filed:') ? <span key={k} className="font-mono text-control text-ink-faint border border-line rounded-tag px-1">{t('mp.filedTag')}</span> : null; })}
+                        {s.src.map((k) => { const src = d!.sources[k]; return src ? <button key={k} onClick={() => void openSource(k)} data-tooltip={`${src.title} · ${t('mp.sourceOpen')}`} className="inline-flex items-center gap-0.5 font-mono text-control text-ink-faint border border-line rounded-tag px-1 hover:text-accent hover:border-accent/40" data-mp-source>{src.runner} · {day(src.at)}{src.kind === 'turn' && <ExternalLink size={9} />}</button> : k.startsWith('filed:') ? <span key={k} className="font-mono text-control text-ink-faint border border-line rounded-tag px-1">{t('mp.filedTag')}</span> : null; })}
                       </li>
                     ))}
                   </ul>

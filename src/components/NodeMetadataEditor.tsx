@@ -127,10 +127,10 @@ export default function NodeMetadataEditor({ id, data, name, preview, overview, 
         className="node-summary-preview"
         aria-label={t('node.metadataEdit')} aria-expanded={false} data-node-metadata-toggle>
         <span className="node-summary-heading">
-          <span className="node-summary-name" title={name} data-tooltip-overflow data-node-name>{name}</span>
+          <span className="node-summary-name" data-tooltip={name} data-tooltip-overflow data-node-name>{name}</span>
           {!isViewerMode && <Pencil size={13} className="node-summary-edit" aria-hidden="true" />}
         </span>
-        {previewText && previewText !== name && <span className="node-summary-text" title={previewText} data-tooltip-overflow data-node-preview>{previewText}</span>}
+        {previewText && previewText !== name && <span className="node-summary-text"   data-node-preview>{previewText}</span>}
       </button>
     </div>
   );

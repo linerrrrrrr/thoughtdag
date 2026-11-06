@@ -30,7 +30,7 @@ export default function HandoffLine({ nodeId, data }: { nodeId: string; data: Th
         <button
           onClick={() => setToolRecordForwarded(nodeId, c.toolForwarded !== 'all')}
           disabled={isViewerMode}
-          title={t('handoff.toggleTitle')}
+
           className={`text-control px-2 py-0.5 rounded-tag shrink-0 transition-colors disabled:cursor-default ${on ? 'bg-warm/15 text-warm hover:bg-warm/25' : 'bg-line text-ink-muted hover:bg-warm/10 hover:text-warm'}`}
           data-handoff-toggle={c.toolForwarded}
         >

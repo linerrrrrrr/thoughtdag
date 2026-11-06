@@ -75,7 +75,7 @@ export default function DiagnosticsPanel({ onLocate, openPing = 0, showTrigger =
         {f.nodeIds.length > 0 && (
           <button
             onClick={() => onLocate(f.nodeIds[0])}
-            title={t('diag.locate')}
+            data-tooltip={t('diag.locate')}
             aria-label={t('diag.locate')}
             className="w-6 h-6 rounded-control text-ink-faint hover:text-accent hover:bg-wash flex items-center justify-center transition-colors"
           >
@@ -85,7 +85,7 @@ export default function DiagnosticsPanel({ onLocate, openPing = 0, showTrigger =
         {f.fixable && (
           <button
             onClick={() => fix(f)}
-            title={t('diag.fix')}
+            data-tooltip={t('diag.fix')}
             aria-label={t('diag.fix')}
             className="w-6 h-6 rounded-control flex items-center justify-center transition-colors object-action-danger" data-icon-only
           >
@@ -104,7 +104,7 @@ export default function DiagnosticsPanel({ onLocate, openPing = 0, showTrigger =
           className={`bg-card border rounded-control w-8 h-8 flex items-center justify-center transition-colors ${
             open ? 'border-accent/40 text-accent' : 'border-line text-ink-faint hover:bg-wash'
           }`}
-          title={t('toolbar.diagnose')}
+          data-tooltip={t('toolbar.diagnose')}
           aria-label={t('toolbar.diagnose')}
         >
           <Stethoscope size={15} strokeWidth={1.75} />

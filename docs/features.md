@@ -17,7 +17,7 @@ Guide: [Canvas, navigation, and frames](/guides/canvas-projects)
 ## Conversation nodes and floating panel
 
 - One node stores a question, answer versions, model provenance, role, highlights, and attachments.
-- Continue a path, **Explore** from selected text, edit questions and answers, or regenerate in place or as a sibling node.
+- Continue a path, edit questions and answers, or regenerate in place or as a sibling node.
 - Floating panel for reading, version switching, attachments, highlights, merge order, grouped context tree, and follow-up input.
 - Right-click node menu for panel/reading access, regeneration, summarizing to a note, copying, CLI continuation, duplication, archiving, and deletion.
 
@@ -25,7 +25,7 @@ Guide: [Conversation nodes and panel](/guides/conversations)
 
 ## Wires and model-visible context
 
-- Purple solid conversation paths, orange structural exploration branches, purple dashed summary references, and red dashed reviewer relationships.
+- Purple solid conversation paths, orange structural passage and role branches, purple dashed summary references, and red dashed reviewer relationships.
 - **Will send** preview grouped into materials, references, and conversation turns.
 - Delete or convert a wire without deleting its nodes; archive content to exclude it while retaining it.
 - Context fingerprints, stale markers, answer versions, and dependency-ordered replay.

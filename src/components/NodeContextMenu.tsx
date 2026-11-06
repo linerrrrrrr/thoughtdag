@@ -83,7 +83,7 @@ export default function NodeContextMenu({ x, y, nodeId, onClose }: {
       {kind !== 'frame' && <div className="px-3 py-2 border-b border-line mb-1"><NodeDetailControls nodeId={nodeId} /></div>}
       {kind !== 'frame' && (
         <button className={`${item} disabled:opacity-50 disabled:cursor-not-allowed`} disabled={node.data.isLoading}
-          title={node.data.isLoading ? t('ctx.renameBusy') : undefined}
+          data-tooltip={node.data.isLoading ? t('ctx.renameBusy') : undefined}
           onClick={() => { setRenameDraft(node.data.displayName ?? ''); setRenaming(true); }} data-rename-node>
           <Pencil size={14} strokeWidth={1.75} className={icon} /> {t('ctx.rename')}
         </button>
@@ -101,7 +101,7 @@ export default function NodeContextMenu({ x, y, nodeId, onClose }: {
         </button>
       )}
       {hasResponse && (
-        <button className={item} title={ti('actions.regenBranchTitle')} onClick={run(() => { void useStore.getState().regenerate(nodeId); })}>
+        <button className={item}  onClick={run(() => { void useStore.getState().regenerate(nodeId); })}>
           <GitFork size={14} strokeWidth={1.75} className={icon} /> {t('ctx.regenBranch')}
         </button>
       )}
@@ -133,7 +133,7 @@ export default function NodeContextMenu({ x, y, nodeId, onClose }: {
       </button>
       {!isContent && (
         // the pre-agent-lane door, kept for people who work in a terminal: the node's context to the clipboard, the session mounts back as a branch
-        <button className={item} title={ti('exp.copyForCliTitle')} onClick={run(() => {
+        <button className={item}  onClick={run(() => {
           void import('../lib/experiment-loop').then((m) => m.takeToExperiment(nodeId, 'branch'));
         })} data-take-to-experiment>
           <FlaskConical size={14} strokeWidth={1.75} className={icon} /> {t('exp.copyForCli')}

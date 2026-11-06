@@ -18,12 +18,11 @@ const { snapshotDir, diffSnapshots } = require('./fs-diff.cjs');
 
 const fsp = fs.promises;
 const RESPONSE_MS = 30 * 1000;
-const { locate, childEnv: envWith } = require('./where.cjs');
+const { createLocator, childEnv: envWith } = require('./where.cjs');
 const EXTRA_HOMES = [path.join(os.homedir(), '.codex', 'bin')];
 
 /** The codex binary and the directories walked to find it (see where.cjs). */
-let located = null;
-const findCodex = () => (located ??= locate('codex', EXTRA_HOMES));
+const findCodex = createLocator('codex', EXTRA_HOMES);
 const childEnv = () => envWith(EXTRA_HOMES);
 
 /** The guard file the canvas writes per working directory, as Codex policy:
@@ -189,13 +188,6 @@ function createCodexRuntime({ log } = {}) {
   const runs = new Map();     // runId → run state
   const byThread = new Map(); // threadId → runId
   const serverAsks = new Map(); // question id → { rpcId, respond(answer) }
-  let binPromise = null;
-  const bin = () => {
-    if (!binPromise) binPromise = findCodex().then((r) => { if (!r.path) { located = null; binPromise = null; } return r.path; });
-    return binPromise;
-  };
-  /** Where the lookup walked, for the picker's "not found" note. */
-  const searched = async () => (await findCodex()).searched;
 
   const write = (obj) => { try { proc.stdin.write(JSON.stringify(obj) + '\n'); return true; } catch { return false; } };
   const send = (method, params, timeoutMs = RESPONSE_MS) => new Promise((resolve, reject) => {
@@ -227,10 +219,11 @@ function createCodexRuntime({ log } = {}) {
     proc = null; ready = null;
   };
 
-  async function ensureServer() {
+  async function ensureServer(lookup) {
     if (proc && ready) return ready;
-    const b = await bin();
-    if (!b) throw new Error('codex is not installed (no `codex` on PATH or in the usual places)');
+    const found = lookup ?? await findCodex();
+    const b = found.path;
+    if (!b) throw new Error(found.error || 'The local agent executable was not found on PATH or in the usual installation directories.');
     // Node cannot spawn an npm .cmd shim directly on Windows. Run the
     // package entrypoint without involving a shell or interpolated commands.
     const npmEntry = path.join(path.dirname(b), 'node_modules', '@openai', 'codex', 'bin', 'codex.js');
@@ -440,12 +433,12 @@ function createCodexRuntime({ log } = {}) {
   }
 
   return {
-    available: () => bin(),
+    available: async () => (await findCodex()).path,
 
     async models() {
-      const b = await bin();
-      if (!b) return { installed: false, models: [], default: null, searched: await searched() };
-      await ensureServer();
+      const found = await findCodex();
+      if (!found.path) return { installed: false, models: [], default: null, searched: found.searched, failures: found.failures, ...(found.error ? { error: found.error } : {}) };
+      await ensureServer(found);
       const r = await send('model/list', {});
       noteEfforts(r);
       const configured = await configuredEffort();

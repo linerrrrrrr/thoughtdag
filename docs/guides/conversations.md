@@ -4,9 +4,7 @@
 
 Enter a question in an ask box. The question and streamed answer become one conversation node. Ask from that node to continue the same path.
 
-<img src="../conversation-branch-en.gif" alt="Selecting text in a real ThoughtDAG answer, choosing Explore, and creating a new orange branch" width="100%" loading="lazy"/>
-
-The recording shows the three beats in order: **select text → choose Explore → submit the branch question**. This page explains interactions inside a node; see [Interface overview](/guides/interface-overview) for where each area sits.
+Drag a connection from a node to empty canvas to create an empty child. Enter the next question in that new node and explicitly send it. See [Interface overview](/guides/interface-overview) for where each area sits.
 
 ## Understand a conversation node
 
@@ -14,7 +12,7 @@ The node card supports quick scanning rather than every control:
 
 - the top shows the question, role, and state;
 - the body shows the active answer version;
-- footer actions cover frequent operations such as continuing, regenerating, copying, and editing;
+- footer actions cover frequent operations such as highlighting, regenerating, copying, and editing;
 - each answer version records its model and generation time;
 - an amber mark means upstream content changed after this answer was generated;
 - semantic zoom folds the full card into a takeaway and then an icon marker.
@@ -29,18 +27,17 @@ The panel floats above the right side of the canvas without moving nodes. Drag i
 |---|---|
 | Header status and actions | Inspect role, token, and material state, then use node-level shortcuts |
 | Question | Read or edit the question; waiting nodes also receive their question here |
-| Answer and versions | Read the full answer, switch versions, inspect the generating model, and explore or highlight selected text |
+| Answer and versions | Read the full answer, switch versions, inspect the generating model, and turn on the highlighter to mark key passages |
 | Attachments | Add [materials](/guides/materials) and control whether inherited attachments enter this context |
 | Highlights | Pass full text, tag important passages, or pass highlights only; see [Highlight and weave](/guides/organize#highlight-and-weave) |
 | Merge order | Reorder upstream blocks when several routes enter the node; see [Control context](/guides/context-control) |
 | Context tree | Inspect the actual materials, references, conversation turns, and estimated tokens; see [Inspect the next request](/guides/context-control#inspect-the-next-request) |
-| Follow-up | Continue this path; click the **Will send summary line** above the input to preview the next request |
 
-## Explore from selected text
+## Continue from an existing node
 
-Select a useful phrase in an answer and choose **Explore**. ThoughtDAG creates an orange branch anchored to that selection. The original path stays intact while the new question opens another direction.
+Drag a connection from the source node to empty canvas, then enter and send a question in the new node. Create several children from the same source to discuss different directions while keeping the original questions and answers.
 
-Use **Explore** to test another interpretation, investigate a detail without lengthening the main path, or compare prompts and models.
+Ordinary text selection supports selecting and copying. With the highlighter enabled, selecting text saves a highlight.
 
 ## Edit a node
 

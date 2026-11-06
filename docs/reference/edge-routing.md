@@ -9,6 +9,11 @@ This is the geometry contract for the local React Flow edge renderer. It does no
 change the continuation/single-node-reference semantics, the connection editor,
 or the ordering of nodes in a conversation chain.
 
+A wire released on empty canvas creates a continuation whose input endpoint
+stays at the release position. Placement uses the automatically facing port and
+its first measured bounds, while keeping the viewport and zoom unchanged. The
+measurement correction belongs to the same creation undo step.
+
 ## Direct implementation choice
 
 Use `getBezierPath()` from the project's existing `@xyflow/react` dependency for

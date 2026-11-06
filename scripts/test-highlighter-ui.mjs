@@ -32,6 +32,8 @@ const card = page.locator('.react-flow__node[data-id="highlight-answer"]');
 const panel = page.locator('[data-focus-panel]');
 const reader = page.locator('[data-material-reader]');
 const toggle = surface => surface.locator('[data-highlighter-toggle]');
+const highlightSection = surface => surface.locator('[data-node-highlights]');
+const disclosure = surface => highlightSection(surface).locator('[data-highlight-disclosure]');
 const marks = id => page.evaluate(id => window.__store.getState().nodes.find(n => n.id === id).data.highlights, id);
 const count = async id => (await marks(id)).length;
 const settle = () => page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
@@ -90,13 +92,38 @@ try {
   await page.evaluate(() => window.__rf.setViewport({ x: 0, y: 0, zoom: 1 }, { duration: 0 }));
   const answer = card.locator('[data-conversation-answer]');
   await toggle(card).waitFor();
+  assert.equal(await highlightSection(card).count(), 1);
+  assert.equal(await highlightSection(card).locator('[data-highlighter-toggle]').count(), 1);
+  assert.equal(await card.locator('.conversation-actions [data-highlighter-toggle]').count(), 0);
+  assert.equal(await disclosure(card).getAttribute('aria-expanded'), 'false');
+  assert.equal(await toggle(card).evaluate(element => element.closest('[data-highlight-disclosure]') === null), true,
+    'The highlighter is an independent action, not nested inside the disclosure button');
+  const beforeEmptyDisclosure = await page.evaluate(() => ({
+    highlights: window.__store.getState().nodes.find(node => node.id === 'highlight-answer').data.highlights,
+    historyIndex: window.__store.getState().historyIndex,
+  }));
+  await disclosure(card).click();
+  assert.equal(await disclosure(card).getAttribute('aria-expanded'), 'true');
+  assert.equal(await highlightSection(card).locator('[data-highlight-list]').isVisible(), true);
+  await disclosure(card).click();
+  assert.equal(await highlightSection(card).locator('[data-highlight-list]').isVisible(), false);
+  assert.deepEqual(await page.evaluate(() => ({
+    highlights: window.__store.getState().nodes.find(node => node.id === 'highlight-answer').data.highlights,
+    historyIndex: window.__store.getState().historyIndex,
+  })), beforeEmptyDisclosure);
+  check('a dedicated collapsed highlights section owns the pen even when empty and disclosure never writes data');
   assert.equal(await toggle(card).getAttribute('aria-pressed'), 'false');
   await selectText(answer, 'Alpha evidence matters.');
   assert.equal(await count('highlight-answer'), 0);
-  assert.equal(await card.getByRole('button', { name: '高亮', exact: true }).count(), 0);
-  assert.equal(await card.getByRole('button', { name: '探索', exact: true }).count(), 1);
-  check('ordinary selection retains Explore and has no legacy highlight action');
+  assert.equal(await answer.getByRole('button', { name: '高亮', exact: true }).count(), 0);
+  assert.equal(await card.getByRole('button', { name: '探索', exact: true }).count(), 0);
+  assert.equal(await page.evaluate(() => window.getSelection()?.toString()), 'Alpha evidence matters.');
+  assert.equal(await page.evaluate(() => window.__store.getState().nodes.length), 3);
+  check('ordinary selection stays available for copying without exploration actions or new nodes');
 
+  // Selection opens its inspector after a delay; let that outer layer mount
+  // before activating the pen whose Escape behavior this fixture exercises.
+  await page.locator('[data-selection-properties]').waitFor();
   await toggle(card).click();
   assert.equal(await toggle(card).getAttribute('aria-pressed'), 'true');
   assert.equal(await card.getByRole('button', { name: '探索', exact: true }).count(), 0);
@@ -121,6 +148,20 @@ try {
   await selectText(answer, 'const codeOnly = 42;');
   assert.equal(await count('highlight-answer'), 2);
   check('enabled tool marks consecutive passages, stays active, and skips duplicates and fenced code');
+
+  const beforeFold = await marks('highlight-answer');
+  await disclosure(card).click();
+  assert.equal(await disclosure(card).getAttribute('aria-expanded'), 'true');
+  for (const mark of beforeFold) {
+    assert.equal(await highlightSection(card).locator('[data-highlight-list]').getByText(mark.text, { exact: true }).count(), 1);
+    assert.equal(await card.getByText(mark.text, { exact: true }).count(), 2,
+      'The passage appears once in the highlight list and once in the answer, without a duplicate chip');
+  }
+  await disclosure(card).click();
+  assert.equal(await toggle(card).getAttribute('aria-pressed'), 'true');
+  assert.deepEqual(await marks('highlight-answer'), beforeFold);
+  assert.equal(await highlightSection(card).locator('[data-highlight-list]').isVisible(), false);
+  check('collapsing saved highlights preserves the active pen and stored passages without duplicate chips');
 
   await clearSelection();
   await card.evaluate(element => {
@@ -160,11 +201,25 @@ try {
     (await import('/src/lib/appearance.ts')).useAppearance.getState().setLighting('dark');
     window.__ui.setState({ panelWidth: 380 });
   });
-  await toggle(panel).click();
   const panelAnswer = panel.locator('.focus-assistant-message');
+  assert.equal(await highlightSection(panel).count(), 1);
+  assert.equal(await highlightSection(panel).locator('[data-highlighter-toggle]').count(), 1);
+  assert.equal(await panel.locator('.focus-response-actions [data-highlighter-toggle], .conversation-actions [data-highlighter-toggle]').count(), 0);
+  assert.equal(await disclosure(panel).getAttribute('aria-expanded'), 'false');
+  await selectText(panelAnswer, '第二段保留阅读节奏。');
+  assert.equal(await panel.getByRole('button', { name: 'Explore', exact: true }).count(), 0);
+  assert.equal(await page.evaluate(() => window.getSelection()?.toString()), '第二段保留阅读节奏。');
+  assert.equal(await page.evaluate(() => window.__store.getState().nodes.length), 3);
+  await toggle(panel).click();
   await selectText(panelAnswer, '第二段保留阅读节奏。');
   assert.ok((await marks('highlight-answer')).some(h => h.text === '第二段保留阅读节奏。'));
   assert.equal(await toggle(panel).getAttribute('aria-pressed'), 'true');
+  const panelMarks = await marks('highlight-answer');
+  await disclosure(panel).click();
+  assert.equal(await highlightSection(panel).locator('[data-highlight-list]').isVisible(), true);
+  await disclosure(panel).click();
+  assert.equal(await toggle(panel).getAttribute('aria-pressed'), 'true');
+  assert.deepEqual(await marks('highlight-answer'), panelMarks);
   await page.screenshot({ path: `${output}/panel-dark-en.png` });
   await page.keyboard.press('Escape');
   assert.equal(await toggle(panel).getAttribute('aria-pressed'), 'false');

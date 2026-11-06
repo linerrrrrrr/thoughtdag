@@ -354,7 +354,6 @@ try {
   const beforeFrameOnly = await page.evaluate(() => ({ ids: window.__store.getState().nodes.map(node => node.id), edges: window.__store.getState().edges }));
   await page.evaluate(async frameId => {
     const store = window.__store.getState();
-    await store.exploreFrom([frameId], 'A frame itself must not become a context source.');
     await store.batchMergeSummarize([frameId], false);
     await store.weaveHighlights([frameId]);
   }, frameId);

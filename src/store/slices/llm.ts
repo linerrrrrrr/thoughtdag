@@ -284,70 +284,6 @@ export const createLlmSlice: StateCreator<StoreState, [], [], LlmSlice> = (set, 
     await Promise.all(Array.from({ length: Math.min(LIMIT, created.length) }, worker));
   },
 
-  /**
-   * One-Rule-honest multi-select explore: the new node hangs from EVERY
-   * selected node with a real edge — the wiring IS the context, nothing is
-   * smuggled in as invisible text.
-   */
-  exploreFrom: async (nodeIds: string[], question: string) => {
-    const { nodes, edges } = get();
-    // Transitive reduction: selecting a chain means its CONTENT — ancestors
-    // flow through their descendants, so only the selection's sinks get a
-    // wire (no residual edges, no scrambled conversation order).
-    const parents = selectionSinks(
-      nodeIds.filter((nid) => nodes.some((n) => n.id === nid && n.data.stepKind !== 'frame')),
-      edges,
-    );
-    if (parents.length === 0 || !question.trim()) return;
-    get().pushHistory();
-    const id = generateId();
-    get().logEvent('explore', id, { sources: parents.length });
-    // Single-parent explore stays on that line's model; multi-parent is
-    // ambiguous — follow the global pick.
-    const exploreModel = parents.length === 1 ? deriveFollowupModel(nodes.find((n) => n.id === parents[0])?.data, useUiStore.getState().selectedModel) : undefined;
-    const newNode: ThoughtNode = {
-      id, type: 'thought', position: { x: 0, y: 0 }, dragHandle: '.drag-handle',
-      data: {
-        question,
-        model: exploreModel,
-        createdAt: new Date().toISOString(),
-        askedAt: new Date().toISOString(),
-        response: '', responses: [], responseIndex: -1,
-        isCollapsed: false, isEditing: false, isEditingResponse: false, isLoading: true,
-        tokenCount: 0, highlights: [], highlightMode: 'tag',
-        attachments: [], excludedAttachmentIds: [], includedAttachmentIds: [],
-        roleMode: 'inherit', isRoot: false, isBranch: false,
-        webSearch: useUiStore.getState().webSearchEnabled,
-        scholarSearch: useUiStore.getState().scholarSearchEnabled,
-        ...recallSnapshot(),
-      },
-    };
-    const newEdges: ThoughtEdge[] = parents.map((pid) => ({
-      id: `edge-${pid}-${id}`,
-      source: pid,
-      target: id,
-      sourceHandle: 'continue',
-      targetHandle: 'top',
-      type: 'smoothstep',
-      style: { stroke: COLORS.accent, strokeWidth: 2 },
-      markerEnd: { type: 'arrowclosed' as const, color: COLORS.accent, width: 18, height: 18 },
-      data: {},
-    }));
-    const allEdges = [...edges, ...newEdges];
-    set({ nodes: placeNewNodes([...nodes, newNode], allEdges, [id]), edges: allEdges, selectedNodeId: id, selectedNodeIds: [] });
-
-    // Standard context walk through the fresh fan-in edges (self blanked)
-    const ctx = buildContext(
-      id,
-      get().nodes.map((n) => (n.id === id ? { ...n, data: { ...n.data, question: '', response: '' } } : n)),
-      get().edges,
-      undefined, undefined, undefined, shownStaleIds(get()),
-    );
-    const messages = ctx.messages;
-    messages.push({ role: 'user', content: question });
-    await runNodeGeneration(set, get, id, { question, messages, images: ctx.images, sources: ctx.sources });
-  },
-
   submitHumanTurn: (nodeId: string, question: string) => {
     if (condenseGuard()) return;
     const q = question.trim();
@@ -485,7 +421,7 @@ export const createLlmSlice: StateCreator<StoreState, [], [], LlmSlice> = (set, 
   batchMergeSummarize: async (nodeIds: string[], deleteAfter?: boolean, intent?: string) => {
     // One-Rule honest converge: the synthesis node hangs from the selection's
     // SINKS with real edges — ancestors flow in along the chains (transitive
-    // reduction, same as exploreFrom), nothing embedded as invisible text.
+    // reduction), nothing embedded as invisible text.
     const { nodes, edges } = get();
     const selected = nodeIds
       .map((id) => nodes.find((n) => n.id === id))

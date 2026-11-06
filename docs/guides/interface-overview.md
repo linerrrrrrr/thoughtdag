@@ -77,7 +77,7 @@ Reviewer and condensed nodes use their own dedicated marks. See [Versions, stale
 ## 4. Wires
 
 - **Purple solid wire**: primary conversation path carrying full upstream context.
-- **Orange solid wire**: an exploration branch created from selected text; it is still part of the context structure.
+- **Orange solid wire**: a passage or role branch, still part of the context structure. Existing passage branches remain available.
 - **Purple dashed wire**: summary reference carrying the referenced question and answer plus the upstream question trail.
 - **Red dashed wire**: sliding reviewer relationship.
 

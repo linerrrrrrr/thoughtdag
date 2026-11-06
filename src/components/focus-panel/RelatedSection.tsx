@@ -139,7 +139,7 @@ export default function RelatedSection({ question, answer }: { question: string;
               <div className="flex w-full flex-wrap items-center gap-1 pt-1" data-related-topic-picker>
                 <span className="text-control text-ink-faint">{t('panel.relatedPickTopic')}</span>
                 {(table ?? []).filter((x) => !picked.includes(x.id)).map((x) => (
-                  <button key={x.id} onMouseDown={(e) => e.preventDefault()} onClick={() => { togglePick(x.id); finishAdding(); }} title={x.description} className="text-control px-2 py-0.5 rounded-tag border border-line text-ink-muted hover:bg-wash" data-related-topic-option={x.id}>{x.name}</button>
+                  <button key={x.id} onMouseDown={(e) => e.preventDefault()} onClick={() => { togglePick(x.id); finishAdding(); }}  className="text-control px-2 py-0.5 rounded-tag border border-line text-ink-muted hover:bg-wash" data-related-topic-option={x.id}>{x.name}</button>
                 ))}
               </div>
             )}

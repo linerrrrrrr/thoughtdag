@@ -336,7 +336,7 @@ try {
     const title = header.querySelector('span');
     const frame = header.closest('.react-flow__node').getBoundingClientRect();
     const toggle = header.querySelector('[data-frame-carry-toggle]').getBoundingClientRect();
-    return { tooltip: title.title, truncated: title.scrollWidth > title.clientWidth, left: toggle.left, right: toggle.right,
+    return { tooltip: title.dataset.tooltip, truncated: title.scrollWidth > title.clientWidth, left: toggle.left, right: toggle.right,
       frameLeft: frame.left, frameRight: frame.right };
   });
   assert.equal(longHeader.tooltip, longTitle, 'the complete long title remains available');

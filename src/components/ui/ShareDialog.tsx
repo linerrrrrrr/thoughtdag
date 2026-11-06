@@ -72,7 +72,7 @@ export default function ShareDialog() {
           <button
             onClick={() => void exportActiveProjectJson({ sharedReadonly: readonlyMark })}
             data-share-fullfile
-            title={t('share.fullFile')}
+            data-tooltip={t('share.fullFile')}
             className="text-control px-3 py-1.5 rounded-control border border-line text-ink-muted hover:bg-wash hover:text-ink transition-colors flex items-center gap-1.5"
           >
             <FileDown size={13} strokeWidth={1.75} />

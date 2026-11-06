@@ -89,11 +89,11 @@ try {
   assert.equal(await page.locator('[data-layout-quick], [data-canvas-layout-entry]').count(), 0);
   assert.equal(await item('top-toolbar').locator('[data-layout-entry]').count(), 1);
   await item('canvas-header').screenshot({ path: `${output}/toolbar-wide.png` });
-  assert.match(await page.locator('.canvas-project-button').getAttribute('title'), /Long research canvas/);
+  assert.match(await page.locator('.canvas-project-button').getAttribute('data-tooltip'), /Long research canvas/);
   const densities = new Set();
   for (const lang of ['zh', 'en']) {
     await page.evaluate(async lang => (await window.__importLive('/src/i18n/index.ts')).useI18n.getState().setLang(lang), lang);
-    assert.equal(await item('search-entry').getAttribute('title'), await page.evaluate(async () => (await window.__importLive('/src/i18n/index.ts')).t('search.entryTitle')));
+    assert.equal(await item('search-entry').getAttribute('data-tooltip'), await page.evaluate(async () => (await window.__importLive('/src/i18n/index.ts')).t('search.entryTitle')));
     for (const panelWidth of [0, 520, 900]) {
       await page.evaluate(width => {
         window.__ui.setState({ panelOpen: width > 0, panelNodeId: width ? 'a' : null, panelWidth: width || 520 });

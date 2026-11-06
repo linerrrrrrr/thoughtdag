@@ -94,7 +94,7 @@ try {
   assert.equal(deriveFollowupModel({ question: 'ordinary' }, 'api/global'), undefined, 'ordinary questions retain global selection');
 
   // A continuation is a new empty node; it performs no transport work until
-  // that node is explicitly sent. The same creator serves wire and text drags.
+  // that node is explicitly sent after creation by a wire drag.
   let historyWrites = 0;
   globalThis.generated = [];
   const setGraph = patch => Object.assign(graph, typeof patch === 'function' ? patch(graph) : patch);
@@ -120,11 +120,15 @@ try {
   assert.equal((await agentOutbound(draft.data.model, draftId)).continue, undefined, 'an active source turn is not resumed');
   parent.data.isLoading = false;
   graph.edges[0].selected = true;
-  const branchId = createQuestionDraft({ parentId: 'parent', branchContext: 'SELECTED_PASSAGE', branchYRatio: 0.3, editor: 'panel' });
+  const branchId = createQuestionDraft({ parentId: 'parent', editor: 'panel' });
   const branch = graph.nodes.find(node => node.id === branchId);
-  assert.equal(branch.data.questionEditor, 'panel'); assert.equal(branch.data.isBranch, true);
-  assert.equal(graph.edges.at(-1).data.branchYRatio, 0.3);
+  assert.equal(branch.data.questionEditor, 'panel'); assert.equal(branch.data.isBranch, false);
+  assert.deepEqual(graph.edges.at(-1).data, {});
   assert.equal(graph.edges.some(edge => edge.selected), false, 'creating a draft clears edge selection too');
+  // Previously saved passage branches still compile their quoted context.
+  branch.data.isBranch = true;
+  branch.data.branchContext = 'SELECTED_PASSAGE';
+  graph.edges.at(-1).data = { isBranchFromSelection: true, branchYRatio: 0.3 };
   assert.equal((await agentOutbound(branch.data.model, branchId)).continue, undefined, 'a selected passage compiles its own context');
   await graph.editQuestion(branchId, 'Explain the selection');
   assert.equal(generated.length, 1);

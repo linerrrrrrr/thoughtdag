@@ -107,7 +107,7 @@ export default function ProjectSwitcher({ onSwitched, children }: { onSwitched: 
       <div className="canvas-toolbar canvas-toolbar-main">
         <button
           onClick={() => setOpen(!open)}
-          title={active?.name} data-tooltip-overflow data-tooltip-icon-only aria-label={active?.name} aria-expanded={open}
+          data-tooltip={active?.name} data-tooltip-overflow data-tooltip-icon-only aria-label={active?.name} aria-expanded={open}
           disabled={switching}
           className="canvas-toolbar-button canvas-project-button disabled:opacity-60"
         >
@@ -133,9 +133,7 @@ export default function ProjectSwitcher({ onSwitched, children }: { onSwitched: 
           return (
             <CanvasToolbarOverflowAction label={unreachable ? ti('switcher.mirrorBadgeGone') : fmt(ti('switcher.mirrorBadge'), { runner: active.sourceSession!.runner })} icon={<ArrowLeftRight size={14} strokeWidth={1.75} aria-hidden="true" />}>
             <button
-              title={unreachable
-                ? ti('switcher.mirrorBadgeGone')
-                : fmt(ti('switcher.mirrorBadge'), { runner: active.sourceSession!.runner })}
+
               onClick={() => { setAtlasFocus(active.sourceSession!.sessionId); setAtlasOpen(true); }}
               className={`canvas-toolbar-button canvas-session-button font-mono ${unreachable ? 'opacity-50 line-through decoration-1' : ''}`}
               data-twin-badge={unreachable ? 'unreachable' : 'live'}
@@ -205,7 +203,7 @@ export default function ProjectSwitcher({ onSwitched, children }: { onSwitched: 
                       <Trash2 size={14} strokeWidth={1.75} />
                     </button>
                     <button
-                      title={t('switcher.archive')}
+                      data-tooltip={t('switcher.archive')} aria-label={t('switcher.archive')}
                       className="opacity-0 group-hover:opacity-100 text-ink-faint hover:text-amber-600 p-1 rounded-control transition-all shrink-0"
                       onClick={(e) => { e.stopPropagation(); void setProjectArchived(p.id, true).then(onSwitched); }}
                       data-archive-canvas
@@ -259,7 +257,7 @@ export default function ProjectSwitcher({ onSwitched, children }: { onSwitched: 
                   void window.desktop!.tray!({ on }).then((r) => setCloseToTray(r.closeToTray)).catch(() => setCloseToTray(!on));
                 }}
                 className="w-full text-left px-3 py-2 text-control text-ink-muted hover:bg-wash transition-colors flex items-center gap-2"
-                title={t('switcher.closeToTrayHint')}
+
                 data-close-to-tray={closeToTray ? 'on' : 'off'}
               >
                 <Minimize2 size={15} strokeWidth={1.75} /> {t('switcher.closeToTray')}

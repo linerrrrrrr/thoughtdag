@@ -6,7 +6,7 @@ import { useT, useI18n } from '../i18n';
 import { COLORS } from '../lib/constants';
 
 // Miniature diagrams for each concept — same visual language as the canvas:
-// solid accent chain, dashed warm branch, and gently rounded cards with continuous borders.
+// solid accent chains, highlighted passages, and gently rounded cards with continuous borders.
 function Card({ x, y, w = 34, h = 20, tone = 'plain' }: { x: number; y: number; w?: number; h?: number; tone?: 'plain' | 'accent' | 'warm' }) {
   return (
     <g>
@@ -35,14 +35,11 @@ const DIAGRAMS: Record<number, React.ReactNode> = {
   ),
   3: (
     <svg viewBox="0 0 120 84" className="w-full h-full">
-      <Card x={20} y={12} tone="accent" />
-      <line x1={37} y1={32} x2={37} y2={50} stroke={COLORS.accent} strokeWidth={1.75} />
-      <path d={`M 34 47 L 37 52 L 40 47 Z`} fill={COLORS.accent} />
-      <Card x={20} y={52} />
-      <rect x={26} y={58} width={14} height={3} rx={2} fill={COLORS.trace} opacity={0.6} />
-      <path d="M 54 62 C 64 62, 62 40, 72 38" stroke={COLORS.warm} strokeWidth={1.75} fill="none" strokeDasharray="4 3" />
-      <path d={`M 69 35.5 L 74 38 L 70 41 Z`} fill={COLORS.warm} />
-      <Card x={74} y={28} tone="warm" />
+      <Card x={28} y={10} w={64} h={64} tone="accent" />
+      <rect x={36} y={29} width={42} height={6} rx={2} fill={COLORS.trace} opacity={0.6} />
+      <line x1={36} y1={42} x2={84} y2={42} stroke={COLORS.line} strokeWidth={2} />
+      <rect x={36} y={49} width={32} height={6} rx={2} fill={COLORS.trace} opacity={0.6} />
+      <line x1={36} y1={62} x2={78} y2={62} stroke={COLORS.line} strokeWidth={2} />
     </svg>
   ),
   4: (

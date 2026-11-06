@@ -141,7 +141,7 @@ function MermaidBlock({ code, source }: { code: string; source: ReactNode }) {
   const toggle = svg && (
     <button
       onClick={(e) => { e.stopPropagation(); setShowSource((v) => !v); }}
-      title={showSource ? t('md.diagramView') : t('md.diagramSource')}
+      data-tooltip={showSource ? t('md.diagramView') : t('md.diagramSource')}
       className={`absolute top-1.5 ${showSource ? 'right-9' : 'right-1.5'} w-6 h-6 rounded-control bg-card border border-line text-ink-faint hover:text-accent flex items-center justify-center opacity-0 group-hover/diagram:opacity-100 transition-opacity nodrag nopan`}
       data-diagram-toggle
     >
@@ -211,7 +211,7 @@ function LocalImage({ path, alt }: { path: string; alt?: string }) {
     return () => { live = false; };
   }, [path]);
   if (src) {
-    return <ConversationLink href={path}><img src={src} alt={alt ?? basenameOf(path)} title={path} className="cursor-zoom-in nopan" /></ConversationLink>;
+    return <ConversationLink href={path}><img src={src} alt={alt ?? basenameOf(path)}  className="cursor-zoom-in nopan" /></ConversationLink>;
   }
   return (
     <ConversationLink href={path}
@@ -224,10 +224,10 @@ function LocalImage({ path, alt }: { path: string; alt?: string }) {
   );
 }
 
-function Img(props: React.ImgHTMLAttributes<HTMLImageElement>) {
+function Img({ title, ...props }: React.ImgHTMLAttributes<HTMLImageElement>) {
   const local = localPathOf(props.src, useContext(BaseContext));
   if (local) return <LocalImage path={local} alt={props.alt} />;
-  return <img {...props} />;
+  return <img {...props} data-tooltip={title} />;
 }
 
 const COMPONENTS = { pre: Pre, table: Table, a: Anchor, img: Img };
@@ -314,7 +314,7 @@ export const HighlightedMarkdown = memo(function HighlightedMarkdown({ content, 
   };
   for (const h of highlights) collect(h, MARK_OPEN, 0);
   for (const em of exploreMarks ?? []) {
-    collect(em.text, `<mark class="explore-mark" data-explore-target="${escapeAttr(em.nodeId)}" title="${escapeAttr(em.title)}">`, 1);
+    collect(em.text, `<mark class="explore-mark" data-explore-target="${escapeAttr(em.nodeId)}">`, 1);
   }
   // Overlaps: the user's own highlight outranks the structural trace.
   spans.sort((a, b) => a.prio - b.prio || a.start - b.start);

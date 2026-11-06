@@ -36,6 +36,28 @@ const settle = () => page.evaluate(() => new Promise(resolve => requestAnimation
 const near = (actual, expected, message) => assert.ok(Math.abs(actual - expected) < 2, `${message}: ${actual} versus ${expected}`);
 const read = id => page.evaluate(id => window.__store.getState().nodes.find(item => item.id === `resize-${id}`), id);
 const geometry = item => ({ width: item.width, height: item.height, position: item.position, keepOverviewHeight: item.data.keepOverviewHeight });
+const screenSize = async target => target.evaluate(element => {
+  const box = element.getBoundingClientRect();
+  const mark = element.querySelector('.resize-grip').getBoundingClientRect();
+  const css = getComputedStyle(element);
+  return { hit: { width: box.width, height: box.height }, mark: { width: mark.width, height: mark.height },
+    background: css.backgroundColor, color: css.color, border: css.borderWidth };
+});
+const checkScreenSize = (size, direction, label) => {
+  assert.ok(Math.abs(size.hit.width - 32) < .5 && Math.abs(size.hit.height - 32) < .5,
+    `${label} keeps a 32px screen hit target: ${JSON.stringify(size.hit)}`);
+  const length = direction === 'width' ? size.mark.height : size.mark.width;
+  assert.ok(length >= 11.5 && length <= 16.5, `${label} keeps its visible mark between 12px and 16px: ${length}`);
+  if (direction === 'both') assert.ok(Math.abs(size.mark.height - size.mark.width) < .5, `${label} keeps a square corner mark`);
+  else {
+    const thickness = direction === 'width' ? size.mark.width : size.mark.height;
+    assert.ok(Math.abs(thickness - 2) < .3, `${label} keeps a readable 2px screen stroke: ${thickness}`);
+  }
+};
+const doNotOverlap = (first, second, label) => assert.ok(
+  first.x + first.width <= second.x + .5 || second.x + second.width <= first.x + .5
+  || first.y + first.height <= second.y + .5 || second.y + second.height <= first.y + .5,
+  `${label}: ${JSON.stringify({ first, second })}`);
 const selection = () => page.evaluate(() => [...window.__store.getState().selectedNodeIds].sort());
 const select = async ids => {
   await page.evaluate(ids => window.__store.getState().setSelectedNodeIds(ids.map(id => `resize-${id}`)), ids);
@@ -50,12 +72,30 @@ const setZoom = async zoom => {
   await page.evaluate(zoom => window.__rf.setViewport({ x: 20, y: 20, zoom }, { duration: 0 }), zoom);
   await settle();
 };
+const frameNode = async (id, zoom) => {
+  await page.evaluate(({ id, zoom }) => {
+    const item = window.__store.getState().nodes.find(item => item.id === `resize-${id}`);
+    window.__rf.setViewport({ x: 40 - item.position.x * zoom, y: 180 - item.position.y * zoom, zoom }, { duration: 0 });
+  }, { id, zoom });
+  await settle();
+};
 const startDrag = async (target, dx, dy) => {
+  await target.hover();
   const box = await target.boundingBox();
   assert.ok(box, 'Resize control is visible');
+  const origin = await target.evaluate(element => {
+    const box = element.getBoundingClientRect();
+    const hit = document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2);
+    const node = element.closest('.react-flow__node');
+    return { ownsHit: hit === element || element.contains(hit), hit: hit?.outerHTML.slice(0, 400),
+      button: box.toJSON(), node: node?.getBoundingClientRect().toJSON(), viewport: window.__rf.getViewport() };
+  });
+  assert.equal(origin.ownsHit, true, `The resize control owns its actual pointer origin: ${JSON.stringify(origin)}`);
   await target.evaluate(element => element.addEventListener('pointerdown', event => { element.__testPointerId = event.pointerId; }, { once: true }));
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
   await page.mouse.down();
+  await settle();
+  assert.equal(await target.getAttribute('data-resize-active'), 'true', `The real pointerdown starts the resize gesture: ${JSON.stringify(origin)}`);
   await page.mouse.move(box.x + box.width / 2 + dx, box.y + box.height / 2 + dy, { steps: 8 });
   await settle();
 };
@@ -264,26 +304,137 @@ try {
   await settle();
   check('Connection and sizing gestures expose only their relevant controls');
 
+  const zooms = [.25, .6, 1, 1.5, 2];
+  await page.evaluate(() => {
+    window.__store.getState().setSelectionGeometry(['resize-a', 'resize-b'], { width: 600, height: 360, lockAspectRatio: false });
+    window.__store.setState(state => ({ nodes: state.nodes.map(item => item.id === 'resize-a' ? { ...item, position: { x: 80, y: 100 } }
+      : item.id === 'resize-b' ? { ...item, position: { x: 800, y: 180 } } : item) }));
+  });
+  await settle();
   for (const theme of ['dark', 'light']) {
     await appearance(theme);
-    for (const zoom of [1, .6]) {
+    for (const zoom of zooms) {
       await setZoom(zoom);
       const styles = [];
       for (const id of ['a', 'b']) {
         await select([id]);
-        const target = handle(id, 'both');
-        const box = await target.boundingBox();
-        assert.ok(box && box.width >= 28 && box.height >= 28, 'Visible full cards keep a usable hit target at either zoom');
-        styles.push(await target.evaluate(element => {
-          const css = getComputedStyle(element), grip = getComputedStyle(element.firstElementChild);
-          return { background: css.backgroundColor, color: css.color, border: css.borderWidth, glyph: [grip.width, grip.height] };
-        }));
+        await frameNode(id, zoom);
+        const directions = [];
+        for (const direction of ['width', 'height', 'both']) {
+          assert.equal(await handle(id, direction).isVisible(), true, `${id} ${direction} fits at ${zoom} zoom`);
+          const size = await screenSize(handle(id, direction));
+          checkScreenSize(size, direction, `${theme} ${id} ${direction} at ${zoom}`);
+          directions.push(size);
+        }
+        styles.push(directions);
       }
-      assert.deepEqual(styles[0], styles[1], 'Conversation and material resize controls share one visual recipe');
+      for (let index = 0; index < styles[0].length; index++) {
+        const thought = styles[0][index], material = styles[1][index];
+        assert.deepEqual([thought.background, thought.color, thought.border], [material.background, material.color, material.border],
+          'Conversation and material resize controls share one visual recipe');
+        near(thought.mark.width, material.mark.width, 'Both node kinds share the same screen mark width');
+        near(thought.mark.height, material.mark.height, 'Both node kinds share the same screen mark height');
+      }
+      await select(['a', 'b']);
+      for (const [index, direction] of ['width', 'height', 'both'].entries()) {
+        const grouped = await screenSize(page.locator(`[data-selection-resize="${direction}"]`));
+        checkScreenSize(grouped, direction, `${theme} selection ${direction} at ${zoom}`);
+        near(grouped.mark.width, styles[0][index].mark.width, 'Single and multi-selection share the same visible width');
+        near(grouped.mark.height, styles[0][index].mark.height, 'Single and multi-selection share the same visible height');
+      }
       await select(['a']);
+      await frameNode('a', zoom);
       await screenshot(`${theme}-${Math.round(zoom * 100)}-percent`);
     }
   }
+  check('25%, 60%, 100%, 150% and 200% zoom keep bounded screen marks and 32px hit targets in both themes and selection modes');
+
+  await select(['a']);
+  for (const zoom of zooms) {
+    await page.evaluate(() => window.__store.getState().setSelectionGeometry(['resize-a'], { width: 600, height: 360, lockAspectRatio: false }));
+    await frameNode('a', zoom);
+    const before = await read('a');
+    await drag(handle('a', 'width'), 24, 0);
+    const afterWidth = await read('a');
+    near(afterWidth.width, before.width + 24 / zoom, `Width drag uses canvas units at ${zoom}`);
+    near(afterWidth.height, before.height, `Width drag preserves height at ${zoom}`);
+    await drag(handle('a', 'height'), 0, 20);
+    const afterHeight = await read('a');
+    near(afterHeight.height, afterWidth.height + 20 / zoom, `Height drag uses canvas units at ${zoom}`);
+    near(afterHeight.width, afterWidth.width, `Height drag preserves width at ${zoom}`);
+    assert.deepEqual(afterHeight.position, before.position, 'Resizing does not move the card');
+    await page.evaluate(() => window.__store.getState().undo());
+    assert.deepEqual(geometry(await read('a')), geometry(afterWidth), `One undo reverses the height drag at ${zoom}`);
+    await page.evaluate(() => window.__store.getState().undo());
+    assert.deepEqual(geometry(await read('a')), geometry(before), `One undo reverses the width drag at ${zoom}`);
+  }
+  check('Actual width and height drags use screen distance divided by zoom and remain independently undoable from 25% to 200%');
+
+  await page.evaluate(() => window.__store.getState().setSelectionGeometry(['resize-a'], { width: 600, height: 360, lockAspectRatio: true }));
+  await frameNode('a', .25);
+  const beforeCrowdedDrag = await read('a');
+  await startDrag(handle('a', 'width'), -40, 0);
+  assert.equal(await handle('a', 'width').isVisible(), true, 'An active handle stays available when proportional resizing makes the card crowded');
+  assert.equal(await handle('a', 'width').getAttribute('data-resize-active'), 'true');
+  await page.keyboard.press('Escape');
+  await page.mouse.up();
+  await settle();
+  assert.deepEqual(geometry(await read('a')), geometry(beforeCrowdedDrag), 'Escape still restores a gesture that crosses the crowding threshold');
+  check('Crossing a crowding threshold during an active drag preserves the gesture and its Escape restoration');
+
+  await seed();
+  await page.evaluate(() => {
+    window.__store.getState().setSelectionGeometry(['resize-a', 'resize-b'], { width: 360, height: 240, lockAspectRatio: false });
+  });
+  for (const zoom of [.15, .04]) {
+    await page.evaluate(zoom => window.__rf.setViewport({ x: 120, y: 240, zoom }, { duration: 0 }), zoom);
+    await settle();
+    for (const id of ['a', 'b']) {
+      await select([id]);
+      assert.equal(await handle(id, 'width').isVisible(), false, `Crowded ${id} width control yields at ${zoom}`);
+      assert.equal(await handle(id, 'height').isVisible(), false, `Crowded ${id} height control yields at ${zoom}`);
+      assert.equal(await handle(id, 'both').isVisible(), zoom === .15, 'The corner yields when its hit area would cover the connection ports');
+      if (zoom === .15) checkScreenSize(await screenSize(handle(id, 'both')), 'both', `${id} corner at ${zoom}`);
+      else {
+        await node(id).hover();
+        assert.equal(await node(id).locator('[data-connection-role="source"][data-connection-side="bottom"]').evaluate(element => {
+          const box = element.getBoundingClientRect();
+          const hit = document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2);
+          return hit === element || element.contains(hit);
+        }), true, 'A tiny full-detail card keeps its bottom port directly reachable');
+      }
+    }
+    await select(['a', 'b']);
+    const corner = page.locator('[data-selection-resize="both"]');
+    assert.equal(await corner.isVisible(), zoom === .15, 'A selection too short for its corner target yields to the properties panel');
+    if (zoom === .15) checkScreenSize(await screenSize(corner), 'both', `selection corner at ${zoom}`);
+    const cornerBox = await corner.boundingBox();
+    for (const direction of ['width', 'height']) {
+      const axis = page.locator(`[data-selection-resize="${direction}"]`);
+      if (await axis.isVisible() && cornerBox) doNotOverlap(await axis.boundingBox(), cornerBox, `Selection ${direction} cannot overlap the corner at ${zoom}`);
+      if (zoom === .04) assert.equal(await axis.isVisible(), false, 'A tiny selection hides crowded edge targets');
+    }
+    await screenshot(`crowded-${Math.round(zoom * 100)}-percent`);
+  }
+  check('15% full-detail cards retain a corner target; 4% cards yield crowded controls while preserving connection access');
+
+  await seed();
+  await select(['a']);
+  const beforeAutomatic = geometry(await read('a'));
+  await page.evaluate(() => {
+    window.__ui.getState().setCanvasDetail('auto');
+    window.__store.setState(state => ({ nodes: state.nodes.map(item => ({ ...item, data: { ...item.data, detailLevel: undefined } })) }));
+  });
+  for (const zoom of [.6, .25]) {
+    await setZoom(zoom);
+    assert.equal(await node('a').locator('[data-node-resize]').count(), 0, 'Automatic overview does not expose working-card size controls');
+  }
+  await setZoom(1);
+  assert.equal(await node('a').locator('[data-node-resize]').count(), 3, 'Returning to working scale restores the same controls');
+  assert.deepEqual(geometry(await read('a')), beforeAutomatic, 'Semantic zoom does not change stored geometry');
+  check('Automatic summary and compact views still hide working-card controls and restore them without changing geometry');
+
+  await seed();
   await setZoom(1);
   await select(['b']);
   await page.evaluate(() => window.__store.getState().setSelectionGeometry(['resize-b'], { width: 380, height: 120 }));
@@ -291,14 +442,25 @@ try {
   await node('b').hover();
   const rightPort = node('b').locator('[data-connection-role="source"][data-connection-side="right"]');
   const portBox = await rightPort.boundingBox();
-  const widthGripBox = await handle('b', 'width').boundingBox();
-  assert.ok(portBox && widthGripBox);
-  assert.ok(Math.abs(portBox.y + portBox.height / 2 - widthGripBox.y - widthGripBox.height / 2) >= 31, 'A short material card keeps width and connection hit areas separated');
+  assert.ok(portBox);
+  assert.equal(await handle('b', 'width').isVisible(), false, 'A 120px material yields its crowded width handle');
+  assert.equal(await handle('b', 'both').isVisible(), true, 'A short material keeps corner resizing available');
   assert.equal(await rightPort.evaluate(element => {
     const box = element.getBoundingClientRect();
     const hit = document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2);
     return hit === element || element.contains(hit);
   }), true, 'The right connection port remains directly clickable on a 120px material card');
+  await page.evaluate(() => window.__store.getState().setSelectionGeometry(['resize-b'], { height: 160 }));
+  await settle();
+  assert.equal(await handle('b', 'width').isVisible(), true, 'A 160px material has room for the width handle');
+  const tallerPort = await rightPort.boundingBox();
+  const widthGripBox = await handle('b', 'width').boundingBox();
+  const cornerGripBox = await handle('b', 'both').boundingBox();
+  doNotOverlap(widthGripBox, { x: tallerPort.x - 10, y: tallerPort.y - 10, width: tallerPort.width + 20, height: tallerPort.height + 20 },
+    'The width target clears the complete side-port hit area');
+  doNotOverlap(widthGripBox, cornerGripBox, 'The width target clears the corner target on a short material');
+  await page.evaluate(() => window.__store.getState().setSelectionGeometry(['resize-b'], { height: 120 }));
+  await settle();
   const materialBody = node('b').locator('[data-content-body]');
   const shortCard = await node('b').boundingBox();
   const shortBody = await materialBody.boundingBox();
@@ -345,7 +507,7 @@ try {
   await page.evaluate(async () => (await window.__importLive('/src/i18n/index.ts')).useI18n.getState().setLang('en'));
   await screenshot('light-380-node-english');
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
-  check('Dark/light themes, 100%/60% zoom, 380px cards and a narrow English window retain usable controls');
+  check('380px cards and a narrow English window retain usable controls');
   assert.deepEqual(errors, []);
   assert.deepEqual(writes, [], 'Geometry editing never calls model APIs');
 } catch (error) {

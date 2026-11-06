@@ -278,7 +278,7 @@ export default function ApiKeyModal() {
                     {p.models.some((m) => m.vision) && <span> · 📷 {p.models.filter((m) => m.vision).length}</span>}
                   </div>
                 </div>
-                <button onClick={() => void refresh(p)} disabled={busy} title={t('provider.refreshTitle')} aria-label={t('provider.refreshTitle')} className="text-ink-faint hover:text-accent w-6 h-6 rounded-control flex items-center justify-center transition-colors shrink-0" data-provider-refresh>
+                <button onClick={() => void refresh(p)} disabled={busy}  aria-label={t('provider.refreshTitle')} className="text-ink-faint hover:text-accent w-6 h-6 rounded-control flex items-center justify-center transition-colors shrink-0" data-provider-refresh>
                   <Pencil size={13} strokeWidth={1.75} />
                 </button>
                 <button onClick={() => void remove(p.baseURL)} disabled={busy} aria-label={t('actions.deleteProvider')} className="w-6 h-6 rounded-control flex items-center justify-center transition-colors shrink-0 object-action-danger" data-icon-only>
@@ -411,16 +411,16 @@ export default function ApiKeyModal() {
                         }} />
                       <span className="font-mono flex-1 truncate">{m.id}</span>
                       {m.contextLength ? (
-                        <span className="text-meta text-ink-faint font-mono shrink-0" title={m.contextLength.toLocaleString()} data-model-window>
+                        <span className="text-meta text-ink-faint font-mono shrink-0" data-tooltip={m.contextLength.toLocaleString()} data-model-window>
                           {m.contextLength >= 1024 * 1024 ? `${Math.round(m.contextLength / (1024 * 1024))}M` : `${Math.round(m.contextLength / 1024)}k`}
                         </span>
                       ) : null}
                       {m.vision != null ? (
-                        m.vision && <span title={t('provider.visionYes')}>📷</span>
+                        m.vision && <span data-tooltip={t('provider.visionYes')}>📷</span>
                       ) : picked.has(m.id) && (
                         <button
                           onClick={(e) => { e.preventDefault(); const next = new Map(picked); next.set(m.id, !next.get(m.id)); setPicked(next); }}
-                          title={t('provider.visionToggle')} aria-label={t('provider.visionToggle')}
+                          data-tooltip={t('provider.visionToggle')} aria-label={t('provider.visionToggle')}
                           className={`flex items-center gap-0.5 text-control px-1.5 py-0.5 rounded-tag transition-colors ${picked.get(m.id) ? 'bg-accent/10 text-accent' : 'bg-wash text-ink-faint'}`}
                         >
                           <Camera size={11} strokeWidth={1.75} />

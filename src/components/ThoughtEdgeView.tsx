@@ -126,7 +126,7 @@ export default function ThoughtEdgeView({
                   state.setEdges(state.edges.map(edge => ({ ...edge, selected: additive ? edge.id === id ? !edge.selected : !!edge.selected : edge.id === id })));
                   requestProperties();
                 }}
-                  className={annotationClass} title={t('edgeEditor.title')} data-edge-annotation>{label}</button>)}
+                  className={annotationClass} data-tooltip={t('edgeEditor.title')} data-edge-annotation>{label}</button>)}
             </div>
           </div>
         </EdgeLabelRenderer>

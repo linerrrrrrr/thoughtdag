@@ -1,23 +1,19 @@
 ---
 title: "How to branch for a follow-up question without interrupting the main thread"
-description: "Branch an AI conversation from a passage, explore a side question, and reconnect useful context without losing the main thread."
+description: "Connect a new question to an existing node and reconnect useful context without losing the main thread."
 ---
 
 # How to branch for a follow-up question without interrupting the main thread
 
 You are discussing how to improve reading habits with an AI, and a specific phrase in its response—"bookmarks are a one-way archive"—sparks an idea you want to dig into. However, you haven't finished discussing the overall reading plan yet.
 
-ThoughtDAG is an open-source AI conversation canvas. You can branch from a passage in an answer, keep the original discussion, and develop both questions separately. Later, you choose which parts to connect to a follow-up.
+ThoughtDAG is an open-source AI conversation canvas. You can connect a new question to an existing node, keep the original discussion, and develop both questions separately. Later, you choose which parts to connect to a follow-up.
 
-## 1. Start from the text snippet
+## 1. Connect a new question to the existing node
 
-Double-click the main node to open the sidebar. Highlight the specific text you want to investigate within the AI's answer, and click the "Explore" button that appears. The selected text is now pinned above your input box. Type your new question, for example, "How can I make old bookmarks resurface?", and send it.
+Drag a connection from the original node to empty canvas to create an empty child. Enter your question in that new node, for example, "Regarding bookmarks being a one-way archive, how can I make old bookmarks resurface?", and explicitly send it.
 
-An orange branch will appear on the canvas extending from the original node. The selected text explains the origin of the follow-up, but the new branch still inherits the upstream path of the conversation. The selected words are not the branch’s only context.
-
-<TutorialMedia clip="branch" alt="Illustration: select a passage, explore a side question, and return to the main reading plan" />
-
-Illustration: branch from “Try recalling before rereading” while keeping the main reading plan. The branch inherits its upstream path, not only the selected sentence.
+The solid connection carries the original node and its effective upstream context into the new question. State the detail you want to discuss in the question while keeping the main reading plan intact.
 
 ## 2. Advance both questions separately
 
@@ -37,7 +33,7 @@ Illustration: the visible level of detail changes; the original text stays avail
 
 Suppose the branch suggests a weekly bookmark review, and you want to include it in your reading plan. Return to the main thread and continue to a new downstream node. Connect the useful branch node to that new node, then regenerate its answer.
 
-Alternatively, use `@` in the main thread’s follow-up box to select a named branch node and ask: “Incorporate the weekly bookmark review schedule into the plan.” The reference joins the new question. Use a new downstream node as the meeting point; do not wire a branch back into its own ancestor.
+Alternatively, use `@` in the new node’s question input to select a named branch node and ask: “Incorporate the weekly bookmark review schedule into the plan.” The reference joins the new question. Use a new downstream node as the meeting point; do not wire a branch back into its own ancestor.
 
 Check the wire direction and context preview to confirm which content you added. A summary reference carries the referenced question and answer plus its upstream question trail. It does not make those claims a conclusion you have accepted.
 

@@ -33,8 +33,6 @@
 }
 .node-token-heading { display: flex; align-items: center; gap: 12px; }
 .node-tool-marks { display: inline-flex; align-items: center; gap: 5px; color: inherit; font-size: var(--text-meta); line-height: var(--text-meta--line-height); white-space: nowrap; user-select: none; }
-.node-token-usage:hover { color: var(--color-ink); }
-.node-token-usage:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 4px; }
 .node-token-bar {
   display: block;
   box-sizing: border-box;

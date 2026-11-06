@@ -2,7 +2,6 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ReactFlow,
   Background,
-  Controls,
   MiniMap,
   SelectionMode,
   type OnNodesChange,
@@ -22,6 +21,7 @@ import './index.css';
 import { ListFilter } from 'lucide-react';
 import ThoughtNode from './components/ThoughtNode';
 import CanvasWheelZoom from './components/CanvasWheelZoom';
+import CanvasControls from './components/CanvasControls';
 import CanvasDetailControl from './components/CanvasDetailControl';
 import ParadigmNode from './components/ParadigmNode';
 import { useAppearance, edgePalette, LEGACY_EDGE_HEX } from './lib/appearance';
@@ -37,7 +37,7 @@ import { useCanvasSelectionCard, useCanvasToolCard, useCanvasToolCards } from '.
 import { useCanvasEditing } from './lib/canvas-editing';
 import { useContextInspection } from './lib/context-inspection';
 import { CanvasQuickLayoutContext, quickCanvasLayout } from './lib/canvas-layout-preferences';
-import { createEdgeAnchorResolver } from './lib/edge-anchors';
+import { createEdgeAnchorResolver, positionNodeAtConnectionEnd } from './lib/edge-anchors';
 import { createEdgeRoutingContext } from './lib/edge-path';
 import { CanvasEdgeRouting } from './lib/edge-routing-context';
 import FocusPanel from './components/focus-panel';
@@ -234,9 +234,13 @@ function Canvas() {
   const selectedEdges = edges.filter(edge => edge.selected && !edge.hidden);
   const editingEdge = selectedEdges.length === 1 ? selectedEdges[0] : undefined;
   const anchorResolver = useRef(createEdgeAnchorResolver());
+  const pendingConnectionDrops = useRef(new Map<string, {
+    parentId: string; end: { x: number; y: number }; node: ThoughtNodeType;
+  }>());
   const activeProjectId = useProjects((s) => s.activeId);
   useEffect(() => {
     anchorResolver.current.clear();
+    pendingConnectionDrops.current.clear();
     useCanvasEditing.getState().reset();
     useUiStore.getState().setPanelOpen(false);
   }, [activeProjectId]);
@@ -313,7 +317,7 @@ function Canvas() {
       archived: cs.getPropertyValue('--color-wash').trim() || '#EBEEF3',
       ordinary: resolvedTheme === 'dark' ? '#728098' : '#939FAF',
     };
-   
+
   }, [resolvedTheme]);
   const prevNodeCount = useRef(nodes.length);
   // Every "center on node" goes through here: when the focus panel is open
@@ -615,8 +619,29 @@ function Canvas() {
       const accepted = changes.filter(change => !(marquee.current && change.type === 'select')
         && !(previewing && (change.type === 'dimensions' || change.type === 'position')));
       if (!accepted.length) return;
-      const next = applyNodeChanges(accepted, current) as typeof current;
-      setNodes(next);
+      let next = applyNodeChanges(accepted, current) as typeof current;
+      const settled = new Map<ThoughtNodeType, ThoughtNodeType['position']>();
+      for (const [id, pending] of pendingConnectionDrops.current) {
+        const node = next.find(item => item.id === id);
+        const parent = next.find(item => item.id === pending.parentId);
+        if (!node || !parent || node.dragging || node.position.x !== pending.node.position.x || node.position.y !== pending.node.position.y) {
+          pendingConnectionDrops.current.delete(id);
+          continue;
+        }
+        const handles = rfInstance.current?.getInternalNode(id)?.internals.handleBounds?.target;
+        if (!node.measured?.width || !node.measured.height || !handles?.length) continue;
+        const position = positionNodeAtConnectionEnd(parent, node, pending.end, handles);
+        next = next.map(item => item.id === id ? { ...item, position } : item);
+        settled.set(pending.node, position);
+        pendingConnectionDrops.current.delete(id);
+      }
+      if (settled.size) {
+        // The first real measurement completes creation (not a second move).
+        // Keep its undo/redo snapshot at the same final port-anchored position.
+        useStore.setState(state => ({ nodes: next, history: state.history.map(snapshot => snapshot.nodes.some(node => settled.has(node)) ? {
+          ...snapshot, nodes: snapshot.nodes.map(node => settled.has(node) ? { ...node, position: settled.get(node)! } : node),
+        } : snapshot) }));
+      } else setNodes(next);
     },
     [setNodes, layoutPreview]
   );
@@ -753,11 +778,18 @@ function Canvas() {
       return;
     }
     const { clientX, clientY } = 'changedTouches' in event ? event.changedTouches[0] : event;
-    const pos = flowPosAt({ x: clientX, y: clientY });
+    const end = rfInstance.current?.screenToFlowPosition({ x: clientX, y: clientY }, { snapToGrid: false });
+    if (!end) return;
     const st = useStore.getState();
     if (st.nodes.find((n) => n.id === parentId)?.data.stepKind === 'frame') return;
-    createQuestionDraft({ position: pos, parentId });
-  }, [isParadigm, flowPosAt]);
+    const id = createQuestionDraft({ connectionEnd: end, parentId });
+    const node = useStore.getState().nodes.find(item => item.id === id);
+    if (node) {
+      pendingConnectionDrops.current.set(node.id, { parentId, end, node });
+      // The pointer already chose a visible location; keep this viewport and zoom.
+      prevNodeCount.current = useStore.getState().nodes.length;
+    }
+  }, [isParadigm]);
 
   const selectedNodeId = useStore((s) => s.selectedNodeId);
   const selectedNodeIds = useStore((s) => s.selectedNodeIds);
@@ -1542,7 +1574,7 @@ function Canvas() {
         {canvasNodesDraggable && !layoutOpen && <SelectionResizeControls onNodeContextMenu={onNodeContextMenu} />}
         <ThoughtMapPill panelShiftWidth={occupiedPanelWidth} />
         <TimelineBar />
-        <Controls position="bottom-left" />
+        <CanvasControls>
         {nodes.length > 0 && <MiniMap
           nodeColor={(node) => {
             const data = node.data as Record<string, unknown>;
@@ -1563,6 +1595,7 @@ function Canvas() {
           zoomable
           position="bottom-right"
         />}
+        </CanvasControls>
       </ReactFlow>
       </CanvasEdgeRouting.Provider>
 
@@ -1703,7 +1736,7 @@ function Canvas() {
                 <SearchToggles />
                 <button
                   onClick={() => setShowRootRole(!showRootRole)}
-                  title={t('landing.roleTrayTitle')}
+                  data-tooltip={t('landing.roleTrayTitle')} aria-label={t('landing.roleTrayTitle')}
                   className={`rounded-control w-8 h-8 flex items-center justify-center transition-colors shrink-0 ${
                     showRootRole || rootRole ? 'text-accent bg-accent/10 hover:bg-accent/20' : 'text-ink-faint hover:text-ink-muted hover:bg-line'
                   }`}
@@ -1869,7 +1902,7 @@ function Canvas() {
               onClick={() => spawnAskNode(flowPosAt(null))}
               draggable
               onDragStart={(e) => { e.dataTransfer.setData('application/thoughtdag-content', 'ask'); e.dataTransfer.effectAllowed = 'copy'; }}
-              title={t('palette.askTitle')}
+              data-tooltip={t('palette.askTitle')} aria-label={t('palette.askTitle')}
               className="w-9 h-9 rounded-control flex items-center justify-center text-accent hover:bg-accent/10 transition-colors cursor-grab"
             >
               <MessageCircleQuestion size={17} strokeWidth={1.75} />
@@ -1877,21 +1910,21 @@ function Canvas() {
           )}
           <button
             onPointerDown={(e) => paletteDrag(e, (screen) => spawnContentNode('note', flowPosAt(screen)))}
-            title={t('palette.noteTitle')}
+            data-tooltip={t('palette.noteTitle')} aria-label={t('palette.noteTitle')}
             className="w-9 h-9 rounded-control flex items-center justify-center text-amber-600 hover:bg-amber-500/10 transition-colors"
           >
             <StickyNote size={17} strokeWidth={1.75} />
           </button>
           <button
             onPointerDown={(e) => paletteDrag(e, (screen) => spawnContentNode('file', flowPosAt(screen)))}
-            title={t('palette.fileTitle')}
+            data-tooltip={t('palette.fileTitle')} aria-label={t('palette.fileTitle')}
             className="w-9 h-9 rounded-control flex items-center justify-center text-ink-muted hover:bg-wash transition-colors"
           >
             <Paperclip size={17} strokeWidth={1.75} />
           </button>
           <button
             onPointerDown={(e) => paletteDrag(e, (screen) => spawnFrame(flowPosAt(screen)))}
-            title={t('palette.frameTitle')}
+            data-tooltip={t('palette.frameTitle')} aria-label={t('palette.frameTitle')}
             className="w-9 h-9 rounded-control flex items-center justify-center text-ink-muted hover:bg-wash transition-colors"
           >
             <Frame size={17} strokeWidth={1.75} />
@@ -1927,7 +1960,7 @@ function Canvas() {
             <CanvasToolbarOverflowAction label={t('paradigm.instantiate')} icon={<ArrowRight size={14} />}>
             <button
               onClick={() => void instantiate()}
-              title={t('paradigm.instantiateTitle')}
+
               className="bg-ink text-card rounded-control h-8 px-3 flex items-center gap-1.5 hover:bg-ink/85 transition-colors text-control font-medium"
             >
               ▶ {t('paradigm.instantiate')}
@@ -1960,7 +1993,7 @@ function Canvas() {
               }).then((ok) => { if (ok) void useStore.getState().replayStale(); });
             }}
             className="bg-amber-500/10 border border-amber-500/40 rounded-control h-8 px-3 flex items-center gap-1.5 hover:bg-amber-500/20 transition-colors text-amber-600 text-control font-medium"
-            title={t('replay.chipTitle')}
+
           >
             <ListRestart size={14} strokeWidth={1.75} /> {staleCount}
           </button>
@@ -1972,7 +2005,7 @@ function Canvas() {
           <button
             onClick={() => useUiStore.getState().setCondenseDialogOpen(true)}
             className="bg-card border border-accent/50 rounded-control h-8 px-2 flex items-center justify-center gap-1.5 hover:bg-wash transition-colors text-accent"
-            title={fmt(t('condense.entryBuilding'), { i: String(condenseRunState.current), n: String(condenseRunState.total) })}
+            data-tooltip={fmt(t('condense.entryBuilding'), { i: String(condenseRunState.current), n: String(condenseRunState.total) })}
             data-condense-entry
           >
             <Loader2 size={14} strokeWidth={1.75} className="animate-spin" /><span className="text-control font-mono">{condenseRunState.current}/{condenseRunState.total}</span>
@@ -1990,13 +2023,13 @@ function Canvas() {
           className="canvas-toolbar relative z-10"
           data-top-toolbar
         >
-          <span className="canvas-toolbar-icon bg-card border border-line rounded-control h-8 px-3 flex items-center gap-1.5 text-ink-muted text-control font-medium" title={t('viewer.badge')} data-tooltip-icon-only aria-label={t('viewer.badge')} data-viewer-badge>
+          <span className="canvas-toolbar-icon bg-card border border-line rounded-control h-8 px-3 flex items-center gap-1.5 text-ink-muted text-control font-medium" data-tooltip={t('viewer.badge')} data-tooltip-icon-only aria-label={t('viewer.badge')} data-viewer-badge>
             <Eye size={14} strokeWidth={1.75} /><span className="canvas-toolbar-label">{t('viewer.badge')}</span>
           </span>
           <button
             onClick={() => setSearchOpen(true)}
             className="bg-card border border-line rounded-control w-8 h-8 flex items-center justify-center hover:bg-wash transition-colors text-ink-muted hover:text-accent"
-            title={t('search.entryTitle')}
+            data-tooltip={t('search.entryTitle')} aria-label={t('search.entryTitle')}
             data-search-entry
           >
             <Search size={15} strokeWidth={1.75} />
@@ -2005,7 +2038,7 @@ function Canvas() {
           <button
             onClick={() => exportActiveProjectJson()}
             className="bg-card border border-line rounded-control w-8 h-8 flex items-center justify-center hover:bg-wash transition-colors text-ink-muted hover:text-accent"
-            title={t('viewer.downloadJson')}
+            data-tooltip={t('viewer.downloadJson')} aria-label={t('viewer.downloadJson')}
           >
             <FileDown size={15} strokeWidth={1.75} />
           </button>
@@ -2013,7 +2046,7 @@ function Canvas() {
             href="https://github.com/chenxiachan/thoughtdag"
             target="_blank"
             rel="noreferrer"
-            title={t('viewer.openApp')} data-tooltip-icon-only aria-label={t('viewer.openApp')}
+            data-tooltip={t('viewer.openApp')} data-tooltip-icon-only aria-label={t('viewer.openApp')}
             className="canvas-toolbar-icon bg-ink text-card rounded-control h-8 px-3 flex items-center gap-1.5 hover:bg-ink/85 transition-colors text-control font-medium"
           >
             <ArrowRight size={14} /><span className="canvas-toolbar-label">{t('viewer.openApp')}</span>
@@ -2030,7 +2063,7 @@ function Canvas() {
             <button
               onClick={() => setFrameNavOpen((v) => !v)}
               className="canvas-toolbar-button canvas-toolbar-secondary"
-              title={t('toolbar.frames')}
+              data-tooltip={t('toolbar.frames')} aria-label={t('toolbar.frames')}
               aria-expanded={frameNavOpen}
               data-frame-nav-trigger
             >
@@ -2063,7 +2096,7 @@ function Canvas() {
             onClick={() => setChatOpen((v) => !v)}
             className="canvas-toolbar-button canvas-toolbar-secondary"
             aria-pressed={chatOpen}
-            title={t('chat.entryTitle')}
+            data-tooltip={t('chat.entryTitle')} aria-label={t('chat.entryTitle')}
             data-chat-entry
           >
             <MessageCircleQuestion size={16} strokeWidth={1.75} />
@@ -2074,7 +2107,7 @@ function Canvas() {
             onClick={() => setSearchOpen(true)}
             className="canvas-toolbar-button"
             aria-expanded={searchOpen}
-            title={t('search.entryTitle')}
+            data-tooltip={t('search.entryTitle')} aria-label={t('search.entryTitle')}
             data-search-entry
           >
             <Search size={16} strokeWidth={1.75} />
@@ -2096,7 +2129,7 @@ function Canvas() {
             else useCanvasEditing.getState().setLayoutOpen(true);
           }}
           className="canvas-toolbar-button canvas-toolbar-icon"
-          title={t('canvasLayout.title')}
+          data-tooltip={t('canvasLayout.title')}
           data-tooltip-icon-only
           aria-label={t('canvasLayout.title')}
           aria-expanded={showLayoutPanel}
@@ -2159,7 +2192,7 @@ function Canvas() {
                 <button
                   onClick={() => { setMoreOpen(false); setAnnotationsHidden(!annotationsHidden); }}
                   className="w-full text-left px-3 py-2 text-control text-ink hover:bg-wash transition-colors flex items-center gap-2.5"
-                  title={annotationsHidden ? undefined : t('toolbar.hideAnnotations')}
+                  data-tooltip={annotationsHidden ? undefined : t('toolbar.hideAnnotations')}
                 >
                   <StickyNote size={14} strokeWidth={1.75} className={`shrink-0 ${annotationsHidden ? 'text-accent' : 'text-ink-faint'}`} /> {annotationsHidden ? t('toolbar.menuAnnotationsShow') : t('toolbar.menuAnnotationsHide')}
                 </button>
@@ -2167,7 +2200,7 @@ function Canvas() {
               <button
                 onClick={() => { setMoreOpen(false); setWheelPans(!wheelPans); }}
                 className="w-full text-left px-3 py-2 text-control text-ink hover:bg-wash transition-colors flex items-center gap-2.5"
-                title={t('toolbar.wheelPansTitle')}
+
                 aria-pressed={wheelPans}
                 data-wheel-pans
               >
@@ -2196,7 +2229,7 @@ function Canvas() {
                 <button
                   onClick={() => { setMoreOpen(false); useUiStore.getState().setCondenseDialogOpen(true); }}
                   className="w-full text-left px-3 py-2 text-control text-ink hover:bg-wash transition-colors flex items-center gap-2.5"
-                  title={t('condense.entryTitle')}
+
                 >
                   <Minimize2 size={14} strokeWidth={1.75} className="text-ink-faint shrink-0" /> {t('condense.title')}…
                 </button>
@@ -2227,7 +2260,7 @@ function Canvas() {
                   }}
                   className="w-full text-left px-3 py-2 text-control text-ink hover:bg-wash transition-colors flex items-center gap-2.5"
                   data-share-link
-                  title={t('viewer.shareTitle')}
+                  data-tooltip={t('viewer.shareTitle')}
                 >
                   <Share2 size={14} strokeWidth={1.75} className="text-ink-faint shrink-0" /> {t('toolbar.menuShare')}
                 </button>
@@ -2245,7 +2278,7 @@ function Canvas() {
                 <button
                   onClick={() => { setMoreOpen(false); exportEventLogCsv(); }}
                   className="w-full text-left px-3 py-2 text-control text-ink hover:bg-wash transition-colors flex items-center gap-2.5"
-                  title={t('toolbar.exportEventsTitle')}
+                  data-tooltip={t('toolbar.exportEventsTitle')}
                 >
                   <FileText size={14} strokeWidth={1.75} className="text-ink-faint shrink-0" /> {t('toolbar.exportEvents')}
                 </button>
@@ -2289,7 +2322,7 @@ function Canvas() {
               <button
                 onClick={() => { setMoreOpen(false); useUiStore.getState().setMemoryManagerOpen(true); }}
                 className="w-full text-left px-3 py-2 text-control text-ink hover:bg-wash transition-colors flex items-center gap-2.5"
-                title={t('memory.entryTitle')}
+                data-tooltip={t('memory.entryTitle')}
               >
                 <Brain size={14} strokeWidth={1.75} className="text-ink-faint shrink-0" /> {t('memory.managerTitle')}
               </button>
@@ -2303,7 +2336,7 @@ function Canvas() {
                 <button
                   onClick={() => { setMoreOpen(false); const text = harnessDesktop ? `dsh-thoughtdag@${pluginUpdate.latest}` : pluginUpdateCommand(pluginUpdate.latest); void navigator.clipboard.writeText(text).then(() => toast('success', t(harnessDesktop ? 'plugin.updateCopiedDesktop' : 'plugin.updateCopied'))); }}
                   className="w-full text-left px-3 py-2 text-control text-accent hover:bg-wash transition-colors flex items-center gap-2.5"
-                  title={harnessDesktop ? fmt(t('plugin.updateHintDesktop'), { pkg: `dsh-thoughtdag@${pluginUpdate.latest}` }) : fmt(t('plugin.updateHint'), { cmd: pluginUpdateCommand(pluginUpdate.latest) })}
+
                   data-plugin-update
                 >
                   <Download size={14} strokeWidth={1.75} className="shrink-0" /> {fmt(t('plugin.updateAvailable'), { v: pluginUpdate.latest })}
@@ -2337,7 +2370,7 @@ function Canvas() {
           onClick={undo}
           disabled={!undoable.canUndo}
           className="canvas-toolbar-button"
-          title={t('canvas.undo')}
+          data-tooltip={t('canvas.undo')} aria-label={t('canvas.undo')}
         >
           <Undo2 size={16} strokeWidth={1.75} />
         </button>
@@ -2345,7 +2378,7 @@ function Canvas() {
           onClick={redo}
           disabled={!undoable.canRedo}
           className="canvas-toolbar-button"
-          title={t('canvas.redo')}
+          data-tooltip={t('canvas.redo')} aria-label={t('canvas.redo')}
         >
           <Redo2 size={16} strokeWidth={1.75} />
         </button>
@@ -2552,7 +2585,7 @@ function ThoughtMapPill({ panelShiftWidth }: { panelShiftWidth: number }) {
           onClick={flyBack}
           onMouseEnter={() => useUiStore.getState().setBeaconNodeId(lastActive.node.id)}
           onMouseLeave={() => useUiStore.getState().setBeaconNodeId(null)}
-          title={t('continue.buttonTitle')}
+          data-tooltip={t('continue.buttonTitle')}
           data-continue-pill
           className="flex h-10 items-center gap-related bg-action text-white rounded-control px-surface-inset whitespace-nowrap text-control hover:bg-action-strong transition-colors"
         >

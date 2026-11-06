@@ -91,7 +91,7 @@ Click a frame's title or border to select it; Ctrl / Cmd / Shift adds it to the 
 
 Frame settings contains name, color, size and position, aspect lock, movement behavior, and current membership counts. Names can be cleared. Multiple selected frames can share color, dimensions, ratio lock, and movement behavior; their names are not edited together. Name and geometry inputs retain the Enter-to-commit and Escape-to-cancel conventions.
 
-- **Select contents** selects fully enclosed nodes for explicit content actions such as synthesis, exploration, archive, and Markdown export. Frames themselves are excluded from content actions.
+- **Select contents** selects fully enclosed nodes for explicit content actions such as synthesis, archive, and Markdown export. Frames themselves are excluded from content actions.
 - **Select frames and contents** also selects the outer and nested frames, without duplicates.
 - **Fit bounds to contents** takes a snapshot of current contents and adjusts the frame with padding. Empty frames are unchanged, contents never move or resize, and locked frames retain their ratio.
 - **Duplicate frames only** copies only the selected frames. **Duplicate frames and contents** also copies contained objects and internal edges, and omits outside nodes and boundary edges.
@@ -116,7 +116,6 @@ Selecting one or more objects opens **Object format** below the toolbar to adjus
 | **Merge Summary** | Keep the originals and create a synthesis node |
 | **Merge & Delete** | Create the synthesis, then remove the selected originals |
 | **Weave highlights** | When highlights exist, weave the selected excerpts into cited prose |
-| **Explore** | Ask a new question using the selection as material |
 | **Archive** | Keep the nodes but exclude them from context traversal |
 | **Duplicate** | Copy the selection and its internal wires, excluding wires that cross its boundary |
 | **Align** | Align or distribute the selected objects, preserving context order |
@@ -126,7 +125,7 @@ Selecting one or more objects opens **Object format** below the toolbar to adjus
 
 Click outside the selection or press `Esc` to leave multi-selection; the clicked target still works. The selection's format panel, alignment menu, and object-type switch remain usable without clearing it. Ctrl/Cmd/Shift still append or toggle objects.
 
-Here, **Explore** opens a [conversation branch](/guides/conversations#explore-from-selected-text), **Merge Summary** and **Weave highlights** create new [content representations](/guides/organize), **Archive** changes [context traversal](/guides/context-control#change-what-enters-the-request), and **Export .md** belongs to [data and sharing](/guides/data-sharing#import-and-export).
+Here, **Merge Summary** and **Weave highlights** create new [content representations](/guides/organize), **Archive** changes [context traversal](/guides/context-control#change-what-enters-the-request), and **Export .md** belongs to [data and sharing](/guides/data-sharing#import-and-export).
 
 ## Canvases and recovery
 

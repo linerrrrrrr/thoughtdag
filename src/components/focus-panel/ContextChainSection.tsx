@@ -30,7 +30,7 @@ function MemoryRow() {
     <button
       onClick={() => setMemoryManagerOpen(true)}
       className="w-full text-left rounded-control px-2 py-1.5 hover:bg-wash transition-colors group flex items-center gap-2 text-control"
-      title={t('memory.rowTitle')}
+
     >
       <span className="text-ink-faint shrink-0">🧠</span>
       <span className="text-ink-muted group-hover:text-accent transition-colors truncate flex-1">
@@ -73,7 +73,7 @@ export default function ContextChainSection({
   const [contextOpen, setContextOpen] = useState(false);
   const jump = (id: string) => { setSelectedNodeId(id); onFocusNode?.(id); };
   const staleDot = (id: string) => staleIds.includes(id) && (
-    <span className="w-1.5 h-1.5 shape-circle bg-amber-500 shrink-0" title={t('node.staleBadge')} />
+    <span className="w-1.5 h-1.5 shape-circle bg-amber-500 shrink-0" data-tooltip={t('node.staleBadge')} />
   );
 
   const ancestors = partition.mainline.slice(0, -1); // exclude current node
@@ -138,7 +138,7 @@ export default function ContextChainSection({
                   {staleDot(ref.source.id)}
                   {isSingleNodeReference(ref.edge) ? <span
                     onClick={(e) => { e.stopPropagation(); setEdgeStructural(ref.edge.id, true); }}
-                    title={t('edge.depthToggleTitle')}
+
                     className="text-control px-1.5 py-px rounded-tag shrink-0 cursor-pointer bg-wash text-ink-faint transition-shadow hover:ring-1 hover:ring-accent/40"
                   >
                     {t('edgeEditor.reference')} →—
@@ -171,7 +171,7 @@ export default function ContextChainSection({
                 </span>
                 {staleDot(ancestor.id)}
                 {toolsIn.has(ancestor.id) && (
-                  <span className="text-control px-1.5 py-px rounded-tag bg-warm/10 text-warm shrink-0" title={t('chain.toolsInTitle')} data-chain-tools-in>
+                  <span className="text-control px-1.5 py-px rounded-tag bg-warm/10 text-warm shrink-0"  data-chain-tools-in>
                     {fmt(t('chain.toolsIn'), { tok: toolsIn.get(ancestor.id)!.toLocaleString() })}
                   </span>
                 )}

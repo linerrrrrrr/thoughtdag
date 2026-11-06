@@ -1,4 +1,4 @@
-// Local fixtures verify the status header remains a drag surface, including tooltips.
+// Local fixtures verify static status metadata remains a drag surface without popups.
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
@@ -91,9 +91,10 @@ const center = async locator => {
   assert.ok(rect, 'Drag target must be visible');
   return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
 };
-const drag = async (label, point, expectTip = false) => {
+const drag = async (label, point) => {
   await page.mouse.move(point.x, point.y);
-  if (expectTip) await tip().waitFor();
+  await page.waitForTimeout(400);
+  assert.equal(await tip().count(), 0, `${label} has no hover window`);
   await page.mouse.down();
   await tip().waitFor({ state: 'detached' });
   await page.mouse.move(point.x + 72, point.y + 36, { steps: 12 });
@@ -104,7 +105,7 @@ const drag = async (label, point, expectTip = false) => {
   // can be consumed before the node receives the remaining displacement.
   assert.ok(position.x >= 64 && position.x <= 74 && position.y >= 31 && position.y <= 38,
     `${label} should drag by 72,36; received ${JSON.stringify(position)}`);
-  check(`${label} starts header drag and dismisses its tooltip without consuming the gesture`);
+  check(`${label} starts header drag without opening a tooltip or consuming the gesture`);
 };
 const within = async (child, parent, label) => {
   const c = await child.boundingBox(), p = await parent.boundingBox();
@@ -179,25 +180,21 @@ try {
   assert.doesNotMatch(await node().locator('.thought-node-header').innerText(), /\btok\b/);
   const beforeHover = await snapshotData();
   await usage().hover();
-  await tip().waitFor();
-  const detailText = await tip().innerText();
-  for (const part of ['问题', '回答', '工具', '思考', '6.7%', '13.3%', '53.3%', '26.7%']) assert.ok(detailText.includes(part), `Missing detail ${part}: ${detailText}`);
-  assert.equal((await usage().locator('[data-tool-marks]').innerText()).trim(), '2', 'The compact tool mark only shows its icon and count');
-  assert.ok(detailText.includes('Read×1') && detailText.includes('Bash×1'), 'Tool names remain in the shared details');
-  assert.equal(await usage().locator('[title], [tabindex]').count(), 0, 'The usage group has one tooltip and one keyboard focus target');
-  const sharedTip = await tip().elementHandle();
-  const sharedBounds = await tip().boundingBox();
-  for (const target of [usage().locator('[data-node-token-total]'), usage().locator('[data-tool-marks] svg'), usage().locator('[data-tool-marks]'), bar()]) {
+  await page.waitForTimeout(450);
+  assert.equal(await tip().count(), 0, 'Token estimate has no details popup');
+  assert.equal((await usage().locator('[data-tool-marks]').innerText()).trim(), '2');
+  for (const target of [usage(), usage().locator('[data-node-token-total]'), usage().locator('[data-tool-marks] svg'), usage().locator('[data-tool-marks]'), bar()]) {
     await target.hover();
-    assert.ok(await sharedTip.evaluate(element => element.isConnected), 'Moving inside the group must not dismiss the tooltip');
-    assert.equal(await tip().innerText(), detailText, 'Tokens, tool count and bar share the same details');
-    assert.deepEqual(await tip().boundingBox(), sharedBounds, 'The shared tooltip stays anchored to the group');
+    await page.waitForTimeout(400);
+    assert.equal(await tip().count(), 0, 'Every part of the token group stays quiet');
+    assert.equal(await target.getAttribute('title'), null);
+    assert.equal(await target.getAttribute('data-tooltip'), null);
   }
-  assert.equal(await tip().evaluate(element => getComputedStyle(element).pointerEvents), 'none');
+  assert.equal(await usage().getAttribute('tabindex'), null, 'Static metadata is not an extra focus stop');
   assert.equal(await snapshotData(), beforeHover, 'Hover must not mutate node data');
   assert.deepEqual(writes, [], 'Hover must not issue writes');
-  await screenshot('light-status-details');
-  check('Total, tool icon/count and bar share one stable read-only tooltip with the same four-part estimate');
+  await screenshot('light-status-no-popup');
+  check('Total, tool count and composition remain visible without a floating details window');
 
   await reset();
   const emptyPoint = await node().locator('.thought-node-header').evaluate(header => {
@@ -211,22 +208,17 @@ try {
   assert.ok(emptyPoint, 'The status header retains blank drag space');
   await drag('Header blank space', emptyPoint);
   await reset();
-  await drag('Token total', await center(usage().locator('[data-node-token-total]')), true);
+  await drag('Token total', await center(usage().locator('[data-node-token-total]')));
   await reset();
-  await drag('Token composition bar', await center(bar()), true);
+  await drag('Token composition bar', await center(bar()));
   await reset();
-  await drag('Tool-call label', await center(node().locator('[data-tool-marks]')), true);
+  await drag('Tool-call label', await center(node().locator('[data-tool-marks]')));
 
   await reset();
   await node().locator('.thought-node-header button').first().focus();
   await page.keyboard.press('Tab');
-  await tip().waitFor();
-  assert.equal(await usage().evaluate(element => document.activeElement === element), true);
-  assert.match(await tip().innerText(), /150/);
-  await screenshot('keyboard-status-details');
-  await page.keyboard.press('Escape');
-  await tip().waitFor({ state: 'detached' });
-  check('Keyboard focus reveals the same token details and Escape dismisses the tooltip');
+  assert.equal(await usage().evaluate(element => document.activeElement === element), false);
+  check('Keyboard navigation skips the static token estimate');
 
   await reset();
   await node().locator('[data-node-metadata-toggle]').click();
@@ -264,12 +256,10 @@ try {
       await within(node().locator('[data-tool-marks]'), header, 'Tool calls');
       await within(node().locator('[data-node-details]'), header, 'Details button');
       await usage().hover();
-      await tip().waitFor();
-      assert.ok((await tip().innerText()).includes(lang === 'en' ? 'Turn content estimate' : '本轮内容估算'), `Tooltip must use ${lang}`);
-      assert.equal((await node().locator('[data-tool-marks]').innerText()).trim(), '2', `The compact tool count has no text label in ${lang}`);
-      assert.equal(await tip().evaluate(element => {
-        const rect = element.getBoundingClientRect(); return rect.left >= 0 && rect.right <= innerWidth && rect.top >= 0 && rect.bottom <= innerHeight;
-      }), true, 'Tooltip fits the viewport');
+      await page.waitForTimeout(400);
+      assert.equal(await tip().count(), 0, 'Narrow cards have no token popup');
+      assert.ok((await usage().getAttribute('aria-label')).includes(lang === 'en' ? 'Turn content estimate' : '本轮内容估算'));
+      assert.equal((await node().locator('[data-tool-marks]').innerText()).trim(), '2');
       await assertNarrow(`${lang}/${theme} at capture`);
       await screenshot(`${theme}-${lang}-narrow`);
       await page.mouse.move(1300, 850);
@@ -284,18 +274,18 @@ try {
   assert.equal(await node().locator('[data-tool-marks]').count(), 0);
   await assertGradient('Ordinary question and answer', [0, 10 / 30 * 100, 100]);
   await usage().hover();
-  await tip().waitFor();
-  assert.match(await tip().innerText(), /未记录/);
+  await page.waitForTimeout(400);
+  assert.equal(await tip().count(), 0);
   await screenshot('ordinary-turn-no-tools');
-  check('Ordinary turns still expose composition and missing thinking is identified as unrecorded');
+  check('Ordinary turns retain the question/answer composition without inventing a thinking segment');
 
   await page.mouse.move(1300, 850);
   await patch({ data: { response: '', responses: [''], tokenCount: 10 } });
   assert.match(await usage().innerText(), /10\s+tokens/);
   await assertGradient('Question-only turn', [0, 100]);
   await usage().hover();
-  await tip().waitFor();
-  assert.match(await tip().innerText(), /100%/);
+  await page.waitForTimeout(400);
+  assert.equal(await tip().count(), 0);
   await screenshot('single-part-turn');
   check('A single nonzero part remains a valid solid gradient spanning 0 to 100 percent');
 
@@ -303,8 +293,8 @@ try {
   await patch({ data: { question: '', response: '', responses: [''], tokenCount: 0 } });
   assert.match(await usage().innerText(), /0\s+tokens/);
   await usage().hover();
-  await tip().waitFor();
-  assert.doesNotMatch(await tip().innerText(), /NaN|Infinity/);
+  await page.waitForTimeout(400);
+  assert.equal(await tip().count(), 0);
   assert.equal(await bar().evaluate(element => getComputedStyle(element).backgroundImage), 'none', 'Empty content must not invent occupied color segments');
   assert.equal(await bar().locator(':scope > *').count(), 0);
   await screenshot('empty-turn');

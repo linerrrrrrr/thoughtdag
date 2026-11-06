@@ -27,7 +27,7 @@ export function AgentRerunButton({ nodeId, data, size = 'sm' }: { nodeId: string
     <button
       onClick={(e) => { e.stopPropagation(); setNodeModel(nodeId, agent); void rerunNode(nodeId, {}); }}
       className={`rounded-control ${size === 'md' ? 'h-7 px-2.5 text-control' : 'h-6 px-2 text-control'} inline-flex items-center gap-1 shrink-0 text-accent hover:bg-wash transition-colors`}
-      title={t('node.agentRerunTitle')}
+
       data-agent-rerun
     >
       <Wrench size={size === 'md' ? 13 : 12} strokeWidth={1.75} /> {t('node.agentRerun')}

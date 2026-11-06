@@ -163,7 +163,7 @@ vm.runInNewContext(readFileSync(runtimePath, 'utf8'), {
   module: loaded, exports: loaded.exports, Buffer, process, setTimeout, clearTimeout, setInterval, clearInterval,
   require(name) {
     if (name === 'node:child_process') return { spawn };
-    if (name === './where.cjs') return { locate: async () => ({ path: path.join(fixtureDir, 'codex.exe'), searched: [] }), childEnv: () => ({}) };
+    if (name === './where.cjs') return { createLocator: () => async () => ({ path: path.join(fixtureDir, 'codex.exe'), searched: [], failures: [] }), childEnv: () => ({}) };
     return runtimeRequire(name);
   },
 }, { filename: runtimePath });

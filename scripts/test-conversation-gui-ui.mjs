@@ -105,6 +105,20 @@ const assertClickable = async (target, label) => {
     return !!hit && (hit === element || element.contains(hit));
   }), true, `${label} is covered or clipped`);
 };
+const assertTooltip = async (target, label) => {
+  await page.evaluate(() => document.activeElement?.blur());
+  await page.mouse.move(1740, 1080);
+  await page.waitForTimeout(50);
+  await assertClickable(target, label);
+  assert.equal(await target.getAttribute('aria-label'), label);
+  assert.equal(await target.getAttribute('data-tooltip'), label);
+  await target.hover();
+  const tip = page.locator('.tdag-tooltip');
+  await tip.waitFor({ state: 'visible' });
+  assert.equal(await tip.innerText(), label, `${label} has a rendered hover explanation`);
+  await page.mouse.move(1740, 1080);
+  await tip.waitFor({ state: 'detached' });
+};
 const assertConversation = async surface => {
   const question = surface.locator('[data-conversation-question]').first();
   const bubble = surface.locator('[data-conversation-user-message], .conversation-user-message').first();
@@ -204,6 +218,18 @@ try {
     for (const surface of [node(), reader()]) {
       assert.equal(await surface.locator('textarea, [data-inline-followup], [data-panel-composer], [data-agent-composer-bar]').count(), 0,
         'An answered conversation has no follow-up field or composer settings');
+      const highlights = surface.locator('[data-node-highlights]');
+      assert.equal(await highlights.count(), 1, 'Each reading surface has one dedicated highlights section');
+      assert.equal(await highlights.locator('[data-highlight-disclosure]').getAttribute('aria-expanded'), 'false');
+      assert.equal(await highlights.locator('[data-highlighter-toggle]').count(), 1);
+      assert.equal(await surface.evaluate(element => {
+        const metadata = element.querySelector('[data-node-metadata-toggle]');
+        const highlights = element.querySelector('[data-node-highlights]');
+        const question = element.querySelector('[data-conversation-question]');
+        return !!metadata && !!highlights && !!question
+          && !!(metadata.compareDocumentPosition(highlights) & Node.DOCUMENT_POSITION_FOLLOWING)
+          && !!(highlights.compareDocumentPosition(question) & Node.DOCUMENT_POSITION_FOLLOWING);
+      }), true, 'Highlights follow name/summary and precede the conversation');
     }
     const contentBox = await reader().locator('.focus-panel-content').boundingBox(), panelBox = await reader().boundingBox();
     assert.ok(contentBox.y + contentBox.height >= panelBox.y + panelBox.height - 3, 'Reading content fills the space below the header');
@@ -300,23 +326,39 @@ try {
     assert.deepEqual(errors, []);
     check('Panel answer edit saves, question Escape cancels only the editor, and long content does not overflow the panel');
 
-    const passage = '保留差异及其条件，避免过早合并。';
-    await patch({ data: { highlights: [{ id: 'explore-fixture', text: passage, createdAt: new Date().toISOString() }] } });
-    await reader().locator('details').filter({ has: page.locator('[data-highlight-explore]') }).locator('summary').click();
-    await reader().locator('[data-highlight-explore]').click();
-    await page.waitForFunction(() => window.__store.getState().nodes.length === 2 && window.__ui.getState().panelNodeId !== 'conversation-a');
-    const child = await page.evaluate(() => window.__store.getState().nodes.find(node => node.id === window.__ui.getState().panelNodeId));
-    assert.equal(child.data.question, '');
-    assert.equal(child.data.response, '');
-    assert.equal(child.data.isLoading, false);
-    assert.equal(child.data.branchContext, passage);
-    assert.equal(await reader().locator('[data-conversation-question] textarea').inputValue(), '');
-    assert.equal(await page.locator('[data-highlight-explore-editor], [data-panel-composer], [data-inline-followup]').count(), 0);
-    assert.equal(await page.evaluate(id => window.__store.getState().edges.some(edge => edge.source === 'conversation-a' && edge.target === id && edge.data?.isBranchFromSelection), child.id), true);
+    for (const surface of [node(), reader()]) {
+      const actions = surface.locator('.conversation-actions, .focus-response-actions');
+      assert.equal(await actions.locator('[data-highlighter-toggle]').count(), 0, 'The pen belongs to the highlights section');
+      assert.equal(await actions.getByRole('button').count(), 3, 'This answer has only regenerate, copy and edit actions');
+      for (const label of ['重新生成', '复制回答', '编辑回答']) {
+        await assertTooltip(actions.getByRole('button', { name: label, exact: true }), label);
+      }
+    }
+    assert.deepEqual(writes, [{ method: 'POST', path: '/api/claude' }], 'Hovering answer actions never invokes them');
+    check('Regenerate, copy and edit have accessible names and real hover tooltips on both reading surfaces');
+
+    const passage = `${fixture.response.split('\n')[0]}\n${fixture.response.split('\n').at(-1)}`;
+    assert.ok(passage.length > 80, 'The fixture exercises passages longer than the old truncation limit');
+    await patch({ data: { highlights: [{ id: 'highlight-fixture', text: passage, createdAt: new Date().toISOString() }] } });
+    const highlights = reader().locator('[data-node-highlights]');
+    await highlights.locator('[data-highlight-disclosure]').click();
+    assert.equal(await highlights.locator('[data-highlight-list]').getByText(passage, { exact: true }).count(), 1,
+      'The dedicated list preserves the full passage');
+    assert.equal(await reader().getByRole('button', { name: '探索', exact: true }).count(), 0);
+    assert.equal(await reader().locator('textarea, [data-highlight-explore], [data-panel-composer], [data-inline-followup]').count(), 0);
+    await highlights.getByRole('button', { name: '仅传高亮', exact: true }).click();
+    assert.equal((await saved()).highlightMode, 'filter');
+    await highlights.getByRole('button', { name: '标注重点', exact: true }).click();
+    assert.equal((await saved()).highlightMode, 'tag');
+    assert.equal(await page.evaluate(() => window.__store.getState().nodes.length), 1);
+    assert.equal(await page.evaluate(() => window.__store.getState().edges.length), 0);
     assert.equal((await saved()).isEditing, false);
-    assert.deepEqual(writes, [{ method: 'POST', path: '/api/claude' }], 'Exploring a highlight creates a draft without a model call');
-    await screenshot('light-highlight-new-node');
-    check('Highlight exploration creates a linked empty question node and never adds an input to the answered parent');
+    assert.deepEqual(writes, [{ method: 'POST', path: '/api/claude' }], 'Highlight controls never call the model');
+    await screenshot('light-highlight-controls');
+    await highlights.getByRole('button', { name: '删除高亮', exact: true }).click();
+    assert.deepEqual((await saved()).highlights, []);
+    assert.equal(await highlights.locator('[data-highlighter-toggle]').count(), 1, 'Deleting the last passage leaves the pen available');
+    check('The dedicated list shows complete passages, retains tag/filter controls and deletion, and never creates question nodes');
   }
 } catch (error) {
   await page.screenshot({ path: `${output}/failure.png` });

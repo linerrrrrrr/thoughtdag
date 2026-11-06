@@ -19,7 +19,7 @@ export default function RoleTemplateChips({ onPick }: { onPick: (prompt: string)
           type="button"
           onClick={() => onPick(tpl.prompt)}
           className="text-control bg-wash hover:bg-accent/10 hover:text-accent text-ink-muted px-2 py-1 rounded-tag transition-colors"
-          title={tpl.prompt.length > 140 ? `${tpl.prompt.slice(0, 140)}…` : tpl.prompt}
+
         >
           {tpl.name}
         </button>

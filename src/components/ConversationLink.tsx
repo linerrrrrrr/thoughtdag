@@ -23,8 +23,8 @@ function FilePreview({ value, onClose }: { value: Preview; onClose: () => void }
     <div ref={ref} className="file-preview" role="dialog" aria-modal="true" aria-label={t('local.preview')} data-file-preview>
       <header>
         <FileText size={17} />
-        <div className="file-preview-heading"><strong>{basenameOf(value.target.path)}</strong><span title={value.target.path} data-tooltip-overflow>{value.target.path}</span></div>
-        <button type="button" title={t('local.reveal')} aria-label={t('local.reveal')} onClick={() => void reveal(value.target.path)}><FolderOpen size={17} /></button>
+        <div className="file-preview-heading"><strong>{basenameOf(value.target.path)}</strong><span data-tooltip={value.target.path} data-tooltip-overflow>{value.target.path}</span></div>
+        <button type="button" data-tooltip={t('local.reveal')} aria-label={t('local.reveal')} onClick={() => void reveal(value.target.path)}><FolderOpen size={17} /></button>
         <button type="button" aria-label={t('common.close')} data-file-preview-close onClick={onClose}><X size={18} /></button>
       </header>
       {value.truncated && <div className="file-preview-notice">{t('local.previewTruncated')}</div>}
@@ -45,7 +45,7 @@ async function reveal(path: string) {
 }
 
 /** One link behavior is shared by answers, commentary, and tool file references. */
-export function ConversationLink({ base, ...props }: AnchorHTMLAttributes<HTMLAnchorElement> & { base?: string }) {
+export function ConversationLink({ base, title, ...props }: AnchorHTMLAttributes<HTMLAnchorElement> & { base?: string }) {
   const t = useT();
   const href = safeMarkdownUrl(props.href ?? '');
   const target = localTargetOf(href, base);
@@ -83,7 +83,7 @@ export function ConversationLink({ base, ...props }: AnchorHTMLAttributes<HTMLAn
     <a {...props} href={linkHref || undefined} ref={anchor} target={target || !href ? undefined : '_blank'} rel={target ? undefined : 'noreferrer noopener'}
       className={[props.className, 'conversation-link nodrag nopan', target ? 'conversation-file-link' : ''].filter(Boolean).join(' ')}
       data-local-path={target?.path} data-file-line-ref={target?.line} aria-busy={busy || undefined}
-      title={target ? `${target.path}${target.line ? `:${target.line}${target.column ? `:${target.column}` : ''}` : ''}` : props.title}
+      data-tooltip={target ? `${target.path}${target.line ? `:${target.line}${target.column ? `:${target.column}` : ''}` : ''}` : title}
       onPointerDown={e => e.stopPropagation()} onDoubleClick={e => e.stopPropagation()}
       onClick={e => { e.stopPropagation(); if (!href) e.preventDefault(); else if (target) { e.preventDefault(); void open(); } }}
       onAuxClick={e => { if (target) { e.preventDefault(); e.stopPropagation(); if (e.button === 1) void open(); } }}
@@ -107,7 +107,7 @@ export function ConversationLink({ base, ...props }: AnchorHTMLAttributes<HTMLAn
         const index = buttons.indexOf(document.activeElement as HTMLButtonElement);
         buttons[e.key === 'Home' ? 0 : e.key === 'End' ? buttons.length - 1 : (index + (e.key === 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length]?.focus();
       }}>
-      {target && <div className="conversation-link-menu-path" title={target.path}>{basenameOf(target.path)}{target.line ? `:${target.line}` : ''}</div>}
+      {target && <div className="conversation-link-menu-path" data-tooltip={target.path}>{basenameOf(target.path)}{target.line ? `:${target.line}` : ''}</div>}
       <button type="button" role="menuitem" onClick={() => action(() => void open())}>{target ? <FileText size={15} /> : <ExternalLink size={15} />}{t(target ? 'local.open' : 'local.openLink')}</button>
       {target && <>
         <button type="button" role="menuitem" onClick={() => action(() => void reveal(target.path))}><FolderOpen size={15} />{t('local.reveal')}</button>

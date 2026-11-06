@@ -71,7 +71,7 @@ export default function FrameSettings({ frames, children }: { frames: ThoughtNod
         <div className="flex gap-1.5" role="group" aria-label={t('frame.settingsColor')}>
           {Object.entries(FRAME_COLORS).map(([name, color]) => <button key={name} type="button"
             data-frame-color={name} aria-label={t(colorLabels[name as keyof typeof colorLabels])}
-            title={t(colorLabels[name as keyof typeof colorLabels])} aria-pressed={colors.size === 1 && colors.has(name)}
+            data-tooltip={t(colorLabels[name as keyof typeof colorLabels])} aria-pressed={colors.size === 1 && colors.has(name)}
             onClick={() => useStore.getState().setFrameProperties(ids, { color: name })}
             className={`w-8 h-8 flex items-center justify-center rounded-control border focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${colors.size === 1 && colors.has(name) ? 'border-accent' : 'border-transparent hover:bg-wash'}`}>
             <span className={`w-4 h-4 rounded-tag ${color.dot}`} aria-hidden="true" />
@@ -101,7 +101,7 @@ export default function FrameSettings({ frames, children }: { frames: ThoughtNod
           onClick={() => useStore.getState().selectFrameContents(ids, false)}><MousePointer2 size={14} className="shrink-0" />{t('frame.selectContents')}</button>
         <button type="button" className={actionClass} data-frame-select-all
           onClick={() => useStore.getState().selectFrameContents(ids, true)}><Frame size={14} className="shrink-0" />{t('frame.selectWithContents')}</button>
-        <button type="button" className={actionClass} data-frame-fit disabled={!canFit} title={t('frame.fitHint')}
+        <button type="button" className={actionClass} data-frame-fit disabled={!canFit}
           onClick={() => useStore.getState().fitFramesToContents(ids)}><Maximize size={14} className="shrink-0" />{t('frame.fitContents')}</button>
       </div>
     </section>

@@ -123,7 +123,7 @@ function SourcesDialog({ roots, counts, onChanged, onClose }: {
                 {(c.state === 'installed' || c.state === 'outdated') && (
                   <button
                     className="p-1 rounded-control transition-colors shrink-0 object-action-danger" data-icon-only
-                    title={t('atlas.handoffRemove')}
+                    data-tooltip={t('atlas.handoffRemove')} aria-label={t('atlas.handoffRemove')}
                     data-handoff-remove
                     onClick={() => void window.desktopSessions!.commandsRemove!(runner).then(refreshCmds)}
                   >
@@ -407,7 +407,7 @@ export default function SessionAtlas({ onClose, onSwitched, focusSessionId, init
             )}
           </div>
           {isDesktop && targets && targets.terminals.length > 0 && (
-            <label className="flex items-center gap-1.5 text-control text-ink-muted border border-line rounded-control px-2.5 py-1.5 cursor-pointer" title={t('atlas.terminalChoice')}>
+            <label className="flex items-center gap-1.5 text-control text-ink-muted border border-line rounded-control px-2.5 py-1.5 cursor-pointer" data-tooltip={t('atlas.terminalChoice')}>
               <SquareTerminal size={14} strokeWidth={1.75} />
               <select
                 value={targets.prefs.terminal}
@@ -564,7 +564,7 @@ export default function SessionAtlas({ onClose, onSwitched, focusSessionId, init
                       </div>
                     </div>
                     <button
-                      title={t('switcher.archive')}
+                      data-tooltip={t('switcher.archive')} aria-label={t('switcher.archive')}
                       className="opacity-0 group-hover:opacity-100 text-ink-faint hover:text-amber-600 p-1.5 rounded-control transition-all shrink-0"
                       onClick={(e) => { e.stopPropagation(); void setProjectArchived(p.id, true); }}
                       data-atlas-archive
@@ -597,7 +597,7 @@ export default function SessionAtlas({ onClose, onSwitched, focusSessionId, init
                       {projects.filter((p) => p.archived).sort((a, b) => b.updatedAt - a.updatedAt).map((p) => (
                         <button
                           key={p.id}
-                          title={t('atlas.restoreOpen')}
+                          data-tooltip={t('atlas.restoreOpen')}
                           onClick={() => { void setProjectArchived(p.id, false).then(() => { onClose(); void switchProject(p.id).then(onSwitched); }); }}
                           className="w-full text-left border border-dashed border-line rounded-content px-4 py-2.5 hover:bg-wash transition-colors opacity-70 hover:opacity-100"
                           data-atlas-archived-item
@@ -688,7 +688,7 @@ export default function SessionAtlas({ onClose, onSwitched, focusSessionId, init
                         <div className="text-control text-ink truncate flex items-center gap-1.5">
                           <span className="truncate">{displayTitle(card)}</span>
                           {threadForks.has(card.sessionId) && (
-                            <span className="text-meta text-ink-faint border border-line rounded-tag px-1 py-px shrink-0 font-mono" title={`⑂ ${threadForks.get(card.sessionId)}`} data-atlas-fork>⑂</span>
+                            <span className="text-meta text-ink-faint border border-line rounded-tag px-1 py-px shrink-0 font-mono" data-tooltip={`⑂ ${threadForks.get(card.sessionId)}`} data-atlas-fork>⑂</span>
                           )}
                           {changes.get(changeKeyOf(card))?.kind === 'new' && (
                             <span className="text-meta text-white bg-action rounded-tag px-1 py-px shrink-0" data-atlas-badge="new">{t('atlas.badgeNew')}</span>
@@ -703,7 +703,7 @@ export default function SessionAtlas({ onClose, onSwitched, focusSessionId, init
                           ) : (() => {
                             const home = canvasOf(card.sessionId);
                             return home ? (
-                              <span className="text-meta text-ink-faint border border-line rounded-tag px-1 py-px shrink-0" title={home.name} data-atlas-badge="canvas">{t('atlas.onCanvas')}</span>
+                              <span className="text-meta text-ink-faint border border-line rounded-tag px-1 py-px shrink-0" data-tooltip={home.name} data-atlas-badge="canvas">{t('atlas.onCanvas')}</span>
                             ) : null;
                           })()}
                         </div>
@@ -722,7 +722,7 @@ export default function SessionAtlas({ onClose, onSwitched, focusSessionId, init
                           <div className={`${picked.has(pickKey(card)) ? '' : 'opacity-0 group-hover:opacity-100'} transition-opacity flex items-center gap-1 shrink-0`}>
                             {!canvasOf(card.sessionId) && !!card.sessionId && (
                               <button
-                                title={t('atlas.pickForMerge')}
+                                data-tooltip={t('atlas.pickForMerge')}
                                 className={`p-1.5 rounded-control transition-colors ${picked.has(pickKey(card)) ? 'text-accent' : 'text-ink-faint hover:text-accent'}`}
                                 onClick={(e) => { e.stopPropagation(); togglePick(card); }}
                                 data-atlas-pick={picked.has(pickKey(card)) ? 'on' : 'off'}
@@ -730,10 +730,10 @@ export default function SessionAtlas({ onClose, onSwitched, focusSessionId, init
                                 {picked.has(pickKey(card)) ? <SquareCheckBig size={16} strokeWidth={1.75} /> : <Square size={16} strokeWidth={1.75} />}
                               </button>
                             )}
-                            <span title={t('atlas.import')} className="text-ink-faint hover:text-accent p-1.5"><Import size={16} strokeWidth={1.75} /></span>
+                            <span data-tooltip={t('atlas.import')} className="text-ink-faint hover:text-accent p-1.5"><Import size={16} strokeWidth={1.75} /></span>
                             {projects.some((p) => p.sourceSession?.sessionId === card.sessionId) && (
                               <button
-                                title={t('atlas.recast')}
+                                data-tooltip={t('atlas.recast')} aria-label={t('atlas.recast')}
                                 className="text-ink-faint hover:text-red-500 p-1.5 rounded-control transition-colors"
                                 onClick={(e) => { e.stopPropagation(); void recast(card); }}
                                 data-atlas-recast
@@ -743,7 +743,7 @@ export default function SessionAtlas({ onClose, onSwitched, focusSessionId, init
                             )}
                             {!canvasOf(card.sessionId) && (
                               <button
-                                title={t('atlas.mountTo')}
+                                data-tooltip={t('atlas.mountTo')} aria-label={t('atlas.mountTo')}
                                 className="text-ink-faint hover:text-accent p-1.5 rounded-control transition-colors"
                                 onClick={(e) => { e.stopPropagation(); setMountPick(card); }}
                                 data-atlas-mount
@@ -753,7 +753,7 @@ export default function SessionAtlas({ onClose, onSwitched, focusSessionId, init
                             )}
                             {appHosts.has(card.runner) && (
                               <button
-                                title={fmt(t('atlas.openApp'), { name: appHosts.get(card.runner)! })}
+                                data-tooltip={fmt(t('atlas.openApp'), { name: appHosts.get(card.runner)! })} aria-label={fmt(t('atlas.openApp'), { name: appHosts.get(card.runner)! })}
                                 className="text-ink-faint hover:text-accent p-1.5 rounded-control transition-colors"
                                 onClick={(e) => { e.stopPropagation(); void openInCli(card, 'app'); }}
                                 data-atlas-open-app
@@ -762,7 +762,7 @@ export default function SessionAtlas({ onClose, onSwitched, focusSessionId, init
                               </button>
                             )}
                             <button
-                              title={t('atlas.openTerminal')}
+                              data-tooltip={t('atlas.openTerminal')} aria-label={t('atlas.openTerminal')}
                               className="text-ink-faint hover:text-accent p-1.5 rounded-control transition-colors"
                               onClick={(e) => { e.stopPropagation(); void openInCli(card, 'terminal'); }}
                               data-atlas-open-cli

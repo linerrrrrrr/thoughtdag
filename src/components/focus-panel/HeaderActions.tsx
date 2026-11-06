@@ -103,19 +103,19 @@ export default function HeaderActions({ nodeId, isLoading }: { nodeId: string; i
               {isArchived ? <ArchiveRestore size={15} strokeWidth={1.75} /> : <Archive size={15} strokeWidth={1.75} />}
               {t(isArchived ? 'archive.restoreTitle' : 'archive.title')}
             </button>
-            <button className={menuItem} onClick={() => { setMenuOpen(false); setFanOutOpen(true); }} title={t('fanout.entryTitle')}>
+            <button className={menuItem} onClick={() => { setMenuOpen(false); setFanOutOpen(true); }} >
               <Split size={15} strokeWidth={1.75} /> {t('fanout.entry')}
             </button>
-            <button className={menuItem} onClick={() => { setMenuOpen(false); void regenerate(nodeId); }} title={t('actions.regenBranchTitle')}>
+            <button className={menuItem} onClick={() => { setMenuOpen(false); void regenerate(nodeId); }} >
               <GitFork size={15} strokeWidth={1.75} /> {t('actions.regenBranch')}
             </button>
             <button className={menuItem} onClick={() => { setMenuOpen(false); duplicateNode(nodeId); }}>
               <Files size={15} strokeWidth={1.75} /> {t('common.duplicate')}
             </button>
-            <button className={menuItem} onClick={() => { setMenuOpen(false); downloadMarkdown(contextChainMarkdown(nodeId)); }} title={t('actions.exportTitle')}>
+            <button className={menuItem} onClick={() => { setMenuOpen(false); downloadMarkdown(contextChainMarkdown(nodeId)); }} data-tooltip={t('actions.exportTitle')}>
               <FileDown size={15} strokeWidth={1.75} /> {t('common.export')}
             </button>
-            <button className={menuItem} onClick={() => { setMenuOpen(false); void copyText(contextChainMarkdown(nodeId)); }} title={t('actions.copyTitle')}>
+            <button className={menuItem} onClick={() => { setMenuOpen(false); void copyText(contextChainMarkdown(nodeId)); }} data-tooltip={t('actions.copyTitle')}>
               <ClipboardCopy size={15} strokeWidth={1.75} /> {t('actions.copyMd')}
             </button>
             {diverged && (

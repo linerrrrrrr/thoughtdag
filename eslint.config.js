@@ -21,4 +21,13 @@ export default defineConfig([
       globals: globals.browser,
     },
   },
+  {
+    files: ['src/**/*.tsx'],
+    rules: {
+      'no-restricted-syntax': ['error', {
+        selector: 'JSXOpeningElement[name.name=/^[a-z]/] > JSXAttribute[name.name="title"]',
+        message: 'Native title popups are not application UI. Use an independent accessible name and, only for a necessary short hint, data-tooltip.',
+      }],
+    },
+  },
 ])

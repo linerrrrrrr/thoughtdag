@@ -161,7 +161,7 @@ export default function AttachmentsSection({
                   {att.type === 'application/pdf' && !att.isExtracting && (
                     <button
                       onClick={() => useUiStore.getState().setReaderNodeId(nodeId)}
-                      title={t('attach.openReader')}
+                      data-tooltip={t('attach.openReader')}
                       aria-label={t('attach.openReader')}
                       className="text-ink-faint hover:text-accent transition-colors shrink-0"
                     >
@@ -206,7 +206,7 @@ export default function AttachmentsSection({
                     {att.type === 'application/pdf' && (
                       <button
                         onClick={() => useUiStore.getState().setReaderNodeId(sourceNodeId)}
-                        title={t('attach.openReader')}
+                        data-tooltip={t('attach.openReader')}
                         aria-label={t('attach.openReader')}
                         className="text-ink-faint hover:text-accent transition-colors shrink-0"
                       >
@@ -222,7 +222,7 @@ export default function AttachmentsSection({
                           ? 'bg-green-100 text-green-600 hover:bg-green-200'
                           : 'bg-line text-ink-muted hover:bg-accent/10 hover:text-accent'
                       }`}
-                      title={excludedByAncestor && !isOverridden ? t('attach.titleExcludedUpstream') : isOverridden ? t('attach.titleReIncluded') : isExcludedSelf ? t('attach.titleInclude') : t('attach.titleExclude')}
+                      data-tooltip={excludedByAncestor && !isOverridden ? t('attach.titleExcludedUpstream') : isOverridden ? t('attach.titleReIncluded') : isExcludedSelf ? t('attach.titleInclude') : t('attach.titleExclude')}
                     >
                       {excludedByAncestor && !isOverridden && !isExcludedSelf ? t('attach.btnUpstream') : isOverridden ? t('attach.btnReIncluded') : isExcludedSelf ? t('attach.btnExcluded') : t('attach.btnIncluded')}
                     </button>

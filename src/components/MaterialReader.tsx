@@ -862,7 +862,7 @@ function ReaderOverlay({ node, onLocate, dock }: { node: ThoughtNode; onLocate: 
               )}
             </div>
           ) : (
-            <span className="text-title font-semibold text-ink truncate min-w-0" title={shownTitle} data-tooltip-overflow>{shownTitle}</span>
+            <span className="text-title font-semibold text-ink truncate min-w-0" data-tooltip={shownTitle} data-tooltip-overflow>{shownTitle}</span>
           )}
           {numPages != null && <span className="text-meta text-ink-faint font-mono shrink-0">{numPages}p</span>}
           <div className="flex-1" />
@@ -905,7 +905,7 @@ function ReaderOverlay({ node, onLocate, dock }: { node: ThoughtNode; onLocate: 
           {(pdfAtt || imageAtts.length > 0 || htmlAtt || linkHtml) && view === 'original' && !isViewerMode && (
             <button
               onClick={() => setClipMode((v) => !v)}
-              title={t('reader.clipTitle')}
+
               data-reader-clip-toggle
               className={`flex items-center gap-1.5 text-control px-3 py-1.5 rounded-control border transition-colors shrink-0 ${clipMode ? 'border-warm bg-warm/10 text-warm font-medium' : 'border-line text-ink-muted hover:bg-wash'}`}
             >
@@ -917,7 +917,7 @@ function ReaderOverlay({ node, onLocate, dock }: { node: ThoughtNode; onLocate: 
             <button
               onClick={() => { if (hasVisionModel) imageAtts.forEach((a) => void extractImage(node.id, a.id)); }}
               disabled={!hasVisionModel || imageAtts.some((a) => a.isExtracting)}
-              title={hasVisionModel ? t('reader.imageRecognizeTitle') : t('content.noVisionModel')}
+
               data-image-recognize
               className="flex items-center gap-1.5 text-control px-3 py-1.5 rounded-control border border-line text-ink-muted hover:bg-wash transition-colors shrink-0 disabled:opacity-40"
             >
@@ -930,7 +930,7 @@ function ReaderOverlay({ node, onLocate, dock }: { node: ThoughtNode; onLocate: 
           {docAtt && !digestText && !digesting && !!docAtt.extractedText?.trim() && !isViewerMode && (
             <button
               onClick={() => void startDigest()}
-              title={t('reader.digestTitle')}
+
               className="flex items-center gap-1.5 text-control px-3 py-1.5 rounded-control border border-line text-ink-muted hover:bg-wash transition-colors shrink-0"
             >
               <Sparkles size={13} strokeWidth={1.75} />
@@ -951,7 +951,7 @@ function ReaderOverlay({ node, onLocate, dock }: { node: ThoughtNode; onLocate: 
                 onClick={() => (recog === 'confirm' ? void startRecognize() : setRecog('confirm'))}
                 onBlur={() => setRecog((r) => (r === 'confirm' ? 'idle' : r))}
                 disabled={!pdfAtt.pageImages?.length || !hasVisionModel}
-                title={!hasVisionModel ? t('content.noVisionModel') : pdfAtt.pageImages?.length ? t('reader.recognizeTitle') : t('reader.noImages')}
+
                 className={`flex items-center gap-1.5 text-control px-3 py-1.5 rounded-control border transition-colors shrink-0 disabled:opacity-40 disabled:cursor-not-allowed ${
                   recog === 'confirm' ? 'border-amber-400 bg-amber-50 text-amber-700' : 'border-line text-ink-muted hover:bg-wash'
                 }`}
@@ -965,7 +965,7 @@ function ReaderOverlay({ node, onLocate, dock }: { node: ThoughtNode; onLocate: 
             <button
               onClick={() => (editing ? commitEdit() : setEditing(true))}
               data-reader-edit-toggle
-              title={t('reader.editText')}
+              aria-label={t('reader.editText')}
               className={`w-7 h-7 rounded-control flex items-center justify-center transition-colors shrink-0 ${editing ? 'bg-accent/10 text-accent' : 'text-ink-faint hover:bg-wash hover:text-ink'}`}
             >
               <Pencil size={13} strokeWidth={1.75} />
@@ -977,7 +977,7 @@ function ReaderOverlay({ node, onLocate, dock }: { node: ThoughtNode; onLocate: 
               <Maximize2 size={14} strokeWidth={1.75} />
             </button>
           ) : window.innerWidth >= DOCK_MIN_WINDOW && (
-            <button onClick={() => useUiStore.getState().setReaderMode('dock')} title={t('reader.dock')} data-reader-dock className={iconButton}>
+            <button onClick={() => useUiStore.getState().setReaderMode('dock')} data-tooltip={t('reader.dock')} aria-label={t('reader.dock')} data-reader-dock className={iconButton}>
               <PanelLeft size={14} strokeWidth={1.75} />
             </button>
           )}
@@ -1026,7 +1026,7 @@ function ReaderOverlay({ node, onLocate, dock }: { node: ThoughtNode; onLocate: 
                 <div className="flex items-center gap-1 bg-card border border-line rounded-overlay px-1.5 py-1" data-image-zoom>
                   <button onClick={() => setImgZoom((z) => Math.max(0.5, +(z - 0.25).toFixed(2)))} aria-label={t('reader.imageZoomOut')} data-zoom-out
                     className="w-7 h-7 rounded-control hover:bg-wash flex items-center justify-center text-ink-muted hover:text-ink transition-colors"><ZoomOut size={14} strokeWidth={1.75} /></button>
-                  <button onClick={() => setImgZoom(1)} title={t('reader.imageZoomFit')} data-zoom-fit
+                  <button onClick={() => setImgZoom(1)} data-tooltip={t('reader.imageZoomFit')} data-zoom-fit
                     className="px-2 h-7 rounded-control hover:bg-wash font-mono text-control text-ink-muted hover:text-ink transition-colors min-w-[52px]">{Math.round(imgZoom * 100)}%</button>
                   <button onClick={() => setImgZoom((z) => Math.min(3, +(z + 0.25).toFixed(2)))} aria-label={t('reader.imageZoomIn')} data-zoom-in
                     className="w-7 h-7 rounded-control hover:bg-wash flex items-center justify-center text-ink-muted hover:text-ink transition-colors"><ZoomIn size={14} strokeWidth={1.75} /></button>
@@ -1164,7 +1164,7 @@ function ReaderOverlay({ node, onLocate, dock }: { node: ThoughtNode; onLocate: 
               )}
               <button
                 onClick={() => { if (!docked) close(); onLocate(thread[0].id); }}
-                title={t('reader.locate')}
+                data-tooltip={t('reader.locate')} aria-label={t('reader.locate')}
                 className="w-6 h-6 rounded-control text-ink-faint hover:text-accent hover:bg-wash flex items-center justify-center transition-colors shrink-0"
               >
                 <Crosshair size={13} strokeWidth={1.75} />
@@ -1266,7 +1266,7 @@ function ReaderOverlay({ node, onLocate, dock }: { node: ThoughtNode; onLocate: 
                   </button>
                   <button
                     onClick={() => { if (!docked) close(); onLocate(c.id); }}
-                    title={t('reader.locate')}
+                    data-tooltip={t('reader.locate')} aria-label={t('reader.locate')}
                     className="w-4.5 h-4.5 rounded-control flex items-center justify-center text-ink-faint hover:text-accent shrink-0"
                   >
                     <Crosshair size={11} strokeWidth={1.75} />
@@ -1312,7 +1312,7 @@ function ReaderOverlay({ node, onLocate, dock }: { node: ThoughtNode; onLocate: 
             {!ask.targetNodeId && (
               <button
                 onClick={saveSelectionAsNote}
-                title={t('reader.saveAsNote')}
+                aria-label={t('reader.saveAsNote')}
                 data-reader-clip-note
                 className="w-8 h-8 rounded-control bg-wash text-ink-muted hover:text-warm hover:bg-warm/10 flex items-center justify-center transition-colors shrink-0"
               >
@@ -1340,7 +1340,7 @@ function ReaderOverlay({ node, onLocate, dock }: { node: ThoughtNode; onLocate: 
           <ChevronRight size={15} strokeWidth={1.75} />
         </button>
         {headerIcon}
-        <span className="text-control text-ink-muted truncate [writing-mode:vertical-rl] max-h-[45vh]" title={shownTitle} data-tooltip-overflow>{shownTitle}</span>
+        <span className="text-control text-ink-muted truncate [writing-mode:vertical-rl] max-h-[45vh]" data-tooltip={shownTitle} data-tooltip-overflow>{shownTitle}</span>
         <div className="flex-1" />
         <button onClick={() => useUiStore.getState().setReaderMode('full')} aria-label={t('reader.expand')} className={iconButton}>
           <Maximize2 size={14} strokeWidth={1.75} />
@@ -1560,7 +1560,7 @@ function PdfPage({ doc, pdfjs, pageNo, width, anchors, activeThreadId, onAnchorC
           ))}
           <button
             onClick={() => onAnchorClick?.(a.id)}
-            title={a.question}
+
             className={`absolute w-6 h-6 rounded-control border flex items-center justify-center text-control transition-transform hover:scale-110 ${
               activeThreadId === a.id ? 'bg-action text-white border-accent' : 'bg-card text-accent border-accent/40'
             }`}

@@ -50,7 +50,7 @@ export function ArrangeItems({ ids, getViewportRect, onClose }: { ids: string[];
       return <div key={action}>
         {(index === 3 || index === 6) && <div className="my-1 border-t border-line" role="separator" />}
         <button type="button" role="menuitem" className={itemClass} disabled={disabled}
-          title={disabled ? fmt(t('arrange.minimum'), { n: minimum }) : undefined}
+          data-tooltip={disabled ? fmt(t('arrange.minimum'), { n: minimum }) : undefined}
           onClick={() => run(action)} data-arrange-action={action}>
           <Icon size={15} strokeWidth={1.75} className="text-ink-muted shrink-0" aria-hidden="true" />{t(label)}
         </button>
@@ -121,7 +121,7 @@ export default function SelectionArrangeMenu({ ids, getViewportRect }: { ids: st
   return <div className="flex items-center gap-1.5 shrink-0 ml-auto" role="group" aria-label={t('arrange.spatialTools')}>
     <AlignPopover ids={ids} getViewportRect={getViewportRect} open={open} onOpenChange={setOpen} />
     <button type="button" data-create-selection-frame disabled={!selectedNodes.length || hasFrame}
-      aria-label={t('frame.createFromSelection')} title={t(hasFrame ? 'frame.selectionContainsFrame' : 'frame.createFromSelectionHint')}
+      aria-label={t('frame.createFromSelection')}
       className="h-8 px-2.5 rounded-control transition-colors flex items-center gap-1.5 text-control whitespace-nowrap shrink-0 bg-wash hover:bg-line text-ink-muted focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-40 disabled:cursor-not-allowed"
       onClick={() => { setOpen(false); useStore.getState().createFrameFromSelection(ids); }}>
       <Frame size={14} strokeWidth={1.75} aria-hidden="true" />{t('frame.create')}
