@@ -72,11 +72,11 @@ function sharedLength(left, right, tolerance = 2) {
 try {
   buildSync({ entryPoints: ['src/lib/edge-path.ts'], bundle: true, platform: 'node', format: 'esm', outfile: bundle,
     define: { 'import.meta.env': '{}' }, logLevel: 'silent' });
-  const { routeEdge, createEdgeRoutingContext } = await import(pathToFileURL(bundle).href);
-  const vertical = (cards, routeMode) => {
+  const { routeEdge, createEdgeRoutingContext, normalizeEdgeRoutingSettings } = await import(pathToFileURL(bundle).href);
+  const vertical = (cards, routeMode, options) => {
     const [s, t] = cards;
     return routeEdge(s.position.x + s.measured.width / 2, s.position.y + s.measured.height, 'bottom',
-      t.position.x + t.measured.width / 2, t.position.y, 'top', s.id, t.id, cards, routeMode);
+      t.position.x + t.measured.width / 2, t.position.y, 'top', s.id, t.id, cards, routeMode, options);
   };
   test('aligned chain is straight and flows downward', () => {
     const cards = [node('s', 0, 0), node('t', 0, 400)];
@@ -106,6 +106,130 @@ try {
       assert.notEqual(route.path, vertical(cards.slice(0, 2), mode).path, `${mode} must keep its obstacle detour`);
       clear(route, cards);
     }
+  });
+  test('omitted routing settings retain the existing default detour', () => {
+    const cards = [node('s', 0, 0), node('t', 0, 600), node('block', -80, 210, 360, 200)];
+    for (const mode of ['auto', 'curve', 'orthogonal']) {
+      assert.deepEqual(vertical(cards, mode), vertical(cards, mode, {
+        context: createEdgeRoutingContext(cards, [], { avoidObstacles: true, obstacleClearance: 20 }),
+      }));
+    }
+  });
+  test('global obstacle avoidance can be disabled in every route mode', () => {
+    const cards = [node('s', 0, 0), node('t', 0, 600), node('block', -80, 210, 360, 200)];
+    const context = createEdgeRoutingContext(cards, [], { avoidObstacles: false });
+    for (const mode of ['auto', 'curve', 'orthogonal']) {
+      const route = vertical(cards, mode, { context });
+      assert.deepEqual(route, vertical(cards.slice(0, 2), mode));
+      assert.notEqual(route.path, vertical(cards, mode).path);
+      clear(route, cards.slice(0, 2));
+    }
+  });
+  test('greater avoidance clearance produces a visibly wider detour in every route mode', () => {
+    const cards = [node('s', 0, 0), node('t', 0, 900), node('block', -80, 260, 360, 200)];
+    for (const mode of ['auto', 'curve', 'orthogonal']) {
+      const compact = clear(vertical(cards, mode, { settings: { obstacleClearance: 8 } }), cards);
+      const wide = clear(vertical(cards, mode, { settings: { obstacleClearance: 64 } }), cards);
+      const extent = (points) => Math.max(...points.map((point) => Math.abs(point.x - 100)));
+      assert.ok(extent(wide) > extent(compact) + 20, `${mode} must honor the requested breathing room`);
+    }
+  });
+  test('disabled avoidance ignores its retained clearance value', () => {
+    const cards = [node('s', 0, 0), node('t', 240, 600), node('block', -80, 210, 360, 200)];
+    for (const mode of ['auto', 'curve', 'orthogonal']) {
+      const route = (obstacleClearance) => vertical(cards, mode, { settings: { avoidObstacles: false, obstacleClearance } });
+      assert.deepEqual(route(8), route(64));
+    }
+  });
+  test('requested clearance yields to physically tight gaps without crossing cards', () => {
+    for (const obstacleClearance of [8, 20, 48, 64]) {
+      for (const gap of [2, 8, 30]) {
+        const cards = [node('s', 0, 0), node('t', 0, 700), node('block', -60, 80 + gap, 320, 260)];
+        for (const mode of ['auto', 'curve', 'orthogonal']) {
+          clear(vertical(cards, mode, { settings: { obstacleClearance } }), cards);
+        }
+      }
+    }
+  });
+  test('routing preferences normalize invalid and out-of-range restored values', () => {
+    assert.deepEqual(normalizeEdgeRoutingSettings(), { avoidObstacles: true, obstacleClearance: 20, curvature: 0.25 });
+    assert.deepEqual(normalizeEdgeRoutingSettings({ avoidObstacles: false, obstacleClearance: NaN }),
+      { avoidObstacles: false, obstacleClearance: 20, curvature: 0.25 });
+    assert.equal(normalizeEdgeRoutingSettings({ obstacleClearance: Infinity }).obstacleClearance, 20);
+    assert.equal(normalizeEdgeRoutingSettings({ obstacleClearance: -10 }).obstacleClearance, 8);
+    assert.equal(normalizeEdgeRoutingSettings({ obstacleClearance: 1000 }).obstacleClearance, 64);
+    assert.equal(normalizeEdgeRoutingSettings({ curvature: NaN }).curvature, 0.25);
+    assert.equal(normalizeEdgeRoutingSettings({ curvature: -1 }).curvature, 0);
+    assert.equal(normalizeEdgeRoutingSettings({ curvature: 2 }).curvature, 1);
+  });
+  test('continuous curvature changes natural forward curves while preserving endpoint normals', () => {
+    const cards = [node('s', 0, 0), node('t', 600, 600)];
+    for (const mode of ['auto', 'curve']) {
+      const routes = [0, 0.25, 0.401, 0.402, 1].map((curvature) => vertical(cards, mode, { settings: { curvature } }));
+      assert.deepEqual(routes[1], vertical(cards, mode));
+      assert.equal(new Set(routes.map((route) => route.path)).size, routes.length);
+      for (const route of routes) {
+        const points = clear(route, cards);
+        assert.deepEqual(points[0], { x: 100, y: 80 });
+        assert.deepEqual(points.at(-1), { x: 700, y: 600 });
+        assert.ok(points[1].y > points[0].y && points.at(-1).y > points.at(-2).y);
+      }
+    }
+  });
+  test('continuous curvature changes obstacle smoothing without crossing visible cards', () => {
+    const cards = [node('s', 0, 0), node('t', 0, 900), node('block', -80, 260, 360, 200)];
+    for (const mode of ['auto', 'curve']) {
+      const routes = [0, 0.25, 0.401, 0.402, 1].map((curvature) => vertical(cards, mode, { settings: { curvature } }));
+      assert.equal(new Set(routes.map((route) => route.path)).size, routes.length);
+      for (const route of routes) {
+        const points = clear(route, cards);
+        assert.ok(points[1].y > points[0].y && points.at(-1).y > points.at(-2).y);
+      }
+    }
+  });
+  test('curvature never changes an orthogonal route or its shared-port lanes', () => {
+    const cards = [node('s', 0, 300, 200, 140), node('a', 1400, 0), node('b', 1400, 600), node('block', 600, 100, 300, 600)];
+    const edges = ['a', 'b'].map((target) => ({ id: `s-${target}`, source: 's', target, sourceHandle: 'out-right', targetHandle: 'in-left' }));
+    const route = (edge, curvature) => routeEdge(200, 356, 'right', 1400, cards.find((card) => card.id === edge.target).position.y + 56,
+      'left', 's', edge.target, cards, 'orthogonal', { edgeId: edge.id, context: createEdgeRoutingContext(cards, edges, { curvature }) });
+    for (const edge of edges) assert.deepEqual(route(edge, 0), route(edge, 1));
+  });
+  test('every curvature extreme remains safe around tight and reverse-facing endpoint geometry', () => {
+    for (const curvature of [0, 0.01, 0.25, 0.9, 1]) {
+      for (const mode of ['auto', 'curve']) {
+        const reverse = [node('s', 500, 400), node('t', 0, 0)];
+        clear(vertical(reverse, mode, { settings: { curvature } }), reverse);
+        for (const gap of [2, 8, 30]) {
+          const tight = [node('s', 0, 0), node('t', 0, 700), node('block', -60, 80 + gap, 320, 260)];
+          clear(vertical(tight, mode, { settings: { curvature, obstacleClearance: 64 } }), tight);
+        }
+      }
+    }
+  });
+  test('frames and hidden cards remain excluded at the greatest avoidance clearance', () => {
+    const cards = [node('s', 0, 0), node('t', 170, 600)];
+    const extras = [node('frame', -200, -200, 1200, 1200, { data: { stepKind: 'frame' } }),
+      node('hidden', 0, 150, 500, 200, { hidden: true })];
+    const settings = { obstacleClearance: 64 };
+    for (const mode of ['auto', 'curve', 'orthogonal']) {
+      assert.deepEqual(vertical([...cards, ...extras], mode, { context: createEdgeRoutingContext([...cards, ...extras], [], settings) }),
+        vertical(cards, mode, { context: createEdgeRoutingContext(cards, [], settings) }));
+    }
+  });
+  test('disabling obstacle avoidance preserves geometric same-source port lanes', () => {
+    const cards = [node('s', 0, 300, 200, 140), node('a', 1400, 0), node('b', 1400, 600), node('block', 600, 100, 300, 600)];
+    const edges = ['a', 'b'].map((target) => ({ id: `s-${target}`, source: 's', target, sourceHandle: 'out-right', targetHandle: 'in-left' }));
+    const context = createEdgeRoutingContext(cards, edges, { avoidObstacles: false });
+    const unblocked = createEdgeRoutingContext(cards.slice(0, 3), edges, { avoidObstacles: false });
+    assert.deepEqual(context.lanes, createEdgeRoutingContext(cards, edges).lanes);
+    const routes = edges.map((edge) => {
+      const target = cards.find((card) => card.id === edge.target);
+      const route = (routing) => routeEdge(200, 356, 'right', 1400, target.position.y + 56, 'left',
+        's', edge.target, cards, 'orthogonal', { edgeId: edge.id, context: routing });
+      assert.deepEqual(route(context), route(unblocked));
+      return clear(route(context), cards.slice(0, 3));
+    });
+    assert.ok(sharedLength(routes[0], routes[1]) < 55);
   });
   test('horizontal orthogonal routes respect side normals for unequal heights', () => {
     const cards = [node('s', 0, 0, 200, 600), node('t', 500, 120, 200, 80)];

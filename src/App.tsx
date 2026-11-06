@@ -40,6 +40,7 @@ import { CanvasQuickLayoutContext, quickCanvasLayout } from './lib/canvas-layout
 import { createEdgeAnchorResolver, positionNodeAtConnectionEnd } from './lib/edge-anchors';
 import { createEdgeRoutingContext } from './lib/edge-path';
 import { CanvasEdgeRouting } from './lib/edge-routing-context';
+import { useEdgeRoutingPreferences } from './lib/edge-routing-preferences';
 import FocusPanel from './components/focus-panel';
 import SelectionResizeControls from './components/SelectionResizeControls';
 import SelectionRegion from './components/SelectionRegion';
@@ -55,10 +56,12 @@ import ProjectSwitcher from './components/ProjectSwitcher';
 import SessionAtlas from './components/SessionAtlas';
 import { useStore } from './store';
 import { undoState } from './store/slices/history';
+import { canvasHistoryCommand, isTextEditingTarget } from './lib/canvas-shortcuts';
 import { shownStaleIds } from './lib/stale-judge';
 import { isFrameNode, resolveCarriedNodeIds } from './lib/frames';
 import { enclosedSelection, partitionSpatialSelection, intersectingEdgeSelection, snapshotEdgeSelectionPaths, type SelectionTarget, type EdgeSelectionPath, type SelectionRegion as SelectionRegionState } from './lib/canvas-selection';
 import type { ArrangeRect } from './lib/arrange-selection';
+import { nodeLayerIndices } from './lib/node-layer';
 import { useProjects, adoptImportedProject, markInstantiatedFrom } from './store/projects';
 import { projectStorageKey } from './store/projects';
 import { set as idbSet } from 'idb-keyval';
@@ -230,7 +233,7 @@ export default function App() {
 
 function Canvas() {
   const { nodes, edges, setNodes, setEdges, addQuestion, undo, redo, addCrossLink, setSelectedNodeId, setSelectedNodeIds, history, historyIndex } = useStore();
-  const { edgePreviews, propertiesRequest, layoutOpen, layoutPreview, selectionTarget } = useCanvasEditing();
+  const { propertiesRequest, layoutOpen, layoutPreview, selectionTarget } = useCanvasEditing();
   const selectedEdges = edges.filter(edge => edge.selected && !edge.hidden);
   const editingEdge = selectedEdges.length === 1 ? selectedEdges[0] : undefined;
   const anchorResolver = useRef(createEdgeAnchorResolver());
@@ -599,7 +602,6 @@ function Canvas() {
   }, []);
   const syncMarqueeSelection = useCallback((ids: string[]) => {
     const selected = new Set(ids);
-    useCanvasEditing.getState().setEdgePreviews(null);
     useStore.setState(state => ({
       selectedNodeIds: marquee.current?.target === 'edges' ? [] : ids,
       selectedNodeId: marquee.current?.target !== 'edges' && ids.length === 1 ? ids[0] : null,
@@ -891,11 +893,11 @@ function Canvas() {
         }
         return;
       }
-      if ((e.metaKey || e.ctrlKey) && !e.altKey && (key === 'z' || (key === 'y' && e.ctrlKey && !e.metaKey))) {
-        const field = e.target as HTMLElement;
-        if (field.tagName === 'INPUT' || field.tagName === 'TEXTAREA' || field.isContentEditable) return;
+      const historyCommand = canvasHistoryCommand(e);
+      if (historyCommand) {
+        if (isTextEditingTarget(e.target)) return;
         e.preventDefault();
-        if (key === 'y' || e.shiftKey) redo(); else undo();
+        if (historyCommand === 'redo') redo(); else undo();
         return;
       }
       // Cmd+F: node search (replaces browser find on the canvas)
@@ -1112,31 +1114,12 @@ function Canvas() {
         layoutDirection: draft.data.layoutDirection, edgeRouteDefault: draft.data.edgeRouteDefault } } : node;
     });
   }, [nodes, layoutPreview]);
-  const renderEdges = useMemo(() => {
-    // Source inspection describes committed context. Keep property drafts, but
-    // suspend their visual preview until the temporary source card closes.
-    if (inspectedTarget || !edgePreviews) return edges;
-    const previews = new Map(edgePreviews.map(edge => [edge.id, edge]));
-    return edges.map(edge => previews.has(edge.id) ? { ...previews.get(edge.id)!, selected: edge.selected } : edge);
-  }, [edges, edgePreviews, inspectedTarget]);
 
   const canvasNodesDraggable = !isViewerMode && !layoutPreview && !condenseBuilding;
   const displayNodes = useMemo((): typeof nodes => {
-    // Smaller frames represent more specific regions, so render them above
-    // larger frames while keeping every frame below ordinary canvas nodes.
-    // Equal-sized overlaps keep their existing array order.
-    const stackedFrames = renderNodes
-      .filter((n) => n.data.stepKind === 'frame')
-      .map((n, order) => ({
-        id: n.id,
-        order,
-        area: (n.measured?.width ?? n.width ?? 640) * (n.measured?.height ?? n.height ?? 420),
-      }))
-      .sort((a, b) => b.area - a.area || a.order - b.order);
-    const frameZ = new Map(stackedFrames.map((frame, index) => [frame.id, index - stackedFrames.length]));
-    let out = renderNodes.map((n) => (
-      n.data.stepKind === 'frame' ? { ...n, zIndex: frameZ.get(n.id) ?? -1, style: { ...n.style, pointerEvents: 'none' as const } } : n
-    ));
+    const layers = nodeLayerIndices(renderNodes);
+    let out = renderNodes.map(node => ({ ...node, zIndex: layers.get(node.id),
+      ...(node.data.stepKind === 'frame' ? { style: { ...node.style, pointerEvents: 'none' as const } } : {}) }));
     if (annotationsHidden) {
       out = out.map((n) => {
         const k = n.data.stepKind;
@@ -1185,7 +1168,7 @@ function Canvas() {
     // Theme mapping happens here too: storage keeps the canonical light hex
     // as the edge's semantic identity, the render layer resolves it against
     // the active theme — old backups need no migration.
-    const base = renderEdges.map((raw) => {
+    const base = edges.map((raw) => {
       const e = raw.data?.isBranchFromSelection
         ? { ...raw, animated: false, style: { ...raw.style, strokeDasharray: undefined } }
         : raw;
@@ -1253,7 +1236,7 @@ function Canvas() {
         zIndex: 0,
       };
     });
-  }, [nodes, edges, renderEdges, selectedNodeIds, themePalette, focusSets, inspectedTarget]);
+  }, [nodes, edges, selectedNodeIds, themePalette, focusSets, inspectedTarget]);
 
   const displayEdges = useMemo(() => {
     anchorResolver.current.prune(highlightedEdges);
@@ -1263,7 +1246,8 @@ function Canvas() {
       return anchors ? { ...edge, sourceHandle: anchors.sourceHandle, targetHandle: anchors.targetHandle } : edge;
     });
   }, [highlightedEdges, displayNodes]);
-  const routingContext = useMemo(() => createEdgeRoutingContext(displayNodes, displayEdges), [displayNodes, displayEdges]);
+  const edgeRoutingSettings = useEdgeRoutingPreferences(state => state.settings);
+  const routingContext = useMemo(() => createEdgeRoutingContext(displayNodes, displayEdges, edgeRoutingSettings), [displayNodes, displayEdges, edgeRoutingSettings]);
 
   // The panel is an overlay — the canvas never resizes. When it opens (or
   // the selection moves while it is open) and the selected node would be
@@ -1472,6 +1456,7 @@ function Canvas() {
         }}
         nodes={displayNodes}
         edges={displayEdges}
+        elevateNodesOnSelect={false}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onNodeDragStart={onNodeDragStart}
@@ -1554,7 +1539,6 @@ function Canvas() {
         onPaneClick={() => {
           marquee.current = null;
           useCanvasEditing.getState().setSelectionRegion(null);
-          useCanvasEditing.getState().setEdgePreviews(null);
           if (!layoutOpen) { setSelectedNodeId(null); setSelectedNodeIds([]); }
           setNodeMenu(null);
         }}

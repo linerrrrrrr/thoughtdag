@@ -1,6 +1,8 @@
 /* A conversation is the reading surface; inspection tools follow below it. */
 .focus-panel-shell {
   container-type: inline-size;
+  height: auto;
+  max-height: calc(100% - var(--spacing-canvas-inset) * 2);
   background: var(--conversation-surface, var(--color-card));
   border-color: var(--conversation-line, var(--color-line));
   color: var(--color-ink);
@@ -29,14 +31,14 @@
   background: transparent;
 }
 
-.focus-panel-content > [data-node-metadata] {
+.focus-panel-prelude > [data-node-metadata] {
   max-width: 760px;
   margin: 0 auto var(--spacing-section-gap);
   padding-inline: var(--spacing-surface-inset);
   border: 0;
 }
 
-.focus-panel-content > [data-node-metadata] > [data-node-metadata-toggle] {
+.focus-panel-prelude > [data-node-metadata] > [data-node-metadata-toggle] {
   min-height: 30px;
   padding-inline: 0;
   font-size: var(--text-control);
@@ -44,17 +46,29 @@
   color: var(--conversation-muted, var(--color-ink-muted));
 }
 
-.focus-panel-content > [data-node-metadata]:has(+ [data-node-highlights]) { margin-bottom: 0; }
-.focus-panel-content > [data-node-highlights] {
+.focus-panel-prelude > [data-node-metadata]:has(+ [data-node-highlights]) { margin-bottom: 0; }
+.focus-panel-prelude > [data-node-highlights] {
   max-width: 760px;
   margin: 0 auto var(--spacing-section-gap);
   border-top: 1px solid var(--conversation-line);
 }
 
 .focus-panel-content {
+  flex: 1 1 auto;
+  min-height: 0;
   padding: var(--spacing-section-gap) 0;
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
+  scrollbar-width: thin;
+}
+
+.focus-panel-prelude {
+  display: flow-root;
+}
+
+.focus-panel-content--split .focus-question-section,
+.focus-panel-content--split .focus-response-section {
+  margin-bottom: 0;
 }
 
 .focus-question-section,

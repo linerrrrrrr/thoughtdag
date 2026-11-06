@@ -9,6 +9,9 @@ import SearchToggles from '../ui/SearchToggles';
 import { Markdown } from '../Markdown';
 import { useInlineEditDismiss } from '../../lib/use-inline-edit-dismiss';
 
+const isConversationResizeTarget = (target: EventTarget | null) => target instanceof Element
+  && !!target.closest('[data-conversation-divider]');
+
 export default function QuestionSection({
   nodeId,
   question,
@@ -48,6 +51,8 @@ export default function QuestionSection({
     ref: editorRef,
     onOutside: () => setEditing(nodeId, false),
     onCancel: cancelEdit,
+    ignoreOutside: event => isConversationResizeTarget(event.target),
+    ignoreFocusOutside: isConversationResizeTarget,
   });
 
   const handleDoubleClickQuestion = () => {
@@ -141,7 +146,7 @@ export default function QuestionSection({
         <div className="focus-user-turn">
         <div
           onDoubleClick={handleDoubleClickQuestion}
-          className="focus-user-message question-md markdown-body text-body text-ink cursor-text max-h-[300px] overflow-y-auto"
+          className="focus-user-message question-md markdown-body text-body text-ink cursor-text"
           data-conversation-user-message
         >
           <Markdown base={base}>{(displayQuestion ?? question) || placeholder || ''}</Markdown>

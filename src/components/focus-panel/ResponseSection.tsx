@@ -19,6 +19,9 @@ import { AgentRerunButton } from '../ui/AgentRerunButton';
 import type { ThoughtData } from '../../types';
 import { useInlineEditDismiss } from '../../lib/use-inline-edit-dismiss';
 
+const isConversationResizeTarget = (target: EventTarget | null) => target instanceof Element
+  && !!target.closest('[data-conversation-divider]');
+
 export default function ResponseSection({
   nodeId,
   data,
@@ -80,19 +83,61 @@ export default function ResponseSection({
     ref: editorRef,
     onOutside: () => setEditingResponse(nodeId, false),
     onCancel: cancelEdit,
+    ignoreOutside: event => isConversationResizeTarget(event.target),
+    ignoreFocusOutside: isConversationResizeTarget,
   });
   const streamRef = useRef<HTMLDivElement>(null);
+  const followingStreamRef = useRef(true);
   const { markSelection } = highlighter;
 
   // Follow the stream — but only while the reader is at the bottom. Scroll
   // up during generation and the view stays put (read from the top while
-  // the rest streams in); scroll back down to re-engage following.
+  // the rest streams in); return to the live tail to re-engage following.
   useEffect(() => {
-    const el = streamRef.current;
-    if (!data.isLoading || !el) return;
-    if (el.scrollHeight - el.scrollTop - el.clientHeight < 80) {
-      el.scrollTop = el.scrollHeight;
-    }
+    if (!data.isLoading) { followingStreamRef.current = true; return; }
+    const content = streamRef.current;
+    const el = content?.closest<HTMLElement>('[data-conversation-split-answer]') ?? content;
+    if (!content || !el) return;
+    // Follow only the live text inside its pane; the surrounding page keeps
+    // its own scroll position for metadata and inspection.
+    const tailScrollTop = () => Math.max(0, el === content
+      ? el.scrollHeight - el.clientHeight
+      : content.getBoundingClientRect().bottom - el.getBoundingClientRect().top + el.scrollTop - el.clientHeight);
+    const atTail = () => Math.abs(tailScrollTop() - el.scrollTop) <= 1;
+    let previousScrollTop = el.scrollTop;
+    let upwardWheelPending = false;
+    // Upward intent suspends following before the browser scrolls, including
+    // tiny movements in a short answer pane. Only an actual return resumes it.
+    const onWheel = (event: WheelEvent) => {
+      if (event.ctrlKey || event.metaKey || event.shiftKey
+        || Math.abs(event.deltaX) > Math.abs(event.deltaY)) return;
+      if (event.deltaY < 0) {
+        followingStreamRef.current = false;
+        upwardWheelPending = true;
+      } else if (event.deltaY > 0) {
+        upwardWheelPending = false;
+        if (atTail()) followingStreamRef.current = true;
+      }
+    };
+    // Track the reader before the next chunk changes the scroll height.
+    const onScroll = () => {
+      const movedDown = el.scrollTop > previousScrollTop;
+      if (!atTail()) {
+        followingStreamRef.current = false;
+        upwardWheelPending = false;
+      } else if (!upwardWheelPending && movedDown) {
+        followingStreamRef.current = true;
+      }
+      previousScrollTop = el.scrollTop;
+    };
+    if (followingStreamRef.current) el.scrollTop = tailScrollTop();
+    previousScrollTop = el.scrollTop;
+    el.addEventListener('wheel', onWheel, { passive: true, capture: true });
+    el.addEventListener('scroll', onScroll, { passive: true });
+    return () => {
+      el.removeEventListener('wheel', onWheel, { capture: true });
+      el.removeEventListener('scroll', onScroll);
+    };
   }, [data.isLoading, data.response, data.reasoning]);
 
   // Text selection handler
@@ -159,7 +204,7 @@ export default function ResponseSection({
         data.reasoning ? (
           <div className="py-1">
             <div className="text-control text-ink-faint mb-1">💭 {t('node.reasoningLive')}</div>
-            <div ref={streamRef} className="text-body text-ink-faint italic whitespace-pre-wrap break-words max-h-[300px] overflow-y-auto">
+            <div ref={streamRef} className="text-body text-ink-faint italic whitespace-pre-wrap break-words">
               {data.reasoning.length > 4000 ? '…' + data.reasoning.slice(-4000) : data.reasoning}
             </div>
           </div>
@@ -169,7 +214,7 @@ export default function ResponseSection({
         </div>
         )
       ) : data.isLoading && data.response && !data.restreaming ? (
-        <div ref={streamRef} className="focus-assistant-message markdown-body text-body text-ink max-h-[500px] overflow-y-auto">
+        <div ref={streamRef} className="focus-assistant-message markdown-body text-body text-ink">
           <Markdown base={data.agentSession?.cwd ?? data.importSource?.cwd}>{data.response}</Markdown>
           <span className="inline-block w-2 h-4 bg-accent animate-pulse rounded-none ml-0.5 align-text-bottom" />
         </div>

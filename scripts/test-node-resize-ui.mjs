@@ -108,10 +108,13 @@ const screenshot = async name => { await page.mouse.move(10, 110); await settle(
 const appearance = mode => page.evaluate(async mode => (await window.__importLive('/src/lib/appearance.ts')).useAppearance.getState().setLighting(mode), mode);
 const seed = async () => {
   await page.evaluate(() => {
+    // Keep the general resize gestures below the separately tested content
+    // height ceiling; short conversations now intentionally stop growing.
+    const response = Array.from({ length: 12 }, () => '拖动边缘进行快速调整，在对象格式中输入精确数值。自动高度跟随内容，固定高度保留阅读窗口。').join('\n\n');
     const data = (name, material = false) => ({
       question: material ? '材料节点与对话节点共享尺寸控件，保持不同的内容身份。\n\n调整宽度只改变换行；手动调整高度后，正文在卡片内部滚动。' : '节点的宽度与高度应该怎样协调？',
-      response: material ? '' : '拖动边缘进行快速调整，在对象格式中输入精确数值。自动高度跟随内容，固定高度保留阅读窗口。',
-      responses: material ? [''] : ['拖动边缘进行快速调整，在对象格式中输入精确数值。自动高度跟随内容，固定高度保留阅读窗口。'],
+      response: material ? '' : response,
+      responses: material ? [''] : [response],
       responseIndex: 0, displayName: name, detailLevel: 'full', ...(material ? { stepKind: 'note' } : {}),
       isCollapsed: false, isEditing: false, isEditingResponse: false, isLoading: false,
       tokenCount: 60, highlights: [], highlightMode: 'tag', attachments: [],

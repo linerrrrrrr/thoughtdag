@@ -12,10 +12,12 @@ import type { StoreState, NodeSlice } from '../types';
 import { condenseGuard } from '../../lib/condense-guard';
 import { activeAbortControllers } from '../streaming';
 import { arrangeNodes } from '../../lib/arrange-selection';
+import { reorderNodeLayers } from '../../lib/node-layer';
 import { fitFrameNodes, frameContentIds, isFrameNode, nodesRect } from '../../lib/frames';
 import { applySelectionGeometry } from '../../lib/node-geometry';
 import { applyEdgeSettings, applyBatchEdgeSettings } from '../../lib/edge-edit';
 import { canvasLayoutInputKey, planCanvasLayout } from '../../lib/canvas-layout';
+import { questionHeightRatio } from '../../lib/conversation-split';
 
 /** Do not propagate retired metadata when copying older saved documents. */
 function copiedNodeData(data: ThoughtNode['data']): ThoughtNode['data'] {
@@ -73,6 +75,16 @@ export const createNodeSlice: StateCreator<StoreState, [], [], NodeSlice> = (set
     if (nodes === get().nodes) return;
     get().pushHistory();
     set({ nodes });
+    get().pushHistory();
+  },
+
+  setQuestionHeightRatio: (nodeId, ratio) => {
+    const node = get().nodes.find(n => n.id === nodeId);
+    const next = questionHeightRatio(ratio);
+    if (!node || questionHeightRatio(node.data.questionHeightRatio) === next) return;
+    get().pushHistory();
+    set(state => ({ nodes: state.nodes.map(n => n.id === nodeId
+      ? { ...n, data: { ...n.data, questionHeightRatio: next } } : n) }));
     get().pushHistory();
   },
 
@@ -391,15 +403,15 @@ export const createNodeSlice: StateCreator<StoreState, [], [], NodeSlice> = (set
     return { ok: true };
   },
 
-  updateSelectedEdges: (ids, patch) => {
+  updateSelectedEdges: (ids, patch, { recordHistory = true } = {}) => {
     if (condenseGuard()) return { ok: false, error: 'restricted' };
     const { nodes, edges } = get();
     const result = applyBatchEdgeSettings(nodes, edges, ids, patch);
     if (!result.ok) return result;
     if (result.edges === edges) return { ok: true };
-    get().pushHistory();
+    if (recordHistory) get().pushHistory();
     set({ edges: result.edges });
-    get().pushHistory();
+    if (recordHistory) get().pushHistory();
     return { ok: true };
   },
 
@@ -546,7 +558,7 @@ export const createNodeSlice: StateCreator<StoreState, [], [], NodeSlice> = (set
   arrangeSelection: (nodeIds, action, reference, viewport) => {
     if (condenseGuard()) return;
     const state = get();
-    const result = arrangeNodes(state.nodes, state.edges, nodeIds, action, reference, viewport);
+    const result = arrangeNodes(state.nodes, nodeIds, action, reference, viewport);
     if (result.reason) {
       toast('info', t(`arrange.blocked.${result.reason}` as MessageKey));
       return;
@@ -554,6 +566,16 @@ export const createNodeSlice: StateCreator<StoreState, [], [], NodeSlice> = (set
     if (!result.changed) return;
     state.pushHistory();
     set({ nodes: result.nodes });
+    get().pushHistory();
+  },
+
+  reorderSelection: (nodeIds, action) => {
+    if (condenseGuard()) return;
+    const state = get();
+    const nodes = reorderNodeLayers(state.nodes, nodeIds, action);
+    if (nodes === state.nodes) return;
+    state.pushHistory();
+    set({ nodes });
     get().pushHistory();
   },
 

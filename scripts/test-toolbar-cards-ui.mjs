@@ -110,14 +110,14 @@ try {
 
   await page.locator('[data-node-format-field="width"]').fill('420');
   await card('canvas-detail-trigger').click(); await one('canvas-detail-panel');
-  assert.equal(await page.evaluate(() => window.__store.getState().nodes.find(node => node.id === 'a').width), 380,
-    'replacing properties must not submit a geometry draft');
+  assert.equal(await page.evaluate(() => window.__store.getState().nodes.find(node => node.id === 'a').width), 420,
+    'leaving geometry for another card saves the local edit');
   await card('toolbar-more').click(); await one('toolbar-more-panel');
   await page.keyboard.press('Escape'); await none();
   assert.deepEqual(await page.evaluate(() => window.__store.getState().selectedNodeIds), ['a']);
   await selectFormat();
   assert.equal(await page.locator('[data-node-format-field="width"]').inputValue(), '420');
-  await card('node-format-cancel').click();
+  assert.equal(await card('node-format-cancel').count(), 0);
   await card('frame-nav-trigger').click(); await one('frame-nav-panel');
   await card('canvas-detail-trigger').click(); await one('canvas-detail-panel');
   await page.keyboard.press('Escape'); await none();
@@ -173,13 +173,13 @@ try {
   await card('canvas-layout-panel').waitFor({ state: 'detached' });
   assert.equal(await card('layout-entry').evaluate(el => el === document.activeElement), true);
   await selectConnection();
-  await card('edge-label').fill('保留连线草稿');
+  await card('edge-label').fill('即时保存的连线标注');
   await card('toolbar-more').click(); await one('toolbar-more-panel');
-  assert.equal(await page.evaluate(() => window.__canvasEditing.getState().edgePreviews), null);
+  assert.equal(await page.evaluate(() => window.__store.getState().edges[0].data.label), '即时保存的连线标注');
   await page.keyboard.press('Escape'); await none();
   await selectConnection();
-  assert.equal(await card('edge-label').inputValue(), '保留连线草稿');
-  assert.equal(await page.evaluate(() => window.__store.getState().edges[0].data.label), undefined);
+  assert.equal(await card('edge-label').inputValue(), '即时保存的连线标注');
+  assert.equal(await page.evaluate(() => window.__store.getState().edges[0].data.label), '即时保存的连线标注');
   await card('selection-properties-close').click();
   await none();
   assert.equal(await page.evaluate(() => window.__store.getState().edges[0].selected), true);

@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
+import { useState, useRef, useCallback, useEffect, useLayoutEffect, useMemo } from 'react';
 import { describeModel } from '../lib/use-models';
 import { conclusionOf } from '../lib/turn-insight';
 import { useReactFlow, useUpdateNodeInternals, type NodeProps } from '@xyflow/react';
@@ -33,6 +33,8 @@ import NodeMetadataEditor from './NodeMetadataEditor';
 import NodeTokenUsage from './NodeTokenUsage';
 import NodeContextSources from './NodeContextSources';
 import './ConversationSurface.css';
+import ConversationSplit from './ConversationSplit';
+import './ConversationNodeSplit.css';
 import { ApprovalCard } from './ui/ApprovalCard';
 import { AgentTrace } from './ui/AgentTrace';
 import { AgentActivityView } from './ui/AgentActivityView';
@@ -42,10 +44,11 @@ import { SquareTerminal } from 'lucide-react';
 import { useT, fmt } from '../i18n';
 import { isViewerMode } from '../lib/viewer';
 import { useInlineEditDismiss } from '../lib/use-inline-edit-dismiss';
+import { measureConversationContentHeight, registerNodeContentHeightMeasure } from '../lib/node-content-height';
 
 // Camera and resize controls change presentation, not the active editing task.
 const isGeometryControl = (target: EventTarget | null) => target instanceof Element
-  && !!target.closest('.react-flow__resize-control, .react-flow__controls');
+  && !!target.closest('.react-flow__resize-control, .react-flow__controls, [data-conversation-divider]');
 
 export default function ThoughtNode({ id, data, selected }: NodeProps<ThoughtNodeType>) {
   // Actions are stable references: selecting them one by one (instead of a
@@ -87,6 +90,7 @@ export default function ThoughtNode({ id, data, selected }: NodeProps<ThoughtNod
   const [metadataEditing, setMetadataEditing] = useState(false);
   const customWidth = useStore((s) => s.nodes.find((n) => n.id === id)?.width);
   const customHeight = useStore((s) => s.nodes.find((n) => n.id === id)?.height);
+  const customStyleHeight = useStore((s) => s.nodes.find((n) => n.id === id)?.style?.height);
   const responseRef = useRef<HTMLDivElement>(null);
   const nodeRef = useRef<HTMLDivElement>(null);
   const questionTaRef = useRef<HTMLTextAreaElement>(null);
@@ -131,6 +135,37 @@ export default function ThoughtNode({ id, data, selected }: NodeProps<ThoughtNod
   // Handles move to hug the seal at glyph tier — tell React Flow to re-measure
   const updateNodeInternals = useUpdateNodeInternals();
   useEffect(() => { updateNodeInternals(id); }, [glyphTier, zoomedOut, isCollapsed, metadataEditing, customWidth, customHeight, id, updateNodeInternals]);
+  useLayoutEffect(() => {
+    // Live tails and textareas intentionally bound their own content. Resume
+    // the complete-reading limit when the turn or editing session settles.
+    const canLimit = !data.isLoading && !editingQuestionHere && !editingResponseHere && !metadataEditing;
+    const unregister = registerNodeContentHeightMeasure(id, width => canLimit
+      ? measureConversationContentHeight(nodeRef.current, width) : undefined);
+    const root = nodeRef.current;
+    if (!root || !canLimit || zoomedOut || isCollapsed) return unregister;
+    const normalize = () => {
+      const measured = measureConversationContentHeight(root);
+      if (measured === undefined) return;
+      const limit = Math.max(240, measured);
+      // Existing saved sizes obey the same content ceiling as new resizes.
+      // Reconcile the active history baseline too: normalization must not
+      // become a dirty undo step that immediately repeats itself.
+      useStore.getState().normalizeNodeContentHeight(id, limit);
+    };
+    let frame: number | undefined;
+    const observer = new ResizeObserver(() => {
+      if (frame !== undefined) cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => { frame = undefined; normalize(); });
+    });
+    observer.observe(root);
+    for (const element of root.querySelectorAll<HTMLElement>(':scope > *, .conversation-split-content')) observer.observe(element);
+    normalize();
+    return () => {
+      observer.disconnect();
+      if (frame !== undefined) cancelAnimationFrame(frame);
+      unregister();
+    };
+  }, [id, data.isLoading, editingQuestionHere, editingResponseHere, metadataEditing, zoomedOut, isCollapsed, customStyleHeight]);
   // Upstream changed since this answer was written (see recomputeStaleness)
   const isStale = useStore((s) => s.staleIds.includes(id) && !staleHiddenByJudge(s, id));
   const staleVerdict = useStore((s) => currentStaleVerdict(s, id));
@@ -352,6 +387,7 @@ export default function ThoughtNode({ id, data, selected }: NodeProps<ThoughtNod
   // "Continue last thread" hover: this node is the flight destination
   const isBeacon = useUiStore((s) => s.beaconNodeId === id);
   const fixedHeight = (!zoomedOut || data.keepOverviewHeight) && !isCollapsed && !metadataEditing ? customHeight : undefined;
+  const splitEnabled = !isHuman && !isAwaitingAsk && !!(data.response || data.isLoading || editingResponseHere || data.generationFailed || activity.length);
 
   return (
     <div
@@ -537,7 +573,8 @@ export default function ThoughtNode({ id, data, selected }: NodeProps<ThoughtNod
       )}
 
       {!isCollapsed && !zoomedOut && (
-        <div className={`p-surface-inset min-h-0 ${fixedHeight != null ? 'flex-1 overflow-y-auto nowheel' : ''} nodrag nopan`} data-thought-body>
+        <div className={`p-surface-inset min-h-0 ${splitEnabled ? 'conversation-node-split-body' : fixedHeight != null ? 'flex-1 overflow-y-auto nowheel' : ''} nodrag nopan`} data-thought-body data-conversation-split-body={splitEnabled || undefined}>
+          <ConversationSplit nodeId={id} surface="node" enabled={splitEnabled} question={<>
           {/* The passage this branch explores: without it the user loses
               the thread that spawned the node. Page-anchored ones carry a
               p.N chip that reopens the reader at that page, thread open —
@@ -639,13 +676,12 @@ export default function ThoughtNode({ id, data, selected }: NodeProps<ThoughtNod
               )}
             </div>
           ) : (
-            // Long pasted questions must not stretch the card: same pattern
-            // as the answer block — cap the height, scroll inside (nowheel
-            // keeps the wheel on the text, not the canvas zoom).
+            // The split pane owns question scrolling; pending turns retain
+            // their original bounded reading area.
             <div className="conversation-question" data-conversation-question>
             <div
               onDoubleClick={handleDoubleClickQuestion}
-              className="conversation-user-message question-md markdown-body cursor-text max-h-[180px] overflow-y-auto nowheel nopan"
+              className={`conversation-user-message question-md markdown-body cursor-text ${splitEnabled ? '' : 'max-h-[180px] overflow-y-auto'} nowheel nopan`}
             >
               {/* a question is markdown like an answer (lists, code, emphasis), set compact; the plaques above keep the plain text */}
               <Markdown base={data.agentSession?.cwd ?? data.importSource?.cwd} diagrams="placeholder">{originalQuestionBeforeInstructions(data.question, activity)}</Markdown>
@@ -654,6 +690,7 @@ export default function ThoughtNode({ id, data, selected }: NodeProps<ThoughtNod
             </div>
           )}
 
+          </>} answer={<>
           {!data.isLoading && activity.length > 0 && <AgentActivityView key={`${id}:${data.responseIndex}`} entries={activity} compact base={data.agentSession?.cwd ?? data.importSource?.cwd} failed={data.generationFailed} />}
           {data.isLoading && !!data.pendingApprovals?.length && (
             <div className="flex flex-col gap-1.5">
@@ -745,7 +782,7 @@ export default function ThoughtNode({ id, data, selected }: NodeProps<ThoughtNod
               onClick={handleResponseClick}
               data-conversation-answer
               data-highlighter-active={highlighter.active || undefined}
-              className={`conversation-answer markdown-body text-body text-ink ${fixedHeight == null ? 'max-h-[400px] overflow-y-auto' : ''} cursor-text nopan nodrag nowheel`}
+              className={`conversation-answer markdown-body text-body text-ink ${!splitEnabled && fixedHeight == null ? 'max-h-[400px] overflow-y-auto' : ''} cursor-text nopan nodrag nowheel`}
             >
               {highlightedTexts.size > 0 || exploreSpecs.length > 0 ? (
                 <HighlightedMarkdown base={data.agentSession?.cwd ?? data.importSource?.cwd} content={data.response} highlights={highlightedTexts} exploreMarks={exploreSpecs} diagrams="placeholder" />
@@ -905,6 +942,7 @@ export default function ThoughtNode({ id, data, selected }: NodeProps<ThoughtNod
             </div>
           )}
 
+          </>} />
         </div>
       )}
 

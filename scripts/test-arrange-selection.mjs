@@ -1,6 +1,6 @@
-// Explicit arrangement keeps geometry, group membership, and DAG order intact.
+// Manual arrangement follows the selection, including overlaps and offset chains.
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
+import { buildSync } from 'esbuild';
 import { mkdtempSync, rmdirSync, unlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -9,27 +9,22 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const temp = mkdtempSync(join(tmpdir(), 'thoughtdag-arrange-'));
 const bundle = join(temp, 'arrange.mjs');
-execFileSync(process.execPath, [join(root, 'node_modules/esbuild/bin/esbuild'),
-  join(root, 'src/lib/arrange-selection.ts'), '--bundle', '--format=esm', '--platform=node',
-  `--outfile=${bundle}`, '--define:import.meta.env={}',
-], { stdio: ['ignore', 'ignore', 'pipe'] });
+buildSync({ entryPoints: [join(root, 'src/lib/arrange-selection.ts')], bundle: true,
+  format: 'esm', platform: 'node', outfile: bundle, define: { 'import.meta.env': '{}' } });
 const { arrangeNodes, arrangementUnitCount } = await import(pathToFileURL(bundle).href);
 const framesBundle = join(temp, 'frames.mjs');
-execFileSync(process.execPath, [join(root, 'node_modules/esbuild/bin/esbuild'),
-  join(root, 'src/lib/frames.ts'), '--bundle', '--format=esm', '--platform=node', `--outfile=${framesBundle}`,
-  '--define:import.meta.env={}',
-], { stdio: ['ignore', 'ignore', 'pipe'] });
+buildSync({ entryPoints: [join(root, 'src/lib/frames.ts')], bundle: true,
+  format: 'esm', platform: 'node', outfile: framesBundle, define: { 'import.meta.env': '{}' } });
 const { resolveCarriedNodeIds } = await import(pathToFileURL(framesBundle).href);
 const node = (id, x, y, width = 100, height = 80, data = {}) => ({
   id, type: 'thought', position: { x, y }, width, height,
   data: { question: 'Question', response: '', isCollapsed: false, ...data },
 });
-const edge = (source, target, data) => ({ id: `${source}-${target}`, source, target, data });
 const position = (result, id) => result.nodes.find((n) => n.id === id).position;
 const close = (actual, expected) => assert.ok(Math.abs(actual - expected) < 0.01, `${actual} != ${expected}`);
 let passed = 0;
 const test = (name, fn) => { fn(); passed++; console.log(`PASS ${name}`); };
-const all = (nodes, action, reference, viewport, edges = []) => arrangeNodes(nodes, edges, nodes.map((n) => n.id), action, reference, viewport);
+const all = (nodes, action, reference, viewport) => arrangeNodes(nodes, nodes.map((n) => n.id), action, reference, viewport);
 const fixture = () => [node('a', 20, 30, 100, 80), node('b', 400, 300, 160, 120), node('c', 800, 600, 120, 100)];
 
 try {
@@ -94,14 +89,31 @@ try {
       assert.equal(all(nodes, 'left', 'viewport', rect).reason, 'invalid-viewport');
     }
   });
-  test('distribution refuses negative spacing instead of overlapping cards', () => {
-    const nodes = [node('a', 0, 0, 300), node('b', 30, 200, 300), node('c', 60, 400, 300)];
-    assert.equal(all(nodes, 'distribute-horizontal').reason, 'overlap');
+  for (const axis of ['horizontal', 'vertical']) {
+    test(`${axis} distribution allows equal negative gaps and preserves the outer bounds`, () => {
+      const nodes = [node('a', 0, 0, 300, 300), node('b', 20, 20, 200, 200), node('c', 60, 60, 300, 300)];
+      const result = all(nodes, `distribute-${axis}`);
+      assert.equal(result.changed, true);
+      assert.equal(result.reason, undefined);
+      const coordinate = axis === 'horizontal' ? 'x' : 'y';
+      close(position(result, 'a')[coordinate], 0);
+      close(position(result, 'b')[coordinate], 80);
+      close(position(result, 'c')[coordinate], 60);
+      close(position(result, 'b')[coordinate] - 300, -220);
+      close(position(result, 'c')[coordinate] - position(result, 'b')[coordinate] - 200, -220);
+    });
+  }
+  test('viewport distribution allows cards wider than the visible canvas', () => {
+    const result = all([node('a', 0, 0, 300), node('b', 600, 200, 200)],
+      'distribute-horizontal', 'viewport', { x: 10, y: 0, width: 100, height: 800 });
+    assert.equal(result.reason, undefined);
+    close(position(result, 'a').x, 10);
+    close(position(result, 'b').x + 200, 110);
   });
   test('legacy metadata never expands the selected alignment scope', () => {
     const nodes = [node('g1', 200, 0, 100, 80, { canvasGroupId: 'group' }),
       node('g2', 300, 120, 100, 80, { canvasGroupId: 'group' }), node('other', 0, 400)];
-    const result = arrangeNodes(nodes, [], ['g1', 'other'], 'left');
+    const result = arrangeNodes(nodes, ['g1', 'other'], 'left');
     assert.equal(result.changed, true);
     close(position(result, 'g1').x, 0);
     assert.equal(result.nodes[1], nodes[1]);
@@ -114,7 +126,7 @@ try {
     const nodes = [node('g1', 200, 0, 100, 80, { canvasGroupId: 'group' }),
       node('g2', 300, 120, 100, 80, { canvasGroupId: 'group' }),
       node('g3', 600, 300, 100, 80, { canvasGroupId: 'group' })];
-    const result = arrangeNodes(nodes, [], ['g1', 'g2'], 'left');
+    const result = arrangeNodes(nodes, ['g1', 'g2'], 'left');
     assert.equal(result.changed, true);
     close(position(result, 'g1').x, 200);
     close(position(result, 'g2').x, 200);
@@ -136,127 +148,59 @@ try {
     assert.equal(result.changed, true);
     close(position(result, 'a').x, 0); close(position(result, 'b').x, 300); close(position(result, 'c').x, 600);
   });
-  test('unselected nodes remain identical and block new collisions', () => {
+  test('alignment may overlap an unselected node without moving it', () => {
     const nodes = [node('a', 0, 0), node('b', 400, 200), node('fixed', 0, 200)];
-    const blocked = arrangeNodes(nodes, [], ['a', 'b'], 'left');
-    assert.equal(blocked.reason, 'overlap');
-    assert.equal(blocked.nodes, nodes);
-    const changed = arrangeNodes(nodes, [], ['a', 'b'], 'right');
-    assert.equal(changed.changed, true);
-    assert.equal(changed.nodes[2], nodes[2]);
-  });
-  test('continuation nodes cannot be flattened onto one row', () => {
-    const nodes = [node('parent', 0, 0), node('child', 0, 200)];
-    const result = all(nodes, 'top', 'selection', undefined, [edge('parent', 'child')]);
-    assert.equal(result.reason, 'context-order');
-    assert.equal(result.nodes, nodes);
-  });
-  test('a boundary edge protects its unselected parent and chain column', () => {
-    const nodes = [node('parent', 0, 0), node('child', 0, 200), node('other', 400, 500)];
-    const result = arrangeNodes(nodes, [edge('parent', 'child')], ['child', 'other'], 'right');
-    assert.equal(result.reason, 'chain-alignment');
-    assert.equal(result.nodes, nodes);
-  });
-  test('a boundary edge protects its unselected child against moving the parent below it', () => {
-    const nodes = [node('parent', 0, 0), node('child', 0, 200), node('other', 400, 500)];
-    const result = arrangeNodes(nodes, [edge('parent', 'child')], ['parent', 'other'], 'bottom');
-    assert.equal(result.reason, 'context-order');
-  });
-  test('horizontal continuation cannot be flattened onto one column', () => {
-    const nodes = [node('parent', 0, 80, 100, 80, { layoutDirection: 'horizontal' }), node('child', 300, 80)];
-    const result = all(nodes, 'left', 'selection', undefined, [edge('parent', 'child')]);
-    assert.equal(result.reason, 'context-order');
-    assert.equal(result.nodes, nodes);
-  });
-  test('horizontal distribution preserves a conversation row with unequal widths', () => {
-    const nodes = [node('a', 0, 80, 100, 80, { layoutDirection: 'horizontal' }),
-      node('b', 300, 80, 180, 120, { layoutDirection: 'horizontal' }), node('c', 900, 80, 120, 100)];
-    const result = all(nodes, 'distribute-horizontal', 'selection', undefined, [edge('a', 'b'), edge('b', 'c')]);
+    const result = arrangeNodes(nodes, ['a', 'b'], 'left');
     assert.equal(result.changed, true);
     assert.equal(result.reason, undefined);
-    close(position(result, 'b').x - 100, position(result, 'c').x - position(result, 'b').x - 180);
-    for (const n of result.nodes) close(n.position.y, 80);
+    assert.deepEqual(position(result, 'b'), nodes[2].position);
+    assert.equal(result.nodes[2], nodes[2]);
   });
-  test('horizontal boundary protects the unselected parent row', () => {
-    const nodes = [node('parent', 0, 80, 100, 80, { layoutDirection: 'horizontal' }),
-      node('child', 300, 80), node('other', 700, 500)];
-    const result = arrangeNodes(nodes, [edge('parent', 'child')], ['child', 'other'], 'bottom');
-    assert.equal(result.reason, 'chain-alignment');
-    assert.equal(result.nodes, nodes);
-  });
-  test('horizontal boundary prevents moving the parent beyond its unselected child', () => {
-    const nodes = [node('parent', 0, 80, 100, 80, { layoutDirection: 'horizontal' }),
-      node('child', 300, 80), node('other', 800, 500)];
-    const result = arrangeNodes(nodes, [edge('parent', 'child')], ['parent', 'other'], 'right');
-    assert.equal(result.reason, 'context-order');
-    assert.equal(result.nodes, nodes);
-  });
-  test('horizontal chain with unequal heights keeps its top-aligned row', () => {
-    const nodes = [node('parent', 0, 80, 100, 180, { layoutDirection: 'horizontal' }), node('child', 300, 80, 100, 80)];
-    assert.equal(all(nodes, 'bottom', 'selection', undefined, [edge('parent', 'child')]).reason, 'chain-alignment');
-    assert.equal(all(nodes, 'top', 'selection', undefined, [edge('parent', 'child')]).changed, false);
-  });
-  test('horizontal metadata on a child supports an older parent without direction', () => {
-    const nodes = [node('parent', 0, 80), node('child', 300, 80, 100, 80, { layoutDirection: 'horizontal' })];
-    assert.equal(all(nodes, 'left', 'selection', undefined, [edge('parent', 'child')]).reason, 'context-order');
-  });
-  test('a sole horizontal reference preserves the same input order', () => {
-    const nodes = [node('parent', 0, 80, 100, 80, { layoutDirection: 'horizontal' }), node('child', 300, 80)];
-    assert.equal(all(nodes, 'right', 'selection', undefined, [edge('parent', 'child', { isCrossLink: true })]).reason, 'context-order');
-  });
-  test('horizontal exploration may align below its parent but cannot precede it', () => {
-    const nodes = [node('parent', 100, 80, 100, 80, { layoutDirection: 'horizontal' }), node('branch', 400, 400)];
-    const edges = [edge('parent', 'branch', { isBranchFromSelection: true })];
-    assert.equal(all(nodes, 'left', 'selection', undefined, edges).changed, true);
-    assert.equal(arrangeNodes(nodes, edges, ['branch'], 'left', 'viewport', { x: 0, y: 0, width: 1000, height: 1000 }).reason, 'context-order');
-  });
-  test('watch edges do not impose context order', () => {
-    const nodes = [node('parent', 0, 0), node('watcher', 400, 200)];
-    const result = all(nodes, 'bottom', 'selection', undefined, [edge('parent', 'watcher', { isWatch: true })]);
-    assert.equal(result.changed, true);
-  });
-  test('a cross-link that is the only parent preserves continuation order', () => {
+  test('vertical conversation nodes may align onto one row', () => {
     const nodes = [node('parent', 0, 0), node('child', 0, 200)];
-    assert.equal(all(nodes, 'bottom', 'selection', undefined, [edge('parent', 'child', { isCrossLink: true })]).reason, 'context-order');
-  });
-  test('an ordinary reference does not replace a real continuation parent', () => {
-    const nodes = [node('parent', 0, 0), node('child', 0, 200), node('reference', 400, 500)];
-    const result = arrangeNodes(nodes, [edge('parent', 'child'), edge('reference', 'child', { isCrossLink: true })], ['reference'], 'top', 'viewport', { x: 0, y: 300, width: 1000, height: 800 });
+    const result = all(nodes, 'top');
     assert.equal(result.changed, true);
+    assert.equal(result.reason, undefined);
+    assert.deepEqual(position(result, 'child'), position(result, 'parent'));
   });
-  test('exploration may align beside the parent but cannot move above it', () => {
-    const nodes = [node('parent', 0, 100), node('branch', 400, 300)];
-    const edges = [edge('parent', 'branch', { isBranchFromSelection: true })];
-    assert.equal(all(nodes, 'top', 'selection', undefined, edges).changed, true);
-    assert.equal(arrangeNodes(nodes, edges, ['branch'], 'top', 'viewport', { x: 0, y: 0, width: 1000, height: 1000 }).reason, 'context-order');
-  });
-  test('an alternative answer can move laterally without moving the main chain', () => {
-    const nodes = [node('parent', 0, 0), node('main', 0, 200), node('alternative', 400, 200)];
-    const result = arrangeNodes(nodes, [edge('parent', 'main'), edge('parent', 'alternative')], ['alternative'],
-      'right', 'viewport', { x: 0, y: 0, width: 1000, height: 800 });
+  test('partial alignment may offset a child while its unselected parent stays fixed', () => {
+    const nodes = [node('parent', 0, 0), node('child', 0, 200), node('other', 400, 500)];
+    const result = arrangeNodes(nodes, ['child', 'other'], 'right');
     assert.equal(result.changed, true);
-    close(position(result, 'alternative').x, 900);
+    close(position(result, 'child').x, 400);
     assert.equal(result.nodes[0], nodes[0]);
+  });
+  test('manual alignment may move a parent below its unselected child', () => {
+    const nodes = [node('parent', 0, 0), node('child', 0, 200), node('other', 400, 500)];
+    const result = arrangeNodes(nodes, ['parent', 'other'], 'bottom');
+    assert.equal(result.changed, true);
+    close(position(result, 'parent').y, 500);
     assert.equal(result.nodes[1], nodes[1]);
   });
-  test('a merge keeps the first continued parent column rather than an exploration column', () => {
-    const nodes = [node('explore', 400, 0), node('main', 0, 0), node('merge', 0, 200)];
-    const result = arrangeNodes(nodes, [edge('explore', 'merge', { isBranchFromSelection: true }), edge('main', 'merge')], ['merge'],
-      'right', 'viewport', { x: 0, y: 0, width: 1000, height: 800 });
-    assert.equal(result.reason, 'chain-alignment');
-  });
-  test('unrelated existing violations do not block a valid arrangement', () => {
-    const nodes = [...fixture(), node('bad-parent', 2000, 200), node('bad-child', 2400, 0)];
-    const result = arrangeNodes(nodes, [edge('bad-parent', 'bad-child')], ['a', 'b', 'c'], 'left');
+  test('horizontal conversation nodes may align onto one column', () => {
+    const nodes = [node('parent', 0, 80, 100, 80, { layoutDirection: 'horizontal' }), node('child', 300, 80)];
+    const result = all(nodes, 'left');
     assert.equal(result.changed, true);
+    assert.equal(result.reason, undefined);
+    assert.deepEqual(position(result, 'child'), position(result, 'parent'));
+  });
+  test('horizontal nodes with unequal heights support bottom alignment', () => {
+    const nodes = [node('parent', 0, 80, 100, 180, { layoutDirection: 'horizontal' }), node('child', 300, 80, 100, 80)];
+    const result = all(nodes, 'bottom');
+    assert.equal(result.changed, true);
+    close(position(result, 'parent').y + 180, position(result, 'child').y + 80);
+    assert.equal(all(nodes, 'top').changed, false);
+  });
+  test('manual placement preserves node data, dimensions and the unselected objects', () => {
+    const nodes = [...fixture(), node('fixed', 0, 300)];
+    const result = arrangeNodes(nodes, ['a', 'b', 'c'], 'left');
+    assert.equal(result.changed, true);
+    for (let index = 0; index < 3; index++) {
+      assert.equal(result.nodes[index].data, nodes[index].data);
+      assert.equal(result.nodes[index].width, nodes[index].width);
+      assert.equal(result.nodes[index].height, nodes[index].height);
+    }
     assert.equal(result.nodes[3], nodes[3]);
-    assert.equal(result.nodes[4], nodes[4]);
-  });
-  test('retired metadata does not freeze relative positions when improving an imperfect chain', () => {
-    const nodes = [node('a', 0, 100, 100, 80, { canvasGroupId: 'g' }), node('b', 200, 50, 100, 80, { canvasGroupId: 'g' })];
-    const result = all(nodes, 'bottom', 'viewport', { x: 0, y: 0, width: 1000, height: 800 }, [edge('a', 'b')]);
-    assert.equal(result.changed, true);
-    close(position(result, 'b').y - position(result, 'a').y, 0);
   });
   test('idempotent arrangement is not an undo step and preserves references', () => {
     const nodes = [node('a', 0, 0), node('b', 0, 200)];
@@ -275,7 +219,7 @@ try {
     const carried = resolveCarriedNodeIds(nodes, ['frame']);
     assert.deepEqual(carried, ['frame', 'a', 'b']);
     assert.equal(arrangementUnitCount(nodes, ['frame', 'a']), 1);
-    const result = arrangeNodes(nodes, [], ['frame', 'a'], 'left', 'viewport', { x: 0, y: 0, width: 1600, height: 1000 });
+    const result = arrangeNodes(nodes, ['frame', 'a'], 'left', 'viewport', { x: 0, y: 0, width: 1600, height: 1000 });
     assert.equal(result.changed, true);
     for (const original of nodes) {
       if (carried.includes(original.id)) close(position(result, original.id).x - original.position.x, -100);
@@ -290,12 +234,12 @@ try {
       node('single', 300, 450),
     ];
     const viewport = { x: 0, y: 0, width: 1600, height: 1000 };
-    const result = arrangeNodes(nodes, [], ['frame'], 'left', 'viewport', viewport);
+    const result = arrangeNodes(nodes, ['frame'], 'left', 'viewport', viewport);
     assert.equal(result.changed, true);
     assert.ok(result.nodes.slice(1).every((n, i) => n === nodes[i + 1]));
     const linked = nodes.map(n => n.id === 'frame' ? { ...n, data: { ...n.data, frameCarry: true } } : n);
     assert.deepEqual(resolveCarriedNodeIds(linked, ['frame']), ['frame', 'a', 'single']);
-    const moved = arrangeNodes(linked, [], ['frame'], 'left', 'viewport', viewport);
+    const moved = arrangeNodes(linked, ['frame'], 'left', 'viewport', viewport);
     assert.equal(moved.changed, true);
     close(position(moved, 'a').x, 50);
     assert.equal(moved.nodes[2], linked[2]);
@@ -311,10 +255,10 @@ try {
     ];
     const ids = ['f1', 'f3', 'f2'];
     assert.equal(arrangementUnitCount(nodes, ids), 1);
-    const result = arrangeNodes(nodes, [], ids, 'right', 'viewport', { x: 0, y: 0, width: 1600, height: 1000 });
+    const result = arrangeNodes(nodes, ids, 'right', 'viewport', { x: 0, y: 0, width: 1600, height: 1000 });
     assert.equal(result.changed, true);
     for (const original of nodes) close(position(result, original.id).x - original.position.x, 500);
-    const invalid = arrangeNodes(nodes, [], ids, 'distribute-horizontal');
+    const invalid = arrangeNodes(nodes, ids, 'distribute-horizontal');
     assert.equal(invalid.reason, 'insufficient');
     assert.equal(invalid.nodes, nodes);
   });

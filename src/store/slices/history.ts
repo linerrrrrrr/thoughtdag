@@ -95,8 +95,10 @@ function sameNode(a: ThoughtNode, b: ThoughtNode): boolean {
     if (!NODE_VIEW.has(k) && !same(ao[k], bo[k])) return false;
   }
   // a stream in flight changes its text with every chunk; until it lands
-  // only the version it is writing counts
-  return a.data.isLoading || b.data.isLoading ? sameVersion(a.data, b.data) : sameContent(a.data, b.data);
+  // only the version it is writing and the person's reading split count.
+  return a.data.isLoading || b.data.isLoading
+    ? a.data.questionHeightRatio === b.data.questionHeightRatio && sameVersion(a.data, b.data)
+    : sameContent(a.data, b.data);
 }
 
 function sameEdge(a: ThoughtEdge, b: ThoughtEdge): boolean {
@@ -145,8 +147,9 @@ function restore(target: Snapshot, live: Snapshot): Snapshot {
   const nodes = target.nodes.map((n) => {
     const cur = liveNodes.get(n.id);
     if (cur === n) return n;
-    // a node still streaming keeps its live self (undo checked the step leaves it be)
-    if (cur?.data.isLoading) return cur;
+    // A stream keeps its live content; only its reading split can be restored.
+    if (cur?.data.isLoading) return cur.data.questionHeightRatio === n.data.questionHeightRatio
+      ? cur : { ...cur, data: { ...cur.data, questionHeightRatio: n.data.questionHeightRatio } };
     const data = restoreData(n.data, cur?.data);
     return { ...n, selected: cur?.selected ?? false, measured: cur?.measured ?? n.measured, data };
   });
@@ -166,6 +169,26 @@ function touchesStream(target: Snapshot, live: Snapshot): boolean {
     const was = byId.get(n.id);
     return !was || !sameVersion(was.data, n.data);
   });
+}
+
+function pixelHeight(value: unknown): number | undefined {
+  if (typeof value === 'number') return Number.isFinite(value) && value > 0 ? value : undefined;
+  if (typeof value !== 'string') return;
+  const match = value.trim().match(/^(\+?(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?)(?:px)?$/i);
+  const height = match ? Number(match[1]) : NaN;
+  return Number.isFinite(height) && height > 0 ? height : undefined;
+}
+
+function clampContentHeight(node: ThoughtNode, limit: number): ThoughtNode {
+  const height = pixelHeight(node.height);
+  const styleHeight = pixelHeight(node.style?.height);
+  const clampHeight = height !== undefined && height > limit;
+  const clampStyle = styleHeight !== undefined && styleHeight > limit;
+  if (!clampHeight && !clampStyle) return node;
+  return { ...node,
+    ...(clampHeight || (height === undefined && clampStyle) ? { height: limit } : {}),
+    ...(clampStyle ? { style: { ...node.style, height: limit } } : {}),
+  };
 }
 
 /** What the undo and redo buttons can do right now. */
@@ -208,11 +231,36 @@ export const createHistorySlice: StateCreator<StoreState, [], [], HistorySlice> 
     if (done && !pending(done.data)) {
       const inFlight = (n: ThoughtNode) => n.id === nodeId && pending(n.data);
       const next = history.map((s) => (s.nodes.some(inFlight)
-        ? { ...s, nodes: s.nodes.map((n) => (inFlight(n) ? { ...n, data: done.data } : n)) }
+        ? { ...s, nodes: s.nodes.map((n) => (inFlight(n) ? { ...n, data: { ...done.data, questionHeightRatio: n.data.questionHeightRatio } } : n)) }
         : s));
       set({ history: next });
     }
     get().pushHistory();
+  },
+
+  normalizeNodeContentHeight: (nodeId, limit) => {
+    if (!Number.isFinite(limit) || limit <= 0) return;
+    set(state => {
+      const live = state.nodes.find(node => node.id === nodeId);
+      if (!live) return state;
+      const normalized = clampContentHeight(live, limit);
+      const active = state.history[state.historyIndex];
+      const historical = active?.nodes.find(node => node.id === nodeId);
+      let history = state.history;
+      // The limit describes the current prose at its current width. Only
+      // that active snapshot can share it; older turns are measured on restore.
+      if (active && historical && historical.width === live.width && historical.style?.width === live.style?.width
+        && sameContent(historical.data, live.data)) {
+        const clamped = clampContentHeight(historical, limit);
+        if (clamped !== historical) {
+          history = history.slice();
+          history[state.historyIndex] = { ...active,
+            nodes: active.nodes.map(node => node.id === nodeId ? clamped : node) };
+        }
+      }
+      if (normalized === live && history === state.history) return state;
+      return { nodes: normalized === live ? state.nodes : state.nodes.map(node => node.id === nodeId ? normalized : node), history };
+    });
   },
 
   undo: () => {

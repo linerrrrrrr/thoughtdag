@@ -1,4 +1,4 @@
-// One typed selection inspector: scope, drafts, previews, and explicit actions.
+// One typed inspector: outside-save geometry, live connections, and explicit deletion.
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
@@ -34,7 +34,7 @@ const section = type => page.locator(`[data-selection-section="${type}"]`);
 const close = () => page.locator('[data-selection-properties-close]').click();
 const choose = type => page.locator(`[data-selection-target="${type}"]`).click();
 const edgeLabel = () => page.locator('[data-edge-label], [data-batch-edge-label]');
-const edgeApply = () => page.locator('[data-edge-apply], [data-batch-edge-apply]');
+const edgeDelete = () => page.locator('[data-connection-delete]');
 const node = id => page.locator(`.react-flow__node[data-id="${id}"]`);
 const readSelection = () => page.evaluate(() => ({
   nodes: [...window.__store.getState().selectedNodeIds].sort(),
@@ -146,28 +146,28 @@ try {
     }
     await page.screenshot({ path: `${output}/three-types.png` });
   });
-  await probe('one connection has the same inspector and draft after click or marquee selection', async () => {
+  await probe('one connection keeps live values after closure and click or marquee selection', async () => {
     await fixture();
     const p = await linePoint('ab', 0.4); await page.mouse.click(p.x, p.y);
     await selected([], ['ab']); await page.locator('[data-connection-properties]').waitFor();
     assert.match(await panel().innerText(), /选区属性/);
-    await edgeLabel().fill('one shared draft');
+    await edgeLabel().fill('one shared value');
     await close(); await selected([], ['ab']);
     assert.equal(await panel().count(), 0);
-    assert.equal((await readEdges())[0].data.label, 'first');
-    assert.equal(await page.evaluate(() => window.__canvasEditing.getState().edgePreviews?.length ?? 0), 0);
+    assert.equal((await readEdges())[0].data.label, 'one shared value');
     await page.mouse.click(1150, 900);
-    const middle = await linePoint('ab');
+    const middle = await linePoint('ab', 0.25);
     await draw({ x: middle.x - 38, y: middle.y - 10, width: 76, height: 20 });
     await choose('edges'); await selected([], ['ab']);
-    assert.equal(await edgeLabel().inputValue(), 'one shared draft');
+    assert.equal(await edgeLabel().inputValue(), 'one shared value');
+    await edgeLabel().focus();
     await page.keyboard.press('Escape');
-    assert.equal(await edgeLabel().inputValue(), 'first');
+    assert.equal(await edgeLabel().inputValue(), 'one shared value');
     await selected([], ['ab']);
     await page.keyboard.press('Escape');
     assert.equal(await panel().count(), 0); await selected([], ['ab']);
   });
-  await probe('replacement closes properties without restoring them or discarding selection and empty drafts', async () => {
+  await probe('replacement preserves selection and already-saved empty labels without restoring the old card', async () => {
     await fixture(); await select([], ['ab']);
     await edgeLabel().fill('');
     await page.locator('[data-toolbar-more]').click();
@@ -176,11 +176,10 @@ try {
     await page.keyboard.press('Escape');
     assert.equal(await panel().count(), 0);
     await reopen(); await panel().waitFor(); assert.equal(await edgeLabel().inputValue(), '');
-    assert.equal((await readEdges())[0].data.label, 'first');
-    await edgeApply().click(); assert.equal((await readEdges())[0].data.label, undefined);
+    assert.equal((await readEdges())[0].data.label, undefined);
     await undo(); assert.equal((await readEdges())[0].data.label, 'first');
   });
-  await probe('single and multiple connections preview patches without mutating values and apply as one undo step', async () => {
+  await probe('single and multiple connections save each keystroke and undo a complete label edit once', async () => {
     for (const ids of [['ab'], ['ab', 'bc']]) {
       await fixture(); await select([], ids);
       const before = await readEdges(), geometry = await readGeometry();
@@ -189,10 +188,9 @@ try {
         assert.equal(await label.inputValue(), '');
         assert.match(await page.locator('[data-connection-properties]').innerText(), /多个值/);
       }
-      await label.fill('shared label');
-      await page.waitForFunction(ids => ids.every(id => window.__canvasEditing.getState().edgePreviews?.some(edge => edge.id === id && edge.data?.label === 'shared label')), ids);
-      assert.deepEqual(await readEdges(), before, 'preview is not persisted');
-      await edgeApply().click();
+      await label.fill('');
+      await label.pressSequentially('shared label');
+      assert.equal(await label.inputValue(), 'shared label', 'normalization must not swallow word spaces');
       const after = await readEdges();
       for (let i = 0; i < after.length; i++) {
         assert.equal(after[i].data.label, ids.includes(after[i].id) ? 'shared label' : before[i].data.label);
@@ -200,31 +198,118 @@ try {
         assert.equal(after[i].data.isCrossLink, before[i].data.isCrossLink);
       }
       assert.deepEqual(await readGeometry(), geometry);
+      assert.equal(await page.locator('[data-connection-apply], [data-connection-cancel], [data-connection-reset]').count(), 0);
+      await close();
       await undo(); assert.deepEqual(await readEdges(), before);
+      await page.evaluate(() => window.__store.getState().redo()); assert.deepEqual(await readEdges(), after);
     }
   });
-  await probe('geometry drafts survive closure and mixed-type edits target only their labeled group', async () => {
+  await probe('geometry saves on closure and mixed-type edits target only their labeled group', async () => {
     await fixture(); await select(['a', 'f'], ['ab']);
     for (const type of ['nodes', 'frames', 'edges']) await section(type).waitFor();
     const before = await readGeometry(), originalEdges = await readEdges();
     const width = section('nodes').locator('[data-node-format-field="width"]');
     await width.fill('520'); await close();
-    assert.deepEqual(await readGeometry(), before, 'closing properties never applies geometry');
     await selected(['a', 'f'], ['ab']);
     await reopen(); await panel().waitFor();
     assert.equal(await width.inputValue(), '520');
-    await section('nodes').locator('[data-node-format-apply]').click();
     const after = await readGeometry();
     assert.equal(after.find(node => node.id === 'a').width, 520);
     assert.deepEqual(after.filter(node => node.id !== 'a'), before.filter(node => node.id !== 'a'));
     assert.deepEqual(await readEdges(), originalEdges);
     await selected(['a', 'f'], ['ab']);
+    await undo(); assert.deepEqual(await readGeometry(), before);
+  });
+  await probe('geometry commits once outside its boundary while Tab, Escape, IME and invalid values stay safe', async () => {
+    for (const [type, ids] of [['nodes', ['a']], ['nodes', ['a', 'b']], ['frames', ['f']]]) {
+      await fixture(); await select(ids);
+      const before = await readGeometry();
+      const width = section(type).locator('[data-node-format-field="width"]');
+      const height = section(type).locator('[data-node-format-field="height"]');
+      const target = section(type).locator('h3').first();
+      const requested = type === 'frames' ? 1550 : 520;
+      await width.fill(String(requested)); await page.keyboard.press('Tab');
+      assert.equal(await height.evaluate(el => document.activeElement === el), true);
+      assert.deepEqual(await readGeometry(), before, 'Tab inside the geometry editor never saves early');
+      await target.click();
+      const after = await readGeometry();
+      for (const item of after) {
+        if (ids.includes(item.id)) assert.equal(item.width, requested);
+        else assert.deepEqual(item, before.find(old => old.id === item.id));
+      }
+      await undo(); assert.deepEqual(await readGeometry(), before, 'one outside event creates only one undo step');
+      await width.fill(String(requested)); await page.keyboard.press('Escape'); await target.click();
+      assert.deepEqual(await readGeometry(), before, 'Escape never commits');
+      await width.fill(String(requested));
+      for (const key of ['Enter', 'Escape']) await width.evaluate((input, key) => input.dispatchEvent(
+        new KeyboardEvent('keydown', { key, code: key, isComposing: true, bubbles: true })), key);
+      assert.deepEqual(await readGeometry(), before, 'IME confirmation keys never settle the editor');
+      await page.keyboard.press('Escape');
+      await width.fill('invalid'); await target.click();
+      assert.deepEqual(await readGeometry(), before);
+      assert.equal(await width.getAttribute('aria-invalid'), 'true');
+      await width.fill(String(requested)); await target.click();
+      assert.equal((await readGeometry()).find(item => item.id === ids[0]).width, requested);
+      assert.equal(await page.locator('[data-node-format-apply], [data-node-format-cancel]').count(), 0);
+    }
+  });
+  await probe('single-object coordinates and frame names save outside, including an empty frame name', async () => {
+    for (const [type, id] of [['nodes', 'a'], ['frames', 'f']]) {
+      await fixture(); await select([id]);
+      const before = await readGeometry();
+      await section(type).locator('[data-node-format-field="x"]').fill('450');
+      await section(type).locator('[data-node-format-field="y"]').fill('610');
+      assert.deepEqual(await readGeometry(), before);
+      await section(type).locator('h3').first().click();
+      assert.deepEqual((await readGeometry()).find(item => item.id === id).position, { x: 450, y: 610 });
+      await undo(); assert.deepEqual(await readGeometry(), before);
+    }
+    const name = page.locator('[data-frame-name]');
+    const original = await name.inputValue();
+    await name.fill('新的分区名称'); await section('frames').locator('h3').first().click();
+    assert.equal(await name.inputValue(), '新的分区名称');
+    await undo(); assert.equal(await name.inputValue(), original);
+    await name.fill('取消的名称'); await page.keyboard.press('Escape');
+    await section('frames').locator('h3').first().click(); assert.equal(await name.inputValue(), original);
+    await name.fill(''); await close(); await reopen();
+    assert.equal(await name.inputValue(), '');
+    assert.equal(await section('frames').getByRole('button', { name: '应用', exact: true }).count(), 0);
+  });
+  await probe('an immediately chosen elbow survives close, reopen, replacement and persisted reload', async () => {
+    await fixture();
+    await page.evaluate(() => window.__store.setState(state => ({
+      nodes: state.nodes.map(node => node.id === 'b' ? { ...node, position: { x: 800, y: 800 } } : node),
+    })));
+    await select([], ['ab']);
+    const path = () => page.locator('.react-flow__edge[data-id="ab"] .react-flow__edge-path').getAttribute('d');
+    const curve = await path();
+    await page.locator('[data-connection-route="orthogonal"]').click();
+    assert.equal((await readEdges())[0].data.route, 'orthogonal');
+    await page.waitForFunction(() => document.querySelector('.react-flow__edge[data-id="ab"] .react-flow__edge-path')?.getAttribute('d')?.includes('L'));
+    const elbow = await path(); assert.notEqual(elbow, curve);
+    await close(); assert.equal(await path(), elbow);
+    await reopen(); assert.equal(await path(), elbow);
+    await page.locator('[data-toolbar-more]').click(); await page.keyboard.press('Escape');
+    assert.equal(await path(), elbow);
+    await page.evaluate(async () => {
+      const path = '/src/lib/persistence.ts';
+      const live = [...performance.getEntriesByType('resource')].reverse()
+        .find(entry => new URL(entry.name).pathname === path)?.name ?? path;
+      await (await import(live)).flushPendingWrites();
+    });
+    await page.reload({ waitUntil: 'networkidle' });
+    await page.waitForFunction(() => window.__store?.persist.hasHydrated() && window.__rf && window.__canvasEditing);
+    assert.equal((await readEdges()).find(edge => edge.id === 'ab').data.route, 'orthogonal');
+    await select([], ['ab']);
+    assert.equal(await page.locator('[data-connection-route="orthogonal"]').getAttribute('aria-pressed'), 'true');
+    await close();
+    await page.waitForFunction(() => document.querySelector('.react-flow__edge[data-id="ab"] .react-flow__edge-path')?.getAttribute('d')?.includes('L'));
   });
   await probe('editing or deleting a frame preserves its content and connections and has one undo step', async () => {
     await fixture(); await select(['f']);
     const before = await readGeometry(), originalEdges = await readEdges();
     await section('frames').locator('[data-node-format-field="width"]').fill('1550');
-    await section('frames').locator('[data-node-format-apply]').click();
+    await section('frames').locator('h3').first().click();
     const resized = await readGeometry();
     assert.equal(resized.find(node => node.id === 'f').width, 1550);
     assert.deepEqual(resized.filter(node => node.id !== 'f'), before.filter(node => node.id !== 'f'));
@@ -287,21 +372,19 @@ try {
     assert.deepEqual(await readEdges(), [], 'the explicit connection and deleted node incident connection are removed');
     await undo(); assert.deepEqual(await readGeometry(), geometry); assert.deepEqual(await readEdges(), edges);
   });
-  await probe('focused node keyboard boundary cancels restored geometry draft before closing properties and clearing selection', async () => {
+  await probe('focused node Escape closes properties before clearing selection and keeps saved geometry', async () => {
     await fixture(); await select(['a']);
     const geometry = await readGeometry();
     const width = section('nodes').locator('[data-node-format-field="width"]');
     await width.fill('520'); await close();
     await reopen(); await panel().waitFor(); assert.equal(await width.inputValue(), '520');
-    const token = node('a').locator('[data-node-token-usage]'); await token.focus();
-    assert.equal(await token.evaluate(element => document.activeElement === element && element.tagName === 'SPAN'), true);
-    await page.keyboard.press('Escape');
-    await selected(['a'], []); assert.equal(await panel().count(), 1);
-    assert.equal(await width.inputValue(), '400'); assert.deepEqual(await readGeometry(), geometry);
+    const saved = await readGeometry(); assert.equal(saved.find(item => item.id === 'a').width, 520);
+    await node('a').focus();
     await page.keyboard.press('Escape');
     assert.equal(await panel().count(), 0); await selected(['a'], []);
     await page.keyboard.press('Escape'); await selected([], []);
-    assert.deepEqual(await readGeometry(), geometry);
+    assert.deepEqual(await readGeometry(), saved);
+    await undo(); assert.deepEqual(await readGeometry(), geometry);
   });
   await probe('frame keyboard boundary keeps select-all in the frame type and ignores node generation and collapse shortcuts', async () => {
     await fixture();
@@ -341,8 +424,8 @@ try {
             return el.contains(document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2));
           }), true);
         }
-        await edgeApply().scrollIntoViewIfNeeded();
-        assert.equal(await edgeApply().evaluate(el => {
+        await edgeDelete().scrollIntoViewIfNeeded();
+        assert.equal(await edgeDelete().evaluate(el => {
           const rect = el.getBoundingClientRect();
           return rect.top >= 0 && rect.bottom <= window.innerHeight
             && el.contains(document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2));

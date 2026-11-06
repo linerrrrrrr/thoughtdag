@@ -37,6 +37,7 @@
     "test:codex-import": "node scripts/test-codex-session-kind.mjs && node scripts/test-codex-approval.mjs && node scripts/test-internal-session-repair.mjs && node scripts/test-live-import-refresh.mjs && node scripts/test-browser-session-repair.mjs && node scripts/test-codex-index-migration.mjs",
     "test:agent-activity": "node scripts/test-agent-activity.mjs",
     "test:agent-activity-ui": "node scripts/test-agent-activity-ui.mjs",
+    "test:conversation-split-ui": "node scripts/test-conversation-split-ui.mjs",
     "test:harness-workspace": "node scripts/test-harness-workspace.mjs",
     "desktop:why": "esbuild cli/src/lib.ts --bundle --platform=node --format=esm --target=node20 --define:import.meta.env={} --outfile=desktop/why.mjs --log-level=warning"
   },

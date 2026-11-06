@@ -200,18 +200,17 @@ try {
 
   await page.evaluate(() => {
     window.__store.getState().setSelectedNodeIds([]);
-    const edge = window.__store.getState().edges.find(edge => edge.id === 'edge-source-b');
-    window.__canvasEditing.getState().setEdgePreviews([{ ...edge, data: { ...edge.data, isCrossLink: true } }]);
+    window.__store.getState().updateSelectedEdges(['edge-source-b'], { relation: 'reference' });
   });
   await page.waitForFunction(() => window.__rf.getEdges().find(edge => edge.id === 'edge-source-b')?.data?.isCrossLink);
   await trigger().click();
-  await page.waitForFunction(() => document.querySelectorAll('[data-merge-order]').length === 2);
-  assert.equal(await popover().locator('[data-context-order-item]').count(), 2);
-  assert.equal(await popover().locator('[data-context-reference-item]').count(), 0);
+  await popover().waitFor();
+  assert.equal(await popover().locator('[data-context-order-item]').count(), 1);
+  assert.equal(await popover().locator('[data-context-reference-item]').count(), 1);
   await page.keyboard.press('Escape');
   await page.waitForFunction(() => window.__rf.getEdges().find(edge => edge.id === 'edge-source-b')?.data?.isCrossLink);
-  assert.equal(await page.evaluate(() => window.__canvasEditing.getState().edgePreviews?.length), 1);
-  check('inspection reports committed context and restores an existing relation preview after dismissal');
+  assert.equal(await page.evaluate(() => window.__store.getState().edges.find(edge => edge.id === 'edge-source-b').data.isCrossLink), true);
+  check('inspection and dismissal both use the immediately saved connection purpose');
 
   await seed({ reference: true });
   assert.match(await trigger().innerText(), /3/);

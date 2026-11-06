@@ -1,4 +1,4 @@
-import type { ThoughtEdge, ThoughtNode } from '../types';
+import type { ThoughtNode } from '../types';
 import { nodeRect, resolveCarriedNodeIds } from './frames';
 import { nodeHeight } from './layout';
 
@@ -6,12 +6,11 @@ export type ArrangeAction = 'left' | 'center' | 'right' | 'top' | 'middle' | 'bo
   | 'distribute-horizontal' | 'distribute-vertical';
 export type ArrangeReference = 'selection' | 'viewport';
 export type ArrangeRect = { x: number; y: number; width: number; height: number };
-export type ArrangeReason = 'insufficient' | 'overlap' | 'context-order' | 'chain-alignment' | 'invalid-viewport';
+export type ArrangeReason = 'insufficient' | 'invalid-viewport';
 export type ArrangeResult = { nodes: ThoughtNode[]; changed: boolean; reason?: ArrangeReason };
 
 type Unit = { ids: string[]; rect: ArrangeRect };
 const EPSILON = 0.01;
-const MATERIAL_KINDS = new Set(['note', 'file', 'link', 'frame']);
 
 function rectOf(node: ThoughtNode): ArrangeRect {
   const rect = nodeRect(node);
@@ -54,52 +53,13 @@ export function arrangementUnitCount(nodes: ThoughtNode[], nodeIds: string[]): n
   return selectionUnits(nodes, nodeIds).length;
 }
 
-function overlapArea(a: ArrangeRect, b: ArrangeRect): number {
-  return Math.max(0, Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x))
-    * Math.max(0, Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y));
-}
-
-/** The same parent adoption and continuation ownership as the column layout. */
-function contextEdges(nodes: ThoughtNode[], edges: ThoughtEdge[]): {
-  structural: ThoughtEdge[]; continuations: Set<string>;
-} {
-  const byId = new Map(nodes.map((node) => [node.id, node]));
-  const live = edges.filter((edge) => !edge.data?.isWatch && byId.has(edge.source) && byId.has(edge.target));
-  const structural = live.filter((edge) => !edge.data?.isCrossLink);
-  const parented = new Set(structural.map((edge) => edge.target));
-  for (const edge of live) {
-    if (!edge.data?.isCrossLink || parented.has(edge.target)) continue;
-    structural.push(edge);
-    parented.add(edge.target);
-  }
-  const thoughtEdges = structural.filter((edge) =>
-    !MATERIAL_KINDS.has(byId.get(edge.source)!.data.stepKind ?? '')
-    && !MATERIAL_KINDS.has(byId.get(edge.target)!.data.stepKind ?? ''));
-  const owners = new Map<string, ThoughtEdge>();
-  for (const edge of thoughtEdges) {
-    const owner = owners.get(edge.target);
-    if (!owner || (owner.data?.isBranchFromSelection && !edge.data?.isBranchFromSelection)) {
-      owners.set(edge.target, edge);
-    }
-  }
-  const claimedParents = new Set<string>();
-  const continuations = new Set<string>();
-  for (const edge of thoughtEdges) {
-    if (edge.data?.isBranchFromSelection || owners.get(edge.target) !== edge || claimedParents.has(edge.source)) continue;
-    claimedParents.add(edge.source);
-    continuations.add(edge.id);
-  }
-  return { structural, continuations };
-}
-
 /**
- * Apply one explicit arrangement atomically. Invalid arrangements leave the
- * original graph untouched; unrelated nodes are never nudged to make room.
- * Existing manual imperfections are tolerated when their violation does not
- * increase, so an unrelated crossed edge cannot disable canvas editing.
+ * Manual arrangement changes only the selected spatial objects. Chain
+ * alignment, arrow direction, and collisions do not constrain placement;
+ * unselected objects stay fixed unless carried by a linked frame.
  */
 export function arrangeNodes(
-  nodes: ThoughtNode[], edges: ThoughtEdge[], nodeIds: string[],
+  nodes: ThoughtNode[], nodeIds: string[],
   action: ArrangeAction, reference: ArrangeReference = 'selection', viewport?: ArrangeRect,
 ): ArrangeResult {
   const fail = (reason: ArrangeReason): ArrangeResult => ({ nodes, changed: false, reason });
@@ -123,12 +83,11 @@ export function arrangeNodes(
       || a.rect[crossAxis] - b.rect[crossAxis] || a.ids[0].localeCompare(b.ids[0]));
     const occupied = units.reduce((sum, unit) => sum + unit.rect[size], 0);
     const gap = (target[size] - occupied) / (units.length - 1);
-    if (gap < -EPSILON) return fail('overlap');
     let cursor = target[axis];
     for (const unit of ordered) {
       const delta = cursor - unit.rect[axis];
       setDelta(unit, axis === 'x' ? delta : 0, axis === 'y' ? delta : 0);
-      cursor += unit.rect[size] + Math.max(0, gap);
+      cursor += unit.rect[size] + gap;
     }
   } else {
     for (const unit of units) {
@@ -145,53 +104,13 @@ export function arrangeNodes(
     }
   }
 
-  const moved = new Set<string>();
+  let changed = false;
   const proposed = nodes.map((node) => {
     const delta = deltas.get(node.id);
     if (!delta || (Math.abs(delta.x) < EPSILON && Math.abs(delta.y) < EPSILON)) return node;
-    moved.add(node.id);
+    changed = true;
     return { ...node, position: { x: node.position.x + delta.x, y: node.position.y + delta.y } };
   });
-  if (!moved.size) return { nodes, changed: false };
-  const before = new Map(nodes.map((node) => [node.id, node]));
-  const after = new Map(proposed.map((node) => [node.id, node]));
-  const { structural, continuations } = contextEdges(nodes, edges);
-  for (const edge of structural) {
-    if (!moved.has(edge.source) && !moved.has(edge.target)) continue;
-    const source = before.get(edge.source)!;
-    const destination = before.get(edge.target)!;
-    const nextSource = after.get(edge.source)!;
-    const nextDestination = after.get(edge.target)!;
-    // Frames are annotation regions, never an ordered conversation turn.
-    if (source.data.stepKind === 'frame' || destination.data.stepKind === 'frame') continue;
-    // The upstream node owns the flow direction. A downstream preference
-    // is a fallback for old parents that predate explicit layout metadata.
-    const horizontal = (source.data.layoutDirection ?? destination.data.layoutDirection) === 'horizontal';
-    const primary = horizontal ? 'x' : 'y', cross = horizontal ? 'y' : 'x';
-    const clearance = edge.data?.isBranchFromSelection ? 0 : rectOf(source)[horizontal ? 'width' : 'height'];
-    const priorViolation = source.position[primary] + clearance - destination.position[primary];
-    const nextViolation = nextSource.position[primary] + clearance - nextDestination.position[primary];
-    if (nextViolation > Math.max(0, priorViolation) + EPSILON) return fail('context-order');
-    if (continuations.has(edge.id)) {
-      const priorOffset = Math.abs(source.position[cross] - destination.position[cross]);
-      const nextOffset = Math.abs(nextSource.position[cross] - nextDestination.position[cross]);
-      if (nextOffset > Math.max(EPSILON, priorOffset) + EPSILON) return fail('chain-alignment');
-    }
-  }
-
-  // Frames intentionally contain nodes. Existing overlaps may be improved
-  // or preserved; newly increased overlaps are refused.
-  const solid = proposed.filter((node) => node.data.stepKind !== 'frame');
-  const oldRects = new Map(solid.map((node) => [node.id, rectOf(before.get(node.id)!)]));
-  const newRects = new Map(solid.map((node) => [node.id, rectOf(node)]));
-  for (const a of solid) {
-    if (!moved.has(a.id)) continue;
-    for (const b of solid) {
-      // Only pairs touching a moved card need checking, once per pair.
-      if (a.id === b.id || (moved.has(b.id) && a.id > b.id)) continue;
-      const prior = overlapArea(oldRects.get(a.id)!, oldRects.get(b.id)!);
-      if (overlapArea(newRects.get(a.id)!, newRects.get(b.id)!) > prior + EPSILON) return fail('overlap');
-    }
-  }
+  if (!changed) return { nodes, changed: false };
   return { nodes: proposed, changed: true };
 }

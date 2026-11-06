@@ -240,6 +240,8 @@ export type NodeDetailLevel = 'compact' | 'summary' | 'full';
 export interface ThoughtData extends Record<string, unknown> {
   /** Locked presentation detail; absent follows the global canvas preference. */
   detailLevel?: NodeDetailLevel;
+  /** Question's share of reading height, shared by the card and reading panel. */
+  questionHeightRatio?: number;
   /** Canvas-only preferences; never change the content carried by an edge. */
   layoutDirection?: 'vertical' | 'horizontal';
   edgeRouteDefault?: 'auto' | 'curve' | 'orthogonal';

@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import { X } from 'lucide-react';
 import { useStore } from '../../store';
 import { useUiStore } from '../../lib/ui-store';
@@ -23,10 +23,13 @@ import HeaderActions from './HeaderActions';
 import ContextChainSection from './ContextChainSection';
 import ContextOrderSection from './ContextOrderSection';
 import { useDismissableLayer } from '../../lib/use-dismissable-layer';
+import { handleCanvasPanelKeyDown } from '../../lib/canvas-shortcuts';
 import { getNodeNameSource } from '../../lib/node-display-name';
 import NodeMetadataEditor from '../NodeMetadataEditor';
+import ConversationSplit from '../ConversationSplit';
 import './FocusPanel.css';
 import { activeAgentActivity, originalQuestionBeforeInstructions } from '../../lib/agent-activity';
+import { attachPageScrollChain } from '../../lib/page-scroll-chain';
 
 // The panel reads one turn and its context. Further questions belong to a
 // new linked node, whose own question editor opens before any request runs.
@@ -38,7 +41,11 @@ export default function FocusPanel({ nodeId, onFocusNode }: { nodeId: string; on
   } = useStore();
   const t = useT();
   const panelRef = useRef<HTMLDivElement>(null);
+  const headerRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const preludeRef = useRef<HTMLDivElement>(null);
   const responseRef = useRef<HTMLDivElement>(null);
+  const [availableHeight, setAvailableHeight] = useState(420);
   // This working panel can outlive its opener; restoring stale canvas focus would reselect it.
   useDismissableLayer({ open: true, refs: [panelRef], dismissOnOutside: false, restoreFocus: false,
     onDismiss: () => useUiStore.getState().setPanelOpen(false) });
@@ -91,6 +98,37 @@ export default function FocusPanel({ nodeId, onFocusNode }: { nodeId: string; on
     enabled: canHighlight,
     surfaceRef: responseRef,
   });
+  const nodeExists = !!node;
+  useLayoutEffect(() => {
+    if (contentRef.current) return attachPageScrollChain(contentRef.current);
+  }, [nodeId, nodeExists]);
+  useLayoutEffect(() => {
+    const panel = panelRef.current;
+    const header = headerRef.current;
+    const content = contentRef.current;
+    const prelude = preludeRef.current;
+    if (!panel || !header || !content || !prelude) return;
+    const measure = () => {
+      const style = getComputedStyle(content);
+      const padding = (parseFloat(style.paddingTop) || 0) + (parseFloat(style.paddingBottom) || 0);
+      const border = panel.offsetHeight - panel.clientHeight;
+      // Long metadata stays in the page flow. Keep the conversation readable
+      // and let the page scroll when the prelude exceeds the viewport.
+      setAvailableHeight(Math.max(160, Math.floor(window.innerHeight
+        - panel.getBoundingClientRect().top - PANEL_INSET - header.offsetHeight
+        - prelude.offsetHeight - padding - border)));
+    };
+    const observer = new ResizeObserver(measure);
+    observer.observe(header);
+    observer.observe(content);
+    observer.observe(prelude);
+    window.addEventListener('resize', measure);
+    measure();
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', measure);
+    };
+  }, [nodeId, nodeExists]);
 
   if (!node) {
     return null;
@@ -100,6 +138,8 @@ export default function FocusPanel({ nodeId, onFocusNode }: { nodeId: string; on
   const hasMultipleVersions = data.responses.length > 1;
   // A draft node uses its own question editor.
   const awaiting = awaitingInput(data);
+  const hasAnswer = !!(data.response || data.isLoading || data.isEditingResponse
+    || data.generationFailed || activeAgentActivity(data).length);
 
   // Inherited role for the status line: the SAME resolution buildContext
   // injects (structural mainline, legacy roleMode honored) — what the panel
@@ -121,7 +161,7 @@ export default function FocusPanel({ nodeId, onFocusNode }: { nodeId: string; on
       role="complementary" aria-label={t('panel.reading')}
       className={`focus-panel-shell absolute right-canvas-inset top-canvas-inset bottom-canvas-inset z-20 border rounded-panel overflow-hidden flex flex-col max-w-[calc(100vw-32px)] md:max-w-[70vw] ${resizing ? 'select-none' : ''}`}
       style={{ width: panelWidth, minWidth: `min(${PANEL_MIN_WIDTH}px, calc(100vw - ${PANEL_INSET * 2}px))` }}
-      onKeyDown={(event) => { if (event.key !== 'Escape' || event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) event.stopPropagation(); }}
+      onKeyDown={handleCanvasPanelKeyDown}
     >
       {/* Resize handle on the left edge */}
       <div
@@ -137,7 +177,7 @@ export default function FocusPanel({ nodeId, onFocusNode }: { nodeId: string; on
         <div className={`w-[3px] h-9 rounded-control transition-colors ${resizing ? 'bg-accent' : 'bg-line-strong'}`} />
       </div>
       {/* Reading identity stays quiet; operational details follow the conversation. */}
-      <div className="focus-panel-header flex items-center gap-related shrink-0">
+      <div ref={headerRef} className="focus-panel-header flex items-center gap-related shrink-0">
         <div className="min-w-0 flex-1">
           <h2 className="focus-panel-title" data-tooltip={getNodeNameSource(data, t('ctx.unnamedNode'))} data-tooltip-overflow data-reading-node-name>{getNodeNameSource(data, t('ctx.unnamedNode'))}</h2>
         </div>
@@ -152,41 +192,48 @@ export default function FocusPanel({ nodeId, onFocusNode }: { nodeId: string; on
           </button>
         </div>
       </div>
-      {/* A continuous reading surface; section dividers provide hierarchy. */}
-      <div className="focus-panel-content flex-1 min-h-0 overflow-y-auto">
-        <NodeMetadataEditor key={`metadata-${nodeId}`} id={nodeId} data={data}
-          name={getNodeNameSource(data, t('ctx.unnamedNode'))}
-          preview={data.displaySummary ?? activeSummary(data)} overview={false}
-          open={metadataOpen} onOpenChange={setMetadataOpen} variant="panel" />
-        {(data.response || data.highlights.length > 0) && <NodeHighlightsSection key={`h-${nodeId}`}
-          nodeId={nodeId} highlights={data.highlights} highlightMode={data.highlightMode}
-          highlighter={highlighter} canHighlight={canHighlight} />}
-        <AgentSessionLine data={data} />
-        <HandoffLine nodeId={nodeId!} data={data} />
-        <QuestionSection
-          key={`q-${nodeId}-${data.isEditing ? 'edit' : 'view'}`}
-          nodeId={nodeId!}
-          base={data.agentSession?.cwd ?? data.importSource?.cwd}
-          question={data.question}
-          displayQuestion={originalQuestionBeforeInstructions(data.question, activeAgentActivity(data))}
-          isEditing={data.isEditing && data.questionEditor === 'panel'}
-          isHuman={data.stepKind === 'human'}
-          awaiting={!!awaiting}
-          placeholder={awaiting ? (data.instruction || t('node.askPlaceholder')) : undefined}
-          branchContext={data.branchContext}
+      {/* Pane boundaries hand scrolling back to this page; inspection follows it. */}
+      <div ref={contentRef} data-conversation-scroll-page
+        className={`focus-panel-content min-h-0 overflow-y-auto nowheel nopan ${hasAnswer ? 'focus-panel-content--split' : ''}`}>
+        <div ref={preludeRef} className="focus-panel-prelude">
+          <NodeMetadataEditor key={`metadata-${nodeId}`} id={nodeId} data={data}
+            name={getNodeNameSource(data, t('ctx.unnamedNode'))}
+            preview={data.displaySummary ?? activeSummary(data)} overview={false}
+            open={metadataOpen} onOpenChange={setMetadataOpen} variant="panel" />
+          {(data.response || data.highlights.length > 0) && <NodeHighlightsSection key={`h-${nodeId}`}
+            nodeId={nodeId} highlights={data.highlights} highlightMode={data.highlightMode}
+            highlighter={highlighter} canHighlight={canHighlight} />}
+          <AgentSessionLine data={data} />
+          <HandoffLine nodeId={nodeId!} data={data} />
+        </div>
+        <ConversationSplit nodeId={nodeId} surface="panel" enabled={hasAnswer} availableHeight={availableHeight}
+          question={
+            <QuestionSection
+              key={`q-${nodeId}-${data.isEditing ? 'edit' : 'view'}`}
+              nodeId={nodeId!}
+              base={data.agentSession?.cwd ?? data.importSource?.cwd}
+              question={data.question}
+              displayQuestion={originalQuestionBeforeInstructions(data.question, activeAgentActivity(data))}
+              isEditing={data.isEditing && data.questionEditor === 'panel'}
+              isHuman={data.stepKind === 'human'}
+              awaiting={!!awaiting}
+              placeholder={awaiting ? (data.instruction || t('node.askPlaceholder')) : undefined}
+              branchContext={data.branchContext}
+            />
+          }
+          answer={
+            <ResponseSection
+              key={`r-${nodeId}`}
+              nodeId={nodeId!}
+              data={data}
+              hasMultipleVersions={hasMultipleVersions}
+              highlightedTexts={highlightedTexts}
+              highlighter={highlighter}
+              responseRef={responseRef}
+              onFocusNode={onFocusNode}
+            />
+          }
         />
-
-        <ResponseSection
-          key={`r-${nodeId}`}
-          nodeId={nodeId!}
-          data={data}
-          hasMultipleVersions={hasMultipleVersions}
-          highlightedTexts={highlightedTexts}
-          highlighter={highlighter}
-          responseRef={responseRef}
-          onFocusNode={onFocusNode}
-        />
-
         <div className="focus-panel-inspect">
           <div className="focus-panel-role">
             <RoleLine data={data} inheritedRole={inheritedRole} onEdit={(initial) => setRoleEdit(initial)} />
@@ -194,28 +241,26 @@ export default function FocusPanel({ nodeId, onFocusNode }: { nodeId: string; on
           {roleEdit !== null && !isViewerMode && (
             <RoleEditor nodeId={nodeId} initial={roleEdit} inherited={!data.rolePrompt && !!inheritedRole} hasOwn={!!data.rolePrompt} onClose={() => setRoleEdit(null)} />
           )}
-        <AttachmentsSection
-          nodeId={nodeId!}
-          attachments={data.attachments || []}
-          excludedAttachmentIds={data.excludedAttachmentIds || []}
-          includedAttachmentIds={data.includedAttachmentIds || []}
-          addAttachment={addAttachment}
-          removeAttachment={removeAttachment}
-          toggleExcludeAttachment={toggleExcludeAttachment}
-          setAttachmentRenderMode={setAttachmentRenderMode}
-          getInheritedAttachments={getInheritedAttachments}
-        />
-
-        <RecallSection nodeId={nodeId!} items={data.recallItems} meta={data.recallMeta} recallOn={data.recall ?? recallEnabled} progress={data.recallProgress} />
-        <RelatedSection key={`rel-${nodeId}`} question={data.question} answer={data.response ?? ''} />
-
-        <ContextOrderSection nodeId={node.id} />
-        <ContextChainSection
-          key={`c-${nodeId}`}
-          partition={partition}
-          totalContextTokens={totalContextTokens}
-          onFocusNode={onFocusNode}
-        />
+          <AttachmentsSection
+            nodeId={nodeId!}
+            attachments={data.attachments || []}
+            excludedAttachmentIds={data.excludedAttachmentIds || []}
+            includedAttachmentIds={data.includedAttachmentIds || []}
+            addAttachment={addAttachment}
+            removeAttachment={removeAttachment}
+            toggleExcludeAttachment={toggleExcludeAttachment}
+            setAttachmentRenderMode={setAttachmentRenderMode}
+            getInheritedAttachments={getInheritedAttachments}
+          />
+          <RecallSection nodeId={nodeId!} items={data.recallItems} meta={data.recallMeta} recallOn={data.recall ?? recallEnabled} progress={data.recallProgress} />
+          <RelatedSection key={`rel-${nodeId}`} question={data.question} answer={data.response ?? ''} />
+          <ContextOrderSection nodeId={node.id} />
+          <ContextChainSection
+            key={`c-${nodeId}`}
+            partition={partition}
+            totalContextTokens={totalContextTokens}
+            onFocusNode={onFocusNode}
+          />
         </div>
       </div>
     </div>

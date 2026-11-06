@@ -1,10 +1,9 @@
 import { create } from 'zustand';
-import type { ThoughtEdge, ThoughtNode } from '../types';
+import type { ThoughtNode } from '../types';
 import type { SelectionRegion, SelectionTarget } from './canvas-selection';
 
-/** Draft geometry is rendered separately from the persisted graph and undo history. */
+/** Layout previews stay separate from the persisted graph and undo history. */
 export const useCanvasEditing = create<{
-  edgePreviews: ThoughtEdge[] | null;
   propertiesRequest: number;
   requestProperties: () => void;
   selectionTarget: SelectionTarget;
@@ -18,19 +17,17 @@ export const useCanvasEditing = create<{
   beginLayout: () => number;
   finishLayout: (request: number) => void;
   cancelLayout: () => void;
-  setEdgePreviews: (edges: ThoughtEdge[] | null) => void;
   setLayoutOpen: (open: boolean) => void;
   setLayoutPreview: (nodes: ThoughtNode[] | null) => void;
   reset: () => void;
 }>((set, get) => ({
-  edgePreviews: null,
   propertiesRequest: 0,
   requestProperties: () => set(state => ({ propertiesRequest: state.propertiesRequest + 1 })),
   selectionTarget: 'nodes',
   selectionRegion: null,
   setSelectionRegion: (selectionRegion) => set({ selectionRegion: selectionRegion ? { ...selectionRegion, frameIds: selectionRegion.frameIds ?? [] } : null,
     ...(!selectionRegion ? { selectionTarget: 'nodes' as const } : {}) }),
-  setSelectionTarget: (selectionTarget) => set({ selectionTarget, edgePreviews: null }),
+  setSelectionTarget: (selectionTarget) => set({ selectionTarget }),
   layoutOpen: false,
   layoutPreview: null,
   layoutBusy: false,
@@ -44,11 +41,9 @@ export const useCanvasEditing = create<{
   },
   finishLayout: (request) => set((state) => state.layoutRequest === request ? { layoutBusy: false } : state),
   cancelLayout: () => set((state) => ({ layoutRequest: state.layoutRequest + 1, layoutBusy: false, layoutPreview: null })),
-  setEdgePreviews: (edgePreviews) => set({ edgePreviews }),
-  setLayoutOpen: (layoutOpen) => set((state) => ({ layoutOpen, layoutPreview: null, layoutBusy: false, layoutRequest: state.layoutRequest + 1,
-    ...(layoutOpen ? { edgePreviews: null } : {}) })),
+  setLayoutOpen: (layoutOpen) => set((state) => ({ layoutOpen, layoutPreview: null, layoutBusy: false, layoutRequest: state.layoutRequest + 1 })),
   setLayoutPreview: (layoutPreview) => set({ layoutPreview }),
-  reset: () => set((state) => ({ edgePreviews: null, selectionRegion: null, selectionTarget: 'nodes', layoutOpen: false, layoutPreview: null,
+  reset: () => set((state) => ({ selectionRegion: null, selectionTarget: 'nodes', layoutOpen: false, layoutPreview: null,
     layoutBusy: false, layoutRequest: state.layoutRequest + 1 })),
 }));
 

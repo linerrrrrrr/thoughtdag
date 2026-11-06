@@ -16,7 +16,6 @@
 .edge-inspector-icon { display: grid; place-items: center; width: 32px; height: 32px; color: var(--color-ink-muted); border-radius: var(--radius-control); }
 .edge-inspector-icon:hover { color: var(--color-ink); background: var(--color-wash); }
 .edge-inspector-body { display: grid; gap: 20px; min-height: 0; padding: 16px; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--color-line-strong) transparent; }
-.edge-inspector-batch-hint { margin: 0; padding-bottom: 14px; border-bottom: 1px solid var(--color-line); color: var(--color-ink-muted); font-size: var(--text-control); line-height: var(--text-control--line-height); }
 .edge-inspector-endpoints { padding-bottom: 14px; border-bottom: 1px solid var(--color-line); }
 .edge-inspector-endpoint { display: flex; align-items: flex-start; width: 100%; gap: 10px; text-align: left; padding: 3px 0; border-radius: var(--radius-control); }
 .edge-inspector-endpoint:hover .edge-inspector-endpoint-name { color: var(--color-accent); }
@@ -59,10 +58,6 @@
 .edge-inspector-actions > button { display: flex; align-items: center; justify-content: center; gap: 5px; min-height: 34px; padding: 6px 13px; border-radius: var(--radius-control); font-size: var(--text-control); }
 .edge-inspector-actions > button:disabled { opacity: .4; }
 .edge-inspector-actions .edge-inspector-delete { margin-right: auto; padding-inline: 0 8px; color: var(--color-watch); }
-.edge-inspector-cancel { border: 1px solid var(--color-line); }
-.edge-inspector-cancel:hover:not(:disabled) { background: var(--color-wash); }
-.edge-inspector-apply { background: var(--color-action); color: white; }
-.edge-inspector-apply:hover:not(:disabled) { background: var(--color-action-strong); }
 .edge-inspector-error { margin: 0 0 10px; color: var(--color-red-600); font-size: var(--text-control); line-height: var(--text-control--line-height); }
 @media (max-width: 767px) {
   .edge-inspector-note input { font-size: var(--text-body); }

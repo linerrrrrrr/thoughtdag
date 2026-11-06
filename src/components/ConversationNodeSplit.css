@@ -1,0 +1,24 @@
+/* Full-detail cards keep one bounded reading area; each pane scrolls independently. */
+.conversation-node [data-thought-body].conversation-node-split-body {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.conversation-node-split-body > .conversation-split {
+  flex: none;
+  height: var(--conversation-natural-height, 420px);
+}
+
+.conversation-node[data-thought-resized] > .conversation-node-split-body {
+  flex: 1;
+}
+
+.conversation-node[data-thought-resized] > .conversation-node-split-body > .conversation-split {
+  flex: 1;
+  height: auto;
+}
+
+.conversation-node .conversation-split-question .conversation-question {
+  margin-bottom: 0;
+}

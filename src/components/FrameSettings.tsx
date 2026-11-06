@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { Check, Files, Frame, Maximize, MousePointer2, Trash2, X } from 'lucide-react';
+import { Files, Frame, Maximize, MousePointer2, Trash2 } from 'lucide-react';
 import type { ThoughtNode } from '../types';
 import { useStore } from '../store';
 import { FRAME_COLORS } from '../lib/constants';
@@ -36,10 +36,6 @@ function FrameName({ frame }: { frame: ThoughtNode }) {
         onKeyDown={event => { if (event.key === 'Enter' && !isImeComposing(event)) { event.preventDefault(); event.stopPropagation(); commit(); } }}
         className="h-9 w-full rounded-control border border-line bg-card px-2.5 text-control text-ink placeholder:text-ink-faint outline-none focus:border-accent focus:ring-1 focus:ring-accent" />
     </label>
-    {editing && draft !== frame.data.question && <div className="flex justify-end gap-1">
-      <button type="button" className={`${actionClass} !w-auto`} onClick={cancel} aria-label={t('common.cancel')}><X size={14} /></button>
-      <button type="button" className={`${actionClass} !w-auto text-accent`} onClick={commit}><Check size={14} />{t('format.apply')}</button>
-    </div>}
   </div>;
 }
 

@@ -20,7 +20,7 @@ page.setDefaultTimeout(15000);
 const errors = [], writes = [], checks = [];
 page.on('pageerror', (error) => errors.push(error.message));
 await context.route('**/api/**', (route) => {
-  if (['GET', 'HEAD', 'OPTIONS'].includes(route.request().method())) return route.continue();
+  if (['GET', 'HEAD', 'OPTIONS'].includes(route.request().method())) return route.fulfill({ json: { models: [], providers: [], sessions: [], topics: [] } });
   writes.push(`${route.request().method()} ${route.request().url()}`);
   return route.abort('blockedbyclient');
 });
@@ -28,6 +28,7 @@ await page.addInitScript(() => {
   localStorage.setItem('thoughtdag.seeded', 'yes');
   localStorage.setItem('thoughtdag.tutorialDone', '1');
   localStorage.setItem('thoughtdag.autoRefreshPaused', 'yes');
+  localStorage.setItem('thoughtdag.lang', 'zh');
 });
 const check = (name) => { checks.push(name); console.log(`PASS ${name}`); };
 const near = (a, b, message) => assert.ok(Math.abs(a - b) < 1, `${message}: ${a} != ${b}`);
@@ -36,11 +37,13 @@ const positions = (nodes) => nodes.map(({ id, position }) => ({ id, position }))
 const size = (node) => ({ w: node.measured?.width ?? node.width, h: node.measured?.height ?? node.height });
 const select = (ids) => page.evaluate((ids) => window.__store.getState().setSelectedNodeIds(ids), ids);
 const expandFormat = async () => {
-  // The inspector mounts after the canvas double-click grace period.
-  await page.locator('[data-node-format-panel]').waitFor();
+  // Closing a card preserves its selection; explicitly reopen that card.
+  await page.evaluate(() => window.__canvasEditing.getState().requestProperties());
+  await page.locator('[data-selection-properties]').waitFor();
   await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
   const reopen = page.locator('[data-node-format-reopen]');
   if (await reopen.isVisible()) await reopen.click();
+  await page.locator('[data-node-format-panel]').waitFor();
 };
 const pointerClickHandle = async (node, modifiers = []) => {
   const box = await node.locator('.drag-handle').first().boundingBox();
@@ -88,6 +91,23 @@ const action = async (name, reference = 'selection') => {
   assert.equal(await page.evaluate(() => window.__ui.getState().confirmRequest), null, 'Arrangement executes without confirmation');
   await page.waitForTimeout(100);
 };
+const linkedFixture = async (ids) => {
+  await fixture(ids);
+  await page.evaluate(() => {
+    const positions = [{ x: 80, y: 240 }, { x: 80, y: 740 }, { x: 1000, y: 1140 }];
+    const nodes = window.__store.getState().nodes.map((node, index) => ({ ...node, position: positions[index],
+      data: { ...node.data, stepKind: undefined, layoutDirection: 'vertical',
+        response: `Stable answer ${index}`, responses: [`Stable answer ${index}`] } }));
+    const edges = [{ id: 'chain-ab', source: 'arrange-a', target: 'arrange-b', type: 'thought', data: {} },
+      { id: 'chain-bc', source: 'arrange-b', target: 'arrange-c', type: 'thought', data: {} }];
+    window.__store.setState({ nodes, edges, history: [{ nodes, edges }], historyIndex: 0 });
+  });
+  await page.waitForTimeout(250);
+};
+const contextMessages = () => page.evaluate(() => {
+  const { nodes, edges } = window.__store.getState();
+  return window.__buildContext('arrange-c', nodes, edges).messages;
+});
 const menuWithinViewport = async (label) => {
   const box = await page.getByRole('menu', { name: label, exact: true }).boundingBox();
   const viewport = page.viewportSize();
@@ -182,6 +202,57 @@ try {
   assert.ok(await page.locator('[data-selection-align]').evaluate((node) => node === document.activeElement));
   check('distribution disabled states and keyboard focus follow selection and reference');
 
+  await linkedFixture(['arrange-b', 'arrange-c']);
+  const beforeChain = await readNodes();
+  const beforeMessages = await contextMessages();
+  const beforeWiring = await page.evaluate(() => window.__store.getState().edges);
+  await action('right');
+  const afterChain = await readNodes();
+  assert.ok(Math.abs(afterChain[1].position.x - beforeChain[1].position.x) > 100, 'A partial chain can move off its original column');
+  assert.deepEqual(afterChain[0].position, beforeChain[0].position, 'The unselected upstream node stays fixed');
+  assert.deepEqual(await contextMessages(), beforeMessages, 'Manual alignment preserves the assembled context');
+  assert.deepEqual(await page.evaluate(() => window.__store.getState().edges), beforeWiring, 'Manual alignment preserves wiring');
+  assert.equal(await page.evaluate(() => window.__ui.getState().toasts.length), 0, 'No chain warning blocks alignment');
+  await page.evaluate(() => window.__store.getState().undo());
+  assert.deepEqual(positions(await readNodes()), positions(beforeChain));
+  await page.evaluate(() => window.__store.getState().redo());
+  assert.deepEqual(positions(await readNodes()), positions(afterChain));
+  check('partial-chain alignment executes, preserves context and wiring, and supports one-step undo and redo');
+
+  await linkedFixture(['arrange-a', 'arrange-c']);
+  const beforeReverse = await readNodes();
+  await action('bottom');
+  const afterReverse = await readNodes();
+  assert.ok(afterReverse[0].position.y > afterReverse[1].position.y, 'A parent can be aligned below its child');
+  assert.deepEqual(afterReverse[1].position, beforeReverse[1].position);
+  check('alignment may reverse upstream and downstream spatial order without moving unselected nodes');
+
+  await fixture(['arrange-a', 'arrange-b']);
+  await page.evaluate(() => window.__store.setState(state => ({ nodes: state.nodes.map(node => node.id === 'arrange-c'
+    ? { ...node, position: { x: 80, y: 580 } } : node) })));
+  const beforeCollision = await readNodes();
+  await action('left');
+  const afterCollision = await readNodes();
+  assert.deepEqual(afterCollision[1].position, beforeCollision[2].position, 'An aligned node may overlap a fixed node');
+  assert.deepEqual(afterCollision[2].position, beforeCollision[2].position);
+  check('alignment allows overlap and keeps the fixed node in place');
+
+  for (const [command, axis, dim] of [['distribute-horizontal', 'x', 'w'], ['distribute-vertical', 'y', 'h']]) {
+    await fixture();
+    await page.evaluate(axis => window.__store.setState(state => ({ nodes: state.nodes.map((node, index) => ({ ...node,
+      position: { ...node.position, [axis]: 80 + index * 20 } })) })), axis);
+    const before = await readNodes();
+    await action(command);
+    const after = await readNodes();
+    const gaps = after.slice(1).map((node, index) => node.position[axis] - after[index].position[axis] - size(after[index])[dim]);
+    assert.ok(gaps.every(gap => gap < 0), 'Distribution allows negative gaps');
+    near(gaps[0], gaps[1], 'Negative gaps remain equal');
+    near(after[0].position[axis], before[0].position[axis], 'First object keeps its leading edge');
+    near(after[2].position[axis] + size(after[2])[dim], Math.max(...before.map(node => node.position[axis] + size(node)[dim])), 'Last object reaches the trailing reference edge');
+  }
+  check('both distribution commands allow equal negative gaps in a crowded selection');
+
+  await fixture();
   await select([]);
   const a = page.locator('.react-flow__node[data-id="arrange-a"]');
   await a.locator('.drag-handle').first().click();

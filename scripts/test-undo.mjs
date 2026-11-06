@@ -54,7 +54,7 @@ await build({
     },
   }],
 });
-const { makeStore } = await import(pathToFileURL(bundle).href);
+const { makeStore, sameGraph } = await import(pathToFileURL(bundle).href);
 rmSync(tmp, { recursive: true, force: true });
 
 // ── canvas fixtures ─────────────────────────────────────────────────────
@@ -71,7 +71,7 @@ function assets(st) {
   const nodes = [...st.nodes].sort((a, b) => a.id.localeCompare(b.id)).map((n) => ({
     id: n.id, x: n.position.x, y: n.position.y, w: n.width, h: n.height,
     q: n.data.question, r: n.data.response, rs: n.data.responses, ri: n.data.responseIndex, c: n.data.isCollapsed,
-    k: n.data.stepKind, fc: n.data.frameColor, att: (n.data.attachments ?? []).map((a) => [a.id, a.name, a.extractedBy === 'manual' ? a.extractedText : '']),
+    k: n.data.stepKind, fc: n.data.frameColor, split: n.data.questionHeightRatio, att: (n.data.attachments ?? []).map((a) => [a.id, a.name, a.extractedBy === 'manual' ? a.extractedText : '']),
   }));
   const edges = [...st.edges].sort((a, b) => a.id.localeCompare(b.id)).map((e) => [e.id, e.source, e.target]);
   return JSON.stringify({ nodes, edges });
@@ -224,6 +224,72 @@ for (const [pattern, label] of [['both', 'recorded before and after'], ['before'
   check('redo brings it back with its page, not a spinner', c.s().nodes.find((n) => n.id === 'l1')?.data.linkTitle === 'Example');
 }
 
+// ── automatic content limits are derived geometry, never dirty undo steps ─
+{
+  const original = { ...q('a', 'A', 'answer A'), width: 600, height: 800, style: { height: 800 } };
+  const c = start([original]);
+  c.ops.both(() => c.mutate(ns => [...ns, note('n1', 'the earlier user step')]));
+  const earlier = c.s().history[0];
+  c.s().normalizeNodeContentHeight('a', 500);
+  check('automatic height normalization updates live and active geometry without adding a step', c.s().historyIndex === 1 && c.s().history.length === 2 && c.s().nodes[0].height === 500 && c.s().history[1].nodes[0].height === 500 && sameGraph(c.s().history[1], c.s()));
+  check('inactive history stays untouched until its own content is restored', c.s().history[0] === earlier && earlier.nodes[0].height === 800);
+  c.s().undo();
+  c.s().normalizeNodeContentHeight('a', 500);
+  check('one undo after normalization reaches the earlier user step instead of restoring oversized blank space', !c.s().nodes.some(n => n.id === 'n1') && c.s().nodes[0].height === 500 && c.s().historyIndex === 0 && sameGraph(c.s().history[0], c.s()));
+  const settled = c.s().nodes;
+  c.s().undo();
+  check('normalization does not leave a repeated dirty undo loop', c.s().nodes === settled && c.s().historyIndex === 0 && c.s().history.length === 2);
+  c.s().redo();
+  check('redo still restores the actual user step after derived normalization', c.s().nodes.some(n => n.id === 'n1') && c.s().nodes[0].height === 500);
+}
+{
+  const c = start([{ ...q('a', 'A', 'a much longer earlier answer'), width: 600, height: 800 }]);
+  c.patch('a', { response: 'short new answer' });
+  const earlier = c.s().history[0];
+  c.s().normalizeNodeContentHeight('a', 500);
+  check('a short current answer never clips a different historical answer', c.s().nodes[0].height === 500 && c.s().history[0] === earlier && earlier.nodes[0].height === 800);
+  c.s().undo();
+  c.s().normalizeNodeContentHeight('a', 900);
+  check('restoring different prose retains its own valid historical height', c.s().nodes[0].data.response === 'a much longer earlier answer' && c.s().nodes[0].height === 800);
+}
+{
+  const c = start([{ ...q('a', 'A', 'answer A'), width: 600, height: 800 }]);
+  c.mutate(ns => ns.map(n => ({ ...n, width: 900 })));
+  const earlier = c.s().history[0];
+  c.s().normalizeNodeContentHeight('a', 500);
+  check('a different historical width is not clipped using current wrapping', c.s().nodes[0].height === 500 && c.s().history[0] === earlier && earlier.nodes[0].width === 600 && earlier.nodes[0].height === 800);
+}
+{
+  const c = start([{ ...q('a', 'A', 'answer A'), height: 800, style: { height: '800px', width: '600px', color: 'blue' } }]);
+  c.move('a', 60, -20);
+  c.s().normalizeNodeContentHeight('a', 500);
+  const live = c.s().nodes[0], saved = c.s().history[0].nodes[0];
+  check('legacy pixel style heights normalize both wrapper and node dimensions', live.height === 500 && live.style.height === 500 && saved.height === 500 && saved.style.height === 500);
+  check('normalization only changes height fields and preserves uncommitted positions', live.position.x === 60 && live.position.y === -20 && saved.position.x === 0 && saved.style.width === '600px' && live.style.color === 'blue' && live.data.response === 'answer A');
+  c.s().undo();
+  check('a real unrecorded move remains undoable beside normalized heights', c.s().nodes[0].position.x === 0 && c.s().nodes[0].height === 500);
+}
+{
+  for (const value of ['800px', '800', ' 800.5px ']) {
+    const c = start([{ ...q('a', 'A', 'answer A'), style: { height: value } }]);
+    c.s().normalizeNodeContentHeight('a', 500);
+    check(`legacy height ${JSON.stringify(value)} becomes a bounded explicit size`, c.s().nodes[0].height === 500 && c.s().nodes[0].style.height === 500 && sameGraph(c.s().history[0], c.s()));
+  }
+  const c = start([{ ...q('a', 'A', 'answer A'), style: { height: '80%' } }]);
+  const nodes = c.s().nodes, history = c.s().history;
+  c.s().normalizeNodeContentHeight('a', 500);
+  check('percentage style heights are never interpreted as canvas pixels', c.s().nodes === nodes && c.s().history === history && c.s().nodes[0].style.height === '80%');
+}
+{
+  const c = start([{ ...q('a', 'A', 'answer A'), width: 600, height: 400 }]);
+  const saved = c.s().history[0].nodes[0];
+  c.mutate(ns => ns.map(n => ({ ...n, height: 800 })));
+  c.s().normalizeNodeContentHeight('a', 500);
+  check('a historical height already below the cap stays untouched', c.s().history[0].nodes[0] === saved && saved.height === 400 && c.s().nodes[0].height === 500);
+  c.s().undo();
+  check('a smaller intentional historical size remains undoable', c.s().nodes[0].height === 400);
+}
+
 // ── working flags never come back from a snapshot ───────────────────────
 {
   const c = start([q('a', 'A', 'answer A')]);
@@ -241,6 +307,46 @@ for (const [pattern, label] of [['both', 'recorded before and after'], ['before'
   c.s().undo(); c.s().undo();
   c.s().redo();
   check('a snapshot taken mid-stream never brings back a spinner', c.s().nodes.find((n) => n.id === 'b')?.data.isLoading === false);
+}
+
+// ── reading split changes are steps even while an answer streams ───────
+{
+  const c = start([q('a', 'A', '', 0, 0, { isLoading: true })]);
+  c.ops.both(() => c.patch('a', { questionHeightRatio: 0.7 }));
+  const recordedIndex = c.s().historyIndex;
+  const activity = [{ id: 'live', kind: 'message', text: 'latest activity' }];
+  c.patch('a', { response: 'latest streamed text', reasoning: 'latest reasoning', agentActivity: activity });
+  c.s().undo();
+  const undone = c.s().nodes[0].data;
+  check('a reading split changed during generation is exactly one step', recordedIndex === 1 && c.s().historyIndex === 0 && undone.questionHeightRatio === undefined);
+  check('undoing the split preserves live text, reasoning, activity and generation', undone.response === 'latest streamed text' && undone.reasoning === 'latest reasoning' && undone.agentActivity === activity && undone.isLoading && globalThis.__toasts.length === 0);
+  c.s().redo();
+  const redone = c.s().nodes[0].data;
+  check('redoing the split during generation preserves the latest stream', redone.questionHeightRatio === 0.7 && redone.response === 'latest streamed text' && redone.agentActivity === activity && redone.isLoading);
+}
+{
+  const c = start([q('a', 'A', 'answer A')]);
+  c.ops.both(() => c.mutate((ns) => [...ns, q('b', 'B', '', 0, 400, { isLoading: true })]));
+  c.ops.both(() => c.patch('b', { questionHeightRatio: 0.65 }));
+  c.patch('b', { isLoading: false, response: 'complete B', responses: ['complete B'], responseIndex: 0 });
+  c.settle('b');
+  c.s().undo();
+  const b = c.s().nodes.find((n) => n.id === 'b');
+  check('stream completion keeps the earlier split snapshot and the complete answer', b?.data.questionHeightRatio === undefined && b.data.response === 'complete B' && !b.data.isLoading);
+  c.s().redo();
+  check('redo after completion restores only the chosen split', c.s().nodes.find((n) => n.id === 'b')?.data.questionHeightRatio === 0.65 && c.s().nodes.find((n) => n.id === 'b')?.data.response === 'complete B');
+  c.s().undo(); c.s().undo();
+  check('split undo after completion stays separate from creating the answer node', c.s().nodes.length === 1 && c.s().nodes[0].id === 'a');
+}
+{
+  const c = start([q('a', 'A', '', 0, 0, { isLoading: true })]);
+  c.ops.both(() => c.patch('a', { questionHeightRatio: 0.6 }));
+  c.s().undo();
+  c.patch('a', { isLoading: false, response: 'finished after undo', responses: ['finished after undo'], responseIndex: 0 });
+  c.settle('a');
+  c.s().redo();
+  const a = c.s().nodes[0].data;
+  check('finishing a stream after split undo preserves its redo choice', a.questionHeightRatio === 0.6 && a.response === 'finished after undo' && !a.isLoading);
 }
 
 // ── a streaming answer is never removed or rewritten by undo ────────────

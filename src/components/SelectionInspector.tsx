@@ -7,6 +7,7 @@ import { useDismissableLayer } from '../lib/use-dismissable-layer';
 import { SelectionPanelContext, type SelectionDraftBoundary } from '../lib/selection-panel-context';
 import { isFrameNode } from '../lib/frames';
 import { isImeComposing } from '../utils';
+import { handleCanvasPanelKeyDown } from '../lib/canvas-shortcuts';
 import SelectionToolbar from './SelectionToolbar';
 import ConnectionProperties from './ConnectionProperties';
 import type { ViewportRectGetter } from './SelectionArrangeMenu';
@@ -41,7 +42,7 @@ export default function SelectionInspector({ getViewportRect, withDetails, onClo
   return <aside ref={ref} className="canvas-tool-panel flex flex-col" style={position}
     aria-label={t('selection.properties')} data-selection-properties data-selection-toolbar data-with-details={withDetails || undefined}
     data-edge-inspector={connections.length === 1 ? '' : undefined} data-batch-edge-inspector={connections.length > 1 ? '' : undefined}
-    onKeyDown={event => { if (isImeComposing(event) || event.key !== 'Escape') event.stopPropagation(); }}>
+    onKeyDown={handleCanvasPanelKeyDown}>
     <header className="flex items-start shrink-0 border-b border-line">
       <button type="button" className="min-w-0 flex-1 p-4 py-3 flex items-start gap-2 text-left hover:bg-wash focus-visible:outline-2 focus-visible:outline-accent"
         aria-expanded={!collapse.collapsed} aria-label={t(collapse.collapsed ? 'format.expand' : 'format.collapse')}

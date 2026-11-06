@@ -1,6 +1,7 @@
 import type { ThoughtNode } from '../types';
 import { estimateNodeHeight } from './layout';
 import { isFrameNode, resolveCarriedNodeIds } from './frames';
+import { getNodeContentHeightLimit } from './node-content-height';
 
 export interface NodeGeometryPatch {
   width?: number;
@@ -28,8 +29,10 @@ export function nodeGeometryMinimum(node: ThoughtNode): { width: number; height:
   return isMaterial(node) ? { width: 340, height: 120 } : { width: 360, height: 240 };
 }
 
-export function nodeGeometryMaximum(node: ThoughtNode): { width: number; height: number } {
-  return { width: isMaterial(node) ? 860 : Infinity, height: Infinity };
+export function nodeGeometryMaximum(node: ThoughtNode, width?: number): { width: number; height: number } {
+  const limit = isFrameNode(node) || isMaterial(node) ? undefined : getNodeContentHeightLimit(node.id, width);
+  return { width: isMaterial(node) ? 860 : Infinity,
+    height: Math.max(nodeGeometryMinimum(node).height, positive(limit) ? limit : Infinity) };
 }
 
 /** Apply deltas from a frozen drag snapshot without moving nodes or replacing live content. */
@@ -51,11 +54,16 @@ export function resizeSelectionBy(nodes: ThoughtNode[], originals: ThoughtNode[]
     return [node.id, { width: resized.width, height: resized.height,
       keepOverviewHeight: node.data.keepOverviewHeight || resized.height !== node.height }];
   }));
-  return nodes.map(node => {
+  let changed = false;
+  const result = nodes.map(node => {
     const size = sizes.get(node.id);
-    return !size ? node : { ...node, width: size.width, height: size.height,
+    if (!size || (size.width === node.width && size.height === node.height
+      && !!size.keepOverviewHeight === !!node.data.keepOverviewHeight)) return node;
+    changed = true;
+    return { ...node, width: size.width, height: size.height,
       data: { ...node.data, keepOverviewHeight: size.keepOverviewHeight || undefined } };
   });
+  return changed ? result : nodes;
 }
 
 /** One local formatting operation uses the exact selection; only a single
@@ -81,22 +89,57 @@ export function applySelectionGeometry(nodes: ThoughtNode[], nodeIds: string[], 
     if (ids.has(node.id)) {
       const current = effectiveNodeGeometry(node);
       const min = nodeGeometryMinimum(node);
-      const max = nodeGeometryMaximum(node);
       // Natural content height cannot maintain a fixed geometric ratio.
       const autoHeight = patch.autoHeight === true && !isFrameNode(node);
       const locked = autoHeight ? false : patch.lockAspectRatio ?? !!node.data.lockAspectRatio;
+      const requestedScale = patch.width !== undefined ? patch.width / current.width
+        : patch.height !== undefined ? patch.height / current.height : undefined;
+      const minimumScale = Math.max(min.width / current.width, min.height / current.height);
+      const candidateWidth = locked && requestedScale !== undefined
+        ? current.width * Math.max(minimumScale, requestedScale)
+        : patch.width !== undefined ? Math.max(min.width, patch.width) : undefined;
+      const max = nodeGeometryMaximum(node, candidateWidth);
+      const maximumHeight = max.height;
       let width = patch.width === undefined ? undefined : Math.min(max.width, Math.max(min.width, patch.width));
-      let height = autoHeight || patch.height === undefined ? undefined : Math.max(min.height, patch.height);
+      let height = autoHeight || patch.height === undefined ? undefined : Math.min(maximumHeight, Math.max(min.height, patch.height));
+      // A saved oversized height must not bypass the current content cap,
+      // including width-only edits that change text wrapping.
+      if (!autoHeight && height === undefined && node.height !== undefined && current.height > maximumHeight) height = maximumHeight;
       if (locked && (width !== undefined || height !== undefined)) {
         // If a caller supplies both axes, width is the source. The editor can
         // send only its last edited axis to make that choice explicit.
-        const requestedScale = patch.width !== undefined ? patch.width / current.width : patch.height! / current.height;
-        const minimumScale = Math.max(min.width / current.width, min.height / current.height);
-        const maximumScale = Math.min(max.width / current.width, max.height / current.height);
-        if (minimumScale > maximumScale) return node;
-        const scale = Math.min(maximumScale, Math.max(minimumScale, requestedScale));
-        width = current.width * scale;
-        height = current.height * scale;
+        const maximumWidthScale = max.width / current.width;
+        if (minimumScale > maximumWidthScale) return node;
+        let scale = Math.min(maximumWidthScale, Math.max(minimumScale, requestedScale ?? 1));
+        let correctedBounds = false;
+        if (current.height * scale > maximumHeight) {
+          let lower = Math.max(minimumScale, maximumHeight / current.height);
+          const lowerMaximum = nodeGeometryMaximum(node, current.width * lower).height;
+          if (current.height * lower > lowerMaximum) {
+            // An inherited extreme ratio may have no solution within both
+            // the minimum width and content height. Enforce those bounds
+            // once; subsequent locked edits use the corrected card ratio.
+            width = Math.min(max.width, Math.max(min.width, patch.width ?? current.width));
+            height = Math.min(nodeGeometryMaximum(node, width).height, Math.max(min.height, patch.height ?? current.height));
+            correctedBounds = true;
+          }
+          // Constant limits resolve exactly with two reads. Reflow can raise
+          // the cap at this narrower width; only then search the fit boundary.
+          if (!correctedBounds && lowerMaximum > maximumHeight) {
+            let upper = scale;
+            for (let iteration = 0; iteration < 14 && (upper - lower) * current.height > 0.25; iteration++) {
+              const midpoint = (lower + upper) / 2;
+              const allowed = nodeGeometryMaximum(node, current.width * midpoint).height;
+              if (current.height * midpoint <= allowed) lower = midpoint;
+              else upper = midpoint;
+            }
+          }
+          if (!correctedBounds) scale = lower;
+        }
+        if (!correctedBounds) {
+          width = current.width * scale;
+          height = current.height * scale;
+        }
       }
       if ((width !== undefined && width !== node.width) || (height !== undefined && height !== node.height)) {
         next = { ...next, ...(width !== undefined ? { width } : {}), ...(height !== undefined ? { height } : {}) };

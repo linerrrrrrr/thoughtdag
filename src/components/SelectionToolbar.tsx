@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
-import { Archive, Check, ClipboardList, Files, FileDown, Highlighter, Layers, Trash2, X } from 'lucide-react';
+import { Archive, ClipboardList, Files, FileDown, Highlighter, Layers, Trash2 } from 'lucide-react';
 import { useStore } from '../store';
 import { useProjects } from '../store/projects';
 import type { ThoughtNode } from '../types';
@@ -60,7 +60,10 @@ function GeometryEditor({ selectedNodes, allowPosition }: { selectedNodes: Thoug
     return field === 'width' ? Math.max(min.width, min.height * size.width / size.height) : Math.max(min.height, min.width * size.height / size.width);
   })) * 100) / 100;
   const maximum = (field: 'width' | 'height') => Math.min(...selectedNodes.map((node, index) => {
-    const max = nodeGeometryMaximum(node);
+    // Content height is clamped at commit using the requested width. Keep
+    // numeric validation for fixed material-width bounds only; a stale
+    // current-width height limit must not reject a valid pending edit.
+    const max = { ...nodeGeometryMaximum(node), height: Infinity };
     const size = geometries[index];
     if (!node.data.lockAspectRatio) return max[field];
     return field === 'width' ? Math.min(max.width, max.height * size.width / size.height) : Math.min(max.height, max.width * size.height / size.width);
@@ -94,9 +97,9 @@ function GeometryEditor({ selectedNodes, allowPosition }: { selectedNodes: Thoug
     if (patch) {
       if (dirty) useStore.getState().setSelectionGeometry(selectedNodes.map(node => node.id), patch);
       cancel();
-    }
+    } else setEditing(false);
   };
-  const dismiss = useInlineEditDismiss({ active: editing, ref: editor, onOutside: () => setEditing(false), onCancel: cancel });
+  const dismiss = useInlineEditDismiss({ active: editing, ref: editor, onOutside: commit, onCancel: cancel });
   const displayFor = (field: GeometryField): { value: string; placeholder?: string } => {
     if (draft[field] !== undefined) return { value: draft[field] };
     const values = selectedNodes.map((node, index) => {
@@ -164,13 +167,7 @@ function GeometryEditor({ selectedNodes, allowPosition }: { selectedNodes: Thoug
         <div className="grid grid-cols-2 gap-3">{field('x')}{field('y')}</div>
       </>}
       {error && <p className="text-control text-watch" role="alert">{error}</p>}
-      {dirty && <div className="flex items-center justify-between gap-2">
-        <span className="text-control text-ink-faint">{t('format.editHint')}</span>
-        <div className="flex gap-1">
-          <button type="button" onClick={cancel} data-node-format-cancel className={buttonClass} aria-label={t('common.cancel')}><X size={14} /></button>
-          <button type="button" onClick={() => commit()} data-node-format-apply className={`${buttonClass} text-accent`}><Check size={14} />{t('format.apply')}</button>
-        </div>
-      </div>}
+      {dirty && <p className="text-control text-ink-faint">{t('format.editHint')}</p>}
     </section>}
   </div>;
 }

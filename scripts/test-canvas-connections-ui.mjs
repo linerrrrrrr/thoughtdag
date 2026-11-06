@@ -213,35 +213,33 @@ try {
   await chooseRoute('orthogonal');
   await (await labelInput()).fill('整理后的上下文');
   await page.waitForTimeout(250);
-  assert.deepEqual(await storedGraph(), beforeEdge, 'edge draft must not write to graph');
-  assert.equal(await page.evaluate(() => window.__canvasEditing.getState().edgePreviews.find(edge => edge.id === 'edge-a-b').data.label), '整理后的上下文');
+  assert.equal((await storedGraph()).edges.find(edge => edge.id === 'edge-a-b').data.label, '整理后的上下文');
+  assert.equal((await storedGraph()).edges.find(edge => edge.id === 'edge-a-b').data.route, 'orthogonal');
   assert.notEqual((await geometry()).find((e) => e.id === 'edge-a-b').d, oldPath);
-  await inspector.locator('[data-edge-cancel]').click();
+  await inspector.locator('legend').first().click();
+  await undo(); await undo();
   await page.waitForTimeout(180);
-  assert.deepEqual(await storedGraph(), beforeEdge);
+  assert.deepEqual((await storedGraph()).edges, beforeEdge.edges);
   assert.equal(await (await labelInput()).inputValue(), '');
-  assert.equal(await page.evaluate(() => window.__canvasEditing.getState().edgePreviews), null);
-  check('one click opens compact inspector; route/label drafts do not write until applied');
+  assert.equal(await inspector.locator('[data-edge-apply], [data-edge-cancel]').count(), 0);
+  check('one click opens the inspector; route and label changes save immediately and undo independently');
 
   await chooseRoute('orthogonal');
   await (await labelInput()).fill('分析依据');
-  await inspector.locator('[data-edge-apply]').click();
   await page.waitForTimeout(200);
   const savedEdge = (await storedGraph()).edges.find((e) => e.id === 'edge-a-b');
   assert.equal(savedEdge.data.route, 'orthogonal'); assert.equal(savedEdge.data.label, '分析依据');
   assert.equal(savedEdge.data.isCrossLink, undefined);
   await inspector.getByRole('button', { name: '关闭', exact: true }).click();
-  await undo();
+  await undo(); await undo();
   assert.deepEqual((await storedGraph()).edges, beforeEdge.edges);
-  check('route and label save together without changing relation and undo restores them');
+  check('route and label remain saved after closing and undo preserves the relation');
 
   await fixture();
   await openEdge('edge-b-c');
   await inspector.locator('[data-edge-relation="reference"]').click();
   assert.equal(await inspector.locator('[data-edge-relation]').count(), 2);
   assert.equal(await inspector.locator('[data-edge-scope], [data-edge-context-toggle], [data-edge-context-preview]').count(), 0);
-  assert.equal((await storedGraph()).edges.find((e) => e.id === 'edge-b-c').data.isCrossLink, undefined);
-  await inspector.locator('[data-edge-apply]').click();
   const reference = (await storedGraph()).edges.find((e) => e.id === 'edge-b-c');
   assert.equal(reference.data.isCrossLink, true); assert.equal(reference.data.contextDepth, undefined);
   const payload = await page.evaluate(async () => {
@@ -260,14 +258,16 @@ try {
   await openEdge('edge-a-b');
   await (await labelInput()).fill('临时标题');
   await page.keyboard.press('Escape');
-  assert.equal(await (await labelInput()).inputValue(), '');
+  assert.equal(await (await labelInput()).inputValue(), '临时标题');
   assert.equal(await inspector.count(), 1);
   await (await labelInput()).focus();
   await page.keyboard.press('Delete'); await page.keyboard.press('Backspace');
   assert.equal((await storedGraph()).edges.length, 2);
   await page.keyboard.press('Escape');
+  assert.equal(await inspector.count(), 1);
+  await page.keyboard.press('Escape');
   await inspector.waitFor({ state: 'detached' });
-  check('Escape first cancels drafts then closes; editing keys never delete the connection');
+  check('Escape ends label editing before closing and editing keys never delete the connection');
 
   await openEdge('edge-a-b');
   await (await labelInput()).fill('关闭后保留');
@@ -278,15 +278,13 @@ try {
   assert.equal(await (await labelInput()).inputValue(), '');
   await openEdge('edge-a-b', false);
   assert.equal(await (await labelInput()).inputValue(), '关闭后保留');
-  await inspector.locator('[data-edge-apply]').click();
   await (await labelInput()).fill('');
   await inspector.getByRole('button', { name: '关闭', exact: true }).click();
   await openEdge('edge-a-b');
-  assert.equal(await (await labelInput()).inputValue(), '', 'explicitly empty label draft survives closing');
-  await inspector.locator('[data-edge-cancel]').click();
+  assert.equal(await (await labelInput()).inputValue(), '', 'cleared labels remain saved after closing');
   await inspector.getByRole('button', { name: '关闭', exact: true }).click();
   await openEdge('edge-a-b');
-  assert.equal(await (await labelInput()).inputValue(), '关闭后保留');
+  assert.equal(await (await labelInput()).inputValue(), '');
   await (await labelInput()).fill('中文输入草稿');
   const beforeIme = await storedGraph();
   for (const key of ['Escape', 'Enter']) await (await labelInput()).evaluate((input, key) => input.dispatchEvent(
@@ -306,10 +304,12 @@ try {
   await page.keyboard.press('Escape');
   await page.getByRole('alertdialog').waitFor({ state: 'detached' });
   assert.equal(await (await labelInput()).inputValue(), '中文输入草稿');
-  assert.deepEqual(await storedGraph(), beforeIme);
-  await inspector.locator('[data-edge-cancel]').click();
+  const afterDialog = await storedGraph();
+  assert.deepEqual(afterDialog.nodes, beforeIme.nodes);
+  assert.deepEqual(afterDialog.edges, beforeIme.edges);
+  assert.equal(afterDialog.historyIndex, beforeIme.historyIndex + 1, 'closing the label edit records exactly one step');
   await inspector.getByRole('button', { name: '关闭', exact: true }).click();
-  check('edge drafts survive close/switch and card replacement; empty labels, IME and nested Escape stay isolated');
+  check('live edge values survive close/switch and replacement; empty labels, IME and nested Escape stay isolated');
 
   for (const destination of ['content', 'port']) {
     await fixture();
@@ -428,7 +428,6 @@ try {
   const curved = (await geometry()).find((edge) => edge.id === 'edge-a-b');
   assert.ok(Math.max(...curved.samples.map((point) => Math.abs(point.y - curved.start.y))) < 1, 'aligned facing ports remain naturally straight');
   assert.deepEqual(curved.hits, []);
-  await inspector.locator('[data-edge-apply]').click();
   await page.screenshot({ path: `${outputDir}/aligned-curve.png` });
   await inspector.getByRole('button', { name: '关闭', exact: true }).click();
   await page.evaluate(() => window.__store.setState((state) => ({

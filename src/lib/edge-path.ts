@@ -16,6 +16,29 @@ const TURN_COST = 24;
 const EPSILON = 0.001;
 export type EdgeRouteMode = 'auto' | 'curve' | 'orthogonal';
 
+export interface EdgeRoutingSettings {
+  avoidObstacles: boolean;
+  obstacleClearance: number;
+  curvature: number;
+}
+
+export const DEFAULT_EDGE_ROUTING_SETTINGS: Readonly<EdgeRoutingSettings> = {
+  avoidObstacles: true,
+  obstacleClearance: CLEARANCE,
+  curvature: 0.25,
+};
+
+/** Keep restored preferences and one-off route calls finite and bounded. */
+export function normalizeEdgeRoutingSettings(settings: Partial<EdgeRoutingSettings> = {}): EdgeRoutingSettings {
+  return {
+    avoidObstacles: settings.avoidObstacles !== false,
+    obstacleClearance: typeof settings.obstacleClearance === 'number' && Number.isFinite(settings.obstacleClearance)
+      ? Math.max(8, Math.min(64, settings.obstacleClearance)) : CLEARANCE,
+    curvature: typeof settings.curvature === 'number' && Number.isFinite(settings.curvature)
+      ? Math.max(0, Math.min(1, settings.curvature)) : 0.25,
+  };
+}
+
 export interface RoutedPath {
   path: string;
   labelX: number;
@@ -26,12 +49,14 @@ interface EdgeLane { sourceOffset: number; targetOffset: number; sourceStep: num
 export interface EdgeRoutingContext {
   readonly cards: readonly Card[];
   readonly lanes: ReadonlyMap<string, EdgeLane>;
+  readonly settings: Readonly<EdgeRoutingSettings>;
 }
 export interface EdgeRouteOptions {
   edgeId?: string;
   context?: EdgeRoutingContext;
   /** Convenience for one-off routes. Memoize createEdgeRoutingContext for a graph. */
   edges?: readonly ThoughtEdge[];
+  settings?: Partial<EdgeRoutingSettings>;
 }
 
 function visibleCards(nodes: readonly ThoughtNode[]): Card[] {
@@ -43,7 +68,7 @@ function visibleCards(nodes: readonly ThoughtNode[]): Card[] {
 }
 
 /** Per-canvas immutable plan; geometric order avoids crossed fan-outs. */
-export function createEdgeRoutingContext(nodes: readonly ThoughtNode[], edges: readonly ThoughtEdge[]): EdgeRoutingContext {
+export function createEdgeRoutingContext(nodes: readonly ThoughtNode[], edges: readonly ThoughtEdge[], settings?: Partial<EdgeRoutingSettings>): EdgeRoutingContext {
   const cards = visibleCards(nodes), visible = new Set(cards.map((card) => card.id));
   const cardById = new Map(cards.map((card) => [card.id, card]));
   const nodeById = new Map(nodes.map((node) => [node.id, node]));
@@ -82,7 +107,7 @@ export function createEdgeRoutingContext(nodes: readonly ThoughtNode[], edges: r
       lane.obstacleOffset = Math.max(lane.obstacleOffset, index * 14);
     }
   }
-  return { cards, lanes };
+  return { cards, lanes, settings: normalizeEdgeRoutingSettings(settings) };
 }
 
 const midpoint = (a: Pt, b: Pt): Pt => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
@@ -261,15 +286,26 @@ function cubicPath(curves: Cubic[]): RoutedPath {
   return { path, labelX: first.x, labelY: first.y };
 }
 
-function nativeBezier(start: Pt, end: Pt, sourcePosition: Position, targetPosition: Position): { route: RoutedPath; curve: Cubic } {
+/** Default controls retain the established path. A positive floor keeps the
+ * handle normals defined even at the least-curved setting. */
+const curvatureScale = (curvature: number): number => curvature <= 0.25
+  ? 0.05 + curvature * 3.8 : 1 + (curvature - 0.25) / 0.75;
+
+function nativeBezier(start: Pt, end: Pt, sourcePosition: Position, targetPosition: Position, curvature: number): { route: RoutedPath; curve: Cubic } {
   // Use xyflow's MIT-licensed implementation, including its distance-scaled
   // controls and reverse-facing handles. No short port fans or artificial bow.
   // https://github.com/xyflow/xyflow/blob/main/packages/system/src/utils/edges/bezier-edge.ts
   const [path, labelX, labelY] = getBezierPath({ sourceX: start.x, sourceY: start.y, sourcePosition,
     targetX: end.x, targetY: end.y, targetPosition });
   const coordinates = path.match(/-?\d+(?:\.\d+)?(?:e[-+]?\d+)?/gi)!.map(Number);
-  return { route: { path, labelX, labelY }, curve: [start,
-    { x: coordinates[2], y: coordinates[3] }, { x: coordinates[4], y: coordinates[5] }, end] };
+  const curve: Cubic = [start, { x: coordinates[2], y: coordinates[3] }, { x: coordinates[4], y: coordinates[5] }, end];
+  if (curvature === 0.25) return { route: { path, labelX, labelY }, curve };
+  // xyflow's curvature option only affects reverse-facing handles. Scale the
+  // control arms as well so ordinary forward S curves respond continuously.
+  const scale = curvatureScale(curvature), minimum = Math.min(1, distance(start, end) * 0.005);
+  curve[1] = extend(start, sourcePosition, Math.max(minimum, distance(start, curve[1]) * scale));
+  curve[2] = extend(end, targetPosition, Math.max(minimum, distance(end, curve[2]) * scale));
+  return { route: cubicPath([curve]), curve };
 }
 
 const subtract = (a: Pt, b: Pt): Pt => ({ x: a.x - b.x, y: a.y - b.y });
@@ -359,7 +395,7 @@ function normalRoom(port: Pt, side: Position, cards: readonly Card[], ownId: str
  * https://docs.jointjs.com/api/connectors/#curve
  */
 function connectFreeRoute(points: Pt[], sourceSide: Position, targetSide: Position,
-  cards: readonly Card[], sourceId: string, targetId: string): RoutedPath | null {
+  cards: readonly Card[], sourceId: string, targetId: string, curvature: number): RoutedPath | null {
   const simple = points.filter((point, index) => !index || distance(point, points[index - 1]) > EPSILON);
   if (simple.length < 2) return null;
   const directions = simple.map((point, index) => {
@@ -374,7 +410,7 @@ function connectFreeRoute(points: Pt[], sourceSide: Position, targetSide: Positi
     const tangents = simple.map((point, index) => {
       const before = index ? distance(point, simple[index - 1]) : Infinity;
       const after = index + 1 < simple.length ? distance(point, simple[index + 1]) : Infinity;
-      const amount = Math.min(Math.min(before, after) * tension,
+      const amount = Math.min(Math.min(before, after) * tension * curvatureScale(curvature),
         !index ? sourceRoom : index === simple.length - 1 ? targetRoom : Infinity);
       return { x: directions[index].x * amount, y: directions[index].y * amount };
     });
@@ -434,6 +470,8 @@ function routeSingleEdge(
   routeMode: EdgeRouteMode = 'auto',
   cards: readonly Card[] = visibleCards(nodes),
   obstacleOffset = 0,
+  preferredClearance = CLEARANCE,
+  curvature = 0.25,
 ): RoutedPath {
   sourcePosition ??= 'bottom' as Position;
   targetPosition ??= 'top' as Position;
@@ -447,11 +485,11 @@ function routeSingleEdge(
     targetPosition = 'right' as Position;
   }
   const start = { x: sourceX, y: sourceY }, end = { x: targetX, y: targetY };
-  const native = nativeBezier(start, end, sourcePosition, targetPosition);
+  const native = nativeBezier(start, end, sourcePosition, targetPosition, routeMode === 'orthogonal' ? 0.25 : curvature);
   const natural = native.route;
   // Tight hand-placed gaps may need less breathing room, rather than a
   // fallback that cuts through the card because its padded box blocks a port.
-  for (const clearance of [CLEARANCE, 8, 2, 0.5]) {
+  for (const clearance of [preferredClearance, 8, 2, 0.5]) {
     const siblingClearance = clearance + obstacleOffset * clearance / CLEARANCE;
     const obstacles = cards.map((card) => ({ ...inflate(card, card.id === sourceId || card.id === targetId ? 0 : siblingClearance), id: card.id }));
     const sourceGap = dot(subtract(end, start), normal(sourcePosition));
@@ -482,8 +520,8 @@ function routeSingleEdge(
         if (routeMode === 'orthogonal') return roundedPath([start, ...detour, end], clearance);
         // Endpoint guides constrain routing, but are not forced short SVG
         // segments: the connector can span the entire free corridor.
-        const connected = connectFreeRoute([start, ...detour.slice(1, -1), end], sourcePosition, targetPosition, cards, sourceId, targetId)
-          ?? connectFreeRoute([start, ...detour, end], sourcePosition, targetPosition, cards, sourceId, targetId);
+        const connected = connectFreeRoute([start, ...detour.slice(1, -1), end], sourcePosition, targetPosition, cards, sourceId, targetId, curvature)
+          ?? connectFreeRoute([start, ...detour, end], sourcePosition, targetPosition, cards, sourceId, targetId, curvature);
         if (connected) return connected;
         break;
       }
@@ -531,8 +569,13 @@ export function routeEdge(
   sourceId: string, targetId: string, nodes: ThoughtNode[],
   routeMode: EdgeRouteMode = 'auto', options: EdgeRouteOptions = {},
 ): RoutedPath {
-  const context = options.context ?? (options.edges ? createEdgeRoutingContext(nodes, options.edges) : undefined);
-  const cards = context?.cards ?? visibleCards(nodes);
+  const context = options.context ?? (options.edges ? createEdgeRoutingContext(nodes, options.edges, options.settings) : undefined);
+  const settings = context?.settings ?? normalizeEdgeRoutingSettings(options.settings);
+  const visible = context?.cards ?? visibleCards(nodes);
+  // Endpoint cards still constrain their own ports when other obstacles are
+  // ignored. Keep the context's full card list for stable shared-port lanes.
+  const cards = settings.avoidObstacles ? visible : visible.filter((card) => card.id === sourceId || card.id === targetId);
+  const clearance = settings.avoidObstacles ? settings.obstacleClearance : CLEARANCE;
   const lane = options.edgeId ? context?.lanes.get(options.edgeId) : undefined;
   sourcePosition ??= 'bottom' as Position;
   targetPosition ??= 'top' as Position;
@@ -542,7 +585,7 @@ export function routeEdge(
   sourceX = sourcePort.x; sourceY = sourcePort.y;
   targetX = targetPort.x; targetY = targetPort.y;
   if (routeMode !== 'orthogonal' || !lane || (!lane.sourceOffset && !lane.targetOffset)) {
-    return routeSingleEdge(sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition, sourceId, targetId, nodes, routeMode, cards, lane?.obstacleOffset);
+    return routeSingleEdge(sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition, sourceId, targetId, nodes, routeMode, cards, lane?.obstacleOffset, clearance, settings.curvature);
   }
   // Legacy side handles can still be restored before the display mapper runs.
   if (sourcePosition === 'right' && targetPosition === 'left' && sourceCard && targetCard
@@ -564,12 +607,12 @@ export function routeEdge(
     const to = portFan(end, targetPosition, lane.targetOffset * scale, Math.min(reach + lane.targetStep, gap * 0.4) * scale);
     if (!safe(from, sourceId) || !safe(to, targetId)) continue;
     const middle = routeSingleEdge(from.point.x, from.point.y, sourcePosition, to.point.x, to.point.y, targetPosition,
-      sourceId, targetId, nodes, routeMode, cards, lane.obstacleOffset * scale);
+      sourceId, targetId, nodes, routeMode, cards, lane.obstacleOffset * scale, clearance, settings.curvature);
     const first = roundedPath(from.points, CLEARANCE);
     const last = roundedPath([...to.points].reverse(), CLEARANCE);
     const continuation = (path: string) => path.replace(/^M\s+\S+\s+\S+/, '');
     return { ...middle, path: first.path + continuation(middle.path) + continuation(last.path) };
   }
   // A blocked port has no safe fan-out; keep the shortest valid route visible.
-  return routeSingleEdge(sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition, sourceId, targetId, nodes, routeMode, cards);
+  return routeSingleEdge(sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition, sourceId, targetId, nodes, routeMode, cards, 0, clearance, settings.curvature);
 }

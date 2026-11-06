@@ -10,10 +10,10 @@ import { isViewerMode } from '../lib/viewer';
 import { useInlineEditDismiss } from '../lib/use-inline-edit-dismiss';
 import { frameHeaderScale, FRAME_HEADER_INSET, FRAME_MIN_WIDTH, FRAME_MIN_HEIGHT } from '../lib/frame-sizing';
 
-// Frame: a labeled background region — THE spatial annotation. No handles
-// (it can never be wired, so it can never touch context), ignored by
-// autoLayout, sits behind nodes (zIndex -1). Drag by the title bar; the
-// title stays readable when zoomed out (same semantic-zoom trick as cards).
+// Frame: a labeled annotation region without context handles. New frames
+// start behind cards; explicit layer commands can override that order.
+// Drag by the title bar; the title stays readable when zoomed out
+// (the same semantic-zoom trick as cards).
 // Color is a FIXED palette (no picker): frames are pure navigation objects,
 // so color is function, not decoration (palette lives in lib/constants).
 

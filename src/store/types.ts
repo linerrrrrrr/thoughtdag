@@ -19,6 +19,8 @@ export interface HistorySlice {
   /** The app finished filling a node in (an answer, a fetched page): fold the
       result into the snapshots taken while it was pending, then record. */
   settleNode: (nodeId: string, pending?: (data: ThoughtNode['data']) => boolean) => void;
+  /** Derived content ceilings update matching active geometry without creating an undo step. */
+  normalizeNodeContentHeight: (nodeId: string, limit: number) => void;
   undo: () => void;
   redo: () => void;
 }
@@ -32,6 +34,8 @@ export interface NodeSlice {
   setEdges: (edges: ThoughtEdge[]) => void;
   setSelectedNodeId: (id: string | null, options?: { focus?: boolean }) => void;
   setSelectedNodeIds: (ids: string[]) => void;
+  /** Persist one completed reading-divider adjustment as one undo step. */
+  setQuestionHeightRatio: (nodeId: string, ratio: number) => void;
   /** Apply ordered size/ratio edits as one undo step; coordinates require one object. */
   setSelectionGeometry: (nodeIds: string[], patch: import('../lib/node-geometry').NodeGeometryPatch | import('../lib/node-geometry').NodeGeometryPatch[]) => void;
   deleteNode: (nodeId: string) => void;
@@ -46,7 +50,8 @@ export interface NodeSlice {
    *  and single-node reference (source turn only). Cycle-guarded. */
   setEdgeStructural: (edgeId: string, structural: boolean) => void;
   updateEdgeSettings: (edgeId: string, settings: import('../lib/edge-edit').EdgeEditSettings) => { ok: boolean; error?: string };
-  updateSelectedEdges: (edgeIds: string[], patch: Partial<import('../lib/edge-edit').EdgeEditSettings>) => { ok: boolean; error?: string };
+  /** Live text edits can manage their own baseline and closing history snapshots. */
+  updateSelectedEdges: (edgeIds: string[], patch: Partial<import('../lib/edge-edit').EdgeEditSettings>, options?: { recordHistory?: boolean }) => { ok: boolean; error?: string };
   applyCanvasLayout: (options: import('../lib/canvas-layout').CanvasLayoutOptions, selectedIds?: string[], isCurrent?: () => boolean) => Promise<{ ok: boolean; error?: string }>;
   navigateVersion: (nodeId: string, direction: 'prev' | 'next') => void;
   deleteVersion: (nodeId: string, versionIndex: number) => void;
@@ -57,8 +62,10 @@ export interface NodeSlice {
   relayout: () => void;
   /** Stack the selected nodes into one vertical column, in conversation order (undoable). */
   alignSelection: (nodeIds: string[]) => Promise<void>;
-  /** Align/distribute selection bounds, preserving context order. */
+  /** Align/distribute selected spatial objects without changing context wiring. */
   arrangeSelection: (nodeIds: string[], action: import('../lib/arrange-selection').ArrangeAction, reference: import('../lib/arrange-selection').ArrangeReference, viewport?: import('../lib/arrange-selection').ArrangeRect) => void;
+  /** Change selected objects' stacking order as one undo step. */
+  reorderSelection: (nodeIds: string[], action: import('../lib/node-layer').NodeLayerAction) => void;
   /** Enclose selected spatial objects without changing their positions or context. */
   createFrameFromSelection: (nodeIds: string[]) => string | undefined;
   /** Frame metadata edits never change node membership or context. */

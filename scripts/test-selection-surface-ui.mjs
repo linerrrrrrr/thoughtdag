@@ -106,7 +106,6 @@ async function fixture({ zoom = 1, preselect = false, locked = false, frames = f
       { id: 'ab', source: 'a', target: 'b' }, { id: 'cd', source: 'c', target: 'd' },
     ].map(edge => ({ ...edge, type: 'smoothstep', sourceHandle: 'continue', targetHandle: 'top', data: { route: 'curve' } }));
     window.__canvasEditing.getState().setSelectionTarget('nodes');
-    window.__canvasEditing.getState().setEdgePreviews(null);
     window.__canvasEditing.getState().setLayoutOpen(false);
     window.__store.setState({ nodes, edges, selectedNodeIds: ids, selectedNodeId: null, history: [{ nodes, edges }], historyIndex: 0 });
     window.__ui.setState({ panelOpen: false, panelNodeId: null, tutorialOpen: false, releaseNotesOpen: false, autoRefreshPaused: true, drafts: {} });

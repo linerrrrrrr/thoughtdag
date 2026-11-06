@@ -1,0 +1,79 @@
+/* A quiet reading boundary with an invisible, larger drag target. */
+.conversation-split {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.conversation-split-question,
+.conversation-split-answer {
+  flex-basis: 0;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-gutter: stable;
+  scrollbar-color: var(--conversation-line, var(--color-line)) transparent;
+}
+
+.conversation-split-content { display: flow-root; }
+
+/* Keep native touch chaining available. Wheel deltas are handed through
+   scrollports explicitly so a partial boundary step is not discarded. */
+[data-conversation-split='panel'] > :is(.conversation-split-question, .conversation-split-answer) {
+  overscroll-behavior-y: auto;
+}
+
+.conversation-divider {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 12px;
+  width: 100%;
+  cursor: default;
+  touch-action: none;
+  user-select: none;
+  outline: none;
+}
+
+.conversation-divider[data-adjustable] { cursor: row-resize; }
+
+.conversation-divider::before {
+  content: '';
+  position: absolute;
+  inset-inline: 0;
+  height: 1px;
+  background: var(--conversation-line, var(--color-line));
+  opacity: .5;
+  transition: background-color 120ms, opacity 120ms;
+}
+
+.conversation-divider[data-adjustable]:hover::before {
+  background: var(--color-line-strong);
+  opacity: .8;
+}
+
+.conversation-divider[tabindex]:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
+.conversation-divider:focus-visible::before {
+  background: var(--color-line-strong);
+  opacity: .8;
+}
+
+.conversation-split--dragging > .conversation-divider::before {
+  background: var(--color-line-strong);
+  opacity: .8;
+}
+
+.conversation-split--dragging,
+.conversation-split--dragging * {
+  cursor: row-resize !important;
+  user-select: none !important;
+}

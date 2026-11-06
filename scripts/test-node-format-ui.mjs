@@ -63,10 +63,12 @@ const fixture = async (ids = []) => {
   // Clear React Flow's gesture state as a real selection change would.
   await page.mouse.click(1150, 950);
   await page.evaluate(ids => {
+    // Keep resizing below the real content-height cap; cap behavior has its
+    // own regression. These fixtures exercise dimension editing and ratios.
     const data = label => ({
       question: `用于验证对象选择与格式的研究问题。${label}`, displayName: label,
-      response: '尺寸与位置可以独立设置；选择只影响画布对象，不改变上下文连接。',
-      responses: ['尺寸与位置可以独立设置；选择只影响画布对象，不改变上下文连接。'], responseIndex: 0,
+      response: '尺寸与位置可以独立设置；选择只影响画布对象，不改变上下文连接。'.repeat(80),
+      responses: ['尺寸与位置可以独立设置；选择只影响画布对象，不改变上下文连接。'.repeat(80)], responseIndex: 0,
       isCollapsed: false, isEditing: false, isEditingResponse: false, isLoading: false,
       tokenCount: 20, highlights: [], highlightMode: 'tag', attachments: [],
       excludedAttachmentIds: [], includedAttachmentIds: [], roleMode: 'inherit', isRoot: false, isBranch: false,
@@ -301,22 +303,22 @@ try {
 
   await field('width').fill('700');
   await page.locator('[data-selection-section="nodes"] h3').first().click();
-  assert.equal((await readNodes())[0].width, 400, 'Leaving the geometry boundary keeps a draft without applying it');
+  assert.equal((await readNodes())[0].width, 700, 'Leaving the geometry boundary saves the complete edit');
   assert.equal(await field('width').inputValue(), '700');
   await page.locator('[data-selection-properties-close]').click();
   assert.deepEqual(await selected(), ['format-a'], 'Closing properties keeps the selection');
   assert.equal(await page.locator('[data-selection-properties]').count(), 0);
   await clickNode('a'); await expandInspector();
-  assert.equal(await field('width').inputValue(), '700', 'Reopening the same selection restores its geometry draft');
+  assert.equal(await field('width').inputValue(), '700', 'Reopening the same selection shows saved geometry');
   await field('width').fill('');
   await page.locator('[data-selection-properties-close]').click();
   await clickNode('a'); await expandInspector();
   assert.equal(await field('width').inputValue(), '', 'An empty geometry draft is distinct from an absent draft');
-  assert.equal((await readNodes())[0].width, 400);
+  assert.equal((await readNodes())[0].width, 700);
   await page.keyboard.press('Escape');
-  assert.equal(await field('width').inputValue(), '400');
+  assert.equal(await field('width').inputValue(), '700');
   assert.deepEqual(await selected(), ['format-a']);
-  check('outside focus and closing preserve unapplied geometry drafts, including empty input; Escape cancels without closing');
+  check('outside focus and closure save valid geometry; empty input stays a draft and Escape cancels without closing');
 
   await fixture(['a', 'b']);
   await expandInspector();
