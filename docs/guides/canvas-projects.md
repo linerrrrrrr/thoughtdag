@@ -61,11 +61,13 @@ Use search and keyboard navigation below when you know the target. Use **Continu
 
 <img src="../canvas-navigation-en.gif" alt="The real interface showing node search, the frame navigator, and Tidy layout in the More actions menu" width="100%" loading="lazy"/>
 
-The recording cycles through **Search nodes → Frame navigator → Tidy layout**. It shows the previous layout entry; the action now lives inside **More actions → Layout design**.
+The recording cycles through **Search nodes → Frame navigator → Tidy layout**. It shows the previous entry; the layout panel now opens from **Layout** in the upper-right toolbar.
 
 ## Arrange the graph
 
-Open **Layout design** from the [More actions menu](/guides/interface-overview#more-actions-menu), then choose **Auto layout** in the panel to arrange the selection, or the whole canvas when nothing is selected. It uses saved layout settings and preserves unapplied settings drafts. The panel also offers direction, spacing, preview, and an explicit apply action. Vertical layouts keep each conversation chain in a column, while horizontal layouts keep it in a row, following wire direction in both cases.
+Open **Layout** in the upper-right toolbar and choose the scope, method, direction, and spacing. Preview the result if needed, then select **Apply layout**. The selection is the default scope when objects are selected; otherwise, the whole canvas is used. Closing the panel preserves unapplied settings drafts. Vertical layouts keep each conversation chain in a column, while horizontal layouts keep it in a row, following wire direction in both cases.
+
+The separate **Connections** toolbar entry controls obstacle avoidance, clearance, and curvature across canvases on this device. Valid changes take effect immediately without moving nodes. When space is limited, open Connections from More actions.
 
 Automatic layout applies to the selected nodes while unselected nodes stay in place. When a frame is included, its current contents join the layout and its bounds fit the result, including nested frames. Each applied layout is one undo step.
 

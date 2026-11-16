@@ -1,3 +1,4 @@
+import { appSettings } from './disk-storage';
 // The person's own memory as two documents, not a list of fragments: what
 // they prefer (how they like things done) and who they are (role, field,
 // long-term agenda). A new fact is merged into the document by rewriting
@@ -78,7 +79,7 @@ export function migrateLegacyMemories(): void {
   };
   st.setProfile(merged);
   if (rest.length) st.setMemoryInbox([...st.memoryInbox, ...rest.map((m) => ({ id: m.id, text: m.text, at: m.at, ...(m.project ? { from: m.project } : {}) }))]);
-  try { localStorage.setItem('thoughtdag.memory.legacy', JSON.stringify(legacy)); } catch { /* the fold is the record */ }
+  try { appSettings.setItem('thoughtdag.memory.legacy', JSON.stringify(legacy)); } catch { /* the fold is the record */ }
   st.setMemories([]);
 }
 

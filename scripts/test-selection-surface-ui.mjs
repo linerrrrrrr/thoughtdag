@@ -27,7 +27,6 @@ await context.route('**/api/**', route => {
 await page.addInitScript(() => {
   localStorage.setItem('thoughtdag.seeded', 'yes');
   localStorage.setItem('thoughtdag.tutorialDone', '1');
-  localStorage.setItem('thoughtdag.autoRefreshPaused', 'yes');
   localStorage.setItem('thoughtdag.lang', 'zh');
 });
 const near = (actual, expected, label) => assert.ok(Math.abs(actual - expected) < 1, `${label}: ${actual} != ${expected}`);
@@ -82,8 +81,7 @@ async function fixture({ zoom = 1, preselect = false, locked = false, frames = f
   await page.evaluate(({ preselect, locked, frames }) => {
     const data = (id, extra = {}) => ({ question: `研究节点 ${id}`, displayName: `研究节点 ${id}`,
       response: 'A stable answer for pointer gesture tests.', responses: ['A stable answer for pointer gesture tests.'], responseIndex: 0,
-      isCollapsed: false, isEditing: false, isEditingResponse: false, isLoading: false, isRoot: false, isBranch: false,
-      highlights: [], attachments: [], excludedAttachmentIds: [], includedAttachmentIds: [], tokenCount: 10, roleMode: 'inherit', ...extra });
+      isCollapsed: false, isEditing: false, isEditingResponse: false, isLoading: false, highlights: [], attachments: [], excludedAttachmentIds: [], includedAttachmentIds: [], tokenCount: 10, roleMode: 'inherit', ...extra });
     let nodes = [
       { id: 'a', position: { x: 140, y: 140 }, width: 400, height: 240, data: data('a', { canvasGroupId: 'group-ab', lockAspectRatio: locked }) },
       { id: 'b', position: { x: 140, y: 480 }, width: 440, height: 260, data: data('b', { canvasGroupId: 'group-ab' }) },
@@ -108,7 +106,7 @@ async function fixture({ zoom = 1, preselect = false, locked = false, frames = f
     window.__canvasEditing.getState().setSelectionTarget('nodes');
     window.__canvasEditing.getState().setLayoutOpen(false);
     window.__store.setState({ nodes, edges, selectedNodeIds: ids, selectedNodeId: null, history: [{ nodes, edges }], historyIndex: 0 });
-    window.__ui.setState({ panelOpen: false, panelNodeId: null, tutorialOpen: false, releaseNotesOpen: false, autoRefreshPaused: true, drafts: {} });
+    window.__ui.setState({ panelOpen: false, panelNodeId: null, tutorialOpen: false, releaseNotesOpen: false, drafts: {} });
   }, { preselect, locked, frames });
   await page.waitForTimeout(650);
   await page.evaluate(zoom => window.__rf.setViewport({ x: 80, y: zoom === 1 ? 20 : 110, zoom }, { duration: 0 }), zoom);

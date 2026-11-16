@@ -3,88 +3,84 @@ import { useT } from '../i18n';
 import { useUiStore } from '../lib/ui-store';
 import { useEdgeRoutingPreferences } from '../lib/edge-routing-preferences';
 
-const DRAFT_KEY = 'canvas-edge-routing';
-type RoutingDraft = { avoidObstacles: boolean; obstacleClearance: string; curvature: string };
+const DRAFT_KEY = 'canvas-edge-routing-inputs';
+type RoutingInputs = { clearance: string; curvature: string };
+const limits = { clearance: [8, 64], curvature: [0, 100] } as const;
 const validNumber = (text: string, min: number, max: number) => text.trim() !== ''
   && Number.isFinite(Number(text)) && Number(text) >= min && Number(text) <= max;
+const validInput = (key: keyof RoutingInputs, value: string) => validNumber(value, limits[key][0], limits[key][1]);
 
-function RoutingValue({ name, label, value, min, max, unit, hint, disabled, onChange }: {
-  name: string; label: string; value: string; min: number; max: number; unit: string; hint: string;
-  disabled?: boolean; onChange: (value: string) => void;
+function RoutingValue({ name, label, value, applied, min, max, unit, hint, invalidHint, disabled, onChange }: {
+  name: string; label: string; value: string; applied: number; min: number; max: number; unit: string;
+  hint: string; invalidHint: string; disabled?: boolean; onChange: (value: string) => void;
 }) {
   const id = useId();
   const valid = validNumber(value, min, max);
-  return <fieldset className="canvas-layout-field canvas-routing-value" disabled={disabled} {...{ [`data-routing-${name}`]: '' }}>
-    <legend>{label}</legend>
-    <div className="canvas-routing-inputs">
-      <input type="range" min={min} max={max} step="0.1" value={valid ? Number(value) : min}
-        aria-label={label} aria-describedby={`${id}-hint`} onChange={event => onChange(event.target.value)} />
-      <label className="canvas-routing-number">
-        <input type="number" min={min} max={max} step="any" value={value} aria-label={label}
+  return <div className="canvas-routing-value" data-disabled={disabled || undefined} {...{ [`data-routing-${name}`]: '' }}>
+    <div className="canvas-routing-value-heading">
+      <label htmlFor={`${id}-value`} className="text-control font-medium">{label}</label>
+      <span className="canvas-routing-number">
+        <input id={`${id}-value`} type="number" min={min} max={max} step="any" value={value} disabled={disabled}
           aria-invalid={!valid || undefined} aria-describedby={`${id}-hint`} onChange={event => onChange(event.target.value)} />
         <span aria-hidden="true">{unit}</span>
-      </label>
+      </span>
     </div>
-    <p id={`${id}-hint`} className="text-control text-ink-muted">{hint}</p>
-  </fieldset>;
+    <input type="range" min={min} max={max} step="0.1" value={valid ? Number(value) : applied} disabled={disabled}
+      aria-label={label} aria-describedby={`${id}-hint`} onChange={event => onChange(event.target.value)} />
+    <p id={`${id}-hint`} className={`text-control ${valid || disabled ? 'text-ink-muted' : 'text-red-600'}`}>
+      {valid || disabled ? hint : invalidHint}
+    </p>
+  </div>;
 }
 
-/** Global connection preferences have their own draft and explicit commit. */
-export default function EdgeRoutingControls({ onClose }: { onClose: () => void }) {
+/** Valid changes update the local preference immediately; incomplete numeric input remains a session draft. */
+export default function EdgeRoutingControls() {
   const t = useT();
-  const groupName = useId();
-  const [draft, setDraft] = useState<RoutingDraft>(() => {
-    try {
-      const stored = JSON.parse(useUiStore.getState().drafts[DRAFT_KEY] ?? 'null');
-      if (stored && typeof stored.avoidObstacles === 'boolean' && typeof stored.obstacleClearance === 'string'
-        && typeof stored.curvature === 'string') return stored;
-    } catch { /* Ignore obsolete session drafts. */ }
-    const settings = useEdgeRoutingPreferences.getState().settings;
-    return { avoidObstacles: settings.avoidObstacles, obstacleClearance: String(settings.obstacleClearance),
-      curvature: String(Number((settings.curvature * 100).toFixed(4))) };
+  const switchId = useId();
+  const settings = useEdgeRoutingPreferences(state => state.settings);
+  const [inputs, setInputs] = useState<RoutingInputs>(() => {
+    const applied = useEdgeRoutingPreferences.getState().settings;
+    let pending: Partial<RoutingInputs> = {};
+    try { pending = JSON.parse(useUiStore.getState().drafts[DRAFT_KEY] ?? '{}') ?? {}; }
+    catch { /* Ignore obsolete session drafts. */ }
+    const restore = (key: keyof RoutingInputs, fallback: number) => {
+      const value = pending[key];
+      return typeof value === 'string' && !validInput(key, value) ? value : String(fallback);
+    };
+    return { clearance: restore('clearance', applied.obstacleClearance),
+      curvature: restore('curvature', Number((applied.curvature * 100).toFixed(4))) };
   });
-  const change = <K extends keyof RoutingDraft>(key: K, value: RoutingDraft[K]) => {
-    const next = { ...draft, [key]: value };
-    setDraft(next);
-    useUiStore.getState().setDraft(DRAFT_KEY, JSON.stringify(next), true);
+  const changeValue = (key: keyof RoutingInputs, value: string) => {
+    const next = { ...inputs, [key]: value };
+    setInputs(next);
+    const pending: Partial<RoutingInputs> = {};
+    for (const field of ['clearance', 'curvature'] as const) {
+      if (!validInput(field, next[field])) pending[field] = next[field];
+    }
+    useUiStore.getState().setDraft(DRAFT_KEY, Object.keys(pending).length ? JSON.stringify(pending) : '');
+    if (!validInput(key, value)) return;
+    const preferences = useEdgeRoutingPreferences.getState();
+    preferences.setSettings({ ...preferences.settings,
+      ...(key === 'clearance' ? { obstacleClearance: Number(value) } : { curvature: Number(value) / 100 }) });
   };
-  const valid = (!draft.avoidObstacles || validNumber(draft.obstacleClearance, 8, 64)) && validNumber(draft.curvature, 0, 100);
-  const apply = () => {
-    if (!valid) return;
-    useEdgeRoutingPreferences.getState().setSettings({
-      avoidObstacles: draft.avoidObstacles,
-      obstacleClearance: validNumber(draft.obstacleClearance, 8, 64) ? Number(draft.obstacleClearance)
-        : useEdgeRoutingPreferences.getState().settings.obstacleClearance,
-      curvature: Number(draft.curvature) / 100,
-    });
-    useUiStore.getState().setDraft(DRAFT_KEY, '');
-    onClose();
+  const changeAvoidance = () => {
+    const preferences = useEdgeRoutingPreferences.getState();
+    preferences.setSettings({ ...preferences.settings, avoidObstacles: !preferences.settings.avoidObstacles });
   };
-  return <>
-    <div className="canvas-layout-fields" role="tabpanel" id="canvas-layout-routing" aria-labelledby="canvas-layout-tab-routing" data-routing-settings>
-      <p className="text-control text-ink-muted">{t('edgeRouting.scopeHint')}</p>
-      <fieldset className="canvas-layout-field" data-routing-avoid>
-        <legend>{t('edgeRouting.avoid')}</legend>
-        <div className="canvas-layout-choices grid-cols-2">
-          {(['on', 'off'] as const).map(value => <label key={value} className="canvas-layout-choice">
-            <input type="radio" name={groupName} value={value} checked={draft.avoidObstacles === (value === 'on')}
-              onChange={() => change('avoidObstacles', value === 'on')} />
-            <span>{t(value === 'on' ? 'edgeRouting.on' : 'edgeRouting.off')}</span>
-          </label>)}
-        </div>
-      </fieldset>
-      <RoutingValue name="clearance" label={t('edgeRouting.clearance')} value={draft.obstacleClearance}
-        min={8} max={64} unit="px" hint={t('edgeRouting.clearanceHint')} disabled={!draft.avoidObstacles}
-        onChange={value => change('obstacleClearance', value)} />
-      <RoutingValue name="curvature" label={t('edgeRouting.curvature')} value={draft.curvature}
-        min={0} max={100} unit="%" hint={t('edgeRouting.curvatureHint')} onChange={value => change('curvature', value)} />
-      {!valid && <p className="text-control text-red-600" role="alert">{t('edgeRouting.invalid')}</p>}
+  return <div className="canvas-layout-fields canvas-routing-fields" data-routing-settings>
+    <p className="text-control text-ink-muted">{t('edgeRouting.scopeHint')}</p>
+    <div className="canvas-routing-toggle" data-routing-avoid>
+      <span id={switchId} className="text-control font-medium">{t('edgeRouting.avoid')}</span>
+      <button type="button" role="switch" aria-checked={settings.avoidObstacles} aria-labelledby={switchId}
+        onClick={changeAvoidance} className="canvas-routing-switch">
+        <span className="canvas-routing-switch-track"><span /></span>
+      </button>
     </div>
-    <div className="canvas-layout-footer flex shrink-0 flex-wrap justify-end gap-1 border-t border-line px-2 py-2">
-      <button type="button" className="min-h-8 px-2.5 rounded-control text-control text-ink-muted hover:bg-wash focus-visible:outline-2 focus-visible:outline-accent"
-        onClick={() => { useUiStore.getState().setDraft(DRAFT_KEY, ''); onClose(); }} data-routing-cancel>{t('canvasLayout.cancel')}</button>
-      <button type="button" disabled={!valid} onClick={apply} data-routing-apply
-        className="text-control bg-action text-white px-3 min-h-8 rounded-control hover:bg-action-strong transition-colors disabled:opacity-40 disabled:cursor-not-allowed focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent">{t('edgeRouting.apply')}</button>
-    </div>
-  </>;
+    <RoutingValue name="clearance" label={t('edgeRouting.clearance')} value={inputs.clearance} applied={settings.obstacleClearance}
+      min={8} max={64} unit="px" hint={t('edgeRouting.clearanceHint')} invalidHint={t('edgeRouting.clearanceInvalid')}
+      disabled={!settings.avoidObstacles} onChange={value => changeValue('clearance', value)} />
+    <RoutingValue name="curvature" label={t('edgeRouting.curvature')} value={inputs.curvature} applied={settings.curvature * 100}
+      min={0} max={100} unit="%" hint={t('edgeRouting.curvatureHint')} invalidHint={t('edgeRouting.curvatureInvalid')}
+      onChange={value => changeValue('curvature', value)} />
+  </div>;
 }

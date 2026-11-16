@@ -40,6 +40,7 @@ video/public/audio/
 
 # Local previews and VitePress caches
 /local-tests/
+/local-data/
 /tmp/
 docs/.vitepress/cache/
 

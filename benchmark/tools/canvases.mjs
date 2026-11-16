@@ -78,8 +78,7 @@ for (const [track, name] of CASES) {
         isCollapsed: false, isEditing: false, isEditingResponse: false, isLoading: false,
         tokenCount: 0, highlights: [], highlightMode: 'off',
         attachments: [], excludedAttachmentIds: [], includedAttachmentIds: [],
-        roleMode: 'inherit', isRoot: false, isBranch: false,
-        stepKind: 'frame', frameColor: result.answer_correct ? 'green' : 'red', frameCarry: false,
+        roleMode: 'inherit', stepKind: 'frame', frameColor: result.answer_correct ? 'green' : 'red', frameCarry: false,
       },
     });
     for (const n of nodes) {

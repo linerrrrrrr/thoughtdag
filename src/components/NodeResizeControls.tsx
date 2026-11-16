@@ -22,13 +22,12 @@ function restoreSize(drag: Gesture) {
   if (drag.region) useCanvasEditing.getState().setSelectionTarget(drag.target);
   useStore.setState(state => ({ nodes: state.nodes.map(node => node.id !== drag.original.id ? node : {
     ...node, width: drag.original.width, height: drag.original.height,
-    data: { ...node.data, keepOverviewHeight: drag.original.data.keepOverviewHeight },
+    data: { ...node.data, keepOverviewHeight: drag.original.data.keepOverviewHeight, contentHeightIntent: drag.original.data.contentHeightIntent },
   }) }));
 }
 
 function resizeNode(nodes: ThoughtNode[], original: ThoughtNode, dx: number | undefined, dy: number | undefined) {
-  // Working-card edits preserve semantic zoom; only the selection boundary can
-  // explicitly resize an overview and opt it into a fixed overview footprint.
+  // Preserve legacy resize metadata; reduced cards always fit their content.
   return resizeSelectionBy(nodes, [original], dx, dy).map(node => node.id !== original.id ? node : {
     ...node, data: { ...node.data, keepOverviewHeight: original.data.keepOverviewHeight },
   });

@@ -7,7 +7,7 @@ export interface EdgeEditSettings {
 }
 
 export type EdgeEditError = 'missing-node' | 'self-loop' | 'cycle' | 'restricted' | 'invalid-settings';
-export type EdgeEditRestriction = 'material' | 'branch' | 'watch' | 'frame';
+export type EdgeEditRestriction = 'material' | 'frame';
 export type EdgeEditResult = { ok: true; edge: ThoughtEdge; semanticChanged: boolean }
   | { ok: false; error: EdgeEditError };
 
@@ -35,10 +35,8 @@ export function applyBatchEdgeSettings(nodes: ThoughtNode[], edges: ThoughtEdge[
   return { ok: true, edges: next };
 }
 
-/** Special connections retain their existing role; visual settings stay editable. */
+/** Materials and regions retain their existing connection constraints. */
 export function edgeEditRestriction(edge: ThoughtEdge, nodes: ThoughtNode[]): EdgeEditRestriction | null {
-  if (edge.data?.isWatch) return 'watch';
-  if (edge.data?.isBranchFromSelection) return 'branch';
   const endpoints = nodes.filter((node) => node.id === edge.source || node.id === edge.target);
   if (endpoints.some((node) => node.data.stepKind === 'frame')) return 'frame';
   if (endpoints.some((node) => ['note', 'file', 'link'].includes(node.data.stepKind ?? ''))) return 'material';
@@ -90,20 +88,17 @@ export function applyEdgeSettings(
   if (label) data.label = label;
   else delete data.label;
 
-  // Geometry and labels never normalize unrelated semantic fields. This
-  // preserves legacy watch/exploration links and content fingerprints.
+  // Geometry and labels do not change the connection's context behavior.
   let result: ThoughtEdge = { ...edge, data };
   if (relationChanged) {
     if (settings.relation === 'continue') {
       delete data.isCrossLink;
-      delete data.contextDepth;
       result = {
         ...result, sourceHandle: 'continue', targetHandle: 'top', animated: false,
         style: { ...edge.style, strokeDasharray: undefined },
       };
     } else {
       data.isCrossLink = true;
-      delete data.contextDepth;
       result = { ...result, animated: false, style: { ...edge.style, strokeDasharray: '8 4' } };
     }
   }

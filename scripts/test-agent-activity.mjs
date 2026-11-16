@@ -9,15 +9,15 @@ import { build } from 'esbuild';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const temp = mkdtempSync(join(tmpdir(), 'td-activity-'));
-const uiStub = `export const useUiStore={getState:()=>({selectedModel:'codex/model',recallEnabled:false,autoRefreshPaused:true})}; export const toast=()=>{};`;
+const uiStub = `export const useUiStore={getState:()=>({selectedModel:'codex/model',recallEnabled:false,})}; export const toast=()=>{};`;
 const stubs = {
-  '../lib/graph': 'export const walkUpAncestors=()=>({ordered:[]});',
+  '../lib/graph': 'export const getContextPath=()=>[], isConversationStart=()=>true;',
   './context-builder': 'export const upstreamFingerprint=()=>"hash", upstreamParts=()=>[], recordParts=x=>x, recordsForAgent=x=>x, recordsWithTools=x=>x;',
   '../lib/context-bundle': 'export const sha256Hex=async()=>"hash", canonicalStringify=JSON.stringify;',
   '../lib/highlight-match': 'export const pruneHighlights=x=>x;',
   '../lib/api': 'export const llmCallStream=(...args)=>globalThis.testStream(...args), declaresTools=()=>false;',
-  '../lib/atlas/dsh-bridge': 'export const harnessOutbound=async()=>undefined, claimHarnessTurn=async()=>false, stampHarnessTurn=async()=>{}, isHarnessAgentModel=()=>false;',
-  '../lib/agents/agent-runtime': 'export const agentOutbound=async()=>undefined, adoptAgentTurn=async()=>false, claimAgentTurn=async()=>{}, deriveFollowupModel=d=>d?.model, isAgentModel=()=>true;',
+  '../lib/agents/harness-bridge': 'export const harnessOutbound=async()=>undefined, markHarnessTurn=()=>{}, stampHarnessTurn=()=>{}, isHarnessAgentModel=()=>false;',
+  '../lib/agents/agent-runtime': 'export const agentOutbound=async()=>undefined, adoptAgentTurn=async()=>false, deriveFollowupModel=d=>d?.model, isAgentModel=()=>true;',
   '../utils': 'export const countTokens=x=>x.length, activeSummary=()=>"";',
   '../lib/ui-store': uiStub,
   '../lib/use-models': 'export const getModelsOnce=async()=>({models:[],default:"codex/model"}), reconcileModelId=x=>x, describeModel=x=>x;',

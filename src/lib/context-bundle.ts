@@ -1,8 +1,9 @@
-import type { ThoughtNode, ThoughtEdge } from '../types';
+import type { Attachment, ThoughtNode, ThoughtEdge } from '../types';
 import { buildContext, type MessageSource } from '../store/context-builder';
-import { attachmentFingerprint } from './attachments';
+import { attachmentFingerprint } from './attachment-fingerprint';
 import { countTokens } from '../utils';
 import { isNotebook } from './notebook';
+import { documentCopyText, isEditableDocument } from './document-copy';
 
 // Context Bundle v0 — the compiler's portable output: what the target model
 // should see next, and where every piece came from. This file is the
@@ -26,7 +27,6 @@ export interface BundleCompileOptions {
   /** Free-text task statement; defaults to the target node's question. */
   task?: string;
   language?: string;
-  branchContext?: string;
   staleIds?: ReadonlySet<string> | string[];
   preferredModel?: string | null;
 }
@@ -123,13 +123,12 @@ export function semanticSnapshot(nodes: ThoughtNode[], edges: ThoughtEdge[]): un
       question: n.data.question,
       response: n.data.response,
       archived: n.data.archived || undefined,
-      branchContext: n.data.branchContext || undefined,
       highlightMode: n.data.highlightMode !== 'off' ? n.data.highlightMode : undefined,
-      highlights: (n.data.highlights ?? []).length > 0 ? n.data.highlights.map((h) => h.text) : undefined,
+      // Reading-only marks cannot change context identity or invalidate downstream work.
+      highlights: (n.data.highlightMode === 'tag' || n.data.highlightMode === 'filter') && n.data.highlights?.length
+        ? n.data.highlights.map((h) => h.text) : undefined,
       linkUrl: n.data.linkUrl,
       linkFetchedAt: n.data.linkFetchedAt,
-      rolePrompt: (n.data as { rolePrompt?: string }).rolePrompt,
-      roleMode: (n.data as { roleMode?: string }).roleMode,
       excludedAttachmentIds: (n.data.excludedAttachmentIds as string[] | undefined)?.length
         ? n.data.excludedAttachmentIds : undefined,
       attachments: (n.data.attachments ?? []).map((a) => ({
@@ -138,6 +137,9 @@ export function semanticSnapshot(nodes: ThoughtNode[], edges: ThoughtEdge[]): un
         type: a.type,
         fingerprint: attachmentFingerprint(a),
         extractedText: a.extractedText,
+        editedText: a.editedText,
+        editedHtml: a.editedHtml,
+        editedDocxRevision: a.editedDocxRevision,
         renderMode: a.renderMode,
       })),
     }));
@@ -147,8 +149,6 @@ export function semanticSnapshot(nodes: ThoughtNode[], edges: ThoughtEdge[]): un
       source: e.source,
       target: e.target,
       isCrossLink: e.data?.isCrossLink || undefined,
-      isWatch: e.data?.isWatch || undefined,
-      contextDepth: (e.data as { contextDepth?: string } | undefined)?.contextDepth,
     }));
   return { nodes: nodePart, edges: edgePart };
 }
@@ -157,7 +157,8 @@ export async function graphSnapshotHash(nodes: ThoughtNode[], edges: ThoughtEdge
   return `sha256:${await sha256Hex(canonicalStringify(semanticSnapshot(nodes, edges)))}`;
 }
 
-function projectionMode(att: { type: string; extractedText?: string; renderMode?: string; figures?: unknown[] }): BundleMaterial['model_projection']['mode'] {
+function projectionMode(att: Attachment): BundleMaterial['model_projection']['mode'] {
+  if (isEditableDocument(att)) return documentCopyText(att).trim() || att.editedText !== undefined ? 'extracted_text' : 'placeholder';
   // a notebook's figures ride beside its converted cells, like an image beside its companion
   if (isNotebook(att) && att.figures?.length && att.renderMode !== 'text-only') return 'extracted_text+pixels';
   if (att.type.startsWith('image/')) {
@@ -176,7 +177,7 @@ export async function compileContextBundle(
   edges: ThoughtEdge[],
   opts: BundleCompileOptions,
 ): Promise<ContextBundle> {
-  const built = buildContext(targetNodeId, nodes, edges, opts.branchContext, undefined, undefined, opts.staleIds);
+  const built = buildContext(targetNodeId, nodes, edges, undefined, undefined, opts.staleIds);
   const target = nodes.find((n) => n.id === targetNodeId);
 
   const messages: BundleMessageItem[] = built.messages.map((m, i) => {

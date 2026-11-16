@@ -29,7 +29,6 @@ await context.route('**/api/**', async route => {
 await page.addInitScript(() => {
   localStorage.setItem('thoughtdag.seeded', 'yes');
   localStorage.setItem('thoughtdag.tutorialDone', '1');
-  localStorage.setItem('thoughtdag.autoRefreshPaused', 'yes');
 });
 const check = name => { checks.push(name); console.log(`PASS ${name}`); };
 const viewport = () => page.evaluate(() => window.__rf.getViewport());
@@ -151,7 +150,6 @@ try {
   await page.evaluate(() => {
     window.__ui.getState().setTutorialOpen(false);
     window.__ui.getState().setReleaseNotesOpen(false);
-    window.__ui.getState().setAutoRefreshPaused(true);
     window.__ui.getState().setPanelOpen(false);
     const now = Date.now();
     const output = Array.from({ length: 100 }, (_, i) => `Output line ${i + 1}: verification fixture`).join('\n');
@@ -165,8 +163,7 @@ try {
       question, response, responses: [response], responseIndex: 0, agentActivities: [activity], detailLevel: 'full',
       isCollapsed: false, isEditing: false, isEditingResponse: false, isLoading: false,
       tokenCount: 0, highlights: [], highlightMode: 'tag', attachments: [], excludedAttachmentIds: [], includedAttachmentIds: [],
-      roleMode: 'inherit', isRoot: true, isBranch: false,
-    } }]);
+      roleMode: 'inherit'} }]);
     window.__store.getState().setEdges([]);
   });
   const node = page.locator('.react-flow__node[data-id="nested-scroll"]');

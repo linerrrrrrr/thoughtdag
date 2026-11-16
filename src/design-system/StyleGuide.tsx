@@ -56,7 +56,7 @@ const typeRoles: { role: string; purpose: CopyPair; weight?: number }[] = [
   { role: 'section', purpose: ['页面分区标题', 'Page section headings'], weight: 600 },
   { role: 'page', purpose: ['页面标题', 'Page title'], weight: 600 },
 ];
-const colors = ['surface', 'card', 'wash', 'line', 'ink', 'ink-muted', 'ink-faint', 'accent', 'action', 'material-note', 'material-file-wash', 'watch'];
+const colors = ['surface', 'card', 'wash', 'line', 'ink', 'ink-muted', 'ink-faint', 'accent', 'action', 'material-note', 'material-file-wash', 'danger'];
 const spaces = ['control-gap', 'related', 'toolbar-inset', 'section-gap', 'surface-inset', 'canvas-inset', 'control-size'];
 const radii = ['port', 'tag', 'control', 'content', 'node', 'overlay', 'panel', 'toolbar'];
 const plainAction = 'min-h-8 px-2.5 rounded-control text-control text-ink-muted hover:bg-wash flex items-center gap-2 text-left focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-40 disabled:cursor-not-allowed';
@@ -181,7 +181,7 @@ function EditingSpecimen({ t }: { t: Translate }) {
       <button type="button" className="canvas-toolbar-button canvas-toolbar-icon" aria-pressed={selected} onClick={() => setSelected(value => !value)}><Check aria-hidden="true" />{t('active')}</button>
       <button type="button" className={plainAction} disabled>{t('disabled')}</button>
       <button type="button" className={plainAction} disabled aria-busy="true"><LoaderCircle aria-hidden="true" />{t('busy')}</button>
-      <button type="button" className={`${plainAction} text-watch`} onClick={() => setAction(true)}><Trash2 aria-hidden="true" />{t('danger')}</button>
+      <button type="button" className={`${plainAction} text-danger`} onClick={() => setAction(true)}><Trash2 aria-hidden="true" />{t('danger')}</button>
     </div></fieldset>
     <p className="ds-notice" role="status">{action ? t('sampleAction') : '\u00a0'}</p>
   </div>;

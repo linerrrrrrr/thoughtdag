@@ -30,8 +30,6 @@
         "excludedAttachmentIds": [],
         "includedAttachmentIds": [],
         "roleMode": "inherit",
-        "isRoot": false,
-        "isBranch": false,
         "stepKind": "frame",
         "frameColor": "green",
         "frameCarry": false
@@ -61,9 +59,7 @@
         "attachments": [],
         "excludedAttachmentIds": [],
         "includedAttachmentIds": [],
-        "roleMode": "inherit",
-        "isRoot": true,
-        "isBranch": false
+        "roleMode": "inherit"
       }
     },
     {
@@ -90,9 +86,7 @@
         "attachments": [],
         "excludedAttachmentIds": [],
         "includedAttachmentIds": [],
-        "roleMode": "inherit",
-        "isRoot": false,
-        "isBranch": false
+        "roleMode": "inherit"
       }
     },
     {
@@ -119,9 +113,7 @@
         "attachments": [],
         "excludedAttachmentIds": [],
         "includedAttachmentIds": [],
-        "roleMode": "inherit",
-        "isRoot": false,
-        "isBranch": false
+        "roleMode": "inherit"
       }
     },
     {
@@ -148,9 +140,7 @@
         "attachments": [],
         "excludedAttachmentIds": [],
         "includedAttachmentIds": [],
-        "roleMode": "inherit",
-        "isRoot": false,
-        "isBranch": false
+        "roleMode": "inherit"
       }
     },
     {
@@ -177,9 +167,7 @@
         "attachments": [],
         "excludedAttachmentIds": [],
         "includedAttachmentIds": [],
-        "roleMode": "inherit",
-        "isRoot": false,
-        "isBranch": false
+        "roleMode": "inherit"
       }
     },
     {
@@ -209,8 +197,6 @@
         "excludedAttachmentIds": [],
         "includedAttachmentIds": [],
         "roleMode": "inherit",
-        "isRoot": false,
-        "isBranch": false,
         "stepKind": "frame",
         "frameColor": "green",
         "frameCarry": false
@@ -240,9 +226,7 @@
         "attachments": [],
         "excludedAttachmentIds": [],
         "includedAttachmentIds": [],
-        "roleMode": "inherit",
-        "isRoot": true,
-        "isBranch": false
+        "roleMode": "inherit"
       }
     },
     {
@@ -269,9 +253,7 @@
         "attachments": [],
         "excludedAttachmentIds": [],
         "includedAttachmentIds": [],
-        "roleMode": "inherit",
-        "isRoot": false,
-        "isBranch": false
+        "roleMode": "inherit"
       }
     },
     {
@@ -298,9 +280,7 @@
         "attachments": [],
         "excludedAttachmentIds": [],
         "includedAttachmentIds": [],
-        "roleMode": "inherit",
-        "isRoot": false,
-        "isBranch": false
+        "roleMode": "inherit"
       }
     },
     {
@@ -327,9 +307,7 @@
         "attachments": [],
         "excludedAttachmentIds": [],
         "includedAttachmentIds": [],
-        "roleMode": "inherit",
-        "isRoot": false,
-        "isBranch": false
+        "roleMode": "inherit"
       }
     },
     {
@@ -356,9 +334,7 @@
         "attachments": [],
         "excludedAttachmentIds": [],
         "includedAttachmentIds": [],
-        "roleMode": "inherit",
-        "isRoot": false,
-        "isBranch": false
+        "roleMode": "inherit"
       }
     },
     {
@@ -385,9 +361,7 @@
         "attachments": [],
         "excludedAttachmentIds": [],
         "includedAttachmentIds": [],
-        "roleMode": "inherit",
-        "isRoot": true,
-        "isBranch": false
+        "roleMode": "inherit"
       }
     },
     {
@@ -414,9 +388,7 @@
         "attachments": [],
         "excludedAttachmentIds": [],
         "includedAttachmentIds": [],
-        "roleMode": "inherit",
-        "isRoot": true,
-        "isBranch": false
+        "roleMode": "inherit"
       }
     },
     {
@@ -443,9 +415,7 @@
         "attachments": [],
         "excludedAttachmentIds": [],
         "includedAttachmentIds": [],
-        "roleMode": "inherit",
-        "isRoot": true,
-        "isBranch": false
+        "roleMode": "inherit"
       }
     },
     {
@@ -472,9 +442,7 @@
         "attachments": [],
         "excludedAttachmentIds": [],
         "includedAttachmentIds": [],
-        "roleMode": "inherit",
-        "isRoot": false,
-        "isBranch": false
+        "roleMode": "inherit"
       }
     },
     {
@@ -504,8 +472,6 @@
         "excludedAttachmentIds": [],
         "includedAttachmentIds": [],
         "roleMode": "inherit",
-        "isRoot": false,
-        "isBranch": false,
         "stepKind": "frame",
         "frameColor": "green",
         "frameCarry": false
@@ -535,9 +501,7 @@
         "attachments": [],
         "excludedAttachmentIds": [],
         "includedAttachmentIds": [],
-        "roleMode": "inherit",
-        "isRoot": true,
-        "isBranch": false
+        "roleMode": "inherit"
       }
     },
     {
@@ -564,9 +528,7 @@
         "attachments": [],
         "excludedAttachmentIds": [],
         "includedAttachmentIds": [],
-        "roleMode": "inherit",
-        "isRoot": false,
-        "isBranch": false
+        "roleMode": "inherit"
       }
     },
     {
@@ -593,9 +555,7 @@
         "attachments": [],
         "excludedAttachmentIds": [],
         "includedAttachmentIds": [],
-        "roleMode": "inherit",
-        "isRoot": false,
-        "isBranch": false
+        "roleMode": "inherit"
       }
     },
     {
@@ -622,9 +582,7 @@
         "attachments": [],
         "excludedAttachmentIds": [],
         "includedAttachmentIds": [],
-        "roleMode": "inherit",
-        "isRoot": false,
-        "isBranch": false
+        "roleMode": "inherit"
       }
     },
     {
@@ -651,9 +609,7 @@
         "attachments": [],
         "excludedAttachmentIds": [],
         "includedAttachmentIds": [],
-        "roleMode": "inherit",
-        "isRoot": true,
-        "isBranch": false
+        "roleMode": "inherit"
       }
     },
     {
@@ -680,9 +636,7 @@
         "attachments": [],
         "excludedAttachmentIds": [],
         "includedAttachmentIds": [],
-        "roleMode": "inherit",
-        "isRoot": true,
-        "isBranch": false
+        "roleMode": "inherit"
       }
     },
     {
@@ -709,9 +663,7 @@
         "attachments": [],
         "excludedAttachmentIds": [],
         "includedAttachmentIds": [],
-        "roleMode": "inherit",
-        "isRoot": true,
-        "isBranch": false
+        "roleMode": "inherit"
       }
     },
     {
@@ -738,9 +690,7 @@
         "attachments": [],
         "excludedAttachmentIds": [],
         "includedAttachmentIds": [],
-        "roleMode": "inherit",
-        "isRoot": false,
-        "isBranch": false
+        "roleMode": "inherit"
       }
     },
     {
@@ -770,8 +720,6 @@
         "excludedAttachmentIds": [],
         "includedAttachmentIds": [],
         "roleMode": "inherit",
-        "isRoot": false,
-        "isBranch": false,
         "stepKind": "frame",
         "frameColor": "green",
         "frameCarry": false
@@ -801,9 +749,7 @@
         "attachments": [],
         "excludedAttachmentIds": [],
         "includedAttachmentIds": [],
-        "roleMode": "inherit",
-        "isRoot": true,
-        "isBranch": false
+        "roleMode": "inherit"
       }
     },
     {
@@ -830,9 +776,7 @@
         "attachments": [],
         "excludedAttachmentIds": [],
         "includedAttachmentIds": [],
-        "roleMode": "inherit",
-        "isRoot": true,
-        "isBranch": false
+        "roleMode": "inherit"
       }
     },
     {
@@ -859,9 +803,7 @@
         "attachments": [],
         "excludedAttachmentIds": [],
         "includedAttachmentIds": [],
-        "roleMode": "inherit",
-        "isRoot": true,
-        "isBranch": false
+        "roleMode": "inherit"
       }
     },
     {
@@ -888,9 +830,7 @@
         "attachments": [],
         "excludedAttachmentIds": [],
         "includedAttachmentIds": [],
-        "roleMode": "inherit",
-        "isRoot": true,
-        "isBranch": false
+        "roleMode": "inherit"
       }
     },
     {
@@ -917,9 +857,7 @@
         "attachments": [],
         "excludedAttachmentIds": [],
         "includedAttachmentIds": [],
-        "roleMode": "inherit",
-        "isRoot": false,
-        "isBranch": false
+        "roleMode": "inherit"
       }
     },
     {
@@ -949,8 +887,6 @@
         "excludedAttachmentIds": [],
         "includedAttachmentIds": [],
         "roleMode": "inherit",
-        "isRoot": false,
-        "isBranch": false,
         "stepKind": "frame",
         "frameColor": "green",
         "frameCarry": false
@@ -980,9 +916,7 @@
         "attachments": [],
         "excludedAttachmentIds": [],
         "includedAttachmentIds": [],
-        "roleMode": "inherit",
-        "isRoot": true,
-        "isBranch": false
+        "roleMode": "inherit"
       }
     },
     {
@@ -1009,9 +943,7 @@
         "attachments": [],
         "excludedAttachmentIds": [],
         "includedAttachmentIds": [],
-        "roleMode": "inherit",
-        "isRoot": true,
-        "isBranch": false
+        "roleMode": "inherit"
       }
     },
     {
@@ -1038,9 +970,7 @@
         "attachments": [],
         "excludedAttachmentIds": [],
         "includedAttachmentIds": [],
-        "roleMode": "inherit",
-        "isRoot": true,
-        "isBranch": false
+        "roleMode": "inherit"
       }
     },
     {
@@ -1067,9 +997,7 @@
         "attachments": [],
         "excludedAttachmentIds": [],
         "includedAttachmentIds": [],
-        "roleMode": "inherit",
-        "isRoot": true,
-        "isBranch": false
+        "roleMode": "inherit"
       }
     },
     {
@@ -1096,9 +1024,7 @@
         "attachments": [],
         "excludedAttachmentIds": [],
         "includedAttachmentIds": [],
-        "roleMode": "inherit",
-        "isRoot": false,
-        "isBranch": false
+        "roleMode": "inherit"
       }
     },
     {
@@ -1125,9 +1051,7 @@
         "attachments": [],
         "excludedAttachmentIds": [],
         "includedAttachmentIds": [],
-        "roleMode": "inherit",
-        "isRoot": false,
-        "isBranch": false
+        "roleMode": "inherit"
       }
     },
     {
@@ -1154,9 +1078,7 @@
         "attachments": [],
         "excludedAttachmentIds": [],
         "includedAttachmentIds": [],
-        "roleMode": "inherit",
-        "isRoot": false,
-        "isBranch": false
+        "roleMode": "inherit"
       }
     },
     {
@@ -1183,9 +1105,7 @@
         "attachments": [],
         "excludedAttachmentIds": [],
         "includedAttachmentIds": [],
-        "roleMode": "inherit",
-        "isRoot": false,
-        "isBranch": false
+        "roleMode": "inherit"
       }
     }
   ],

@@ -1,3 +1,4 @@
+import { appSettings } from './disk-storage';
 import { useEffect, useState } from 'react';
 
 // The repository's star count, for the ⋯ menu's GitHub entry: fetched from
@@ -12,8 +13,8 @@ const KEY = 'thoughtdag.githubStars';
 const TTL_MS = 6 * 60 * 60 * 1000;
 
 interface Cached { stars: number; at: number }
-const read = (): Cached | null => { try { const v = JSON.parse(localStorage.getItem(KEY) ?? 'null'); return v && typeof v.stars === 'number' && typeof v.at === 'number' ? v : null; } catch { return null; } };
-const write = (c: Cached) => { try { localStorage.setItem(KEY, JSON.stringify(c)); } catch { /* the count is a nicety */ } };
+const read = (): Cached | null => { try { const v = JSON.parse(appSettings.getItem(KEY) ?? 'null'); return v && typeof v.stars === 'number' && typeof v.at === 'number' ? v : null; } catch { return null; } };
+const write = (c: Cached) => { try { appSettings.setItem(KEY, JSON.stringify(c)); } catch { /* the count is a nicety */ } };
 
 let inflight: Promise<number | null> | null = null;
 /** The star count, cached; null when unknown and unreachable. */

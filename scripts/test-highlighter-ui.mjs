@@ -21,7 +21,6 @@ await page.route('**/api/**', route => {
 await page.addInitScript(() => {
   localStorage.setItem('thoughtdag.seeded', 'yes');
   localStorage.setItem('thoughtdag.tutorialDone', '1');
-  localStorage.setItem('thoughtdag.autoRefreshPaused', 'yes');
   localStorage.setItem('thoughtdag.canvasDetail', 'full');
   localStorage.setItem('thoughtdag.lang', 'zh');
 });
@@ -75,14 +74,14 @@ try {
     const base = { responses: [response, `${response}\n\nVersion two.`], response, responseIndex: 0,
       isCollapsed: false, isEditing: false, isEditingResponse: false, isLoading: false,
       tokenCount: 45, highlights: [], highlightMode: 'tag', attachments: [], excludedAttachmentIds: [],
-      includedAttachmentIds: [], roleMode: 'inherit', isRoot: true, detailLevel: 'full' };
+      includedAttachmentIds: [], roleMode: 'inherit', detailLevel: 'full' };
     const nodes = [
       { id: 'highlight-answer', type: 'thought', position: { x: 100, y: 135 }, width: 560,
         data: { ...base, displayName: '荧光笔交互验收', question: '如何保留阅读中的重点？' } },
       { id: 'highlight-material', type: 'thought', position: { x: 950, y: 150 },
         data: { ...base, response: '', responses: [], question: 'Material passage one.\n\nMaterial passage two.', stepKind: 'note' } },
       { id: 'highlight-rail', type: 'thought', position: { x: 950, y: 600 },
-        data: { ...base, response: 'Rail answer to mark.', responses: ['Rail answer to mark.'], question: 'A reading question', isRoot: false } },
+        data: { ...base, response: 'Rail answer to mark.', responses: ['Rail answer to mark.'], question: 'A reading question'} },
     ];
     const edges = [{ id: 'material-rail', source: 'highlight-material', target: 'highlight-rail' }];
     window.__store.setState({ nodes, edges, selectedNodeIds: [], selectedNodeId: null, history: [{ nodes, edges }], historyIndex: 0 });
@@ -105,6 +104,9 @@ try {
   await disclosure(card).click();
   assert.equal(await disclosure(card).getAttribute('aria-expanded'), 'true');
   assert.equal(await highlightSection(card).locator('[data-highlight-list]').isVisible(), true);
+  assert.deepEqual(await highlightSection(card).locator('.node-highlight-modes button').allTextContents(),
+    ['仅供阅读', '标注重点', '仅传高亮']);
+  assert.equal(await highlightSection(card).locator('p').count(), 0, 'The empty teaching prompt is removed');
   await disclosure(card).click();
   assert.equal(await highlightSection(card).locator('[data-highlight-list]').isVisible(), false);
   assert.deepEqual(await page.evaluate(() => ({
@@ -124,6 +126,9 @@ try {
   // Selection opens its inspector after a delay; let that outer layer mount
   // before activating the pen whose Escape behavior this fixture exercises.
   await page.locator('[data-selection-properties]').waitFor();
+  await disclosure(card).click();
+  await highlightSection(card).getByRole('button', { name: '仅供阅读', exact: true }).click();
+  await disclosure(card).click();
   await toggle(card).click();
   assert.equal(await toggle(card).getAttribute('aria-pressed'), 'true');
   assert.equal(await card.getByRole('button', { name: '探索', exact: true }).count(), 0);
@@ -157,6 +162,23 @@ try {
     assert.equal(await card.getByText(mark.text, { exact: true }).count(), 2,
       'The passage appears once in the highlight list and once in the answer, without a duplicate chip');
   }
+  for (const [label, mode] of [['标注重点', 'tag'], ['仅传高亮', 'filter'], ['仅供阅读', 'off']]) {
+    const button = highlightSection(card).getByRole('button', { name: label, exact: true });
+    await button.click();
+    assert.equal(await button.getAttribute('aria-pressed'), 'true');
+    assert.equal(await highlightSection(card).locator('.node-highlight-modes [aria-pressed="true"]').count(), 1);
+    assert.equal(await page.evaluate(() => window.__store.getState().nodes.find(n => n.id === 'highlight-answer').data.highlightMode), mode);
+    assert.deepEqual(await marks('highlight-answer'), beforeFold);
+    assert.equal(await answer.locator('mark.highlight-mark').count(), 2);
+  }
+  await page.evaluate(() => window.__store.getState().undo());
+  await settle();
+  assert.equal(await highlightSection(card).getByRole('button', { name: '仅传高亮', exact: true }).getAttribute('aria-pressed'), 'true');
+  await page.evaluate(() => window.__store.getState().redo());
+  await settle();
+  assert.equal(await highlightSection(card).getByRole('button', { name: '仅供阅读', exact: true }).getAttribute('aria-pressed'), 'true');
+  await page.screenshot({ path: `${output}/reading-only-node-light-zh.png` });
+  check('all three modes preserve visible marks, reading-only is selectable before marking, and mode changes are undoable');
   await disclosure(card).click();
   assert.equal(await toggle(card).getAttribute('aria-pressed'), 'true');
   assert.deepEqual(await marks('highlight-answer'), beforeFold);
@@ -178,6 +200,8 @@ try {
   await page.screenshot({ path: `${output}/node-light-zh.png` });
   await page.keyboard.press('Escape');
   assert.equal(await toggle(card).getAttribute('aria-pressed'), 'false');
+  // Undo the mode choices before the last saved passage.
+  for (let step = 0; step < 3; step++) await page.evaluate(() => window.__store.getState().undo());
   await page.evaluate(() => window.__store.getState().undo());
   assert.equal(await count('highlight-answer'), 1);
   check('cross-boundary selections do not write; Escape exits the tool and highlights remain undoable');
@@ -217,6 +241,15 @@ try {
   const panelMarks = await marks('highlight-answer');
   await disclosure(panel).click();
   assert.equal(await highlightSection(panel).locator('[data-highlight-list]').isVisible(), true);
+  assert.deepEqual(await highlightSection(panel).locator('.node-highlight-modes button').allTextContents(),
+    ['Reading only', 'Tag important', 'Highlights only']);
+  assert.equal(await highlightSection(panel).getByRole('button', { name: 'Reading only', exact: true }).getAttribute('aria-pressed'), 'true');
+  await highlightSection(panel).getByRole('button', { name: 'Tag important', exact: true }).click();
+  await highlightSection(panel).getByRole('button', { name: 'Reading only', exact: true }).click();
+  assert.deepEqual(await marks('highlight-answer'), panelMarks);
+  assert.equal(await panelAnswer.locator('mark.highlight-mark').count(), panelMarks.length);
+  assert.equal(await highlightSection(panel).evaluate(element => element.scrollWidth > element.clientWidth + 1), false);
+  await page.screenshot({ path: `${output}/reading-only-panel-dark-en.png` });
   await disclosure(panel).click();
   assert.equal(await toggle(panel).getAttribute('aria-pressed'), 'true');
   assert.deepEqual(await marks('highlight-answer'), panelMarks);

@@ -1,4 +1,5 @@
-import { get as idbGet, set as idbSet, del as idbDel } from 'idb-keyval';
+import { appSettings } from './disk-storage';
+import { get as idbGet, set as idbSet, del as idbDel } from './disk-storage';
 import { useStore, stripTransient } from '../store';
 import { useProjects } from '../store/projects';
 import { toast, useUiStore } from './ui-store';
@@ -6,10 +7,11 @@ import { t } from '../i18n';
 import { EXPORT_FORMAT_VERSION, activeProjectName } from './export';
 import { isViewerMode } from './viewer';
 import { inlineVaultedContent } from './attachment-vault';
+import { normalizeConversationGraph } from './normalize-graph';
 
 // Automatic local backup via the File System Access API (Chromium): the user
 // grants a FOLDER once; afterwards every canvas change is debounced and the
-// active project silently (re)written as <name>.thoughtdag.json — a real file
+// active project silently (re)written as <name>-<id>.thoughtdag.json — a real file
 // on disk that survives any browser-data wipe. Point the folder at a synced
 // directory (Dropbox / iCloud / Drive desktop) and it doubles as cross-device
 // sync, still with zero servers.
@@ -21,8 +23,7 @@ import { inlineVaultedContent } from './attachment-vault';
 //     returns a PATH STRING, not a handle — the canvas keeps the string and the
 //     host writes the file. Chromium's own picker never returns inside the
 //     harness's Windows frame, so the handle mode is simply unavailable there.
-//   The mode is chosen by whether the host offers backupJson; the layout
-//   (folder root, cli/ drawer, <name>.thoughtdag.json) is identical in both.
+//   The mode is chosen by whether the host offers backupJson.
 
 const HANDLE_KEY = 'thoughtdag.backupDirHandle';
 /** host-written mode: the picked directory as a plain absolute path */
@@ -60,18 +61,17 @@ let timer: ReturnType<typeof setTimeout> | null = null;
 let dirty = false;
 
 /** What the file should contain and be called — shared by both modes. */
-async function backupPayload(): Promise<{ name: string; isMirror: boolean; json: string } | null> {
+async function backupPayload(): Promise<{ name: string; json: string } | null> {
   const { nodes: rawNodes, edges, events } = useStore.getState();
   if (rawNodes.length === 0) return null;
   const { projects, activeId } = useProjects.getState();
   const activeMeta = projects.find((p) => p.id === activeId);
   const nodes = await inlineVaultedContent(rawNodes);
   const base = (activeProjectName().replace(/[\\/:*?"<>|]/g, '_') || 'canvas').slice(0, 48);
-  // mirror canvases are named after their first prompt — suffix the
-  // session id so long/similar prompts can't collide on disk
-  const isMirror = !!activeMeta?.sourceSession;
-  const name = activeMeta?.sourceSession?.sessionId ? `${base}-${activeMeta.sourceSession.sessionId.slice(0, 8)}` : base;
-  const json = JSON.stringify({
+  // A stable suffix prevents two canvases with the same name from overwriting
+  // one another, including canvases created by older versions.
+  const name = activeId ? `${base}-${activeId}` : base;
+  const json = JSON.stringify(normalizeConversationGraph({
     version: EXPORT_FORMAT_VERSION,
     name: activeProjectName(),
     // the canvas's stable identity — names collide, ids do not; a deep
@@ -79,17 +79,11 @@ async function backupPayload(): Promise<{ name: string; isMirror: boolean; json:
     projectId: activeId,
     exportedAt: new Date().toISOString(),
     instantiatedFrom: activeMeta?.instantiatedFrom,
-    // the LEDGER travels with the archive: a restored canvas keeps its
-    // subscriptions, so listening and appending come back to life — the
-    // ledger holds only UUIDs (session ids), never paths, so the file
-    // survives machines and moves; a source that isn't on this machine
-    // simply stays silent until it appears.
-    sourceSession: activeMeta?.sourceSession,
     nodes: stripTransient(nodes),
     edges,
     events,
-  });
-  return { name, isMirror, json };
+  }));
+  return { name, json };
 }
 
 /** Write the ACTIVE canvas as one real file. Both paths go through here —
@@ -101,21 +95,16 @@ export async function backupActiveProject(): Promise<string | null> {
   if (!handle && !hostDir) return null;
   const out = await backupPayload();
   if (!out) return null;
-  // one filing rule: native canvases at the folder root, session-mirror
-  // canvases in the cli/ drawer — every canvas reaches disk (a canvas
-  // JSON is a PROJECTION, ~2.5% of its source session's size)
-  const rel = out.isMirror ? `cli/${out.name}.thoughtdag.json` : `${out.name}.thoughtdag.json`;
+  const rel = `${out.name}.thoughtdag.json`;
   if (hostDir) {
-    // the host creates cli/ under the picked folder and writes the file there
     await hostWrite()?.(hostDir, rel, out.json);
   } else {
-    const dir = out.isMirror ? await handle!.getDirectoryHandle('cli', { create: true }) : handle!;
-    const file = await dir.getFileHandle(`${out.name}.thoughtdag.json`, { create: true });
+    const file = await handle!.getFileHandle(`${out.name}.thoughtdag.json`, { create: true });
     const w = await file.createWritable();
     await w.write(out.json);
     await w.close();
   }
-  localStorage.setItem('thoughtdag.lastBackupAt', String(Date.now()));
+  appSettings.setItem('thoughtdag.lastBackupAt', String(Date.now()));
   useUiStore.getState().setLastAutoBackupAt(Date.now());
   return activeProjectName();
 }
@@ -163,7 +152,7 @@ export async function enableAutoBackup(): Promise<boolean> {
     const dir = pick ? await pick.call(window.desktopAgents).catch(() => null) : null;
     if (!dir) return false; // dismissed, or this host has no picker
     hostDir = dir;
-    localStorage.setItem(DIR_PATH_KEY, dir);
+    appSettings.setItem(DIR_PATH_KEY, dir);
     useUiStore.getState().setAutoBackupDir(dirLabel(dir));
     ensureWatch();
     try {
@@ -172,7 +161,7 @@ export async function enableAutoBackup(): Promise<boolean> {
       // the folder was rejected (relative, gone, not writable): do not keep
       // a folder that cannot be written — the next pick starts clean
       hostDir = null;
-      localStorage.removeItem(DIR_PATH_KEY);
+      appSettings.removeItem(DIR_PATH_KEY);
       useUiStore.getState().setAutoBackupDir(null);
       console.warn('[thoughtdag] backup folder rejected:', err);
       return false;
@@ -199,7 +188,7 @@ export async function disableAutoBackup(): Promise<void> {
   handle = null;
   hostDir = null;
   await idbDel(HANDLE_KEY);
-  localStorage.removeItem(DIR_PATH_KEY);
+  appSettings.removeItem(DIR_PATH_KEY);
   useUiStore.getState().setAutoBackupDir(null);
 }
 
@@ -210,7 +199,7 @@ export async function disableAutoBackup(): Promise<void> {
 export async function bootAutoBackup(): Promise<void> {
   if (isViewerMode || !backupCapable()) return;
   if (hostWrite()) {
-    const dir = localStorage.getItem(DIR_PATH_KEY);
+    const dir = appSettings.getItem(DIR_PATH_KEY);
     if (!dir) return;
     hostDir = dir;
     useUiStore.getState().setAutoBackupDir(dirLabel(dir));

@@ -1,3 +1,4 @@
+import { appSettings } from './disk-storage';
 import { useUiStore, toast } from './ui-store';
 import { t, fmt } from '../i18n';
 import { compareVersions } from '../whats-new';
@@ -25,9 +26,9 @@ export async function bootPluginUpdateCheck(apiBase: string): Promise<void> {
     if (!j.version || !j.latest || compareVersions(j.latest, j.version) <= 0) return;
     useUiStore.getState().setPluginUpdate({ current: j.version, latest: j.latest });
     let notified: string | null = null;
-    try { notified = localStorage.getItem(NOTIFIED_KEY); } catch { /* ignore */ }
+    try { notified = appSettings.getItem(NOTIFIED_KEY); } catch { /* ignore */ }
     if (notified !== j.latest) {
-      try { localStorage.setItem(NOTIFIED_KEY, j.latest); } catch { /* ignore */ }
+      try { appSettings.setItem(NOTIFIED_KEY, j.latest); } catch { /* ignore */ }
       // the host's word (td:view) may not have arrived this early: the same-origin parent document carries the mark itself
       const desktop = useUiStore.getState().harnessHost?.desktop ?? (() => { try { const root = window.parent?.document?.documentElement; return !!root && (root.dataset.platform !== undefined || root.hasAttribute('data-windows-titlebar')); } catch { return false; } })();
       toast('info', fmt(t('plugin.updateAvailable'), { v: j.latest }) + (desktop ? ' ' + fmt(t('plugin.updateHintDesktop'), { pkg: `dsh-thoughtdag@${j.latest}` }) : ''), 12000);

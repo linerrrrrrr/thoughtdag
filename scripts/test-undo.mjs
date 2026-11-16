@@ -60,7 +60,7 @@ rmSync(tmp, { recursive: true, force: true });
 // ── canvas fixtures ─────────────────────────────────────────────────────
 const q = (id, question, response = '', x = 0, y = 0, extra = {}) => ({
   id, type: 'thought', position: { x, y },
-  data: { question, response, responses: response ? [response] : [], responseIndex: response ? 0 : -1, isLoading: false, isEditing: false, isEditingResponse: false, isCollapsed: false, tokenCount: 0, highlights: [], highlightMode: 'off', attachments: [], excludedAttachmentIds: [], includedAttachmentIds: [], roleMode: 'inherit', isRoot: true, isBranch: false, ...extra },
+  data: { question, response, responses: response ? [response] : [], responseIndex: response ? 0 : -1, isLoading: false, isEditing: false, isEditingResponse: false, isCollapsed: false, tokenCount: 0, highlights: [], highlightMode: 'off', attachments: [], excludedAttachmentIds: [], includedAttachmentIds: [], roleMode: 'inherit', ...extra },
 });
 const note = (id, text, x = 600, y = 0) => q(id, text, '', x, y, { stepKind: 'note' });
 const edge = (s, t) => ({ id: `e-${s}-${t}`, source: s, target: t, type: 'smoothstep', data: {} });

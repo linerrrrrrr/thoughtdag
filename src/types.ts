@@ -1,17 +1,42 @@
 import type { Node, Edge } from '@xyflow/react';
 
+export interface PdfAnnotation {
+  id: string;
+  kind?: 'note' | 'highlight';
+  page: number;
+  rects: [number, number, number, number][];
+  text?: string;
+  comment?: string;
+  color: string;
+  createdAt: string;
+}
+
 export interface Attachment {
   id: string;
   name: string;
   type: string; // MIME type
   size: number;
+  /** Local source location, when supplied by the desktop shell or the user. */
+  sourcePath?: string;
   addedAt?: string; // ISO timestamp: when this material entered the canvas (thinking-timeline raw data)
   content: string; // base64 for images, raw text for text files; '' for vaulted PDFs
-  /** Bulky payload lives in the attachment vault (IndexedDB), not here —
+  /** Bulky payload lives in the attachment vault, not here —
       read through loadAttachmentContent(). Exports inline it back. */
   contentInVault?: boolean;
   thumbnailUrl?: string; // data URL for image preview
   extractedText?: string; // companion text (PDF extraction / image auto-understanding)
+  editedText?: string; // saved Markdown working copy; never overwrites the original or extraction
+  documentHtml?: string; // sanitized DOCX body, including embedded images; original bytes remain separate
+  editedHtml?: string; // saved rich-text working copy; editedText is its model-readable projection
+  /** Immutable native DOCX revision in the vault; the original content is unchanged. */
+  editedDocxRevision?: string;
+  /** Native revision bytes are inlined only for self-contained imports and exports. */
+  editedDocxContent?: string;
+  editedDocxSavedAt?: string;
+  /** Archived pre-native working copy; never used as the current DOCX or model text. */
+  legacyDocumentHtml?: string;
+  legacyDocumentText?: string;
+  pdfAnnotations?: PdfAnnotation[]; // local original-page marks; never included in model text implicitly
   extractedBy?: string; // which model produced extractedText (extraction provenance)
   pageImages?: string[]; // rendered page images as base64 PNG (PDF)
   /** a notebook's figures, in output order — the image channel of a .ipynb
@@ -268,6 +293,10 @@ export interface ThoughtData extends Record<string, unknown> {
   generationFailed?: boolean; // set on LLM failure; cleared on retry/success (persisted so Retry survives refresh)
   references?: Reference[]; // web sources cited by the current response ([n] markers)
   model?: string; // per-node LLM override; undefined = follow the global picker
+  /** Explicit execution lane. Absent on older canvases; infer from their model/session. */
+  executionKind?: 'api' | 'codex';
+  /** Replayable native records aligned with answer versions, independent of display activity. */
+  codexHistories?: (import('./lib/agents/codex-history').CodexNativeHistory | null | undefined)[];
   webSearch?: boolean; // may this node's generation use web search? (snapshotted at ask time; undefined = legacy, follow global)
   scholarSearch?: boolean; // same for arXiv / Semantic Scholar tools
   /** may this node's generation recall past conversations and memories (the why layer)? snapshotted at ask time like the search switches */
@@ -280,7 +309,6 @@ export interface ThoughtData extends Record<string, unknown> {
   recallMeta?: RecallMeta;
   /** while a wide recall is being judged: how many candidates the judge has seen */
   recallProgress?: { done: number; total: number } | null;
-  autoRerun?: boolean; // regenerate in place whenever an upstream ancestor finishes (generic primitive)
   /** Transient: a regeneration is streaming and data.response still holds
       the OLD text (cleared on the first new chunk) — display shows the live
       thinking, not the stale answer. */
@@ -290,8 +318,10 @@ export interface ThoughtData extends Record<string, unknown> {
     runtime: AgentRuntime; sessionId: string | null; sessionFile: string | null; cwd: string;
     /** the effort level the turn actually ran at, in the runtime's own words, from its own record */
     effort?: string;
-    /** the turn continued the mirrored session instead of opening a fresh one */
+    /** the turn continued an existing session instead of opening a fresh one */
     continued?: boolean;
+    turnId?: string | null;
+    nativeHistory?: import('./lib/agents/codex-history').CodexNativeHistory;
     /** what changed on disk during the turn, by the file system's account */
     changes?: { changed: string[]; added: string[]; removed: string[]; truncated?: boolean };
   };
@@ -335,12 +365,10 @@ export interface ThoughtData extends Record<string, unknown> {
   // text, attachments, or a stamped web snapshot) — they never generate,
   // feed context only via OUTGOING edges. Legacy autoLayout leaves them in
   // place; explicit canvas layout includes selected material cards.
-  // Legacy v1 kinds ('step'|'fanout'|'review'|'synthesis') still
-  // instantiate; 'fanout' also marks fan-out placeholders.
   // 'frame' = a labeled background region (spatial annotation) — no handles,
   // never in context; explicit canvas layout fits selected regions to their
   // arranged contents, while legacy autoLayout leaves them in place.
-  stepKind?: 'human' | 'prompt' | 'note' | 'file' | 'link' | 'frame' | 'step' | 'fanout' | 'review' | 'synthesis';
+  stepKind?: 'human' | 'prompt' | 'note' | 'file' | 'link' | 'frame';
   /** Provenance of a node imported from an external runner session (the
       continuity layer's read direction). Source sessions stay read-only;
       these ids let a future continuation point back at native items. */
@@ -370,14 +398,13 @@ export interface ThoughtData extends Record<string, unknown> {
   frameColor?: string; // frame node: fixed-palette color token (wayfinding, not decoration)
   frameCarry?: boolean; // frame node: dragging carries contained nodes (absent = true; new frames start false so they can be adjusted into place first)
   lockAspectRatio?: boolean; // preserve each card's ratio during numeric and handle resizing
-  keepOverviewHeight?: boolean; // explicit card heights remain visible in compact overviews
+  keepOverviewHeight?: boolean; // legacy resize flag; overview height now always follows its content
+  /** A height explicitly chosen for this question/answer, including any open disclosures. */
+  contentHeightIntent?: { content: string; height: number };
   instruction?: string; // paradigm body: the prompt (prompt node) or operator guidance (human node)
-  fanoutRoles?: { name: string; prompt: string }[]; // role list carried by fanout steps/placeholders
-  autoRerunRounds?: number; // max auto-triggered runs per user action (default 1); >1 enables loops
   tokenCount: number;
-  branchContext?: string;
   highlights: Highlight[];
-  highlightMode: 'off' | 'tag' | 'filter'; // off=normal, tag=mark important, filter=pass highlights only
+  highlightMode: 'off' | 'tag' | 'filter'; // off=reading only, tag=mark important, filter=pass highlights only
   summary?: string; // legacy single display summary (pre-versioned nodes)
   /** Display-only summaries, aligned with `responses` by index. Never enter
       context or fingerprints — the map layer, not the transcript. */
@@ -440,19 +467,9 @@ export interface ThoughtData extends Record<string, unknown> {
       (the importer counts the thinking and drops it; Codex logs only the
       count). Display only, like `reasonings`. */
   reasoningTokens?: (number | undefined | null)[];
-  rolePrompt?: string;
-  appliedRole?: string; // the role actually used when generating the current response
-  roleSourceNodeId?: string; // user-chosen role source node (for multi-parent role conflict)
-  roleMode: 'inherit' | 'set-next' | 'reset'; // inherit from ancestors / set for descendants / reset for this node
   attachments: Attachment[];
   excludedAttachmentIds: string[]; // upstream attachment IDs to exclude from context
   includedAttachmentIds: string[]; // override ancestor exclusions (re-include)
-  isRoot: boolean;
-  isBranch: boolean;
-  /** Evaluator nodes subscribe to a thread via watch edges and critique it. */
-  isEvaluator?: boolean;
-  /** auto = re-critique whenever the watched subtree produces new content. */
-  evaluatorTrigger?: 'auto' | 'manual';
   /** Context Focus role, set ONLY by the render pipeline (displayNodes) —
       never persisted. target = the focused node, ctx = feeds its context,
       down = one structural step downstream (not in context). */
@@ -467,21 +484,10 @@ export interface ThoughtEdge extends Edge {
     route?: 'auto' | 'curve' | 'orthogonal';
     label?: string;
     isCrossLink?: boolean;
-    isBranchFromSelection?: boolean;
     /** Position of this edge's upstream BLOCK in the target's context when
         the target has several parents (set via the focus panel; creation
         order when absent). Lives on the edge — semantics drive rendering. */
     contextOrder?: number;
-    /** Watch edge: watched node → evaluator. Treated as a cross-link for
-        layout (no tree structure) but feeds context like any incoming edge. */
-    isWatch?: boolean;
-    followsTip?: boolean; // edge slides forward to the newest node of its source thread
-    branchYRatio?: number; // where along the parent the branch handle sits
-    /** Cross-link depth: default (absent) = quote — the source node's own
-        Q/A plus a one-line trail of its upstream questions. 'full' = the
-        whole structural chain behind the source, still fenced as one
-        reference block. Solid (structural) edges ignore this. */
-    contextDepth?: 'full';
     /** ISO timestamp for edges wired INDEPENDENTLY of node birth (manual
         connect). Most edges are born with their target node — consumers
         should fall back to the target's createdAt. */
@@ -509,7 +515,7 @@ export type CanvasOp =
   | 'delete' | 'archive' | 'unarchive'
   | 'highlight-add' | 'highlight-remove'
   | 'connect' | 'disconnect'
-  | 'merge' | 'weave' | 'explore' | 'fanout'
+  | 'merge' | 'weave' | 'explore'
   | 'material-add' | 'undo' | 'redo'
   /** a request left for a model: the hash of what was sent, and which
       nodes it was built from — the alignment fact, recorded at send time */

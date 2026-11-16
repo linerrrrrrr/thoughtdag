@@ -1,11 +1,10 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { appSettings } from '../lib/disk-storage';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useDismissableLayer } from '../lib/use-dismissable-layer';
-import { useInlineEditDismiss } from '../lib/use-inline-edit-dismiss';
 import { useSessionDraft } from '../lib/use-session-draft';
 import { useTextHighlighter } from '../lib/use-text-highlighter';
 import { useProjects } from '../store/projects';
-import { ChevronDown, ChevronRight, Crosshair, FileText, Link2, Loader2, Maximize2, PanelLeft, Pencil, RefreshCw, ScanText, Send, Sparkles, StickyNote, X, ZoomIn, ZoomOut } from 'lucide-react';
-import type { PDFDocumentProxy } from 'pdfjs-dist';
+import { ChevronDown, ChevronRight, Crosshair, FileText, Link2, Loader2, Maximize2, PanelLeft, RefreshCw, ScanText, Send, Sparkles, StickyNote, X, ZoomIn, ZoomOut } from 'lucide-react';
 import type { Attachment, ThoughtNode } from '../types';
 import { useStore } from '../store';
 import { useUiStore, toast } from '../lib/ui-store';
@@ -15,13 +14,16 @@ import { Markdown, HighlightedMarkdown } from './Markdown';
 import { generateId, isImeComposing } from '../utils';
 import { useT, fmt } from '../i18n';
 import { isViewerMode } from '../lib/viewer';
-import { loadAttachmentContent } from '../lib/attachment-vault';
 import { HtmlMaterialView } from './HtmlMaterialView';
 import { NotebookView } from './NotebookView';
 import { isNotebook } from '../lib/notebook';
+import { documentCopyText, hasNativeDocxSource, isEditableDocument, isDocxDocument } from '../lib/document-copy';
+import DocumentRichBody from './DocumentRichBody';
+import DocumentOriginalButton from './DocumentOriginalButton';
 import SearchToggles from './ui/SearchToggles';
 import HighlighterButton from './ui/HighlighterButton';
 import { useReaderDock, READER_MIN_WIDTH, READER_DEFAULT_WIDTH, READER_STRIP_WIDTH, DOCK_MIN_WINDOW, type ReaderDock } from '../lib/reader-dock';
+import { screenToUi, uiToScreen, uiViewport } from '../lib/ui-scale';
 
 // MaterialReader: the reading overlay — a VIEW onto a material node, never a
 // container. Select a passage (in the original PDF's text layer, or in the
@@ -31,27 +33,8 @@ import { useReaderDock, READER_MIN_WIDTH, READER_DEFAULT_WIDTH, READER_STRIP_WID
 // copy is the readable surface there; "Recognize" rewrites page images into
 // Markdown through the same visible-extraction channel image nodes use.
 
-type Pdfjs = typeof import('pdfjs-dist');
-let pdfjsPromise: Promise<Pdfjs> | null = null;
-function loadPdfjs(): Promise<Pdfjs> {
-  if (!pdfjsPromise) {
-    pdfjsPromise = Promise.all([
-      import('pdfjs-dist'),
-      import('pdfjs-dist/build/pdf.worker.min.mjs?url'),
-    ]).then(([m, worker]) => {
-      m.GlobalWorkerOptions.workerSrc = worker.default;
-      return m;
-    });
-  }
-  return pdfjsPromise;
-}
-
-function base64ToBytes(b64: string): Uint8Array {
-  const bin = atob(b64);
-  const bytes = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-  return bytes;
-}
+const SuperDocEditor = lazy(() => import('./SuperDocEditor'));
+const PdfDocumentView = lazy(() => import('./PdfDocumentView'));
 
 const PAGE_MARK_SPLIT = /<!--\s*tdag-page:(\d+)\s*-->/;
 
@@ -65,8 +48,6 @@ function splitByPageMarks(text: string): { page: number | null; md: string }[] {
   }
   return sections.length > 0 ? sections : [{ page: null, md: text }];
 }
-
-const TEXT_LAYER_PROBE_CHARS = 60; // below this across the first pages = scanned
 
 // Where you were in each material, per session — reopening finds your place.
 const scrollMemory = new Map<string, number>();
@@ -87,6 +68,7 @@ const isReadable = (n: ThoughtNode): boolean =>
 
 export default function MaterialReader({ onLocate }: { onLocate: (id: string) => void }) {
   const readerNodeId = useUiStore((s) => s.readerNodeId);
+  const readerAttachmentId = useUiStore((s) => s.readerAttachmentId);
   const node = useStore((s) => (readerNodeId ? s.nodes.find((n) => n.id === readerNodeId) : undefined));
   const dock = useReaderDock();
   useEffect(() => {
@@ -94,15 +76,27 @@ export default function MaterialReader({ onLocate }: { onLocate: (id: string) =>
     if (readerNodeId && !node) useUiStore.getState().setReaderNodeId(null);
   }, [readerNodeId, node]);
   if (!node) return null;
-  return <ReaderOverlay key={node.id} node={node} onLocate={onLocate} dock={dock} />;
+  const documents = node.data.attachments?.filter(isEditableDocument) ?? [];
+  const attachment = node.data.attachments?.find(att => att.id === readerAttachmentId) ?? documents[0];
+  return <ReaderOverlay key={`${node.id}:${attachment?.id ?? ''}`} node={node} onLocate={onLocate} dock={dock} activeAttachment={attachment} />;
 }
 
-function ReaderOverlay({ node, onLocate, dock }: { node: ThoughtNode; onLocate: (id: string) => void; dock: ReaderDock }) {
+function ReaderOverlay({ node, onLocate, dock, activeAttachment }: { node: ThoughtNode; onLocate: (id: string) => void; dock: ReaderDock; activeAttachment?: Attachment }) {
   const t = useT();
   const projectId = useProjects(s => s.activeId) ?? 'default';
   const draftPrefix = `reader:${projectId}:${node.id}`;
   const layerRef = useRef<HTMLDivElement>(null);
+  // The active document's tools live in a body portal but belong to this reader's focus boundary.
+  const documentToolbarRef = useMemo(() => ({
+    get current() {
+      return layerRef.current?.querySelector('[data-superdoc-active="true"]')
+        ? document.querySelector<HTMLElement>('[data-superdoc-toolbar]') : null;
+    },
+  }), []);
   const data = node.data;
+  const documentAttachment = activeAttachment && isEditableDocument(activeAttachment) ? activeAttachment : undefined;
+  const editableAttachment = documentAttachment && isDocxDocument(documentAttachment) ? documentAttachment : undefined;
+  const nativeDocx = editableAttachment && hasNativeDocxSource(editableAttachment) ? editableAttachment : undefined;
   // Three faces, one body (lib/reader-dock decides which): the full-screen
   // overlay; the column docked on the canvas's left, where the canvas and
   // the node panel stay live beside the text; and, when not even the
@@ -120,17 +114,17 @@ function ReaderOverlay({ node, onLocate, dock }: { node: ThoughtNode; onLocate: 
   };
   const onResizePointerMove = (e: React.PointerEvent) => {
     if (!resizing) return;
-    useUiStore.getState().setReaderWidth(Math.min(dock.maxWidth, Math.max(READER_MIN_WIDTH, Math.round(e.clientX))));
+    useUiStore.getState().setReaderWidth(Math.min(dock.maxWidth, Math.max(READER_MIN_WIDTH, Math.round(screenToUi(e.clientX)))));
   };
   const onResizePointerUp = (e: React.PointerEvent) => {
     if (!resizing) return;
     setResizing(false);
     (e.target as HTMLElement).releasePointerCapture(e.pointerId);
-    localStorage.setItem('thoughtdag.readerWidth', String(useUiStore.getState().readerWidth));
+    appSettings.setItem('thoughtdag.readerWidth', String(useUiStore.getState().readerWidth));
   };
   const onResizeDoubleClick = () => {
     useUiStore.getState().setReaderWidth(READER_DEFAULT_WIDTH);
-    localStorage.removeItem('thoughtdag.readerWidth');
+    appSettings.removeItem('thoughtdag.readerWidth');
   };
   // the material switcher: every readable node on the canvas, this one marked
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -140,7 +134,9 @@ function ReaderOverlay({ node, onLocate, dock }: { node: ThoughtNode; onLocate: 
   // loop belongs to the material, not to the node kind.
   const kind = data.stepKind === 'file' || (!data.stepKind && (data.attachments ?? []).some((a) => a.type === 'application/pdf'))
     ? 'file' : data.stepKind === 'link' ? 'link' : 'note';
-  const attachments = useMemo(() => data.attachments ?? [], [data.attachments]);
+  const attachments = useMemo(() => activeAttachment ? [activeAttachment] : data.attachments ?? [], [activeAttachment, data.attachments]);
+  const attachmentOptions = data.attachments ?? [];
+  const scrollKey = `${node.id}:${activeAttachment?.id ?? ''}`;
   const pdfAtt = attachments.find((a) => a.type === 'application/pdf');
   // HTML material: original view renders the sanitized page(s), the text
   // view its extracted Markdown — the same dual channel PDFs use
@@ -167,7 +163,7 @@ function ReaderOverlay({ node, onLocate, dock }: { node: ThoughtNode; onLocate: 
 
   // ── the readable copy for the text view ──
   const textBody = useMemo(() => {
-    if (pdfAtt) return pdfAtt.extractedText ?? '';
+    if (documentAttachment) return documentCopyText(documentAttachment);
     if (kind === 'file') {
       const textAtts = attachments.filter((a) => !a.type.startsWith('image/') && a.type !== 'application/pdf');
       // an HTML file's or a notebook's readable copy is its extracted text, never the source
@@ -182,7 +178,7 @@ function ReaderOverlay({ node, onLocate, dock }: { node: ThoughtNode; onLocate: 
       return parts.join('\n\n');
     }
     return data.question;
-  }, [pdfAtt, kind, attachments, data.question]);
+  }, [documentAttachment, kind, attachments, data.question]);
   const sections = useMemo(() => splitByPageMarks(textBody), [textBody]);
   // Highlights on the MATERIAL's own text (markdown files, notes, extracted
   // PDF copy) — same data shape as answer highlights, stored on the
@@ -191,7 +187,9 @@ function ReaderOverlay({ node, onLocate, dock }: { node: ThoughtNode; onLocate: 
   const materialHighlights = useMemo(() => new Set((data.highlights ?? []).map((h) => h.text)), [data.highlights]);
 
   // ── PDF document + text-layer probe ──
-  const [view, setView] = useState<'original' | 'text' | 'digest'>(pdfAtt?.pageImages?.length || imageAtts.length || htmlAtt || nbAtt || linkHtml ? 'original' : 'text');
+  const [view, setView] = useState<'original' | 'text' | 'digest'>(documentAttachment
+    ? (pdfAtt ? 'original' : 'text')
+    : imageAtts.length || htmlAtt || nbAtt || linkHtml ? 'original' : 'text');
   // image view zoom: 1 = fit the column; beyond it the row scrolls sideways
   const [imgZoom, setImgZoom] = useState(1);
   // zoomed past the column, the mouse drags the picture around: horizontal
@@ -203,7 +201,7 @@ function ReaderOverlay({ node, onLocate, dock }: { node: ThoughtNode; onLocate: 
   const [digestBusy, setDigestBusy] = useState(false);
   // the digest works off extractedText, so HTML materials digest the same
   // way PDFs do — docAtt is whichever document this material carries
-  const docAtt = pdfAtt ?? htmlAtt;
+  const docAtt = documentAttachment ?? htmlAtt;
   const startDigest = async () => {
     if (!docAtt || digestBusy) return;
     setDigestBusy(true);
@@ -211,7 +209,7 @@ function ReaderOverlay({ node, onLocate, dock }: { node: ThoughtNode; onLocate: 
     if (isViewerMode) return;
     const ok = await generateDigest(node.id, docAtt.id);
     setDigestBusy(false);
-    if (!ok) setView(docAtt ? 'original' : 'text');
+    if (!ok) setView(pdfAtt || htmlAtt ? 'original' : 'text');
   };
   // (p.N) references in the digest jump back into the original pages
   const jumpToPage = (n: number) => {
@@ -220,53 +218,6 @@ function ReaderOverlay({ node, onLocate, dock }: { node: ThoughtNode; onLocate: 
       bodyRef.current?.querySelector(`[data-page="${n}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }, 120);
   };
-  const [doc, setDoc] = useState<PDFDocumentProxy | null>(null);
-  const [pdfjs, setPdfjs] = useState<Pdfjs | null>(null);
-  const [hasTextLayer, setHasTextLayer] = useState<boolean | null>(null);
-  const [pdfError, setPdfError] = useState<string | null>(null);
-  const docRef = useRef<PDFDocumentProxy | null>(null);
-
-  useEffect(() => {
-    if (!pdfAtt) return;
-    let dead = false;
-    (async () => {
-      try {
-        const m = await loadPdfjs();
-        const raw = await loadAttachmentContent(pdfAtt);
-        if (!raw) { if (!dead) setPdfError('missing'); return; }
-        const d = await m.getDocument({ data: base64ToBytes(raw) }).promise;
-        if (dead) { void d.destroy(); return; }
-        docRef.current = d;
-        let chars = 0;
-        for (let p = 1; p <= Math.min(3, d.numPages); p++) {
-          const content = await (await d.getPage(p)).getTextContent();
-          chars += content.items.reduce((s, it) => s + ('str' in it ? it.str.length : 0), 0);
-          if (chars > TEXT_LAYER_PROBE_CHARS) break;
-        }
-        if (dead) return;
-        setPdfjs(m);
-        setDoc(d);
-        setHasTextLayer(chars > TEXT_LAYER_PROBE_CHARS);
-        // decide the readable surface once the document is actually known:
-        // original when it has a text layer, the extracted copy when scanned.
-        // (The attachment can arrive AFTER mount — landing auto-open — so
-        // the mount-time default may have been computed without a PDF.)
-        setView(chars > TEXT_LAYER_PROBE_CHARS ? 'original' : 'text');
-      } catch (err) {
-        if (!dead) {
-          setPdfError(err instanceof Error ? err.message : String(err));
-          setView('text');
-        }
-      }
-    })();
-    return () => {
-      dead = true;
-      void docRef.current?.destroy();
-      docRef.current = null;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pdfAtt?.id]);
-
   // ── selection → ask bar ──
   const bodyRef = useRef<HTMLDivElement>(null);
   const [ask, setAsk] = useState<{ text: string; page: number | null; x: number; y: number; targetNodeId?: string; rects?: [number, number, number, number][] } | null>(null);
@@ -276,6 +227,7 @@ function ReaderOverlay({ node, onLocate, dock }: { node: ThoughtNode; onLocate: 
 
   const handleMouseUp = (event: React.MouseEvent) => {
     if (isViewerMode || event.button !== 0) return;
+    if (event.target instanceof Element && event.target.closest('[data-superdoc-editor]')) return;
     window.setTimeout(() => {
       const sel = window.getSelection();
       // a plain click (no selection) anywhere in the reading surface
@@ -337,7 +289,8 @@ function ReaderOverlay({ node, onLocate, dock }: { node: ThoughtNode; onLocate: 
     // p.N provenance rides inside the quoted passage (document selections only)
     const passage = ask.targetNodeId ? ask.text : (ask.page != null ? `(p.${ask.page}) ${ask.text}` : ask.text);
     const prevSelected = useStore.getState().selectedNodeId;
-    useStore.getState().addQuestion(q, { parentId: ask.targetNodeId ?? node.id, branchContext: passage });
+    const question = passage.trim() ? `${passage.split('\n').map(line => `> ${line}`).join('\n')}\n\n${q}` : q;
+    useStore.getState().addQuestion(question, { parentId: ask.targetNodeId ?? node.id });
     const freshId = useStore.getState().selectedNodeId;
     // docked, the reader keeps the floor: the canvas's selection (and so the
     // node panel) stay as they were; the answer reads in the thread view below
@@ -345,7 +298,7 @@ function ReaderOverlay({ node, onLocate, dock }: { node: ThoughtNode; onLocate: 
     // document selections remember the page they came from (both views);
     // original-view ones additionally leave a mark on that page
     if (!ask.targetNodeId && ask.page != null && freshId) {
-      const anchor = { page: ask.page, ...(ask.rects?.length ? { rects: ask.rects } : {}) };
+      const anchor = { page: ask.page, ...(documentAttachment ? { attId: documentAttachment.id } : {}), ...(ask.rects?.length ? { rects: ask.rects } : {}) };
       useStore.setState((s) => ({
         nodes: s.nodes.map((n) => (n.id === freshId ? { ...n, data: { ...n.data, anchor } } : n)),
       }));
@@ -382,9 +335,9 @@ function ReaderOverlay({ node, onLocate, dock }: { node: ThoughtNode; onLocate: 
   const flyToCanvas = (from: { left: number; top: number; width: number; height: number }) => {
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
     const ghost = document.createElement('div');
-    ghost.style.cssText = `position:fixed;left:${from.left}px;top:${from.top}px;width:${Math.max(60, from.width)}px;height:${Math.max(28, from.height)}px;border:2px solid var(--color-warm);background:color-mix(in srgb, var(--color-warm) 12%, white);border-radius:var(--radius-control);z-index:200;pointer-events:none;`;
+    ghost.style.cssText = `position:fixed;left:${screenToUi(from.left)}px;top:${screenToUi(from.top)}px;width:${Math.max(60, screenToUi(from.width))}px;height:${Math.max(28, screenToUi(from.height))}px;border:2px solid var(--color-warm);background:color-mix(in srgb, var(--color-warm) 12%, white);border-radius:var(--radius-control);z-index:200;pointer-events:none;`;
     document.body.appendChild(ghost);
-    const dx = window.innerWidth * 0.82 - from.left, dy = window.innerHeight * 0.85 - from.top;
+    const dx = screenToUi(window.innerWidth * 0.82 - from.left), dy = screenToUi(window.innerHeight * 0.85 - from.top);
     ghost.animate(
       [
         { transform: 'translate(0,0) scale(1)', opacity: 0.95 },
@@ -400,7 +353,7 @@ function ReaderOverlay({ node, onLocate, dock }: { node: ThoughtNode; onLocate: 
   // back into any context the note joins, defeating the point of clipping.
   const saveSelectionAsNote = () => {
     if (!ask || ask.targetNodeId) return;
-    flyToCanvas({ left: ask.x - 90, top: ask.y - 40, width: 180, height: 36 });
+    flyToCanvas({ left: ask.x - uiToScreen(90), top: ask.y - uiToScreen(40), width: uiToScreen(180), height: uiToScreen(36) });
     const freshId = spawnContentNode('note', findClipSpot(), { question: ask.text });
     const srcAttId = pdfAtt?.id ?? attachments?.[0]?.id;
     if (ask.page != null || srcAttId) {
@@ -457,8 +410,8 @@ function ReaderOverlay({ node, onLocate, dock }: { node: ThoughtNode; onLocate: 
     if (!drag || event.pointerId !== drag.pointerId || !scroller || !body) return;
     if (Math.hypot(event.clientX - drag.x, event.clientY - drag.y) < 3) return;
     setImagePanning(true);
-    scroller.scrollLeft = drag.left - (event.clientX - drag.x);
-    body.scrollTop = drag.top - (event.clientY - drag.y);
+    scroller.scrollLeft = drag.left - screenToUi(event.clientX - drag.x);
+    body.scrollTop = drag.top - screenToUi(event.clientY - drag.y);
   };
   const finishImagePan = (event: React.PointerEvent<HTMLDivElement>) => {
     if (event.pointerId !== imagePan.current?.pointerId) return;
@@ -608,32 +561,11 @@ function ReaderOverlay({ node, onLocate, dock }: { node: ThoughtNode; onLocate: 
     setProgress(null);
   };
 
-  // ── edit the extracted copy (MinerU paste point) ──
-  const [editing, setEditing] = useState(false);
   const materialHighlighter = useTextHighlighter({
     scopeKey: `reader:${node.id}:${view}:${textBody}`,
-    enabled: !isViewerMode && view === 'text' && !editing && !collapsed && !!textBody.trim(),
+    enabled: !isViewerMode && !documentAttachment && view === 'text' && !collapsed && !!textBody.trim(),
     surfaceRef: bodyRef,
   });
-  const editRef = useRef<HTMLTextAreaElement>(null);
-  const editBoundary = useRef<HTMLDivElement>(null);
-  const editKey = `${draftPrefix}:extracted:${pdfAtt?.id ?? ''}`;
-  const [editDraft, setEditDraft] = useSessionDraft(editKey, pdfAtt?.extractedText ?? '');
-  const cancelEdit = () => { useUiStore.getState().setDraft(editKey, ''); setEditing(false); };
-  const editDismiss = useInlineEditDismiss({
-    active: editing, ref: editBoundary, onOutside: () => setEditing(false), onCancel: cancelEdit,
-    ignoreOutside: event => event.target instanceof Element && !!event.target.closest('[data-reader-edit-toggle]'),
-    ignoreFocusOutside: target => target instanceof Element && !!target.closest('[data-reader-edit-toggle]'),
-  });
-  const commitEdit = () => {
-    setEditing(false);
-    const v = editDraft;
-    useUiStore.getState().setDraft(editKey, '');
-    if (!pdfAtt || v === (pdfAtt.extractedText ?? '')) return;
-    useStore.getState().pushHistory();
-    useStore.getState().setAttachmentData(node.id, pdfAtt.id, { extractedText: v, extractedBy: 'manual' });
-    useStore.getState().pushHistory();
-  };
 
   // ── questions grown from this material ──
   const edges = useStore((s) => s.edges);
@@ -674,12 +606,14 @@ function ReaderOverlay({ node, onLocate, dock }: { node: ThoughtNode; onLocate: 
     for (const c of anchored) {
       const a = c.data.anchor;
       if (!a?.rects?.length) continue;
+      if (documentAttachment && (a.attId ? a.attId !== documentAttachment.id
+        : documentAttachment.id !== data.attachments?.find(isEditableDocument)?.id)) continue;
       const list = map.get(a.page) ?? [];
       list.push({ id: c.id, question: c.data.question, rects: a.rects });
       map.set(a.page, list);
     }
     return map;
-  }, [children, nodes, attachments]);
+  }, [children, nodes, attachments, documentAttachment, data.attachments]);
 
   // the rail's thread: the asked node plus its linear structural
   // continuations (follow-ups append here; forks belong to the canvas)
@@ -693,7 +627,7 @@ function ReaderOverlay({ node, onLocate, dock }: { node: ThoughtNode; onLocate: 
       const kids = edges
         .filter((e) => e.source === cur!.id && !e.data?.isCrossLink)
         .map((e) => byId.get(e.target))
-        .filter((n): n is ThoughtNode => !!n && !n.data.isBranch);
+        .filter((n): n is ThoughtNode => !!n);
       cur = kids.length === 1 ? kids[0] : undefined;
     }
     return chain;
@@ -750,7 +684,7 @@ function ReaderOverlay({ node, onLocate, dock }: { node: ThoughtNode; onLocate: 
       if (++tries < 25) window.setTimeout(attempt, 100);
     };
     window.setTimeout(attempt, 150);
-  }, [doc]);
+  }, [pdfAtt?.id, view]);
 
   // a later landing while this material stays open (a p.N chip on the canvas,
   // a node selected beside the docked reader): scroll there now. The mount-time
@@ -771,27 +705,9 @@ function ReaderOverlay({ node, onLocate, dock }: { node: ThoughtNode; onLocate: 
     window.setTimeout(attempt, 50);
   }, [laterJump]);
 
-  // the reading column's width, measured: PDF pages are rendered to fit it
-  // (the docked column is as wide as you dragged it; the overlay's body
-  // loses the rail's width). Debounced so a drag does not re-render every page.
-  const [bodyW, setBodyW] = useState(0);
   useEffect(() => {
     const el = bodyRef.current;
-    if (!el) return;
-    let timer: number | null = null;
-    const ro = new ResizeObserver(() => {
-      if (timer) window.clearTimeout(timer);
-      timer = window.setTimeout(() => setBodyW(el.clientWidth), 120);
-    });
-    ro.observe(el);
-    setBodyW(el.clientWidth);
-    return () => { ro.disconnect(); if (timer) window.clearTimeout(timer); };
-  }, [docked, collapsed]);
-  const pageWidth = Math.max(240, Math.min(860, (bodyW || window.innerWidth * 0.94) - 96));
-
-  useEffect(() => {
-    const el = bodyRef.current;
-    const saved = scrollMemory.get(node.id);
+    const saved = scrollMemory.get(scrollKey);
     if (!el || !saved || scrollRestored.current) return;
     let tries = 0;
     const attempt = () => {
@@ -804,16 +720,16 @@ function ReaderOverlay({ node, onLocate, dock }: { node: ThoughtNode; onLocate: 
       if (++tries < 25) window.setTimeout(attempt, 100);
     };
     window.setTimeout(attempt, 100);
-  }, [node.id, doc]);
+  }, [scrollKey, view]);
 
   // Docked reading is a workspace: canvas clicks keep it open. Child
   // editors and selection popups own their own Escape before this layer.
   useDismissableLayer({
-    open: !docked || !!threadId, refs: [layerRef], dismissOnOutside: false, modal: !docked,
+    open: !docked || !!threadId, refs: [layerRef, documentToolbarRef], dismissOnOutside: false, modal: !docked,
     onDismiss: () => { if (threadId) setThreadId(null); else close(); },
   });
 
-  const title = pdfAtt?.name
+  const title = activeAttachment?.name
     ?? (kind === 'link' ? (data.linkTitle || data.linkUrl || '') : '')
     ?? '';
   const noteTitle = kind === 'note' ? (data.question.split('\n')[0].replace(/^#+\s*/, '').slice(0, 48) || t('reader.empty')) : '';
@@ -823,10 +739,10 @@ function ReaderOverlay({ node, onLocate, dock }: { node: ThoughtNode; onLocate: 
       ? <Link2 size={15} strokeWidth={1.75} className="text-accent shrink-0" />
       : <FileText size={15} strokeWidth={1.75} className="text-ink-muted shrink-0" />;
   const fileFallbackTitle = kind === 'file' && !pdfAtt ? (attachments[0]?.name ?? '') : '';
-  const numPages = doc?.numPages ?? pdfAtt?.numPages ?? htmlAtt?.numPages;
+  const numPages = pdfAtt?.numPages ?? htmlAtt?.numPages;
 
-  const askLeft = ask ? Math.max(180, Math.min(ask.x, window.innerWidth - 200)) : 0;
-  const askTop = ask ? Math.min(ask.y + 10, window.innerHeight - 150) : 0;
+  const askLeft = ask ? Math.max(180, Math.min(screenToUi(ask.x), uiViewport().width - 200)) : 0;
+  const askTop = ask ? Math.min(screenToUi(ask.y) + 10, uiViewport().height - 150) : 0;
 
   const shownTitle = title || noteTitle || fileFallbackTitle;
   const iconButton = 'w-7 h-7 rounded-control text-ink-faint hover:bg-wash hover:text-ink flex items-center justify-center transition-colors shrink-0';
@@ -835,7 +751,7 @@ function ReaderOverlay({ node, onLocate, dock }: { node: ThoughtNode; onLocate: 
   const inner = (
     <>
         {/* header */}
-        <div className="flex items-center gap-3 px-5 py-3 border-b border-line bg-card shrink-0">
+        <div className="flex items-center gap-3 flex-wrap px-5 py-3 border-b border-line bg-card shrink-0">
           {headerIcon}
           {materials.length > 1 ? (
             <div ref={pickerRef} className="relative min-w-0" data-reader-material-picker>
@@ -848,7 +764,7 @@ function ReaderOverlay({ node, onLocate, dock }: { node: ThoughtNode; onLocate: 
                 <ChevronDown size={13} strokeWidth={1.75} className="shrink-0 text-ink-faint" />
               </button>
               {pickerOpen && (
-                <div className="absolute left-0 top-full mt-1 z-50 bg-card border border-line rounded-overlay shadow-lg py-1 min-w-[240px] max-w-[420px] max-h-[50vh] overflow-y-auto">
+                <div className="absolute left-0 top-full mt-1 z-50 bg-card border border-line rounded-overlay shadow-lg py-1 min-w-[240px] max-w-[420px] max-h-[calc(50*var(--ui-vh))] overflow-y-auto">
                   {materials.map((m) => (
                     <button
                       key={m.id}
@@ -865,24 +781,34 @@ function ReaderOverlay({ node, onLocate, dock }: { node: ThoughtNode; onLocate: 
             <span className="text-title font-semibold text-ink truncate min-w-0" data-tooltip={shownTitle} data-tooltip-overflow>{shownTitle}</span>
           )}
           {numPages != null && <span className="text-meta text-ink-faint font-mono shrink-0">{numPages}p</span>}
+          {attachmentOptions.length > 1 && <select aria-label={t('document.selectAttachment')} data-reader-attachment-select
+            value={activeAttachment?.id ?? ''}
+            onChange={event => useUiStore.getState().setReaderNodeId(node.id, { attachmentId: event.target.value })}
+            className="min-w-0 max-w-full text-control bg-card text-ink border border-line rounded-control px-2 py-1.5">
+            {!activeAttachment && <option value="">{t('document.allAttachments')}</option>}
+            {attachmentOptions.map(att => <option key={att.id} value={att.id}>{att.name}</option>)}
+          </select>}
           <div className="flex-1" />
-          {((pdfAtt && !pdfError) || imageAtts.length > 0 || htmlAtt || nbAtt || linkHtml) && (
+          {(documentAttachment || imageAtts.length > 0 || htmlAtt || nbAtt || linkHtml) && (
             <div className="flex items-center rounded-control border border-line overflow-hidden shrink-0 text-control">
-              <button
+              {(!documentAttachment || !!pdfAtt) && <button
                 onClick={() => setView('original')}
+                aria-pressed={view === 'original'}
                 className={`px-3 py-1.5 transition-colors ${view === 'original' ? 'bg-accent/10 text-accent font-medium' : 'text-ink-muted hover:bg-wash'}`}
               >
                 {t('reader.viewOriginal')}
-              </button>
+              </button>}
               <button
                 onClick={() => setView('text')}
-                className={`px-3 py-1.5 transition-colors border-l border-line ${view === 'text' ? 'bg-accent/10 text-accent font-medium' : 'text-ink-muted hover:bg-wash'}`}
+                aria-pressed={view === 'text'}
+                className={`px-3 py-1.5 transition-colors ${!documentAttachment || pdfAtt ? 'border-l border-line' : ''} ${view === 'text' ? 'bg-accent/10 text-accent font-medium' : 'text-ink-muted hover:bg-wash'}`}
               >
-                {t('reader.viewText')}
+                {documentAttachment ? t('document.body') : t('reader.viewText')}
               </button>
               {(digestText || digesting) && (
                 <button
                   onClick={() => setView('digest')}
+                  aria-pressed={view === 'digest'}
                   className={`px-3 py-1.5 transition-colors border-l border-line ${view === 'digest' ? 'bg-accent/10 text-accent font-medium' : 'text-ink-muted hover:bg-wash'}`}
                 >
                   {t('reader.viewDigest')}
@@ -890,7 +816,7 @@ function ReaderOverlay({ node, onLocate, dock }: { node: ThoughtNode; onLocate: 
               )}
             </div>
           )}
-          {!isViewerMode && view === 'text' && !editing && !!textBody.trim() && (
+          {!isViewerMode && !documentAttachment && view === 'text' && !!textBody.trim() && (
             <HighlighterButton
               active={materialHighlighter.active}
               buttonRef={materialHighlighter.buttonRef}
@@ -927,7 +853,7 @@ function ReaderOverlay({ node, onLocate, dock }: { node: ThoughtNode; onLocate: 
               {t(imageAtts.every((a) => a.extractedText?.trim()) ? 'reader.imageReRecognize' : 'reader.imageRecognize')}
             </button>
           )}
-          {docAtt && !digestText && !digesting && !!docAtt.extractedText?.trim() && !isViewerMode && (
+          {docAtt && !digestText && !digesting && !!textBody.trim() && !isViewerMode && (
             <button
               onClick={() => void startDigest()}
 
@@ -961,22 +887,13 @@ function ReaderOverlay({ node, onLocate, dock }: { node: ThoughtNode; onLocate: 
               </button>
             )
           )}
-          {pdfAtt && view === 'text' && recog !== 'running' && (
-            <button
-              onClick={() => (editing ? commitEdit() : setEditing(true))}
-              data-reader-edit-toggle
-              aria-label={t('reader.editText')}
-              className={`w-7 h-7 rounded-control flex items-center justify-center transition-colors shrink-0 ${editing ? 'bg-accent/10 text-accent' : 'text-ink-faint hover:bg-wash hover:text-ink'}`}
-            >
-              <Pencil size={13} strokeWidth={1.75} />
-            </button>
-          )}
+          {documentAttachment && <DocumentOriginalButton attachment={documentAttachment} />}
           {/* dock beside the canvas, or expand to the overlay */}
           {docked ? (
             <button onClick={() => useUiStore.getState().setReaderMode('full')} aria-label={t('reader.expand')} data-reader-expand className={iconButton}>
               <Maximize2 size={14} strokeWidth={1.75} />
             </button>
-          ) : window.innerWidth >= DOCK_MIN_WINDOW && (
+          ) : uiViewport().width >= DOCK_MIN_WINDOW && (
             <button onClick={() => useUiStore.getState().setReaderMode('dock')} data-tooltip={t('reader.dock')} aria-label={t('reader.dock')} data-reader-dock className={iconButton}>
               <PanelLeft size={14} strokeWidth={1.75} />
             </button>
@@ -986,24 +903,17 @@ function ReaderOverlay({ node, onLocate, dock }: { node: ThoughtNode; onLocate: 
           </button>
         </div>
 
+        {nativeDocx && view === 'text' && <div data-docx-reader-toolbar className="shrink-0" />}
         {/* body: document column + (optional) thread view — beside the text
             in the overlay, stacked under it in the docked column */}
         <div className={`flex-1 min-h-0 flex ${docked ? 'flex-col' : ''}`}>
-        <div ref={bodyRef} onMouseUp={handleMouseUp} onScroll={(e) => scrollMemory.set(node.id, e.currentTarget.scrollTop)} className="flex-1 min-w-0 min-h-0 overflow-y-auto bg-wash/60">
+        <div ref={bodyRef} onMouseUp={handleMouseUp} onScroll={(e) => scrollMemory.set(scrollKey, e.currentTarget.scrollTop)}
+          className={`flex-1 min-w-0 min-h-0 overscroll-contain bg-wash/60 ${nativeDocx && view === 'text' ? 'flex flex-col overflow-hidden' : 'overflow-y-auto'}`} data-reader-body>
           {view === 'original' && pdfAtt && (
-            doc && pdfjs ? (
-              <div className="flex flex-col items-center gap-4 py-6 px-4">
-                {Array.from({ length: doc.numPages }, (_, i) => (
-                  <PdfPage key={i + 1} doc={doc} pdfjs={pdfjs} pageNo={i + 1} width={pageWidth} anchors={anchorsByPage.get(i + 1)} activeThreadId={threadId} onAnchorClick={setThreadId} clipMode={clipMode} onClipped={handleClipped} />
-                ))}
-              </div>
-            ) : (
-              <div className="flex items-center justify-center gap-2 h-full text-control text-ink-muted">
-                {pdfError
-                  ? <span className="text-red-600">{fmt(t('reader.pdfFailed'), { msg: pdfError })}</span>
-                  : <><Loader2 size={16} strokeWidth={1.75} className="animate-spin text-accent" /> {t('reader.loading')}</>}
-              </div>
-            )
+            <Suspense fallback={<p className="p-4 text-control text-ink-faint">{t('reader.loading')}</p>}>
+              <PdfDocumentView nodeId={node.id} attachment={pdfAtt} anchorsByPage={anchorsByPage}
+                activeThreadId={threadId} onAnchorClick={setThreadId} clipMode={clipMode} onClipped={handleClipped} />
+            </Suspense>
           )}
 
           {view === 'original' && !pdfAtt && htmlAtt && (
@@ -1086,26 +996,16 @@ function ReaderOverlay({ node, onLocate, dock }: { node: ThoughtNode; onLocate: 
           )}
 
           {view === 'text' && (
-            <div className="max-w-[820px] mx-auto px-8 py-6" data-reader-highlight-surface data-highlighter-active={materialHighlighter.active || undefined}>
-              {pdfAtt && hasTextLayer === false && (
-                <div className="mb-4 text-control text-amber-800 bg-amber-50 border border-amber-200 rounded-content px-3 py-2">
-                  {t('reader.scannedHint')}
-                </div>
-              )}
-              {editing && pdfAtt ? (
-                <div ref={editBoundary} onBlur={editDismiss.onBlur} data-reader-text-editor>
-                <textarea
-                  ref={editRef}
-                  value={editDraft}
-                  onChange={event => setEditDraft(event.target.value)}
-                  autoFocus
-                  className="w-full h-[70vh] text-body font-mono text-ink bg-card border border-line rounded-control px-4 py-3 focus:outline-none focus:ring-1 focus:ring-accent/40 resize-none"
-                />
-                <div className="flex justify-end gap-2 pt-2">
-                  <button type="button" onClick={cancelEdit} className="px-3 py-1.5 text-control text-ink-muted hover:bg-wash rounded-control">{t('common.cancel')}</button>
-                  <button type="button" onClick={commitEdit} className="px-3 py-1.5 text-control text-white bg-action rounded-control">{t('common.save')}</button>
-                </div>
-                </div>
+            <div className={nativeDocx ? 'flex-1 min-h-0 flex flex-col p-surface-inset' : 'max-w-[820px] mx-auto px-surface-inset py-6'} data-reader-highlight-surface data-highlighter-active={materialHighlighter.active || undefined}>
+              {editableAttachment && !nativeDocx && !isViewerMode && <p className="text-control text-ink-faint mb-4">
+                {t('document.legacySource')}
+              </p>}
+              {editableAttachment ? (
+                nativeDocx
+                  ? <Suspense fallback={<p className="text-control text-ink-faint">{t('richDocument.loading')}</p>}>
+                    <SuperDocEditor nodeId={node.id} attachment={nativeDocx} readOnly={isViewerMode} />
+                    </Suspense>
+                  : <DocumentRichBody attachment={editableAttachment} />
               ) : textBody.trim() === '' ? (
                 htmlAtt?.isExtracting ? (
                   <div className="flex items-center justify-center gap-2 py-16 text-control text-ink-muted">
@@ -1119,7 +1019,7 @@ function ReaderOverlay({ node, onLocate, dock }: { node: ThoughtNode; onLocate: 
               ) : (
                 sections.map((s, i) => (
                   <div key={i} data-page={s.page ?? undefined}>
-                    {s.page != null && (
+                    {s.page != null && !documentAttachment && (
                       <div className="text-meta text-ink-faint font-mono text-center select-none pt-4 pb-1">— p.{s.page} —</div>
                     )}
                     <div className="markdown-body text-body text-ink" data-reader-highlight-content>
@@ -1142,13 +1042,7 @@ function ReaderOverlay({ node, onLocate, dock }: { node: ThoughtNode; onLocate: 
           <div className={docked ? 'w-full h-[42%] shrink-0 border-t border-line bg-card flex flex-col min-h-0' : 'w-[420px] shrink-0 border-l border-line bg-card flex flex-col min-h-0'} data-reader-rail data-reader-thread={docked || undefined}>
             <div className="flex items-start gap-2 px-4 py-2.5 border-b border-line shrink-0">
               <div className="flex-1 min-w-0">
-                {thread[0].data.branchContext ? (
-                  <div className="text-control text-ink-faint leading-snug line-clamp-2 border-l-2 border-warm pl-2">
-                    “{thread[0].data.branchContext.slice(0, 140)}{thread[0].data.branchContext.length > 140 ? '…' : ''}”
-                  </div>
-                ) : (
-                  <div className="text-control text-ink-faint">{t('reader.wholeThread')}</div>
-                )}
+                <div className="text-control text-ink-faint leading-snug line-clamp-2">{thread[0].data.question}</div>
               </div>
               {!isViewerMode && thread.some((turn) => !!turn.data.response && !turn.data.isLoading) && (
                 <HighlighterButton
@@ -1257,9 +1151,9 @@ function ReaderOverlay({ node, onLocate, dock }: { node: ThoughtNode; onLocate: 
                   <button onClick={() => setThreadId(c.id)} className="flex items-center gap-1.5 min-w-0">
                     {c.data.isLoading && <Loader2 size={10} strokeWidth={2} className="animate-spin text-accent shrink-0" />}
                     {/* provenance at a glance: page-anchored vs whole-material */}
-                    {(c.data.anchor || !c.data.branchContext) && (
+                    {c.data.anchor && (
                       <span className={`font-mono shrink-0 ${threadId === c.id ? 'text-accent' : 'text-ink-faint'}`}>
-                        {c.data.anchor ? `p.${c.data.anchor.page}` : t('reader.wholeTag')}
+                        {`p.${c.data.anchor.page}`}
                       </span>
                     )}
                     <span className="truncate">{c.data.question.replace(/\s+/g, ' ').slice(0, 32) || '…'}</span>
@@ -1340,7 +1234,7 @@ function ReaderOverlay({ node, onLocate, dock }: { node: ThoughtNode; onLocate: 
           <ChevronRight size={15} strokeWidth={1.75} />
         </button>
         {headerIcon}
-        <span className="text-control text-ink-muted truncate [writing-mode:vertical-rl] max-h-[45vh]" data-tooltip={shownTitle} data-tooltip-overflow>{shownTitle}</span>
+        <span className="text-control text-ink-muted truncate [writing-mode:vertical-rl] max-h-[calc(45*var(--ui-vh))]" data-tooltip={shownTitle} data-tooltip-overflow>{shownTitle}</span>
         <div className="flex-1" />
         <button onClick={() => useUiStore.getState().setReaderMode('full')} aria-label={t('reader.expand')} className={iconButton}>
           <Maximize2 size={14} strokeWidth={1.75} />
@@ -1377,7 +1271,7 @@ function ReaderOverlay({ node, onLocate, dock }: { node: ThoughtNode; onLocate: 
   // the overlay: the reader as a focused sheet over the canvas
   return (
     <div className="fixed inset-0 z-[80] bg-ink/25 flex items-center justify-center animate-fade-in" data-material-reader>
-      <div ref={layerRef} role="dialog" aria-modal="true" aria-label={shownTitle} tabIndex={-1} className={`bg-surface rounded-panel shadow-lg border border-line ${threadId ? "w-[min(1480px,96vw)]" : "w-[min(1060px,94vw)]"} h-[93vh] flex flex-col overflow-hidden transition-all duration-200`}>
+      <div ref={layerRef} role="dialog" aria-modal="true" aria-label={shownTitle} tabIndex={-1} className={`bg-surface rounded-panel shadow-lg border border-line ${threadId ? "w-[min(1480px,calc(96*var(--ui-vw)))]" : "w-[min(1060px,calc(94*var(--ui-vw)))]"} h-[calc(93*var(--ui-vh))] flex flex-col overflow-hidden transition-all duration-200`}>
         {inner}
       </div>
       {askBar}
@@ -1457,150 +1351,6 @@ function ImageFigure({ att, zoom, clipMode, onClipped }: {
 
 // One PDF page: canvas render + selectable text layer, lazily rendered as it
 // scrolls into range so long papers stay light.
-function PdfPage({ doc, pdfjs, pageNo, width, anchors, activeThreadId, onAnchorClick, clipMode, onClipped }: {
-  doc: PDFDocumentProxy; pdfjs: Pdfjs; pageNo: number; width: number;
-  anchors?: { id: string; question: string; rects: [number, number, number, number][] }[];
-  activeThreadId?: string | null;
-  onAnchorClick?: (id: string) => void;
-  clipMode?: boolean;
-  onClipped?: (pageNo: number, rect: [number, number, number, number], dataUrl: string, screenRect?: { left: number; top: number; width: number; height: number }) => void;
-}) {
-  const holderRef = useRef<HTMLDivElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const textRef = useRef<HTMLDivElement>(null);
-  // clip-mode rubber band, in page-fraction space (same space as anchors)
-  const [band, setBand] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
-  const frac = (e: React.MouseEvent) => {
-    const pb = holderRef.current!.getBoundingClientRect();
-    return { x: Math.min(1, Math.max(0, (e.clientX - pb.left) / pb.width)), y: Math.min(1, Math.max(0, (e.clientY - pb.top) / pb.height)) };
-  };
-  const finishClip = () => {
-    if (!band || !canvasRef.current || !onClipped) { setBand(null); return; }
-    const x = Math.min(band.x0, band.x1), y = Math.min(band.y0, band.y1);
-    const w = Math.abs(band.x1 - band.x0), h = Math.abs(band.y1 - band.y0);
-    setBand(null);
-    if (w < 0.02 || h < 0.01) return; // a stray click, not a capture
-    const src = canvasRef.current;
-    const sx = Math.floor(x * src.width), sy = Math.floor(y * src.height);
-    const sw = Math.max(1, Math.floor(w * src.width)), sh = Math.max(1, Math.floor(h * src.height));
-    const out = document.createElement('canvas');
-    out.width = sw; out.height = sh;
-    out.getContext('2d')!.drawImage(src, sx, sy, sw, sh, 0, 0, sw, sh);
-    const pb = holderRef.current!.getBoundingClientRect();
-    const screenRect = { left: pb.left + x * pb.width, top: pb.top + y * pb.height, width: w * pb.width, height: h * pb.height };
-    onClipped(pageNo, [x, y, w, h], out.toDataURL('image/png'), screenRect);
-  };
-  const [visible, setVisible] = useState(pageNo <= 2);
-  const [height, setHeight] = useState(Math.round(width * 1.4142));
-
-  useEffect(() => {
-    if (visible) return;
-    const el = holderRef.current;
-    if (!el) return;
-    const ob = new IntersectionObserver(
-      (entries) => {
-        if (entries.some((e) => e.isIntersecting)) { setVisible(true); ob.disconnect(); }
-      },
-      { rootMargin: '900px' },
-    );
-    ob.observe(el);
-    return () => ob.disconnect();
-  }, [visible]);
-
-  useEffect(() => {
-    if (!visible) return;
-    let dead = false;
-    (async () => {
-      const page = await doc.getPage(pageNo);
-      if (dead) return;
-      const scale = width / page.getViewport({ scale: 1 }).width;
-      const viewport = page.getViewport({ scale });
-      setHeight(Math.round(viewport.height));
-      const canvas = canvasRef.current;
-      const textDiv = textRef.current;
-      const ctx = canvas?.getContext('2d');
-      if (!canvas || !textDiv || !ctx) return;
-      const out = Math.min(window.devicePixelRatio || 1, 1.75);
-      canvas.width = Math.floor(viewport.width * out);
-      canvas.height = Math.floor(viewport.height * out);
-      canvas.style.width = `${Math.floor(viewport.width)}px`;
-      canvas.style.height = `${Math.floor(viewport.height)}px`;
-      await page.render({
-        canvasContext: ctx,
-        viewport,
-        ...(out !== 1 ? { transform: [out, 0, 0, out, 0, 0] } : {}),
-      }).promise;
-      if (dead) return;
-      textDiv.innerHTML = '';
-      textDiv.style.setProperty('--scale-factor', String(scale));
-      const layer = new pdfjs.TextLayer({
-        textContentSource: page.streamTextContent(),
-        container: textDiv,
-        viewport,
-      });
-      await layer.render();
-    })().catch(() => { /* a cancelled render mid-close is fine */ });
-    return () => { dead = true; };
-  }, [visible, width, doc, pdfjs, pageNo]);
-
-  return (
-    <div ref={holderRef} data-page={pageNo} className="relative bg-white rounded-none shrink-0" style={{ width, height }}>
-      <canvas ref={canvasRef} className="absolute inset-0" />
-      <div ref={textRef} className="tdag-textlayer" />
-      {/* interaction marks: a wash over the asked passage (never blocks
-          re-selection) plus one clickable bubble that reopens the thread */}
-      {anchors?.map((a) => (
-        <div key={a.id}>
-          {a.rects.map((r, i) => (
-            <div
-              key={i}
-              className={`absolute rounded-none pointer-events-none ${activeThreadId === a.id ? 'bg-accent/25' : 'bg-accent/10'}`}
-              style={{ left: `${r[0] * 100}%`, top: `${r[1] * 100}%`, width: `${r[2] * 100}%`, height: `${r[3] * 100}%`, zIndex: 3 }}
-            />
-          ))}
-          <button
-            onClick={() => onAnchorClick?.(a.id)}
-
-            className={`absolute w-6 h-6 rounded-control border flex items-center justify-center text-control transition-transform hover:scale-110 ${
-              activeThreadId === a.id ? 'bg-action text-white border-accent' : 'bg-card text-accent border-accent/40'
-            }`}
-            // in the margin beside the passage's first line, where it covers
-            // no text (at the end of the line it sat on the words after it, #81)
-            style={{ left: 'calc(100% + 8px)', top: `${a.rects[0][1] * 100}%`, zIndex: 4 }}
-            data-anchor-bubble={a.id}
-          >
-            💬
-          </button>
-        </div>
-      ))}
-      <span className="absolute -left-9 top-1 text-meta text-ink-faint font-mono select-none">p.{pageNo}</span>
-      {clipMode && (
-        <div
-          className="absolute inset-0 cursor-crosshair"
-          style={{ zIndex: 6 }}
-          data-clip-overlay={pageNo}
-          onMouseDown={(e) => { e.preventDefault(); const p = frac(e); setBand({ x0: p.x, y0: p.y, x1: p.x, y1: p.y }); }}
-          onMouseMove={(e) => { if (band) { const p = frac(e); setBand({ ...band, x1: p.x, y1: p.y }); } }}
-          onMouseUp={finishClip}
-          onMouseLeave={() => { if (band) finishClip(); }}
-        >
-          {band && (
-            <div
-              className="absolute border-2 border-warm bg-warm/10 rounded-none pointer-events-none"
-              style={{
-                left: `${Math.min(band.x0, band.x1) * 100}%`,
-                top: `${Math.min(band.y0, band.y1) * 100}%`,
-                width: `${Math.abs(band.x1 - band.x0) * 100}%`,
-                height: `${Math.abs(band.y1 - band.y0) * 100}%`,
-              }}
-            />
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
 // Digest markdown with (p.N) references turned into jump buttons back into
 // the original pages — a digest with provenance, not a floating summary.
 function DigestBody({ text, onJump }: { text: string; onJump: (page: number) => void }) {

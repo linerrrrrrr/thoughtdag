@@ -4,7 +4,7 @@
 
 执行归属已在 [原生 Agent、默认模型与辅助功能详案](native-agent-model-scenarios.md) 中进一步细化。原生 Agent 主任务、画布 API 问答、标题/摘要等辅助调用，以及初始化和文件归属，以该详案为准。本文与早期交互示意保留为操作走向参考，不代表已经具备“完全不附加 ThoughtDAG 能力”的纯原生模式。
 
-配套文件：[总流程图（SVG）](./model-agent-flow/model-agent-main-flow.svg) · [交互流程演示（HTML，可下载后离线打开）](https://github.com/linerrrrrrr/thoughtdag/blob/main/docs/reference/model-agent-flow/model-agent-flow.html)。
+配套文件：[交互流程演示（HTML，可下载后离线打开）](https://github.com/linerrrrrrr/thoughtdag/blob/main/docs/reference/model-agent-flow/model-agent-flow.html)。
 
 本方案回答四个问题：这一步由谁完成、怎样接入和选择、怎样把上一轮结果交给下一步、用户在哪里检查并明确开始执行。现有能力和待开发内容见第 10 节；图中的目标流程不能当作全部已经实现。
 
@@ -29,8 +29,6 @@ flowchart TD
     E[打开画布] --> ENTRY{从哪里开始}
     ENTRY -->|新任务| N[创建空白问题节点]
     ENTRY -->|已有回答| C[拉出连接或选文探索\n创建空白子节点]
-    ENTRY -->|已有 Agent 会话| AT[打开 Agent 对话地图\n选择导入或合并]
-    AT --> C
     N --> D{这一步需要什么能力}
     C --> D
     D -->|分析所给资料、解释、写作\n或应用已支持的工具| API[模型回答]
@@ -119,7 +117,7 @@ flowchart TD
 ```text
 左上项目工具栏
 ┌──────────────────────────────────────────────────┐
-│ 画布名称    连接与默认    Agent 对话地图           │
+│ 画布名称    连接与默认                            │
 └──────────────────────────────────────────────────┘
 
 新问题节点（模型回答）
@@ -244,7 +242,7 @@ flowchart LR
 
 默认以必要的回答与证据交接，不盲目携带全部工具日志。工具记录被当作历史证据，不作为待执行命令。界面显示“将发送的内容”，允许展开文本预览、排除来源和查看截断；不可用的附件必须明确标出，不用空内容假装传入成功。
 
-普通上下文边只建立输入关系，不因连线自动执行下游。当前已有用户明确启用的持续评审/自动重跑，应作为单独的自动流程显示触发条件、执行者、轮数与停止入口；纯原生入口默认关闭。通用的跨 Agent 自动编排仍需独立设计可审阅的执行计划、停止范围、预算和授权边界。
+普通上下文边只建立输入关系，不因连线自动执行下游。节点重新生成和下游重放均由用户明确触发。通用的跨 Agent 自动编排仍需独立设计可审阅的执行计划、停止范围、预算和授权边界。
 
 ## 7. GUI 清单：每个决策在哪里完成
 
@@ -259,7 +257,6 @@ flowchart LR
 | G07 | 上下文检查工作面板 | 下一步实际接收什么 | 来源、版本、材料、工具记录、原生历史提示、文本预览 | 非模态，允许同时改连线；修改保持草稿，明确应用 |
 | G08 | 节点与阅读详情活动流 | 正在做什么、是否需要干预 | 进度、工具、输出、文件差异；停止、支持时补充指令 | 阅读外点不停止；关闭面板不等于取消任务 |
 | G09 | 待处理请求卡片 | 是否授权、如何回答 | 操作、目标、范围；拒绝、仅本次允许、支持时本会话允许 | 关闭不授权，待处理状态持续可见；默认聚焦取消/拒绝 |
-| G10 | Agent 对话地图 | 带入哪个现有会话 | 来源、目录、运行状态、导入、多选合并、监听 | 选择导入才建图；合并不自动跨会话连线 |
 | G11 | 完成节点与端口 | 继续、换执行者或结束 | 真实执行来源、结果、证据；拉线、选文探索 | 拉线只建空白子节点；不立即生成 |
 | G12 | 失败/失联恢复区域 | 继续还是重试 | 已完成活动、文件变化、宿主状态；核对、继续、新建重做 | 不自动重放；新执行保留原失败记录 |
 | G13 | 目录冲突提示 | 多个 Agent 是否可同时写 | 当前占用任务、路径；排队或改用独立目录 | 仅检测到相关冲突时出现；不冒充已有隔离能力 |
@@ -340,17 +337,16 @@ stateDiagram-v2
 | 不可用模型回退 | 当前固定 API 模型失效时可能回退全局选择，若全局为 Agent 会跨运行方式；仅有提示 | 阻止静默跨方式回退，保留原选择并要求用户明确重新选择 |
 | 活动、审批、停止、补充 | 已有不同程度的实现，取决于运行时 | 按能力显示，统一状态与异常恢复提示 |
 | 上下文 | 已有图编译、引用和材料机制 | 统一发送前检查、原生历史提示与跨运行方式交接 |
-| 多会话导入 | 已有导入、合并和增量镜像 | 保留手动导入和不自动跨会话连线的语义 |
 | 同目录并发 | 未发现统一的跨 Agent 写入锁 | 新增冲突检测、排队或独立环境路径；先检测后开放并发写 |
 | 下游自动编排 | 尚无通用跨 Agent 调度 | 本方案不默认引入；节点逐次明确执行 |
 
 运行环境差异必须在 GUI 中体现：
 
-| 环境 | 已有会话发现 | Agent 执行与限制 |
+| 环境 | 会话来源 | Agent 执行与限制 |
 | --- | --- | --- |
-| 桌面壳 | Codex、Claude Code、Pi、DeepSeek Harness；可选择额外目录 | 固定本地运行时接入主要是 Codex、Claude Code、Pi；发现 Harness 日志不等于可执行 Harness |
-| 本地网页 + server | 当前默认目录只有 Codex、Claude Code、Pi | 可通过本地 HTTP 桥执行已支持运行时；Harness 扫描与任意目录添加尚未补齐 |
-| Harness 插件 | 宿主会话与支持的其他本地来源 | 宿主提供 Harness Agent 执行；能否使用其他 Agent 取决于宿主上的适配和安装 |
+| 桌面壳 | 本地运行时会话 | 固定本地运行时接入主要是 Codex、Claude Code、Pi |
+| 本地网页 + server | 本地运行时会话 | 可通过本地 HTTP 桥执行已支持运行时 |
+| Harness 插件 | 宿主会话 | 宿主提供 Harness Agent 执行；能否使用其他 Agent 取决于宿主上的适配和安装 |
 | 无本地桥的远端网页 | 无法直接读取用户电脑的本地会话 | 显示需要连接宿主，不伪装本地 Agent 已就绪 |
 
 建议依次落实：
@@ -385,7 +381,6 @@ stateDiagram-v2
 - [Agent 运行与路由](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/lib/agents/agent-runtime.ts)：目录、继承、会话续接预览及实际运行。
 - [当前运行时约定](https://github.com/linerrrrrrr/thoughtdag/blob/main/runtime/agents/README.md)、[Codex 活动边界](codex-activity.md)。
 - [API/Agent 请求分派](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/lib/api.ts)、[上下文编译](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/store/context-builder.ts)。
-- [Agent 对话地图](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/components/SessionAtlas.tsx)、[多会话合并](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/lib/atlas/canonical.ts)。
-- [本地网页扫描来源](https://github.com/linerrrrrrr/thoughtdag/blob/main/runtime/sessions-fs.cjs)、[HTTP 会话桥](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/lib/atlas/dsh-bridge.ts)。
+- [本地会话读取](https://github.com/linerrrrrrr/thoughtdag/blob/main/runtime/sessions-fs.cjs)、[Harness 运行桥](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/lib/agents/harness-bridge.ts)。
 
 配套交互示意只模拟选择和状态，不连接模型、不运行 Agent、不保存凭据，也不能用其演示状态证明真实后端已实现。

@@ -50,8 +50,18 @@
 }
 .resize-grip-width,
 .resize-grip-height { background: currentColor; border-radius: calc(var(--radius-port) / var(--resize-scale, 1)); }
-.resize-grip-width { width: var(--grip-stroke); height: var(--grip-length); }
-.resize-grip-height { width: var(--grip-length); height: var(--grip-stroke); }
+/* Keep axis marks clear of the selection outline, like the corner mark.
+   Only the mark moves; the screen-sized pointer target stays on the edge. */
+.resize-grip-width {
+  width: var(--grip-stroke);
+  height: var(--grip-length);
+  transform: translateX(calc(-6px / var(--resize-scale, 1)));
+}
+.resize-grip-height {
+  width: var(--grip-length);
+  height: var(--grip-stroke);
+  transform: translateY(calc(-6px / var(--resize-scale, 1)));
+}
 .resize-grip-both {
   width: var(--grip-length);
   height: var(--grip-length);

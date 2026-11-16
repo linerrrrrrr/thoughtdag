@@ -11,5 +11,3 @@
 .selection-resize-width { left: 100%; top: 50%; cursor: ew-resize; }
 .selection-resize-height { left: 75%; top: 100%; cursor: ns-resize; }
 .selection-resize-both { left: 100%; top: 100%; cursor: nwse-resize; }
-[data-selection-sized] > [data-glyph-node], [data-selection-sized] > .node-overview, [data-selection-sized] > [data-glyph-node] > .node-overview { height: 100%; }
-[data-selection-sized] .node-overview--compact { display: flex; flex-direction: column; justify-content: center; }

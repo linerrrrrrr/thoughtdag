@@ -18,7 +18,7 @@ export interface LayoutLink {
   target: string;
   structural: boolean;
   continuation: boolean;
-  auxiliary?: 'reference' | 'watch';
+  auxiliary?: 'reference';
 }
 
 export interface LayoutProjectionOptions {

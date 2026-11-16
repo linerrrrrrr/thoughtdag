@@ -1,4 +1,5 @@
 import { createContext, useLayoutEffect, useRef } from 'react';
+import { uiRect } from './ui-scale';
 
 export const CanvasToolbarOverflowContext = createContext<{ target: HTMLElement | null; close: () => void }>({ target: null, close: () => {} });
 
@@ -26,7 +27,7 @@ export function useResponsiveCanvasHeader() {
       for (const density of densities) {
         header.dataset.toolbarDensity = density;
         const gap = project ? parseFloat(getComputedStyle(header).columnGap) : 0;
-        const width = (project?.getBoundingClientRect().width ?? 0) + (toolbar?.getBoundingClientRect().width ?? 0) + gap;
+        const width = (project ? uiRect(project).width : 0) + (toolbar ? uiRect(toolbar).width : 0) + gap;
         if (width <= header.clientWidth) break;
       }
     };

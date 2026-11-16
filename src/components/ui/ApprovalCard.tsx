@@ -6,6 +6,7 @@ import { useStore } from '../../store';
 import { answerApproval, type QuestionAnswer } from '../../lib/api';
 import { allowLocation } from '../../lib/agents/agent-runtime';
 import type { ApprovalRequest, ApprovalRecord, FormQuestion, FormAnswer } from '../../types';
+import { CodexApprovalCard } from './CodexApprovalCard';
 
 // What an agent asks the person mid-turn, answered where the turn is shown:
 // on the node. A node is one exchange with the agent, and the agent's
@@ -54,6 +55,10 @@ export function ApprovalCard({ nodeId, request, compact }: { nodeId: string; req
   const btn = compact ? 'text-control px-2.5 py-1' : 'text-control px-3 py-1.5';
   const primary = `${btn} text-white rounded-control bg-action hover:bg-action-strong transition-colors disabled:opacity-50 whitespace-nowrap`;
   const secondary = `${btn} text-ink rounded-control border border-line hover:bg-wash transition-colors disabled:opacity-50 whitespace-nowrap`;
+
+  if (isApproval && request.toolName === 'codex') {
+    return <CodexApprovalCard request={request} busy={busy} onAnswer={(answer, mark) => void send(answer, mark)} />;
+  }
 
   return (
     <div

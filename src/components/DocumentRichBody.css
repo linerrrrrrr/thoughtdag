@@ -1,0 +1,16 @@
+/* Source-document paper keeps author colors readable in both interface themes. */
+.document-rich-body { overflow-wrap: anywhere; min-width: 0; background: #fff; color: #202632; padding: 16px; }
+.document-rich-body > :first-child { margin-top: 0; }
+.document-rich-body p { margin: 0 0 1em; }
+.document-rich-body h1 { font-size: var(--text-page); line-height: var(--text-page--line-height); font-weight: 600; margin: 1.1em 0 .6em; }
+.document-rich-body h2 { font-size: var(--text-section); line-height: var(--text-section--line-height); font-weight: 600; margin: 1em 0 .5em; }
+.document-rich-body h3 { font-size: var(--text-heading); line-height: var(--text-heading--line-height); font-weight: 600; margin: 1em 0 .5em; }
+.document-rich-body ul { list-style: disc; padding-left: 1.5em; margin: .75em 0; }
+.document-rich-body ol { list-style: decimal; padding-left: 1.5em; margin: .75em 0; }
+.document-rich-body blockquote { border-left: 3px solid #cdd3dd; padding-left: 1em; margin: 1em 0; }
+.document-rich-body a { color: #6251d8; text-decoration: underline; }
+.document-rich-body img { max-width: 100%; height: auto; }
+.document-rich-body table { width: 100%; border-collapse: collapse; table-layout: fixed; margin: 1em 0; }
+.document-rich-body th, .document-rich-body td { border: 1px solid #cdd3dd; padding: .5em; vertical-align: top; min-width: 1em; }
+.document-rich-body th { background: #f4f5f7; font-weight: 600; }
+.document-rich-body pre { overflow-x: auto; background: #ebeef3; padding: 1em; }

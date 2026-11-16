@@ -1,15 +1,14 @@
 import { useRef, useState } from 'react';
 import { useDismissableLayer } from '../../lib/use-dismissable-layer';
-import { Archive, ArchiveRestore, ClipboardCopy, Files, Ellipsis, FileDown, GitFork, MessageSquarePlus, RefreshCw, Split, Square, Trash2, Undo2 } from 'lucide-react';
+import { Archive, ArchiveRestore, ClipboardCopy, Files, Ellipsis, FileDown, GitFork, MessageSquarePlus, RefreshCw, Square, Trash2, Undo2 } from 'lucide-react';
 import { useStore } from '../../store';
 import { contextChainMarkdown, downloadMarkdown, copyText } from '../../lib/export';
-import ModelPicker from '../ui/ModelPicker';
-import FanOutModal from '../FanOutModal';
+import { NodeExecutionBadge } from '../ui/NodeExecutionPicker';
 import { toast } from '../../lib/ui-store';
 import { useT } from '../../i18n';
-import { canSteerAgentNode, deriveFollowupModel, isAgentModel } from '../../lib/agents/agent-runtime';
-import { useUiStore } from '../../lib/ui-store';
+import { canSteerAgentNode } from '../../lib/agents/agent-runtime';
 import AgentInstructionInput from './AgentInstructionInput';
+import { uiRect, uiViewport } from '../../lib/ui-scale';
 
 // The reading header keeps the model and menu; answer actions live below the prose.
 
@@ -19,14 +18,9 @@ export default function HeaderActions({ nodeId, isLoading }: { nodeId: string; i
   const stopGeneration = useStore((s) => s.stopGeneration);
   const duplicateNode = useStore((s) => s.duplicateNode);
   const deleteNode = useStore((s) => s.deleteNode);
-  const setNodeModel = useStore((s) => s.setNodeModel);
-  const nodeModel = useStore((s) => s.nodes.find((n) => n.id === nodeId)?.data.model);
   const nodeData = useStore(s => s.nodes.find(n => n.id === nodeId)?.data);
-  const globalModel = useUiStore(s => s.selectedModel);
-  const agent = isAgentModel(deriveFollowupModel(nodeData, globalModel) ?? globalModel);
   const setArchived = useStore((s) => s.setArchived);
   const isArchived = useStore((s) => !!s.nodes.find((n) => n.id === nodeId)?.data.archived);
-  const nodeQuestion = useStore((s) => s.nodes.find((n) => n.id === nodeId)?.data.question ?? '');
   // fine tier of recoverability: a mirror node that drifted from its
   // frozen source snapshot can be put back — text only, never structure
   const diverged = useStore((s) => {
@@ -49,7 +43,6 @@ export default function HeaderActions({ nodeId, isLoading }: { nodeId: string; i
   };
 
   const [menuOpen, setMenuOpen] = useState(false);
-  const [fanOutOpen, setFanOutOpen] = useState(false);
   const [instructionOpen, setInstructionOpen] = useState(false);
   const [instructionPosition, setInstructionPosition] = useState({ right: 16, top: 80 });
   const [previousLoading, setPreviousLoading] = useState(isLoading);
@@ -62,8 +55,8 @@ export default function HeaderActions({ nodeId, isLoading }: { nodeId: string; i
   const canSteer = isLoading && canSteerAgentNode(nodeId);
 
   const openInstructions = () => {
-    const rect = menuButtonRef.current?.getBoundingClientRect();
-    if (rect) setInstructionPosition({ right: Math.max(16, window.innerWidth - rect.right), top: rect.bottom + 8 });
+    const rect = menuButtonRef.current ? uiRect(menuButtonRef.current) : null;
+    if (rect) setInstructionPosition({ right: Math.max(16, uiViewport().width - rect.right), top: rect.bottom + 8 });
     setMenuOpen(false);
     setInstructionOpen(true);
   };
@@ -85,7 +78,7 @@ export default function HeaderActions({ nodeId, isLoading }: { nodeId: string; i
           <Square size={12} strokeWidth={1.75} fill="currentColor" />
         </button>
       )}
-      {!agent && <ModelPicker compact value={nodeModel} onChange={(m) => setNodeModel(nodeId, m)} />}
+      {nodeData && <NodeExecutionBadge data={nodeData} />}
 
       <div ref={menuRef} className="relative">
         <button ref={menuButtonRef} onClick={() => setMenuOpen((v) => !v)} aria-label={t('panel.more')} aria-expanded={menuOpen} className={`${iconBtn} ${menuOpen ? 'bg-line/50 text-ink' : ''}`}>
@@ -96,15 +89,12 @@ export default function HeaderActions({ nodeId, isLoading }: { nodeId: string; i
             {canSteer && <button className={menuItem} data-agent-instruction-trigger onClick={openInstructions}>
               <MessageSquarePlus size={15} strokeWidth={1.75} /> {t('agent.addInstructions')}
             </button>}
-            <button className={menuItem} disabled={isLoading} onClick={() => { setMenuOpen(false); void rerunNode(nodeId, {}); }}>
+            <button className={menuItem} disabled={isLoading} onClick={() => { setMenuOpen(false); void rerunNode(nodeId); }}>
               <RefreshCw size={15} strokeWidth={1.75} /> {t('common.regenerate')}
             </button>
             <button className={menuItem} onClick={() => { setMenuOpen(false); setArchived([nodeId], !isArchived); }}>
               {isArchived ? <ArchiveRestore size={15} strokeWidth={1.75} /> : <Archive size={15} strokeWidth={1.75} />}
               {t(isArchived ? 'archive.restoreTitle' : 'archive.title')}
-            </button>
-            <button className={menuItem} onClick={() => { setMenuOpen(false); setFanOutOpen(true); }} >
-              <Split size={15} strokeWidth={1.75} /> {t('fanout.entry')}
             </button>
             <button className={menuItem} onClick={() => { setMenuOpen(false); void regenerate(nodeId); }} >
               <GitFork size={15} strokeWidth={1.75} /> {t('actions.regenBranch')}
@@ -134,9 +124,6 @@ export default function HeaderActions({ nodeId, isLoading }: { nodeId: string; i
         )}
       </div>
 
-      {fanOutOpen && (
-        <FanOutModal parentId={nodeId} initialQuestion={nodeQuestion} onClose={() => setFanOutOpen(false)} />
-      )}
       <AgentInstructionInput nodeId={nodeId} open={instructionOpen && canSteer} position={instructionPosition}
         triggerRef={menuButtonRef} onClose={() => setInstructionOpen(false)} />
     </div>

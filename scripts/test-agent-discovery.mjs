@@ -48,7 +48,8 @@ function fixture() {
         if (found.statError) throw codedError(found.statError, candidate);
         return { isFile: () => found.kind !== 'directory' };
       },
-      async readFile(candidate) { throw codedError('ENOENT', candidate); },
+      async realpath(candidate) { return entry(candidate).realpath ?? candidate; },
+      async readFile(candidate) { return entry(candidate).content ?? ''; },
     },
   };
   const spawn = (binary, args) => {
@@ -77,7 +78,7 @@ function fixture() {
     vm.runInNewContext(source(relative), {
       module, exports: module.exports, __dirname: path.dirname(filename), __filename: filename,
       Buffer, setTimeout, clearTimeout, setInterval, clearInterval,
-      process: { platform: 'win32', env, execPath: 'C:\\node\\node.exe' },
+      process: { platform: 'win32', arch: 'x64', env, execPath: 'C:\\node\\node.exe' },
       require(name) {
         if (name === 'node:fs') return fs;
         if (name === 'node:path') return win;
@@ -87,6 +88,8 @@ function fixture() {
           execFile() { throw new Error('Discovery must not execute a shell or CLI in these fixtures'); },
         };
         if (name === './where.cjs') return load('runtime/agents/where.cjs');
+        if (name === './codex-launch.cjs') return load('runtime/agents/codex-launch.cjs');
+        if (name === './codex-history.cjs') return require('../runtime/agents/codex-history.cjs');
         if (name === './fs-diff.cjs') return {};
         return require(name);
       },
@@ -95,7 +98,15 @@ function fixture() {
   }
   return {
     env, accessCalls, spawns, load,
-    put(candidate, value = {}) { entries.set(key(candidate), value); },
+    put(candidate, value = {}) {
+      entries.set(key(candidate), value);
+      if (/\\codex\.cmd$/i.test(candidate) && !value.error && !value.exception && value.kind !== 'directory') {
+        const scope = win.join(win.dirname(candidate), 'node_modules', '@openai');
+        entries.set(key(win.join(scope, 'codex', 'package.json')), { content: JSON.stringify({ name: '@openai/codex', version: '0.167.1' }) });
+        entries.set(key(win.join(scope, 'codex-win32-x64', 'package.json')), { content: JSON.stringify({ name: '@openai/codex', version: '0.167.1-win32-x64' }) });
+        entries.set(key(win.join(scope, 'codex-win32-x64', 'vendor', 'x86_64-pc-windows-msvc', 'bin', 'codex.exe')), {});
+      }
+    },
     remove(candidate) { entries.delete(key(candidate)); },
     hold() { return new Promise((resolve) => { gate = new Promise((release) => resolve(() => { gate = null; release(); })); }); },
     where: () => load('runtime/agents/where.cjs'),
@@ -267,6 +278,111 @@ await check('the first model retry after access recovers starts only a catalog q
     assert.equal(f.spawns[0].binary, binary);
   } finally { runtime.shutdown(); }
 });
+
+if (!baseline) {
+  const bundled = 'C:\\Program Files\\WindowsApps\\OpenAI.Codex_26.1103.7773.0_x64__identity\\app\\resources\\codex.exe';
+  const bundledDir = win.dirname(bundled);
+  const resolve = (f, options) => f.load('runtime/agents/codex-launch.cjs').resolveCodexLaunch(options);
+
+  await check('standalone CLI wins over a desktop bundle earlier on PATH', async () => {
+    const f = fixture();
+    f.env.PATH = `${bundledDir};C:\\standalone`;
+    f.put(bundled);
+    f.put('C:\\standalone\\codex.exe');
+    const found = await resolve(f);
+    assert.equal(found.command, 'C:\\standalone\\codex.exe');
+    assert.equal(found.source, 'path');
+    assert.deepEqual(Array.from(found.args), ['app-server', '--listen', 'stdio://']);
+  });
+
+  await check('desktop fallback forces MXC and preserves security environment', async () => {
+    const f = fixture();
+    f.env.PATH = bundledDir;
+    Object.assign(f.env, { CODEX_WINDOWS_REGISTERED_CORE: '1', CODEX_PERMISSION_PROFILE: 'managed-profile', CODEX_SANDBOX_NETWORK_DISABLED: '1' });
+    f.put(bundled);
+    const found = await resolve(f);
+    assert.equal(found.command, bundled);
+    assert.equal(found.source, 'desktop-bundle-mxc');
+    assert.deepEqual(Array.from(found.args), ['-c', 'windows.sandbox=mxc', 'app-server', '--listen', 'stdio://']);
+    for (const key of ['CODEX_WINDOWS_REGISTERED_CORE', 'CODEX_PERMISSION_PROFILE', 'CODEX_SANDBOX_NETWORK_DISABLED']) assert.equal(found.env[key], f.env[key]);
+    assert.equal(found.windowsSandbox, 'mxc');
+    assert.equal(f.spawns.length, 0, 'discovery must never probe by launching a model or shell');
+  });
+
+  await check('standalone CLI inherited from Registered Core also requires MXC', async () => {
+    const f = fixture();
+    f.env.CODEX_WINDOWS_REGISTERED_CORE = '1';
+    f.put('C:\\tools\\codex.exe');
+    const found = await resolve(f);
+    assert.equal(found.windowsSandbox, 'mxc');
+    assert.equal(found.env.CODEX_WINDOWS_REGISTERED_CORE, '1');
+    assert.ok(found.args.includes('windows.sandbox=mxc'));
+  });
+
+  await check('desktop runtime env path remains a guarded fallback without PATH', async () => {
+    const f = fixture();
+    f.env.CODEX_APP_RUNTIME_CLI_PATH = bundled;
+    f.put(bundled);
+    const found = await resolve(f);
+    assert.equal(found.command, bundled);
+    assert.equal(found.windowsSandbox, 'mxc');
+  });
+
+  await check('an explicit invalid installation never silently selects another CLI', async () => {
+    const f = fixture();
+    f.env.THOUGHTDAG_CODEX_PATH = 'C:\\missing\\codex.exe';
+    f.put('C:\\tools\\codex.exe');
+    const found = await resolve(f);
+    assert.equal(found.path, null);
+    assert.match(found.error, /THOUGHTDAG_CODEX_PATH/);
+  });
+
+  await check('an explicitly selected desktop CLI still cannot omit MXC', async () => {
+    const f = fixture();
+    f.env.THOUGHTDAG_CODEX_PATH = bundled;
+    f.put(bundled);
+    const found = await resolve(f);
+    assert.equal(found.command, bundled);
+    assert.equal(found.windowsSandbox, 'mxc');
+  });
+
+  await check('a symlink to the desktop binary receives the same MXC guard', async () => {
+    const f = fixture();
+    f.put('C:\\tools\\codex.exe', { realpath: bundled });
+    const found = await resolve(f);
+    assert.equal(found.command, bundled);
+    assert.equal(found.windowsSandbox, 'mxc');
+  });
+
+  await check('npm shims resolve to the matching native child without a shell wrapper', async () => {
+    const f = fixture();
+    f.put('C:\\tools\\codex.cmd');
+    const found = await resolve(f);
+    assert.equal(found.path, 'C:\\tools\\codex.cmd');
+    assert.equal(found.command, 'C:\\tools\\node_modules\\@openai\\codex-win32-x64\\vendor\\x86_64-pc-windows-msvc\\bin\\codex.exe');
+    assert.equal(found.version, '0.167.1');
+    assert.equal(found.env.CODEX_MANAGED_PACKAGE_ROOT, 'C:\\tools\\node_modules\\@openai\\codex');
+    assert.ok(!found.args.some((arg) => /cmd\.exe|danger-full-access|bypass|unelevated/.test(arg)));
+  });
+
+  await check('mismatched npm native dependencies are never executed', async () => {
+    const f = fixture();
+    f.put('C:\\tools\\codex.cmd');
+    f.put('C:\\tools\\node_modules\\@openai\\codex-win32-x64\\package.json', { content: JSON.stringify({ name: '@openai/codex', version: '0.166.0-win32-x64' }) });
+    const found = await resolve(f);
+    assert.equal(found.path, null);
+    assert.ok(found.failures.some((failure) => failure.code === 'INCOMPLETE_CODEX_PACKAGE'));
+  });
+
+  await check('unknown batch shims are rejected instead of passed to cmd.exe', async () => {
+    const f = fixture();
+    f.env.THOUGHTDAG_CODEX_PATH = 'C:\\unknown\\custom.bat';
+    f.put(f.env.THOUGHTDAG_CODEX_PATH);
+    const found = await resolve(f);
+    assert.equal(found.path, null);
+    assert.ok(found.failures.some((failure) => failure.code === 'UNSUPPORTED_CODEX_SHIM'));
+  });
+}
 
 console.log(`\n${passed} passed, ${failed} failed${baseline ? ' (HEAD baseline)' : ''}.`);
 if (failed) process.exitCode = 1;

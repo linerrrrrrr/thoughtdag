@@ -5,7 +5,7 @@
 // context for selection when the compiled context itself is out of reach
 // (agents, older nodes) or too large to resend.
 import type { ThoughtNode, ThoughtEdge } from '../types';
-import { walkUpAncestors } from './graph';
+import { getContextPath } from './graph';
 import { levelText } from './ladder-core';
 import { requestLocalLadder } from './local-ladder-cache';
 import { activeSummary, activeTopic, countTokens } from '../utils';
@@ -27,7 +27,7 @@ function stepLine(n: ThoughtNode, full: boolean): string | null {
 
 /** The thread behind a node, oldest first, trimmed from the old end to the token budget; and its parent's answer. */
 export function ladderContextFor(nodeId: string, nodes: ThoughtNode[], edges: ThoughtEdge[], budgetTokens = 1400): LadderContext {
-  const { ordered } = walkUpAncestors(nodeId, nodes, edges);
+  const ordered = getContextPath(nodeId, nodes, edges);
   const parents = edges.filter((e) => e.target === nodeId && !e.data?.isCrossLink).map((e) => e.source);
   const parentId = parents[0];
   const parent = parentId ? nodes.find((n) => n.id === parentId) : undefined;

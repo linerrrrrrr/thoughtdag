@@ -2,7 +2,11 @@
 
 ## What stays local
 
-In the desktop app, canvases, model credentials, imported documents, and local session mirrors are stored on your machine. Canvas state uses IndexedDB; optional folder backup writes explicit `.thoughtdag.json` files.
+Canvases, model credentials, imported documents, and local session mirrors stay on your machine. Canvas state defaults to browser IndexedDB; optional folder backup writes `.thoughtdag.json` files.
+
+A local installation can set an absolute `THOUGHTDAG_HOME` and enable `THOUGHTDAG_DISK_STORAGE=1` to store canvases, attachments, and settings under its `browser-storage` directory, and agent workspaces under `workspaces`. On the first visit to each browser origin, the app copies and verifies its existing records before switching. The browser originals remain available; separate origins are not merged.
+
+The browser still holds a locator and filesystem permissions. If browser data is cleared, reopen the same origin and choose the existing local data to reconnect. If the local storage service is unavailable, the app stops at a retry screen rather than silently opening an empty canvas. Folder backup remains a separate feature.
 
 ## What can leave the device
 
@@ -18,11 +22,11 @@ PDF files remain local during ordinary reading. Extracted text or selected mater
 
 ## Credentials
 
-Keys configured in the interface are kept in local browser storage and proxy memory. They are not included in normal canvas backups. Always review the policy of the model or tool endpoint you connect.
+Keys configured in the interface are kept in local application data and are not included in normal canvas backups. With disk storage enabled, settings files may contain plaintext keys; restrict operating-system access to the data directory. Review the policy of any model or tool endpoint you connect.
 
 ## Local why index
 
-The CLI and MCP keep rebuildable indexes and caches in `~/.thoughtdag`, separate from source logs. These may contain historical questions, answers, file paths, and material excerpts—not just filenames.
+The CLI and MCP keep rebuildable indexes and caches in `THOUGHTDAG_HOME`, or `~/.thoughtdag` when it is unset, separate from source logs. These may contain historical questions, answers, file paths, and material excerpts—not just filenames.
 
 ```bash
 thoughtdag purge --cache  # Remove rebuildable caches only

@@ -11,7 +11,6 @@ import { useUiStore } from '../lib/ui-store';
 import { useProjects } from '../store/projects';
 import { handleCanvasPanelKeyDown } from '../lib/canvas-shortcuts';
 import type { ThoughtNode, ThoughtEdge } from '../types';
-import EdgeRoutingControls from './EdgeRoutingControls';
 import './CanvasLayoutPanel.css';
 import { canvasToolViewport, useCanvasPanelPosition } from '../lib/use-canvas-panel-position';
 import { beginCanvasLayoutTask, canvasLayoutBounds, canvasLayoutErrorKey, fitCanvasLayout, readCanvasLayoutOptions, saveCanvasLayoutOptions } from '../lib/canvas-layout-preferences';
@@ -57,7 +56,7 @@ export default function CanvasLayoutPanel({ flow: rf, ref }: {
   const panel = useRef<HTMLDivElement>(null);
   const panelPosition = useCanvasPanelPosition();
   const originalViewport = useRef(rf.getViewport());
-  const [tab, setTab] = useState<'layout' | 'routing'>(() => useUiStore.getState().drafts['canvas-layout-tab'] === 'routing' ? 'routing' : 'layout');
+  const previewMovedViewport = useRef(false);
   const [draft, setDraft] = useState<LayoutDraft>(() => {
     const defaultScope = selectedIds.length ? 'selection' : 'all';
     try {
@@ -84,13 +83,12 @@ export default function CanvasLayoutPanel({ flow: rf, ref }: {
   const close = () => {
     invalidate();
     useCanvasEditing.getState().setLayoutOpen(false);
-    if (tab === 'layout') void rf.setViewport(originalViewport.current, { duration: 150 });
+    if (previewMovedViewport.current) void rf.setViewport(originalViewport.current, { duration: 150 });
   };
   useImperativeHandle(ref, () => ({ close }));
   const cancel = () => { useUiStore.getState().setDraft(draftKey, ''); close(); };
   useDismissableLayer({ open: true, refs: [panel], onDismiss: reason => {
-    if (tab === 'routing') close();
-    else cancel();
+    close();
     if (reason === 'escape') restoreCanvasToolbarFocus(document.querySelector('[data-layout-entry]'));
   }, dismissOnOutside: false, restoreFocus: false });
   useEffect(() => {
@@ -121,6 +119,7 @@ export default function CanvasLayoutPanel({ flow: rf, ref }: {
     if (!shown.length) return;
     const bounds = canvasLayoutBounds(shown);
     if (!bounds) return;
+    previewMovedViewport.current = true;
     const canvas = document.querySelector<HTMLElement>('.react-flow');
     if (reservePanel && canvas && panel.current) {
       const { x, y, width, height } = canvasToolViewport(canvas, panel.current);
@@ -169,36 +168,13 @@ export default function CanvasLayoutPanel({ flow: rf, ref }: {
     finally { task.finish(); if (pending.current === task) pending.current = undefined; }
   };
   const errorMessage = t(canvasLayoutErrorKey(error));
-  const selectTab = (next: 'layout' | 'routing') => {
-    if (next === tab) return;
-    const hadPreview = previewInput.current !== undefined;
-    invalidate();
-    setError(undefined);
-    if (hadPreview) void rf.setViewport(originalViewport.current, { duration: 150 });
-    setTab(next);
-    useUiStore.getState().setDraft('canvas-layout-tab', next, true);
-  };
   return <div ref={panel} style={panelPosition} className="canvas-tool-panel canvas-layout-panel nodrag nopan nowheel" role="dialog" aria-labelledby="canvas-layout-title" aria-busy={busy} data-canvas-layout-panel
     onKeyDown={handleCanvasPanelKeyDown}>
     <div className="canvas-layout-header flex shrink-0 items-center justify-between gap-3 px-4 py-3 border-b border-line">
       <h2 id="canvas-layout-title" className="text-title font-semibold">{t('canvasLayout.title')}</h2>
       <button type="button" onClick={close} className="flex h-7 w-7 -mr-1 items-center justify-center rounded-control text-ink-muted hover:bg-wash hover:text-ink transition-colors focus-visible:outline-2 focus-visible:outline-accent" aria-label={t('common.close')}><X size={16} /></button>
     </div>
-    <div className="canvas-layout-tabs" role="tablist" aria-label={t('canvasLayout.title')}>
-      {(['layout', 'routing'] as const).map(value => <button key={value} type="button" role="tab"
-        id={`canvas-layout-tab-${value}`} aria-controls={`canvas-layout-${value}`} aria-selected={tab === value}
-        tabIndex={tab === value ? 0 : -1} data-layout-tab={value} onClick={() => selectTab(value)}
-        onKeyDown={event => {
-          if (event.nativeEvent.isComposing || event.keyCode === 229 || !['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
-          event.preventDefault();
-          event.stopPropagation();
-          const next = event.key === 'Home' ? 'layout' : event.key === 'End' ? 'routing' : value === 'layout' ? 'routing' : 'layout';
-          selectTab(next);
-          panel.current?.querySelector<HTMLButtonElement>(`[data-layout-tab="${next}"]`)?.focus();
-        }}>{t(value === 'layout' ? 'canvasLayout.layoutTab' : 'edgeRouting.tab')}</button>)}
-    </div>
-    {tab === 'routing' ? <EdgeRoutingControls onClose={close} /> : <>
-    <div className="canvas-layout-fields" role="tabpanel" id="canvas-layout-layout" aria-labelledby="canvas-layout-tab-layout">
+    <div className="canvas-layout-fields">
       <LayoutChoices name="scope" label={t('canvasLayout.scope')} value={scope} onChange={(value) => change('scope', value)} choices={[
         { value: 'all', label: t('canvasLayout.all') },
         { value: 'selection', label: t('canvasLayout.selection'), disabled: !selectedIds.length },
@@ -229,6 +205,5 @@ export default function CanvasLayoutPanel({ flow: rf, ref }: {
       <button type="button" disabled={busy} className={actionClass} onClick={preview} data-layout-preview>{t('canvasLayout.preview')}</button>
       <button type="button" disabled={busy} className="text-control bg-action text-white px-3 min-h-8 rounded-control hover:bg-action-strong transition-colors disabled:opacity-40 disabled:cursor-not-allowed focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent" onClick={() => apply()} data-layout-apply>{t('canvasLayout.apply')}</button>
     </div>
-    </>}
   </div>;
 }

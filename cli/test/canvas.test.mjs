@@ -52,16 +52,6 @@ const canvas = {
 const canvasFile = join(canvasRoot, '脉冲网络综述.thoughtdag.json');
 writeFileSync(canvasFile, JSON.stringify(canvas));
 
-const anchored = (sid, anchor) => [
-  L({ type: 'user', uuid: `${sid}-u1`, parentUuid: null, sessionId: sid, cwd: proj, isSidechain: false, timestamp: '2026-08-31T10:00:00.000Z', message: { role: 'user', content: `继续。\n\n${anchor}` } }),
-  L({ type: 'assistant', uuid: `${sid}-a1`, parentUuid: `${sid}-u1`, sessionId: sid, cwd: proj, isSidechain: false, timestamp: '2026-08-31T10:00:00.000Z', message: { role: 'assistant', content: [{ type: 'tool_use', id: `${sid}-t1`, name: 'Edit', input: { file_path: `${proj}/src/handoff.ts`, old_string: 'x', new_string: 'y' } }] } }),
-  L({ type: 'user', uuid: `${sid}-r1`, parentUuid: `${sid}-a1`, sessionId: sid, cwd: proj, isSidechain: false, message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: `${sid}-t1`, content: 'ok' }] } }),
-  L({ type: 'assistant', uuid: `${sid}-a2`, parentUuid: `${sid}-r1`, sessionId: sid, cwd: proj, isSidechain: false, message: { role: 'assistant', content: [{ type: 'text', text: '好。' }] } }),
-].join('\n');
-writeFileSync(join(ccRoot, 'proj', 'sid-matched.jsonl'), anchored('sid-matched', '[ThoughtDAG anchor: project=proj-snn-01 node=n2 bundle=cb_cdcdcdcdcdcdcdcd mode=continue]'));
-writeFileSync(join(ccRoot, 'proj', 'sid-mismatch.jsonl'), anchored('sid-mismatch', '[ThoughtDAG anchor: project=proj-snn-01 node=n1 bundle=cb_cdcdcdcdcdcdcdcd]'));
-writeFileSync(join(ccRoot, 'proj', 'sid-unverified.jsonl'), anchored('sid-unverified', '[ThoughtDAG anchor: project=proj-x node=n9 bundle=cb_0000000000000000]'));
-
 // the app's own record of the SAME canvas, in the default root — one project, two files
 mkdirSync(join(home, 'canvases'), { recursive: true });
 writeFileSync(join(home, 'canvases', 'proj-snn-01.thoughtdag.json'), JSON.stringify({ ...canvas, record: 'thoughtdag-canvas-record', exportedAt: '2026-09-02T10:00:00.000Z' }));
@@ -82,13 +72,14 @@ test('a canvas backup projects onto the contract with its own runner and manifes
   assert.equal(new Set(ids).size, ids.length, 'unique ids');
 });
 
-test('hand-made turns carry their messages; a mirrored turn is placed, not restated', () => {
+test('canvas turns retain their messages even when they have an agent source', () => {
   const ev = events(canvasFile);
   const turns = ev.filter((e) => e.kind === 'turn.started');
   assert.equal(turns.length, 3);
   const m1 = turns.find((t) => t.turnId.endsWith('#m1'));
-  assert.deepEqual(m1.mirrorOf, { sessionId: 'claude-code:sid-1', item: 'u1' });
-  assert.ok(!ev.some((e) => e.kind === 'message.recorded' && e.turnId.endsWith('#m1') && e.role !== 'custom'), 'no restated text for the mirror');
+  assert.equal(m1.mirrorOf, undefined);
+  assert.ok(ev.some((e) => e.kind === 'message.recorded' && e.turnId.endsWith('#m1') && e.role === 'user' && e.excerpt.includes('我改过')), 'the canvas keeps its edited text');
+  assert.ok(ev.some((e) => e.kind === 'message.recorded' && e.turnId.endsWith('#m1') && e.role === 'assistant'));
   const q1 = ev.find((e) => e.kind === 'message.recorded' && e.turnId.endsWith('#n1') && e.role === 'user');
   assert.equal(q1.actor, 'human'); assert.equal(q1.modelVisible, true);
   const a1 = ev.find((e) => e.kind === 'message.recorded' && e.turnId.endsWith('#n1') && e.role === 'assistant');
@@ -136,7 +127,7 @@ test('context.committed: exact from a logged commit, upstream-only from the olde
 
 test('indexed together, a mirrored turn counts once and the canvas answers why for its materials', () => {
   const out = run('index');
-  assert.match(out, /indexed 7 sessions/, out.split('\n')[0]);
+  assert.match(out, /indexed 4 sessions/, out.split('\n')[0]);
   const why = run('why', `${proj}/src/api.ts`);
   assert.match(why.split('\n')[0], /1 turn in 1 session/, 'the mirror does not double the runner turn');
   const pdf = run('why', 'snn-review.pdf');
@@ -151,15 +142,6 @@ test('indexed together, a mirrored turn counts once and the canvas answers why f
   assert.ok(!JSON.stringify(facts).includes('它用可导的近似'), 'facts hold no answer text');
 });
 
-test("an anchor is a claim until the canvas's bundle commit confirms it: matched, mismatch, unverified", () => {
-  const why = run('why', `${proj}/src/handoff.ts`);
-  assert.match(why, /↩ from canvas node n2 \(cb_cdcdcdcdcdcdcdcd, matched\)/);
-  assert.match(why, /↩ from canvas node n1 \(cb_cdcdcdcdcdcdcdcd, mismatch\)/);
-  assert.match(why, /↩ from canvas node n9 \(cb_0000000000000000, unverified\)/);
-  const json = JSON.parse(run('why', `${proj}/src/handoff.ts`, '--json'));
-  assert.deepEqual(json.hits.map((h) => h.anchor.status).sort(), ['matched', 'mismatch', 'unverified']);
-});
-
 test('a material is found by its own words — the title in its extracted text — whatever the file is called', () => {
   const hit = run('find', 'Surrogate Gradient Learning in Spiking');
   assert.match(hit.split('\n')[0], /1 turn in 1 session/);
@@ -172,7 +154,7 @@ test('a material is found by its own words — the title in its extracted text �
 test('the app\'s own canvas records are a default root: found without --canvas, and one project in two files counts once', () => {
   assert.match(run('find', '自动落盘的画布').split('\n')[0], /1 turn in 1 session/);
   assert.match(run('why', 'snn-review.pdf').split('\n')[0], /1 turn in 1 session/, 'the record and the backup of proj-snn-01 do not double the attachment');
-  assert.match(run('status'), /6 sessions in 7 files/);
+  assert.match(run('status'), /3 sessions in 4 files/);
 });
 
 test('an archived node is out of the record: no turn, no wire, no commit, and the words are not found (#51)', () => {

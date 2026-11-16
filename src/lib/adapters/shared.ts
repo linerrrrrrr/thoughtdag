@@ -193,15 +193,14 @@ export function attachSubagentBranches(
 ): ThoughtNode[] {
   const kids: ThoughtNode[] = [];
   for (const run of turn.subagents ?? []) {
-    const node = makeNode(`[${run.agent}] ${run.task}`.trim(), run.output, false);
-    node.data.isBranch = true;
+    const node = makeNode(`[${run.agent}] ${run.task}`.trim(), run.output);
     node.data.importSource = { runner, sessionId, itemIds: run.itemIds, ...(cwd ? { cwd } : {}), subagent: { agent: run.agent, of: turn.itemIds[0] ?? '' } };
     node.data.source = { question: node.data.question, response: node.data.response };
     if (run.tools?.length) seatTurnWork(node, { tools: run.tools });
     seedPlaque(node);
     nodes.push(node);
     kids.push(node);
-    edges.push({ id: generateId(), source: parent.id, target: node.id, type: 'smoothstep', data: { isBranchFromSelection: true, branchYRatio: 0.5 } } as ThoughtEdge);
+    edges.push({ id: generateId(), source: parent.id, target: node.id, type: 'smoothstep', data: {} } as ThoughtEdge);
   }
   return kids;
 }
@@ -218,12 +217,11 @@ export function turnsToBranch(
   const edges: ThoughtEdge[] = [];
   let prev: { id: string } = { id: anchorNode.id };
   for (const turn of turns) {
-    const node = makeNode(turn.question || '(tool-only turn)', turn.response, false);
+    const node = makeNode(turn.question || '(tool-only turn)', turn.response);
     node.data.importSource = { runner, sessionId, itemIds: turn.itemIds, ...(cwd ? { cwd } : {}) };
     node.data.source = { question: node.data.question, response: node.data.response };
     seatTurnWork(node, turn);
     seedPlaque(node);
-    if (nodes.length === 0) node.data.isBranch = true; // the experiment forks off sideways
     nodes.push(node);
     edges.push({ id: generateId(), source: prev.id, target: node.id, type: 'smoothstep' } as ThoughtEdge);
     attachSubagentBranches(node, turn, nodes, edges, runner, sessionId, cwd);

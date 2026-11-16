@@ -29,7 +29,7 @@ Current presets include OpenRouter, Zhipu GLM / Z.ai GLM, GLM Coding, Kimi Code,
 
 When a plan issues a key for a compatible endpoint, select its preset and paste that key; you do not need to enter its dedicated endpoint manually. GLM Coding, Kimi Code, and MiniMax routes are already included in the app.
 
-A consumer subscription does not necessarily include third-party API access. The **ChatGPT plan** entry is an optional local compatibility route: ThoughtDAG can connect to an adapter that is already running on the same machine, but the current app does not install or start that adapter for you. Without that local setup, OpenRouter, a provider API key, or local Ollama is the more direct route.
+A consumer subscription does not necessarily include third-party API access. Check which API credentials and endpoints the service provides.
 
 ## Local models with Ollama
 
@@ -102,9 +102,3 @@ What leaves the machine: the question and the candidate excerpts of that one dec
 In a small selection pilot, Jev-1.13's median was **391 ms** against **24,813 ms** for a GLM-5.3-Flash adapter with default reasoning: six runs per engine over the same 14 synthetic excerpts. The two are different inference paths, and the timing covers the selection step alone, without retrieval or answer generation, so it does not measure whole-product speed or accuracy.
 
 <img src="./jev-relevance-en.gif" alt="Animated replay of the selection pilot: Jev median 391 milliseconds versus 24,813 milliseconds for the GLM adapter with default reasoning. Not end-to-end retrieval timing." width="100%" loading="lazy"/>
-
-## Connect local agent sessions
-
-Model connections answer “which endpoint generates this response.” Session Atlas brings local agent sessions into a mirror canvas that you can inspect and reorganize. In the desktop app, **Session Atlas → Sources** can re-detect directories and **Enable/Update** the command that opens a session in ThoughtDAG.
-
-[Open the Session Atlas guide](/guides/session-atlas#configure-sources-and-handoff)

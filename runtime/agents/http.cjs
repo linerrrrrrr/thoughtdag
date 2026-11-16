@@ -15,7 +15,7 @@ const RUNTIME_FACTORIES = {
   'claude-code': (log) => require('./claude.cjs').createClaudeRuntime({ log }),
 };
 
-function createAgentsHttp({ workspaceRoot = path.join(os.homedir(), '.thoughtdag', 'workspaces'), log = () => {} } = {}) {
+function createAgentsHttp({ workspaceRoot = path.join(process.env.THOUGHTDAG_HOME || path.join(os.homedir(), '.thoughtdag'), 'workspaces'), log = () => {} } = {}) {
   const runtimes = new Map();
   const owners = new Map();      // runId → runtime name
   const clients = new Set();     // SSE responses

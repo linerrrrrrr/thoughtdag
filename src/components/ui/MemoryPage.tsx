@@ -5,7 +5,7 @@ import { useInlineEditDismiss } from '../../lib/use-inline-edit-dismiss';
 import { whyBridge, hasWhy } from '../../lib/why-bridge';
 import { docLines, lineNote, setDocText, migrateLegacyMemories, removeInbox, type ProfileKind, type LineNote } from '../../lib/profile';
 import { buildDossier, updateDossier, rebuildDossier, editDossierSection, dossierEmpty, SECTION_ORDER, SECTION_KEY, AUTO_MERGE_PENDING, type DossierSection } from '../../lib/dossier';
-import { openWhyLink } from '../../lib/atlas/live-mirror';
+import { openWhyLink } from '../../lib/source-navigation';
 import { downloadFile } from '../../lib/export';
 import AgentMemoryFiles from './AgentMemoryFiles';
 import TopicsPanel from './TopicsPanel';
@@ -151,7 +151,7 @@ function DossierDrawer({ topicId, name, onClose, onChanged, onOpened }: { topicI
   };
   const openSource = async (key: string) => {
     const s = d?.sources[key]; if (!s || s.kind !== 'turn') return;
-    if (await openWhyLink(s.open)) onOpened?.();
+    if (await openWhyLink(s.open, s)) onOpened?.();
   };
   const built = !!d?.builtAt && !dossierEmpty(d);
   return (

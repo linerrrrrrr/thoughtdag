@@ -1,5 +1,8 @@
 import type { ThoughtNode, ThoughtEdge } from '../types';
 import { isNotebook } from './notebook';
+import { DOCX_MIME_TYPE } from './document-copy';
+import { normalizeConversationGraph } from './normalize-graph';
+import { splitLegacyFileNodes } from './single-file-nodes';
 
 // Read-only viewer: the link IS the canvas. Graph data travels in the URL
 // hash (#view=<deflate+base64url>), so nothing touches a server and the
@@ -51,8 +54,13 @@ export async function buildViewerLink(nodes: ThoughtNode[], edges: ThoughtEdge[]
         // still reads everything.
         attachments: (n.data.attachments ?? []).map((a) => ({
           ...a,
-          content: a.type.startsWith('image/') || a.type === 'application/pdf' || isNotebook(a) ? '' : a.content,
+          sourcePath: undefined,
+          content: a.type.startsWith('image/') || a.type === 'application/pdf' || a.type === DOCX_MIME_TYPE || isNotebook(a) ? '' : a.content,
           contentInVault: undefined,
+          editedDocxContent: undefined,
+          editedDocxRevision: undefined,
+          legacyDocumentHtml: undefined,
+          legacyDocumentText: undefined,
           pageImages: undefined,
           figures: undefined,
           isExtracting: false,
@@ -61,7 +69,7 @@ export async function buildViewerLink(nodes: ThoughtNode[], edges: ThoughtEdge[]
     })),
     edges: edges.map((e) => (e.selected ? { ...e, selected: false } : e)),
   };
-  const bytes = new TextEncoder().encode(JSON.stringify(clean));
+  const bytes = new TextEncoder().encode(JSON.stringify(normalizeConversationGraph(clean)));
   const packed = await pipe(bytes, new CompressionStream('deflate-raw'));
   // Always the PUBLIC viewer origin: a link minted on the desktop app or a
   // dev server would otherwise point at localhost and open for nobody. The
@@ -72,7 +80,7 @@ export async function buildViewerLink(nodes: ThoughtNode[], edges: ThoughtEdge[]
 export async function decodeViewerHash(hash: string): Promise<ViewerPayload> {
   const packed = b64url.decode(hash.replace(/^#view=/, ''));
   const bytes = await pipe(packed, new DecompressionStream('deflate-raw'));
-  return JSON.parse(new TextDecoder().decode(bytes)) as ViewerPayload;
+  return splitLegacyFileNodes(normalizeConversationGraph(JSON.parse(new TextDecoder().decode(bytes)) as ViewerPayload));
 }
 
 /** Boot path for viewer mode: silence persistence, then load the graph from

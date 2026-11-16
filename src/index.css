@@ -178,12 +178,16 @@
   --color-material-file-ink: #456986;
   --color-material-file-wash: #EBF1F7;
   --color-warm: #E08A3C;         /* explore branches               */
-  --color-trace: #F59E0B;        /* ancestor-path edge highlight   */
-  --color-watch: #DC2626;        /* evaluator watch edges          */
+  --color-trace: #F59E0B;        /* text highlights, legacy edges, illustrations */
+  --color-danger: #DC2626;        /* destructive actions and errors */
 }
 
 :root {
   color-scheme: light;
+  --ui-scale: 0.75;
+  --ui-vw: calc(1vw / var(--ui-scale));
+  --ui-vh: calc(1vh / var(--ui-scale));
+  --ui-dvh: calc(1dvh / var(--ui-scale));
   /* canvas texture (React Flow Background strokes) */
   --canvas-dot: #D4DAE3;
   --canvas-grid-fine: rgba(84, 100, 128, 0.10);
@@ -217,7 +221,7 @@
   --color-accent-strong: #B9B2F7;
   --color-warm: #E3A45E;
   --color-trace: #D9A83E;
-  --color-watch: #E0796F;
+  --color-danger: #E0796F;
   --canvas-dot: #384254;
   --canvas-grid-fine: rgb(186 195 210 / 0.06);
   --canvas-grid-major: rgb(186 195 210 / 0.14);
@@ -318,6 +322,23 @@ code, pre {
   font-family: var(--font-mono);
 }
 
+/* Scale the complete interface, including body portals, as one composition.
+   React Flow owns physical pointer coordinates: cancel UI zoom at its root,
+   then restore it only for screen-space controls inside that root. */
+body { zoom: var(--ui-scale); }
+.react-flow {
+  zoom: calc(1 / var(--ui-scale));
+  --ui-vw: 1vw;
+  --ui-vh: 1vh;
+  --ui-dvh: 1dvh;
+}
+.react-flow :is(.react-flow__controls, .canvas-map-dock, .canvas-timeline, [data-selection-target-control]) {
+  zoom: var(--ui-scale);
+  --ui-vw: calc(1vw / var(--ui-scale));
+  --ui-vh: calc(1vh / var(--ui-scale));
+  --ui-dvh: calc(1dvh / var(--ui-scale));
+}
+
 /* ReactFlow overrides */
 .canvas-header {
   position: absolute;
@@ -373,13 +394,13 @@ code, pre {
 .canvas-toolbar-group:empty { display: none; }
 /* Destructive object actions share theme-aware feedback across cards and menus.
    Icon-only controls stay quiet until interaction; text actions state the risk. */
-.object-action-danger { color: var(--color-watch); }
+.object-action-danger { color: var(--color-danger); }
 .object-action-danger[data-icon-only] { color: var(--color-ink-faint); }
 .object-action-danger:hover:not(:disabled), .object-action-danger:focus-visible {
-  color: var(--color-watch);
-  background: color-mix(in srgb, var(--color-watch) 9%, transparent);
+  color: var(--color-danger);
+  background: color-mix(in srgb, var(--color-danger) 9%, transparent);
 }
-.object-action-danger:focus-visible { opacity: 1; outline: 2px solid var(--color-watch); outline-offset: 2px; }
+.object-action-danger:focus-visible { opacity: 1; outline: 2px solid var(--color-danger); outline-offset: 2px; }
 .canvas-toolbar-context { gap: 4px; }
 .canvas-toolbar-button {
   display: flex;
@@ -483,7 +504,7 @@ code, pre {
   box-shadow: var(--shadow-lg);
 }
 /* Narrow workspaces keep canvas tools available and collapse the reading panel. */
-@media (max-width: 959px) {
+@media (max-width: 719px) {
   .canvas-header { right: var(--spacing-canvas-inset) !important; }
   [data-focus-panel] { display: none; }
 }
@@ -544,13 +565,13 @@ code, pre {
 .react-flow__minimap {
   background: var(--color-card) !important;
   border: 1px solid var(--color-line) !important;
-  border-radius: var(--radius-overlay) !important;
-  box-shadow: var(--shadow-sm) !important;
+  border-radius: calc(var(--radius-overlay) * var(--ui-scale)) !important;
+  box-shadow: 0 0.75px 2.25px rgb(24 35 52 / 0.06) !important;
   overflow: hidden;
   isolation: isolate;
   margin: 0 !important;
-  right: var(--spacing-canvas-inset) !important;
-  bottom: var(--spacing-canvas-inset) !important;
+  right: calc(var(--spacing-canvas-inset) * var(--ui-scale)) !important;
+  bottom: calc(var(--spacing-canvas-inset) * var(--ui-scale)) !important;
   /* hover = intent to read: the svg scales up losslessly from its corner */
   transition: transform 0.18s ease, border-color 0.18s ease;
   transform-origin: bottom right;
@@ -700,9 +721,10 @@ textarea[class*='outline-none']:focus-visible { outline: none; }
 .node-ask-send:disabled { background: var(--color-line); color: var(--color-ink-faint); cursor: not-allowed; }
 .node-ask-send:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
 
-/* Preserve custom dimensions in the graph while compact cards use their
+/* Preserve custom dimensions in the graph while reduced cards use their
    natural height. Ports follow the visible card in every zoom tier. */
-.react-flow__node:has(> [data-thought-natural-height]) {
+.react-flow__node:has(> [data-thought-natural-height]),
+.react-flow__node:has(> [data-node-overview-surface]) {
   height: auto !important;
 }
 
@@ -719,6 +741,14 @@ textarea[class*='outline-none']:focus-visible { outline: none; }
 .material-files { display: flex; flex-direction: column; gap: 10px; }
 .material-file-row { display: flex; align-items: center; gap: 14px; padding: 12px 0; }
 .material-file-row + .material-file-row { border-top: 1px solid var(--color-line); }
+.material-file-header { align-items: center; flex-shrink: 0; border-bottom: 1px solid var(--color-line); margin-bottom: var(--spacing-related); padding-top: 0; padding-bottom: var(--spacing-related); }
+.material-file-path { margin-top: 2px; overflow-wrap: anywhere; user-select: text; cursor: text; }
+.material-file-header .material-file-meta { margin-top: 3px; }
+.material-document-actions { display: flex; align-items: center; gap: 4px; }
+.material-document-actions button { display: flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: var(--radius-control); color: var(--color-ink-faint); }
+.material-document-actions button:hover:not(:disabled) { color: var(--color-accent); }
+.material-document-actions button:disabled { opacity: .4; cursor: default; }
+.material-document-actions button:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
 .file-identity { flex: 0 0 58px; min-height: 64px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px; border: 1px solid var(--color-material-file-line); border-radius: var(--radius-control); color: var(--color-material-file-ink); background: var(--color-material-file-wash); }
 .file-identity span { font-family: var(--font-mono); font-size: var(--text-meta); line-height: var(--text-meta--line-height); }
 .file-identity[data-file-kind='table'] { color: var(--color-green-700); background: color-mix(in srgb, var(--color-green-600) 7%, var(--color-card)); border-color: color-mix(in srgb, var(--color-green-600) 30%, var(--color-line)); }
@@ -738,14 +768,6 @@ textarea[class*='outline-none']:focus-visible { outline: none; }
 }
 
 .root-node { border-color: color-mix(in srgb, var(--color-accent) 30%, var(--color-line)); }
-
-.orange-node {
-  border-color: color-mix(in srgb, var(--color-warm) 30%, var(--color-line));
-}
-
-.evaluator-node {
-  border-color: color-mix(in srgb, var(--color-watch) 25%, var(--color-line));
-}
 
 /* Instantiated paradigm human turn: the person acts here */
 .human-node {
@@ -781,11 +803,6 @@ textarea[class*='outline-none']:focus-visible { outline: none; }
   border-bottom: 1px solid var(--color-line);
 }
 .panel-card:last-child { border-bottom: 0; }
-.focus-panel-content > [data-agent-session-line],
-.focus-panel-content > [data-handoff-line] {
-  margin-inline: var(--spacing-surface-inset);
-  margin-bottom: var(--spacing-related);
-}
 
 /* Markdown body styles */
 .markdown-body {
@@ -798,7 +815,7 @@ textarea[class*='outline-none']:focus-visible { outline: none; }
   outline-offset: 4px;
 }
 
-/* User highlights: a fill, so they read apart from the explore marks' underline below. */
+/* User highlights use a translucent fill. */
 .markdown-body mark.highlight-mark {
   @apply bg-amber-100 text-amber-800 px-0.5 rounded-none;
 }
@@ -823,23 +840,13 @@ textarea[class*='outline-none']:focus-visible { outline: none; }
 [data-highlighter-active] * {
   cursor: crosshair !important;
 }
+/* The pen selects link text instead of dragging or opening the link. */
+[data-highlighter-active] a {
+  pointer-events: none;
+}
 [data-highlighter-active] ::selection {
   background: color-mix(in srgb, var(--color-trace) 35%, transparent);
   color: inherit;
-}
-
-/* Explore marks: the passages child branches were born from. A warm dotted
-   underline (structural trace), never a fill — fills belong to the user's
-   own highlights. Clickable where the host delegates to the child node. */
-.markdown-body mark.explore-mark {
-  background: transparent;
-  color: inherit;
-  padding: 0;
-  border-bottom: 2px dotted color-mix(in srgb, var(--color-warm) 65%, transparent);
-  cursor: pointer;
-}
-.markdown-body mark.explore-mark:hover {
-  background: color-mix(in srgb, var(--color-warm) 12%, transparent);
 }
 
 .markdown-body h1, .markdown-body h2, .markdown-body h3,
@@ -870,16 +877,7 @@ textarea[class*='outline-none']:focus-visible { outline: none; }
   border: 1px solid color-mix(in srgb, var(--color-accent) 35%, transparent); cursor: pointer;
 }
 .cite-chip:hover { background: color-mix(in srgb, var(--color-accent) 22%, transparent); }
-.cite-chip.unknown { color: #C73E2E; background: rgba(199, 62, 46, 0.08); border-color: rgba(199, 62, 46, 0.4); cursor: help; }
-/* inside the dialog the answer's explore marks ARE the chips (one markup for the dialog and the dropped node) */
-[data-canvas-chat] .markdown-body mark.explore-mark {
-  display: inline-flex; align-items: center; vertical-align: baseline; margin: 0 1px; padding: 0 5px; border-radius: var(--radius-tag); line-height: 1.5;
-  font-family: var(--font-mono); font-size: var(--text-meta); font-weight: 600; text-decoration: none;
-  color: var(--color-accent); background: color-mix(in srgb, var(--color-accent) 12%, transparent);
-  border: 1px solid color-mix(in srgb, var(--color-accent) 35%, transparent); cursor: pointer;
-}
-[data-canvas-chat] .markdown-body mark.explore-mark:hover { background: color-mix(in srgb, var(--color-accent) 22%, transparent); }
-[data-canvas-chat] .markdown-body mark.explore-mark[data-explore-target=""] { color: #C73E2E; background: rgba(199, 62, 46, 0.08); border-color: rgba(199, 62, 46, 0.4); cursor: help; }
+.cite-chip.unknown, .cite-chip[data-node-cite=""] { color: #C73E2E; background: rgba(199, 62, 46, 0.08); border-color: rgba(199, 62, 46, 0.4); cursor: help; }
 [data-canvas-chat] .markdown-body p { margin-bottom: 0.5em; }
 
 /* Questions share answer typography, with compact paragraph spacing. */
@@ -1034,30 +1032,20 @@ body.tdag-connecting, body.tdag-connecting * {
   user-select: none;
 }
 
-/* ── Map mode: the card becomes a label plaque ─────────────────────
-   Same bounding box (edges and layout depend on it), different visual
-   density: a stronger type-colored edge, no document bar. */
-.thought-node.map-node {
-  border-radius: var(--radius-node);
-  border-width: 1px;
-}
+/* Full cards keep canvas-space geometry. Reduced shells and their entire
+   interface composition share NodeOverview.css's screen-space scale. */
 .thought-node.root-node { border-left: 3px solid var(--color-accent); }
-.thought-node.map-node.root-node { border-left-width: calc(2px / clamp(0.32, var(--tdag-zoom, 1), 1)); }
 /* a plaque whose ladder text runs past the node's layout footprint ends in a fade */
 [data-plaque-line][data-clipped] {
   -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 40px), transparent);
   mask-image: linear-gradient(to bottom, #000 calc(100% - 40px), transparent);
 }
-.map-node.root-node { border-color: color-mix(in srgb, var(--color-accent) 85%, var(--color-line)); }
-.map-node.orange-node { border-color: color-mix(in srgb, var(--color-warm) 88%, var(--color-line)); }
-.map-node.evaluator-node { border-color: color-mix(in srgb, var(--color-watch) 82%, var(--color-line)); }
-.map-node.human-node { border-color: color-mix(in srgb, #d97706 82%, var(--color-line)); }
 
 /* Explicit short hints share the application's control and surface tokens. */
 .tdag-tooltip {
   position: fixed;
   z-index: 120;
-  max-width: min(340px, calc(100vw - 24px));
+  max-width: min(340px, calc(100 * var(--ui-vw) - 24px));
   background: var(--color-card);
   color: var(--color-ink-muted);
   border: 1px solid var(--color-line-strong);
@@ -1084,11 +1072,6 @@ body.tdag-connecting, body.tdag-connecting * {
    At zoom = 0.32 the factor is exactly 1 — the tier transition is seamless. */
 [data-zoom-tier='glyph'] [data-glyph-node] > span {
   transform: scale(calc(0.32 / var(--tdag-zoom, 0.32)));
-}
-
-/* Edges thicken at glyph zoom so the skeleton stays legible at distance */
-[data-zoom-tier='glyph'] .react-flow__edge path.react-flow__edge-path {
-  stroke-width: calc(7px * 0.32 / var(--tdag-zoom, 0.32)) !important;
 }
 
 /* Unbroken long tokens (URLs, DOIs, hashes) must wrap instead of escaping
@@ -1130,8 +1113,7 @@ body.tdag-connecting, body.tdag-connecting * {
    wrapper, not the wrapper or the 520px box — shadow hugs the icon itself */
 
 /* ── Context Focus ─────────────────────────────────────────────────────
-   Single selection lights the node's REAL context (same partition the
-   prompt builder uses); everything else dims gently. Read-only. */
+   Selected nodes share one context highlight; unrelated objects dim. */
 .react-flow__node.focus-dim { opacity: 0.30; }
 .react-flow__node.focus-dim, .react-flow__node.focus-ctx,
 .react-flow__node.focus-target, .react-flow__node.focus-down { transition: opacity 0.25s ease; }
@@ -1140,23 +1122,14 @@ body.tdag-connecting, body.tdag-connecting * {
 /* the searchlight owns the stage while active */
 [data-searching] .react-flow__node.focus-dim { opacity: 0.16; }
 
-/* lit edges keep their SCREEN width when zoomed out: divide by the zoom
-   (clamped) so the feed line never thins into invisibility on the map */
-.react-flow__edge.focus-e-path .react-flow__edge-path {
-  stroke-width: calc(3.5px / clamp(0.15, var(--tdag-zoom, 1), 1)) !important;
-}
-.react-flow__edge.focus-e-down .react-flow__edge-path {
-  stroke-width: calc(2.5px / clamp(0.3, var(--tdag-zoom, 1), 1)) !important;
-}
-
-/* feed-line flow: bright dots gliding inside the solid accent stroke */
+/* Feed dots share the line's bounded zoom compensation and stay inside it. */
 .tdag-flow-ov {
   stroke: #fff; stroke-linecap: round; opacity: 0.9; pointer-events: none;
-  stroke-width: calc(1.6px / clamp(0.15, var(--tdag-zoom, 1), 1));
-  stroke-dasharray: calc(5px / clamp(0.15, var(--tdag-zoom, 1), 1)) calc(26px / clamp(0.15, var(--tdag-zoom, 1), 1));
+  stroke-width: calc(1.6px * 0.32 / min(0.32, var(--tdag-zoom, 1)));
+  stroke-dasharray: calc(5px * 0.32 / min(0.32, var(--tdag-zoom, 1))) calc(26px * 0.32 / min(0.32, var(--tdag-zoom, 1)));
   animation: tdag-flow 1.1s linear infinite;
 }
-@keyframes tdag-flow { to { stroke-dashoffset: calc(-31px / clamp(0.15, var(--tdag-zoom, 1), 1)); } }
+@keyframes tdag-flow { to { stroke-dashoffset: calc(-31px * 0.32 / min(0.32, var(--tdag-zoom, 1))); } }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;

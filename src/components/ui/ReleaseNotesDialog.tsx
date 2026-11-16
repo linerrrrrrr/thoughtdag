@@ -28,7 +28,7 @@ export default function ReleaseNotesDialog() {
     <div className="fixed inset-0 z-[100] bg-black/25 flex items-center justify-center animate-fade-in p-6">
       <div
         ref={layerRef} aria-modal="true" tabIndex={-1}
-        className="bg-card border border-line rounded-panel shadow-lg w-[680px] max-w-full max-h-[85vh] overflow-y-auto"
+        className="bg-card border border-line rounded-panel shadow-lg w-[680px] max-w-full max-h-[calc(85*var(--ui-vh))] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-labelledby="release-notes-title"

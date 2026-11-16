@@ -1,20 +1,10 @@
-import { get as idbGet, set as idbSet, del as idbDel } from 'idb-keyval';
+import { get as idbGet, set as idbSet, del as idbDel } from './disk-storage';
 import type { PersistStorage, StorageValue } from 'zustand/middleware';
 
-// Debounced async storage backed by IndexedDB.
-// IndexedDB, not localStorage: attachments carry base64 payloads (PDF page
-// images can be tens of MB) far beyond the ~5MB localStorage quota.
-//
-// OBJECT storage, not createJSONStorage: the JSON wrapper stringifies the
-// whole graph SYNCHRONOUSLY on every set() — the debounce only guarded the
-// IDB write, not the serialize, so attachment-heavy canvases paid 50-100ms
-// per streamed chunk. Here setItem holds a cheap object reference and the
-// debounced flush hands the object straight to IndexedDB, whose structured
-// clone replaces JSON.stringify entirely.
-//
-// Debounced because streaming writes one state update per chunk; the
-// trailing write is flushed on pagehide/visibility-hidden so a quick tab
-// close loses at most WRITE_DELAY_MS of the in-flight response.
+// Debounced object storage: IndexedDB by default, or the configured local
+// disk service after its verified migration. The adapter serializes disk
+// records only when this debounce flushes, never for each streamed chunk.
+// Page hide and visibility changes attempt a final asynchronous flush.
 const WRITE_DELAY_MS = 1000;
 
 let pending: { name: string; value: unknown } | null = null;
@@ -28,7 +18,7 @@ function flush() {
   if (pending) {
     const { name, value } = pending;
     pending = null;
-    void idbSet(name, value);
+    void idbSet(name, value).catch((error) => console.error('[thoughtdag] canvas save failed:', error));
   }
 }
 

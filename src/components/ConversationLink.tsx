@@ -3,9 +3,10 @@ import { createPortal } from 'react-dom';
 import { ClipboardCopy, ExternalLink, FileText, FolderOpen, X } from 'lucide-react';
 import { useT, fmt } from '../i18n';
 import { localTargetOf, localFileHref, basenameOf, safeMarkdownUrl, type LocalTarget } from '../lib/local-target';
-import { openLocalPath } from '../lib/local-path';
+import { openLocalPath, revealLocalPath as reveal } from '../lib/local-path';
 import { toast } from '../lib/ui-store';
 import { useDismissableLayer } from '../lib/use-dismissable-layer';
+import { screenToUi, uiRect, uiViewport } from '../lib/ui-scale';
 import './ConversationLink.css';
 
 interface Preview { target: LocalTarget; text: string; truncated: boolean }
@@ -33,15 +34,6 @@ function FilePreview({ value, onClose }: { value: Preview; onClose: () => void }
       )}</pre>
     </div>
   </div>, document.body);
-}
-
-async function reveal(path: string) {
-  const bridge = window.desktopLocal;
-  if (!bridge?.reveal) return openLocalPath(path);
-  try {
-    const result = await bridge.reveal(path);
-    if (!result.ok) throw new Error(result.reason);
-  } catch { const { t } = await import('../i18n'); toast('error', fmt(t('local.failed'), { path }), 7000); }
 }
 
 /** One link behavior is shared by answers, commentary, and tool file references. */
@@ -87,17 +79,17 @@ export function ConversationLink({ base, title, ...props }: AnchorHTMLAttributes
       onPointerDown={e => e.stopPropagation()} onDoubleClick={e => e.stopPropagation()}
       onClick={e => { e.stopPropagation(); if (!href) e.preventDefault(); else if (target) { e.preventDefault(); void open(); } }}
       onAuxClick={e => { if (target) { e.preventDefault(); e.stopPropagation(); if (e.button === 1) void open(); } }}
-      onContextMenu={e => { e.preventDefault(); e.stopPropagation(); setPoint({ x: e.clientX, y: e.clientY }); }}
+      onContextMenu={e => { e.preventDefault(); e.stopPropagation(); setPoint({ x: screenToUi(e.clientX), y: screenToUi(e.clientY) }); }}
       onKeyDown={e => {
         if (e.nativeEvent.isComposing || e.nativeEvent.keyCode === 229) return;
         if (e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10')) {
-          e.preventDefault(); e.stopPropagation(); const r = anchor.current?.getBoundingClientRect();
+          e.preventDefault(); e.stopPropagation(); const r = anchor.current ? uiRect(anchor.current) : null;
           if (r) setPoint({ x: r.left, y: r.bottom });
         }
       }}
     />
     {point && createPortal(<div ref={menu} role="menu" aria-label={target ? t('local.open') : t('local.openLink')} data-file-menu
-      className="conversation-link-menu nodrag nopan" style={{ left: Math.max(8, Math.min(point.x, window.innerWidth - 240)), top: Math.max(8, Math.min(point.y, window.innerHeight - (target ? 250 : 105))) }}
+      className="conversation-link-menu nodrag nopan" style={{ left: Math.max(8, Math.min(point.x, uiViewport().width - 240)), top: Math.max(8, Math.min(point.y, uiViewport().height - (target ? 250 : 105))) }}
       onPointerDown={e => e.stopPropagation()} onClick={e => e.stopPropagation()} onContextMenu={e => e.preventDefault()}
       onKeyDown={e => {
         if (e.nativeEvent.isComposing || e.nativeEvent.keyCode === 229) return;

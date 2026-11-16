@@ -19,7 +19,6 @@ await page.route('**/api/**', route => {
 await page.addInitScript(() => {
   localStorage.setItem('thoughtdag.seeded', 'yes');
   localStorage.setItem('thoughtdag.tutorialDone', '1');
-  localStorage.setItem('thoughtdag.autoRefreshPaused', 'yes');
 });
 const check = name => console.log('PASS', name);
 try {
@@ -88,8 +87,7 @@ try {
 
   await page.evaluate(() => {
     window.__store.getState().setNodes([{ id: 'layer-reader', type: 'thought', position: { x: 0, y: 0 }, data: {
-      question: 'Reader fixture', response: '', responses: [], responseIndex: 0, stepKind: 'file', isRoot: true,
-      isCollapsed: false, isEditing: false, isLoading: false, tokenCount: 0, highlights: [],
+      question: 'Reader fixture', response: '', responses: [], responseIndex: 0, stepKind: 'file', isCollapsed: false, isEditing: false, isLoading: false, tokenCount: 0, highlights: [],
       attachments: [{ id: 'pdf-fixture', name: 'Fixture.pdf', type: 'application/pdf', content: '', size: 0, extractedText: 'Original extracted text' }],
     } }]);
     window.__store.getState().setEdges([]);

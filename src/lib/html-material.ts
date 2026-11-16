@@ -77,6 +77,52 @@ async function makeTurndown() {
   return td;
 }
 
+/** The visual document body accepts basic text styling and local embedded images.
+ * It never retains active elements, CSS resources, or remote image loads. */
+export async function sanitizeDocumentHtml(source: string): Promise<string> {
+  const { default: DOMPurify } = await import('dompurify');
+  const clean = DOMPurify.sanitize(source, {
+    USE_PROFILES: { html: true },
+    FORBID_TAGS: ['style', 'script', 'iframe', 'object', 'embed', 'form', 'base', 'meta', 'link', 'input', 'button'],
+  });
+  const doc = new DOMParser().parseFromString(clean, 'text/html');
+  const properties = ['font-family', 'font-size', 'font-weight', 'font-style', 'text-decoration', 'text-align', 'color', 'background-color', 'width', 'height', 'margin-left', 'line-height'];
+  const length = /^(?:0|(?:\d+(?:\.\d+)?|\.\d+)(?:px|pt|pc|em|rem|cm|mm|in|%))$/i;
+  const lineHeight = /^(?:normal|(?:\d+(?:\.\d+)?|\.\d+)(?:px|pt|pc|em|rem|cm|mm|in|%)?)$/i;
+  for (const element of doc.body.querySelectorAll<HTMLElement>('[style]')) {
+    const styles = properties.flatMap(property => {
+      const value = element.style.getPropertyValue(property);
+      if (property === 'margin-left' && !length.test(value)) return [];
+      if (property === 'line-height' && !lineHeight.test(value)) return [];
+      return value && !/(?:url\s*\(|expression\s*\(|var\s*\(|@|[<>])/i.test(value) ? [`${property}: ${value}`] : [];
+    });
+    element.removeAttribute('style');
+    if (styles.length) element.setAttribute('style', styles.join('; '));
+  }
+  for (const image of doc.body.querySelectorAll('img')) {
+    image.removeAttribute('srcset');
+    if (!/^data:image\/(?:png|jpe?g|gif|webp);base64,/i.test(image.getAttribute('src') ?? '')) {
+      image.replaceWith(doc.createTextNode(image.getAttribute('alt') ?? ''));
+    }
+  }
+  return doc.body.innerHTML;
+}
+
+/** Converted documents are already the complete body, so do not run article
+ * extraction or deck detection. Image bytes stay in the original document. */
+export async function documentHtmlToMarkdown(source: string): Promise<string> {
+  const doc = await sanitize(source);
+  const td = await makeTurndown();
+  td.addRule('document-image-label', {
+    filter: 'img',
+    replacement: (_content, node) => {
+      const alt = (node as HTMLImageElement).getAttribute('alt')?.trim();
+      return alt ? `\n\n[Image: ${alt}]\n\n` : '';
+    },
+  });
+  return td.turndown(doc.body?.innerHTML ?? '').trim();
+}
+
 function hasSubstance(el: Element): boolean {
   return (el.textContent ?? '').trim().length > 0 || !!el.querySelector('img,svg,canvas,video');
 }

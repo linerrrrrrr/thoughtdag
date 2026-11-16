@@ -70,7 +70,7 @@ try {
     assert.equal(handleSide('continue'), 'bottom'); assert.equal(handleSide('branch'), 'right');
     assert.equal(handleSide('in-left'), 'left'); assert.equal(handleSide('out-top'), 'top');
     const nodes = [node('a', 0, 0), node('b', 680, 0)];
-    for (const data of [{}, { isCrossLink: true }, { isWatch: true }, { isBranchFromSelection: true }]) {
+    for (const data of [{}, { isCrossLink: true }, { }, { }]) {
       assert.deepEqual(sides(resolveEdgeAnchors(edge('a', 'b', data), nodes)), ['right', 'left']);
     }
   });

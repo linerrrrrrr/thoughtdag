@@ -7,6 +7,7 @@ import { internAttachment } from './attachment-vault';
 import { NOTEBOOK_EXTENSION, NOTEBOOK_FIGURE_THRESHOLD, NOTEBOOK_TYPE, isNotebook, notebookMaterial, parseNotebook } from './notebook';
 import { toast } from './ui-store';
 import { t } from '../i18n';
+import { DOCX_MIME_TYPE } from './document-copy';
 
 // last-resort readable copy when the HTML extraction pipeline itself fails
 function stripHtmlTags(html: string): string {
@@ -31,13 +32,11 @@ const OFFICE_EXPORT_HINT = /\.(pptx?|key|odp|doc|rtf|odt|xlsx?|numbers|ods)$/i;
 
 // accept attribute for <input type="file"> — keep in sync with TEXT_EXTENSIONS
 export const FILE_INPUT_ACCEPT =
-  'image/*,.pdf,.ipynb,.txt,.md,.js,.ts,.tsx,.jsx,.py,.json,.csv,.yaml,.yml,.toml,.sh,.c,.cpp,.h,.java,.rs,.go,.rb,.swift,.css,.html,.htm,.xml,.sql';
+  'image/*,.pdf,.docx,.ipynb,.txt,.md,.js,.ts,.tsx,.jsx,.py,.json,.csv,.yaml,.yml,.toml,.sh,.c,.cpp,.h,.java,.rs,.go,.rb,.swift,.css,.html,.htm,.xml,.sql';
 
 // Identity of an attachment's content — used to dedup the same file uploaded
 // to multiple nodes or reached via multiple DAG paths.
-export function attachmentFingerprint(att: Attachment): string {
-  return `${att.name}|${att.size}|${att.content?.substring(0, 100)}`;
-}
+export { attachmentFingerprint } from './attachment-fingerprint';
 
 // Read a File into an Attachment (no server round-trip). Returns null for
 // unsupported types. PDF content is raw base64; extraction happens in processFile.
@@ -70,17 +69,27 @@ export function readFileToAttachment(file: File): Promise<Attachment | null> {
       };
       reader.readAsDataURL(file);
     } else if (isDocx) {
-      // Word docs: extract the text layer in the browser (mammoth is loaded
-      // lazily — first .docx pays the module download, everyone else never does)
+      // Keep source bytes separate from the readable Markdown copy. Conversion
+      // is local and lazy; no upload or source-file modification is involved.
       void file.arrayBuffer().then(async (buf) => {
         try {
           const mammoth = await import('mammoth');
-          const r = await mammoth.extractRawText({ arrayBuffer: buf });
-          resolve({ id, name: file.name, type: 'text/plain', size: file.size, addedAt, content: r.value.trim() });
+          const { documentHtmlToMarkdown, sanitizeDocumentHtml } = await import('./html-material');
+          const { restoreDocxImageSizes } = await import('./docx-image-sizes');
+          const r = await mammoth.convertToHtml({ arrayBuffer: buf });
+          const documentHtml = await sanitizeDocumentHtml(await restoreDocxImageSizes(buf, r.value));
+          const extractedText = await documentHtmlToMarkdown(documentHtml);
+          const bytes = new Uint8Array(buf);
+          let binary = '';
+          for (let offset = 0; offset < bytes.length; offset += 0x8000) {
+            binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
+          }
+          resolve({ id, name: file.name, type: DOCX_MIME_TYPE, size: file.size, addedAt,
+            content: btoa(binary), extractedText, documentHtml });
         } catch {
           resolve(null);
         }
-      });
+      }).catch(() => resolve(null));
     } else if (isHTML) {
       // raw source only serves the reader's original view; the readable
       // Markdown (extractedText) is produced async in processFile
@@ -199,7 +208,7 @@ export async function processFile(file: File, cb: ProcessFileCallbacks): Promise
   }
 
   if (att.type !== 'application/pdf') {
-    cb.add(att);
+    cb.add(await internAttachment(att));
     return;
   }
 

@@ -2,6 +2,7 @@ import { backgroundCall } from './background-model';
 import { activeSummary } from '../utils';
 import { collectTimeline } from './timeline';
 import type { ThoughtNode, ThoughtEdge, ThoughtData } from '../types';
+import { isConversationStart } from './graph';
 
 // The Gedankengang narrator: one on-demand LLM call that reads the whole
 // map's takeaways and writes the journey as a short paragraph — from where
@@ -13,10 +14,10 @@ import type { ThoughtNode, ThoughtEdge, ThoughtData } from '../types';
 export type Gedankengang = { text: string; fp: string; at: string; lang: 'zh' | 'en' };
 
 /** Cheap stable fingerprint over what the narrator actually reads. */
-export function graphFingerprint(nodes: ThoughtNode[]): string {
+export function graphFingerprint(nodes: ThoughtNode[], edges: ThoughtEdge[] = []): string {
   const parts = nodes
     .filter((n) => !(n.data as ThoughtData).archived)
-    .map((n) => `${n.id}:${activeSummary(n.data) ?? ''}:${(n.data as ThoughtData).summaryTypes?.[(n.data as ThoughtData).responseIndex] ?? ''}`)
+    .map((n) => `${n.id}:${isConversationStart(n.id, edges)}:${n.data.question}:${activeSummary(n.data) ?? ''}:${(n.data as ThoughtData).summaryTypes?.[(n.data as ThoughtData).responseIndex] ?? ''}`)
     .sort();
   let h = 5381;
   for (const p of parts) for (let i = 0; i < p.length; i++) h = ((h << 5) + h + p.charCodeAt(i)) | 0;
@@ -32,11 +33,11 @@ export const getCached = (fp: string, lang: 'zh' | 'en') => cache.get(`${lang}:$
 const TAG: Record<string, string> = { ruleout: 'RULEOUT', decision: 'DECISION', pivot: 'PIVOT', open: 'OPEN', insight: 'INSIGHT' };
 
 export async function generateGedankengang(nodes: ThoughtNode[], edges: ThoughtEdge[], lang: 'zh' | 'en'): Promise<Gedankengang> {
-  const fp = graphFingerprint(nodes);
+  const fp = graphFingerprint(nodes, edges);
   const hit = cache.get(`${lang}:${fp}`);
   if (hit) return hit;
 
-  const root = nodes.find((n) => (n.data as ThoughtData).isRoot);
+  const root = nodes.find((n) => !['note', 'file', 'link', 'frame'].includes(n.data.stepKind ?? '') && isConversationStart(n.id, edges));
   const entries = collectTimeline(nodes.filter((n) => !(n.data as ThoughtData).archived), 0);
   // On very large maps, feed the narrator the turns, not the full log: keep
   // every badged line plus the first/last stretches, collapse the rest.
@@ -57,7 +58,6 @@ export async function generateGedankengang(nodes: ThoughtNode[], edges: ThoughtE
     })
     .filter((l): l is string => !!l);
   if (omitted > 0) lines.push(`(${omitted} plain steps omitted from this list)`);
-  void edges; // topology folds into creation order for now — wiring detail
 
   const { text: raw } = await backgroundCall([
     {

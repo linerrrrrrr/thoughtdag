@@ -1,25 +1,32 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useReactFlow, useUpdateNodeInternals, type NodeProps } from '@xyflow/react';
-import { BookOpen, ExternalLink, FileText, Link2, Link2Off, Loader2, Paperclip, Pencil, RefreshCw, StickyNote, Trash2, X } from 'lucide-react';
+import { BookOpen, ExternalLink, FolderOpen, Link2, Loader2, Paperclip, Pencil, RefreshCw, StickyNote, Trash2 } from 'lucide-react';
 import type { Attachment, ThoughtNode as ThoughtNodeType } from '../types';
 import { useStore } from '../store';
 import { useNodeDetail } from '../lib/node-detail';
-import { useUiStore } from '../lib/ui-store';
+import { toast, useUiStore } from '../lib/ui-store';
 import { triggerParadigmCascade } from '../store/streaming';
 import { extractImage, fetchLinkIntoNode, ingestFiles } from '../lib/content';
 import { FILE_INPUT_ACCEPT } from '../lib/attachments';
+import { chooseMaterialFiles, droppedFiles } from '../lib/original-document';
 import { Markdown } from './Markdown';
 import NodeOverview from './NodeOverview';
 import NodeConnectionHandles from './NodeConnectionHandles';
 import NodeResizeControls from './NodeResizeControls';
-import FileIdentity from './FileIdentity';
-import { fileIdentity, fileSizeLabel } from '../lib/file-identity';
+import FileAttachmentHeader from './FileAttachmentHeader';
+import DocumentOriginalButton from './DocumentOriginalButton';
+import { fileIdentity } from '../lib/file-identity';
+import { revealLocalPath } from '../lib/local-path';
 import { getNodeDisplayName, getNodeNameSource } from '../lib/node-display-name';
 import { countTokens } from '../utils';
 import { useT, fmt } from '../i18n';
 import { isViewerMode } from '../lib/viewer';
 import { recallSourceLine } from '../lib/recall';
 import { useInlineEditDismiss } from '../lib/use-inline-edit-dismiss';
+import { hasNativeDocxSource, isEditableDocument } from '../lib/document-copy';
+import DocumentAttachmentCard from './DocumentAttachmentCard';
+import { useStableNodeViewHeight } from '../lib/use-stable-node-view-height';
+import { pixelDimension } from '../lib/node-content-height';
 
 // Content nodes: canvas material, not turns. A note (markdown), a file
 // (attachments) or a link (stamped web snapshot) that never generates — it
@@ -81,34 +88,34 @@ export default function ContentNode({ id, data, selected }: NodeProps<ThoughtNod
   const removeAttachment = useStore((s) => s.removeAttachment);
   const selectedNodeId = useStore((s) => s.selectedNodeId);
   const setSelectedNodeId = useStore((s) => s.setSelectedNodeId);
-  // Blindspot #8: on-canvas ≠ in-context — unlinked material is decoration
-  const isLinked = useStore((s) => s.edges.some((e) => e.source === id));
   // Wiring material happens mostly from the overview — grow the handle there
   const { tier: zoomTier, fixed: fixedDetail } = useNodeDetail(data.detailLevel);
   const zoomedOut = zoomTier !== 'work';
   const rf = useReactFlow();
   const nodePos = useStore((s) => { const n = s.nodes.find((x) => x.id === id); return n ? n.position : null; });
-  // Does this material actually reach any context? 'none' and 'quote' are
-  // the two silent traps a card must confess to (One Rule's honest face).
-  const wireState = useStore((s) => {
-    const outs = s.edges.filter((e) => e.source === id);
-    if (outs.length === 0) return 'none:0';
-    const full = outs.filter((e) => !e.data?.isCrossLink).length;
-    return full > 0 ? `full:${full}` : 'quote:0';
-  });
   const glyphTier = zoomTier === 'glyph';
   const updateNodeInternals = useUpdateNodeInternals();
   useEffect(() => { updateNodeInternals(id); }, [zoomTier, id, updateNodeInternals]);
 
   const kind = data.stepKind === 'file' ? 'file' : data.stepKind === 'link' ? 'link' : 'note';
   // a height of the card's own (the corner handle) vs. the measured one React Flow passes in props
-  const resized = useStore((s) => s.nodes.find((n) => n.id === id)?.height != null);
+  const customHeight = useStore((s) => s.nodes.find((n) => n.id === id)?.height);
+  const customWidth = useStore((s) => s.nodes.find((n) => n.id === id)?.width);
+  const customStyleHeight = useStore((s) => s.nodes.find((n) => n.id === id)?.style?.height);
+  const configuredHeight = customHeight ?? pixelDimension(customStyleHeight);
+  const nodeRef = useRef<HTMLDivElement>(null);
   const [editing, setEditing] = useState(!isViewerMode && kind === 'note' && !data.question);
   const draftKey = `note:${id}`;
   const [draft, setDraft] = useState(() => useUiStore.getState().drafts[draftKey] ?? data.question);
   const retainedDraft = useUiStore(s => s.drafts[draftKey]);
   const editRef = useRef<HTMLDivElement>(null);
   const [openExtract, setOpenExtract] = useState<string | null>(null); // attId whose extraction panel is open
+  const [commentingDocumentId, setCommentingDocumentId] = useState<string | null>(null);
+  const [activeNativeDocumentId, setActiveNativeDocumentId] = useState<string | null>(null);
+  const [documentActionsHost, setDocumentActionsHost] = useState<HTMLDivElement | null>(null);
+  const onNativeEditingChange = useCallback((attachmentId: string, active: boolean) => {
+    setActiveNativeDocumentId(current => active ? attachmentId : current === attachmentId ? null : current);
+  }, []);
   const fileRef = useRef<HTMLInputElement>(null);
   const canContinueWorkflow = useStore(s => s.edges.some(edge => edge.source === id && !edge.data?.isCrossLink && s.nodes.some(node => node.id === edge.target && node.data.stepKind === 'prompt' && !node.data.response && !node.data.isLoading && !node.data.generationFailed)));
 
@@ -140,6 +147,8 @@ export default function ContentNode({ id, data, selected }: NodeProps<ThoughtNod
   };
 
   const attachments = data.attachments || [];
+  const hasNativeDocuments = kind === 'file' && attachments.some(hasNativeDocxSource);
+  const singleNativeDocument = hasNativeDocuments && attachments.length === 1;
   const fileTypes = [...new Set(attachments.map(att => fileIdentity(att.name).extension).filter(Boolean))];
   const materialLabel = t(kind === 'note' ? 'content.textMaterial' : kind === 'file' ? 'content.fileMaterial' : 'glyph.link');
   const linkLoading = kind === 'link' && !data.question && !data.linkTitle?.startsWith('⚠');
@@ -161,7 +170,7 @@ export default function ContentNode({ id, data, selected }: NodeProps<ThoughtNod
   const openClipSource = (e: React.MouseEvent) => {
     e.stopPropagation();
     if (!clipAnchor || !clipSourceId) return;
-    useUiStore.getState().setReaderNodeId(clipSourceId, { page: clipAnchor.page });
+    useUiStore.getState().setReaderNodeId(clipSourceId, { page: clipAnchor.page, attachmentId: clipAnchor.attId });
   };
   const linkDomain = (() => { try { return new URL(data.linkUrl ?? '').hostname; } catch { return data.linkUrl ?? ''; } })();
 
@@ -175,17 +184,22 @@ export default function ContentNode({ id, data, selected }: NodeProps<ThoughtNod
   const nodeNameSource = getNodeNameSource(data, nodeName);
   const noteBody = kind === 'note' ? data.question.replace(/^\s*#+\s*[^\n]+\n?/, '') : '';
   // Keep active input, empty slots and retry controls in their working form.
-  const showPlaque = zoomedOut && !openExtract && (kind === 'note'
+  const overviewAllowed = !editing && !openExtract && !activeNativeDocumentId && !commentingDocumentId;
+  const showPlaque = zoomedOut && overviewAllowed && (kind === 'note'
     ? !editing && !!data.question
     : kind === 'file' ? attachments.length > 0 : !linkLoading && !data.linkTitle?.startsWith('⚠'));
+  const overview = (glyphTier && overviewAllowed) || showPlaque;
+  const viewHeight = useStableNodeViewHeight(nodeRef, !overview && configuredHeight == null,
+    [id, data.question, data.stepKind, data.attachments, overview], customWidth,
+    !!(editing || openExtract || activeNativeDocumentId || commentingDocumentId));
+  const resized = configuredHeight != null || viewHeight.height != null;
 
-  if (glyphTier && !editing && !openExtract) {
-    // Glyph tier: material collapses to its own icon — a note, a document,
-    // a link. The footprint stays (edge anchors must not shift); only the
-    // centered seal renders.
+  if (glyphTier && overviewAllowed) {
+    // Stored dimensions belong to the complete material, not its overview.
     return (
-      <div data-node-detail-level="compact" data-node-detail-locked={data.detailLevel || undefined} className={`material-${kind} drag-handle w-full h-full min-w-[340px] flex items-center justify-center ${selected || selectedNodeId === id ? 'glyph-selected' : ''}`}
-        onClick={(event) => { if (!event.ctrlKey && !event.metaKey && !event.shiftKey) setSelectedNodeId(id); }} data-glyph-node data-selection-sized={data.keepOverviewHeight || undefined}
+      <div data-node-detail-level="compact" data-node-detail-locked={data.detailLevel || undefined} className={`material-${kind} drag-handle w-full ${selected || selectedNodeId === id ? 'glyph-selected' : ''}`}
+        data-node-overview-surface="compact" data-node-overview-kind={kind}
+        onClick={(event) => { if (!event.ctrlKey && !event.metaKey && !event.shiftKey) setSelectedNodeId(id); }} data-glyph-node
         onDoubleClick={(e) => {
           e.stopPropagation();
           // documents open where they are read; notes zoom to working scale
@@ -201,7 +215,8 @@ export default function ContentNode({ id, data, selected }: NodeProps<ThoughtNod
   if (showPlaque) {
     return (
       <div
-        className={`content-card material-${kind} w-full h-full min-w-[340px] flex flex-col rounded-node border animate-fade-in ${selected || selectedNodeId === id ? 'node-selected' : ''}`}
+        className={`content-card material-${kind} w-full flex flex-col animate-fade-in ${selected || selectedNodeId === id ? 'node-selected' : ''}`}
+        data-node-overview-surface="summary" data-node-overview-kind={kind}
         onClick={(event) => { if (!event.ctrlKey && !event.metaKey && !event.shiftKey) setSelectedNodeId(id); }}
         onDoubleClick={(e) => {
           e.stopPropagation();
@@ -212,7 +227,7 @@ export default function ContentNode({ id, data, selected }: NodeProps<ThoughtNod
           if (kind !== 'file' || isViewerMode) return;
           e.preventDefault();
           e.stopPropagation();
-          await ingestFiles(id, e.dataTransfer.files);
+          await ingestFiles(id, droppedFiles(e.dataTransfer));
         }}
         onDragOver={(e) => { if (kind === 'file') { e.preventDefault(); e.stopPropagation(); } }}
         data-content-plaque={kind}
@@ -228,7 +243,7 @@ export default function ContentNode({ id, data, selected }: NodeProps<ThoughtNod
             variant={kind}
             typeLabel={materialLabel}
             fileTypes={kind === 'file' ? fileTypes : undefined}
-            meta={kind === 'link' ? linkDomain : kind === 'file' ? `${t('glyph.file')} · ${attachments.length}` : undefined}
+            meta={kind === 'link' ? linkDomain : kind === 'file' ? t('glyph.file') : undefined}
           />
         </div>
         <NodeConnectionHandles id={id} isTargetAllowed={false} muted large />
@@ -238,8 +253,14 @@ export default function ContentNode({ id, data, selected }: NodeProps<ThoughtNod
 
   return (
     <div
+      ref={nodeRef}
+      style={{ height: viewHeight.height }}
       className={`content-card material-${kind} w-full h-full min-w-[340px] flex flex-col rounded-node border animate-fade-in transition-colors duration-200 ${selected || selectedNodeId === id ? 'node-selected' : ''}`}
       data-node-detail-level="full" data-node-detail-locked={data.detailLevel || undefined}
+      onPointerDownCapture={viewHeight.capture}
+      onKeyDownCapture={event => { if (event.key === 'Enter' || event.key === ' ') viewHeight.capture(); }}
+      onClickCapture={viewHeight.capture}
+      onDoubleClickCapture={viewHeight.capture}
       onClick={(event) => { if (!event.ctrlKey && !event.metaKey && !event.shiftKey) setSelectedNodeId(id); }}
       onDoubleClick={() => {
         // notes keep dblclick=edit (on the body); files and links open the reader
@@ -249,20 +270,20 @@ export default function ContentNode({ id, data, selected }: NodeProps<ThoughtNod
         if (kind !== 'file' || isViewerMode) return;
         e.preventDefault();
         e.stopPropagation();
-        await ingestFiles(id, e.dataTransfer.files);
+        await ingestFiles(id, droppedFiles(e.dataTransfer));
       }}
       onDragOver={(e) => { if (kind === 'file') { e.preventDefault(); e.stopPropagation(); } }}
     >
       {/* Pure source: material feeds context, nothing flows INTO it — hence no target handle. */}
 
-      {/* header: drag handle + identity + linked state + delete */}
+      {/* Header: drag handle, material identity and actions. */}
       <div className="material-header flex items-center justify-between px-surface-inset py-section-gap border-b drag-handle shrink-0">
         <div className="flex items-center gap-2 min-w-0">
           {headerIcon}
           <span className="text-control font-medium material-label">{materialLabel}</span>
           {kind === 'link'
             ? <span className="text-control text-ink-muted truncate">{linkDomain}</span>
-            : <span className="text-meta text-ink-faint font-mono">{kind === 'note' ? `${data.tokenCount} tokens` : `${attachments.length}`}</span>}
+            : kind === 'note' && <span className="text-meta text-ink-faint font-mono">{data.tokenCount} tokens</span>}
           {clipSourceName && (
             <button
               onClick={openClipSource}
@@ -273,13 +294,17 @@ export default function ContentNode({ id, data, selected }: NodeProps<ThoughtNod
               {clipSourceName} &middot; p.{clipAnchor!.page}
             </button>
           )}
-          {!isLinked && (
-            <span className="text-control text-ink-faint bg-wash px-1.5 py-0.5 rounded-tag flex items-center gap-1 shrink-0" >
-              <Link2Off size={11} strokeWidth={1.75} /> {t('content.unlinked')}
-            </span>
-          )}
         </div>
         <div className="nodrag nopan flex items-center gap-1 shrink-0">
+          {kind === 'file' && <div ref={setDocumentActionsHost} className="material-document-actions" />}
+          {kind === 'file' && attachments.length === 1 && !hasNativeDocxSource(attachments[0])
+            && <DocumentOriginalButton attachment={attachments[0]} compact />}
+          {kind === 'file' && !isViewerMode && attachments.length === 1 && attachments[0].sourcePath && window.desktopLocal?.reveal &&
+            <button type="button" aria-label={t('local.reveal')} data-tooltip={t('local.reveal')}
+              onClick={event => { event.stopPropagation(); void revealLocalPath(attachments[0].sourcePath!); }}
+              className="w-6 h-6 shrink-0 rounded-control flex items-center justify-center text-ink-faint hover:text-accent">
+              <FolderOpen size={14} strokeWidth={1.75} />
+            </button>}
           {kind === 'note' && !editing && !isViewerMode && <button
             type="button"
             onClick={(event) => { event.stopPropagation(); startEditing(); }}
@@ -290,8 +315,9 @@ export default function ContentNode({ id, data, selected }: NodeProps<ThoughtNod
             <Pencil size={13} strokeWidth={1.75} />
           </button>}
           <button
-            onClick={(e) => { e.stopPropagation(); useUiStore.getState().setReaderNodeId(id); }}
+            onClick={(e) => { e.stopPropagation(); useUiStore.getState().setReaderNodeId(id, kind === 'file' && attachments[0] ? { attachmentId: attachments[0].id } : undefined); }}
             data-tooltip={t('reader.open')} aria-label={t('reader.open')}
+            data-document-open={kind === 'file' && attachments[0] && isEditableDocument(attachments[0]) ? attachments[0].id : undefined}
             className="text-ink-faint hover:text-accent rounded-control w-6 h-6 flex items-center justify-center transition-colors"
           >
             <BookOpen size={13} strokeWidth={1.75} />
@@ -323,8 +349,8 @@ export default function ContentNode({ id, data, selected }: NodeProps<ThoughtNod
           height (a long note would otherwise cover the cards below it once
           the canvas zooms in); when the card is resized the body becomes the
           scroll region (wheel scrolls text, not zoom) */}
-      <div className="p-surface-inset nodrag flex-1 min-h-0 flex flex-col" style={kind === 'note' && !resized ? { maxHeight: NOTE_BODY_MAX } : undefined}>
-      <div className="flex-1 min-h-0 overflow-y-auto nowheel cursor-text" data-content-body>
+      <div className="p-surface-inset nodrag flex-1 min-h-0 flex flex-col" style={!resized ? (kind === 'note' ? { maxHeight: NOTE_BODY_MAX } : singleNativeDocument ? { height: 520, maxHeight: 520, flex: '0 0 520px' } : attachments.some(isEditableDocument) ? { maxHeight: 520 } : undefined) : undefined}>
+      <div className={`flex-1 min-h-0 overscroll-contain nowheel nopan cursor-text ${singleNativeDocument ? 'flex flex-col overflow-hidden' : 'overflow-y-auto'}`} data-content-body>
         {data.displayName && <div className="mb-surface-inset text-title font-semibold text-ink" data-tooltip={nodeNameSource} data-tooltip-overflow={nodeNameSource === nodeName || undefined} data-node-name>{nodeName}</div>}
         {/* a quote from the why layer says where it came from, above its text */}
         {kind === 'note' && data.recallSource && (
@@ -395,12 +421,21 @@ export default function ContentNode({ id, data, selected }: NodeProps<ThoughtNod
         )}
 
         {kind === 'file' && (
-          <div className="material-files">
+          <div className={`material-files ${singleNativeDocument ? 'flex-1 min-h-0' : ''}`}>
             {attachments.map((att) => (
-              att.type.startsWith('image/') ? (
+              isEditableDocument(att) ? (
+                <DocumentAttachmentCard key={att.id} nodeId={id} attachment={att}
+                  onNativeEditingChange={onNativeEditingChange}
+                  actionsHost={documentActionsHost}
+                  fill={singleNativeDocument}
+                  onAnnotationEditingChange={active => setCommentingDocumentId(current => active ? att.id : current === att.id ? null : current)}
+                  onRemove={() => removeAttachment(id, att.id)} />
+              ) : att.type.startsWith('image/') ? (
                 // Pasted images live on the canvas as the image itself —
                 // resize the card (right edge) to scale it
-                <div key={att.id} className="relative group">
+                <div key={att.id}>
+                  <FileAttachmentHeader attachment={att} onRemove={() => removeAttachment(id, att.id)} />
+                  <div className="relative group">
                   <img
                     src={`data:${att.type};base64,${att.content}`}
                     alt={att.name}
@@ -430,67 +465,29 @@ export default function ContentNode({ id, data, selected }: NodeProps<ThoughtNod
                       <RefreshCw size={11} strokeWidth={1.75} /> {t('content.reExtract')}
                     </button>
                   )}
-                  <button
-                    onClick={(e) => { e.stopPropagation(); removeAttachment(id, att.id); }}
-                    aria-label={t('actions.removeAttachment')}
-                    className="absolute top-1.5 right-1.5 bg-ink/60 text-white rounded-control w-6 h-6 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-                  >
-                    <X size={13} strokeWidth={2} />
-                  </button>
+                  </div>
                   {/* Extraction panel: SEE what the model read, fix it, or redo it —
                       this text is what downstream context receives as the image's index */}
                   {openExtract === att.id && (
                     <ExtractionEditor nodeId={id} attachment={att} onClose={() => setOpenExtract(null)} />
                   )}
                 </div>
-              ) : att.type === 'application/pdf' && att.pageImages?.[0] ? (
-                // PDF wears its first page as a cover — same form as pasted
-                // images, so material reads as material at a glance
-                <div key={att.id} className="relative group">
-                  <img
-                    src={`data:image/png;base64,${att.pageImages[0]}`}
-                    alt={att.name}
-                    className="w-full rounded-content border border-line/60"
-                  />
-                  <span className="absolute bottom-1.5 left-1.5 max-w-[85%] text-control bg-ink/60 text-white px-2 py-0.5 rounded-tag flex items-center gap-1">
-                    <FileText size={11} strokeWidth={1.75} className="shrink-0" />
-                    <span className="truncate">{att.name}</span>
-                    {att.numPages != null && <span className="shrink-0 opacity-80">· {att.numPages}p</span>}
-                  </span>
-                  <button
-                    onClick={(e) => { e.stopPropagation(); removeAttachment(id, att.id); }}
-                    className="absolute top-1.5 right-1.5 bg-ink/60 text-white rounded-control w-6 h-6 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-                  >
-                    <X size={13} strokeWidth={2} />
-                  </button>
-                </div>
               ) : (
-                <div key={att.id} className="material-file-row group">
-                  <FileIdentity name={att.name} />
-                  <div className="min-w-0 flex-1">
-                    <button type="button" onClick={(e) => { e.stopPropagation(); useUiStore.getState().setReaderNodeId(id); }} className="material-file-name text-left hover:text-accent" data-tooltip={att.name} data-tooltip-overflow>{att.name}</button>
-                    <div className="material-file-meta">
-                      {fileSizeLabel(att.size) && <span>{fileSizeLabel(att.size)}</span>}
-                      {att.isExtracting && <span className="text-accent">{t('attach.extracting')}</span>}
-                      {att.numPages != null && <span>{att.numPages}p</span>}
-                    </div>
-                  </div>
-                  <button
-                    onClick={(e) => { e.stopPropagation(); removeAttachment(id, att.id); }}
-                    className="text-ink-faint hover:text-red-500 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus:opacity-100 transition-opacity shrink-0 rounded-control p-1"
-                  >
-                    <X size={13} strokeWidth={1.75} />
-                  </button>
+                <div key={att.id}>
+                  <FileAttachmentHeader attachment={att} onRemove={() => removeAttachment(id, att.id)} />
+                  {(att.extractedText || att.content) && <pre data-file-text-preview={att.id}
+                    className="max-h-[380px] overflow-auto nowheel nopan whitespace-pre-wrap break-words text-control text-ink-muted font-mono">{(att.extractedText || att.content).slice(0, 12000)}</pre>}
                 </div>
               )
             ))}
-            <button
-              onClick={() => fileRef.current?.click()}
-              className={`material-upload w-full border border-dashed border-line hover:border-accent/40 hover:bg-accent/5 rounded-control text-control text-ink-faint hover:text-ink-muted transition-colors ${attachments.length === 0 ? 'py-6' : 'py-2'}`}
+            {!isViewerMode && attachments.length === 0 && <button
+              onClick={() => { void chooseMaterialFiles(fileRef.current, files => ingestFiles(id, files)).catch(() => toast('error', t('document.openFailed'))); }}
+              className="material-upload w-full shrink-0 border border-dashed border-line hover:border-accent/40 hover:bg-accent/5 rounded-control text-control text-ink-faint hover:text-ink-muted transition-colors py-6"
             >
               {t('attach.upload')}
-              {attachments.length === 0 && <span className="block text-control mt-1">{t('attach.types')}</span>}
-            </button>
+              <span className="block text-control mt-1">{t('content.oneFilePerNode')}</span>
+              <span className="block text-control mt-1">{t('attach.types')}</span>
+            </button>}
             <input
               ref={fileRef}
               type="file"
@@ -501,24 +498,13 @@ export default function ContentNode({ id, data, selected }: NodeProps<ThoughtNod
             />
           </div>
         )}
-        {(
-          <div className="px-1 pt-2" data-wire-status>
-            {wireState === 'none:0' ? (
-              <p className="text-control text-amber-700 leading-snug">{t('content.wireNone')}</p>
-            ) : wireState === 'quote:0' ? (
-              <p className="text-control text-amber-700 leading-snug">{t('content.wireQuoteOnly')}</p>
-            ) : (
-              <p className="text-control text-ink-faint leading-snug">{fmt(t('content.wireFull'), { n: wireState.split(':')[1] })}</p>
-            )}
-          </div>
-        )}
       </div>
 
       </div>
 
       {!isViewerMode && (selected || selectedNodeId === id) && !zoomedOut && <NodeResizeControls id={id} />}
 
-      <NodeConnectionHandles id={id} isTargetAllowed={false} muted large={zoomedOut} />
+      <NodeConnectionHandles id={id} isTargetAllowed={false} muted />
     </div>
   );
 }

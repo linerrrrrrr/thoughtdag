@@ -57,12 +57,12 @@ try {
   const fixtures = [
     fixture('example', example.nodes, example.edges),
     fixture('diamond', [node('a'), node('b', 900, 250), node('c', 400, 900), node('d'), node('e', 640, 180)],
-      [edge('a', 'b'), edge('a', 'c', { isBranchFromSelection: true }), edge('b', 'd'), edge('c', 'd'), edge('d', 'e')]),
-    fixture('reviewer', [node('a'), node('b'), node('c'), node('review', 520, 280), node('quote', 520, 220)],
-      [edge('a', 'b'), edge('b', 'c'), edge('c', 'review', { isWatch: true, isCrossLink: true }), edge('quote', 'b', { isCrossLink: true })]),
+      [edge('a', 'b'), edge('a', 'c'), edge('b', 'd'), edge('c', 'd'), edge('d', 'e')]),
+    fixture('references', [node('a'), node('b'), node('c'), node('review', 520, 280), node('quote', 520, 220)],
+      [edge('a', 'b'), edge('b', 'c'), edge('c', 'review', { isCrossLink: true }), edge('quote', 'b', { isCrossLink: true })]),
     fixture('disconnected', Array.from({ length: 12 }, (_, i) => node(`root-${String(i).padStart(2, '0')}`, i % 3 ? 520 : 700, 220 + (i % 4) * 160)), []),
-    fixture('fanout', [node('root'), ...Array.from({ length: 6 }, (_, i) => node(`branch-${i}`, 360 + i * 60, 220 + (i % 3) * 180)), node('merge')],
-      [...Array.from({ length: 6 }, (_, i) => edge('root', `branch-${i}`, { isBranchFromSelection: true })),
+    fixture('siblings', [node('root'), ...Array.from({ length: 6 }, (_, i) => node(`branch-${i}`, 360 + i * 60, 220 + (i % 3) * 180)), node('merge')],
+      [...Array.from({ length: 6 }, (_, i) => edge('root', `branch-${i}`)),
         ...Array.from({ length: 6 }, (_, i) => edge(`branch-${i}`, 'merge'))]),
   ];
   const measure = (nodes, edges) => {
@@ -74,8 +74,8 @@ try {
     const center = (n) => ({ x: n.x + n.width / 2, y: n.y + n.height / 2 });
     const segments = edges.filter((e) => byId.has(e.source) && byId.has(e.target)).map((e) => ({ ...e,
       a: center(byId.get(e.source)), b: center(byId.get(e.target)),
-      kind: e.data?.isWatch ? 'watch' : e.data?.isCrossLink ? 'reference' : 'structural' }));
-    const lengths = { structural: 0, reference: 0, watch: 0 };
+      kind: e.data?.isCrossLink ? 'reference' : 'structural' }));
+    const lengths = { structural: 0, reference: 0 };
     for (const e of segments) lengths[e.kind] += Math.hypot(e.b.x - e.a.x, e.b.y - e.a.y);
     let crossings = 0;
     for (let i = 0; i < segments.length; i++) for (let j = i + 1; j < segments.length; j++) {
@@ -105,7 +105,7 @@ try {
     }
     const byId = new Map(after.map((n) => [n.id, n]));
     const axis = direction === 'horizontal' ? 'x' : 'y';
-    for (const e of edges.filter((e) => !e.data?.isWatch && !e.data?.isCrossLink)) {
+    for (const e of edges.filter((e) => !e.data?.isCrossLink)) {
       const a = byId.get(e.source), b = byId.get(e.target);
       assert.ok(b.position[axis] + 0.01 >= a.position[axis] + (direction === 'horizontal' ? size(a).width : size(a).height), `${e.id} violates flow order`);
     }
@@ -128,7 +128,7 @@ try {
     for (const e of edges) {
       const a = map.get(e.source), b = map.get(e.target);
       if (!a || !b) continue;
-      markup.push(`<path d="M${a.x + a.width / 2} ${a.y + a.height / 2}L${b.x + b.width / 2} ${b.y + b.height / 2}" fill="none" stroke="${e.data?.isWatch ? '#c75e69' : '#6d60b8'}" stroke-width="4" ${e.data?.isCrossLink ? 'stroke-dasharray="12 10"' : ''} marker-end="url(#arrow)"/>`);
+      markup.push(`<path d="M${a.x + a.width / 2} ${a.y + a.height / 2}L${b.x + b.width / 2} ${b.y + b.height / 2}" fill="none" stroke="#6d60b8" stroke-width="4" ${e.data?.isCrossLink ? 'stroke-dasharray="12 10"' : ''} marker-end="url(#arrow)"/>`);
     }
     for (const n of r.filter((n) => !n.frame)) {
       markup.push(`<rect x="${n.x}" y="${n.y}" width="${n.width}" height="${n.height}" rx="12" fill="white" stroke="#9daac2" stroke-width="3"/>`,

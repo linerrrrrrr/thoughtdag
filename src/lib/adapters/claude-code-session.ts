@@ -299,7 +299,7 @@ function collectFromText(text: string): ClaudeSessionCollector {
 
 function noteNode(text: string): ThoughtNode {
   // every canvas node is React Flow type 'thought'; stepKind dispatches
-  const n = makeNode(text, '', false);
+  const n = makeNode(text, '');
   n.data.stepKind = 'note';
   markImporterNote(n);
   return n;
@@ -335,7 +335,7 @@ function buildGraphFromTurns(turns: Turn[], sessionId: string, cwd?: string): { 
       nodes.push(note);
       noteToWire = note;
     }
-    const node = makeNode(turn.question, turn.response, prev === null);
+    const node = makeNode(turn.question, turn.response);
     node.data.importSource = { runner: 'claude-code', sessionId, itemIds: turn.itemIds, ...origin };
     node.data.source = { question: node.data.question, response: node.data.response };
     seedPlaque(node);

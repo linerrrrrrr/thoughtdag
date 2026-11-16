@@ -78,6 +78,8 @@ export interface NodeSlice {
   duplicateFrames: (frameIds: string[], withContents: boolean) => void;
   /** Set/clear a per-node LLM override (undefined = follow the global picker). */
   setNodeModel: (nodeId: string, model: string | undefined) => void;
+  /** Explicitly choose a node's execution lane without generating. */
+  setNodeExecutionKind: (nodeId: string, kind: 'api' | 'codex') => void;
   /** Archive/unarchive nodes: dimmed on canvas, excluded from every context walk (undoable). */
   setArchived: (nodeIds: string[], archived: boolean) => void;
   /** Nodes whose answers predate upstream changes (derived, not persisted). */
@@ -93,12 +95,6 @@ export interface NodeSlice {
 
 export interface AddQuestionOptions {
   parentId?: string;
-  /** Quoted passage for a reading question or a saved branch. */
-  branchContext?: string;
-  branchYRatio?: number;
-  /** false → the new node starts with roleMode 'reset' (no inherited role). */
-  inheritRole?: boolean;
-  rolePrompt?: string;
   initialAttachments?: Attachment[];
   excludeAllInheritedAttachments?: boolean;
   /** @-mentioned node ids: any not already in the new node's context get a
@@ -112,8 +108,6 @@ export interface LlmSlice {
   /** A paradigm human turn: record the question WITHOUT generating (the
    *  answers belong to downstream prompt nodes), then advance the cascade. */
   submitHumanTurn: (nodeId: string, question: string) => void;
-  /** Fan out N perspectives: once = blind candidate branches; follow = reviewers that auto-rerun with the thread. */
-  fanOut: (parentId: string, question: string, roles: { name: string; prompt: string }[], opts?: { follow?: boolean; rounds?: number }) => Promise<void>;
   regenerate: (nodeId: string) => void;
   batchMergeSummarize: (nodeIds: string[], deleteAfter?: boolean, intent?: string) => void;
   /** Weave the highlights of the selected nodes into one cited passage.
@@ -122,10 +116,6 @@ export interface LlmSlice {
    *  its source highlights. Optional intent steers angle/purpose. */
   weaveHighlights: (nodeIds: string[], intent?: string, highlightIds?: string[]) => Promise<void>;
   stopGeneration: (nodeId: string) => void;
-}
-
-export interface RoleSlice {
-  setRolePrompt: (nodeId: string, rolePrompt: string) => void;
 }
 
 export interface HighlightSlice {
@@ -138,16 +128,11 @@ export interface HighlightSlice {
   setMaterialSummary: (nodeId: string, summary: string, topic?: string) => void;
 }
 
-export interface EvaluatorSlice {
-  /** PRESET: ordinary node with a critic role + autoRerun, wired by a followsTip edge. */
-  /** Regenerate a node in place from its incoming edges, appending a version (generic primitive). */
-  rerunNode: (nodeId: string, opts?: { auto?: boolean }) => Promise<void>;
+export interface ReplaySlice {
+  /** Regenerate a node in place from its incoming edges, appending a version. */
+  rerunNode: (nodeId: string) => Promise<void>;
   /** Replay every currently-stale node in dependency order (confirm first — N generations). */
   replayStale: () => Promise<void>;
-  /** Toggle the autoRerun primitive on any node. */
-  setAutoRerun: (nodeId: string, enabled: boolean) => void;
-  /** Set how many auto rounds per user action this node may fire (loops need >1). */
-  setAutoRerunRounds: (nodeId: string, rounds: number) => void;
 }
 
 export interface AttachmentSlice {
@@ -161,6 +146,6 @@ export interface AttachmentSlice {
   getInheritedAttachments: (nodeId: string) => { attachment: Attachment; sourceNodeId: string; sourceQuestion: string; excludedByAncestor: boolean }[];
 }
 
-export type StoreState = HistorySlice & NodeSlice & LlmSlice & RoleSlice & HighlightSlice & AttachmentSlice & EvaluatorSlice & EventSlice;
+export type StoreState = HistorySlice & NodeSlice & LlmSlice & HighlightSlice & AttachmentSlice & ReplaySlice & EventSlice;
 
 export type PersistedState = { nodes: ThoughtNode[]; edges: ThoughtEdge[]; events?: CanvasEvent[] };

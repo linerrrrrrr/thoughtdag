@@ -4,7 +4,7 @@ import { useStore } from '../../store';
 import { useModels } from '../../lib/use-models';
 import { toolCallsIn } from '../../lib/tool-markup';
 import { isAgentModel } from '../../lib/agents/agent-runtime';
-import { HARNESS_AGENT_MODEL, isHarnessAgentModel } from '../../lib/atlas/dsh-bridge';
+import { HARNESS_AGENT_MODEL, isHarnessAgentModel } from '../../lib/agents/harness-bridge';
 import { isViewerMode } from '../../lib/viewer';
 import { useT } from '../../i18n';
 import type { ThoughtData } from '../../types';
@@ -25,7 +25,7 @@ export function AgentRerunButton({ nodeId, data, size = 'sm' }: { nodeId: string
   if (!models?.models.some((m) => m.id === agent)) return null;
   return (
     <button
-      onClick={(e) => { e.stopPropagation(); setNodeModel(nodeId, agent); void rerunNode(nodeId, {}); }}
+      onClick={(e) => { e.stopPropagation(); setNodeModel(nodeId, agent); void rerunNode(nodeId); }}
       className={`rounded-control ${size === 'md' ? 'h-7 px-2.5 text-control' : 'h-6 px-2 text-control'} inline-flex items-center gap-1 shrink-0 text-accent hover:bg-wash transition-colors`}
 
       data-agent-rerun

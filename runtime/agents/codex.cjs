@@ -15,15 +15,15 @@ const os = require('node:os');
 const { randomUUID } = require('node:crypto');
 const { StringDecoder } = require('node:string_decoder');
 const { snapshotDir, diffSnapshots } = require('./fs-diff.cjs');
+const { validateHistory, readRollout, captureNativeTurn } = require('./codex-history.cjs');
 
 const fsp = fs.promises;
 const RESPONSE_MS = 30 * 1000;
-const { createLocator, childEnv: envWith } = require('./where.cjs');
+const { createCodexLaunchResolver } = require('./codex-launch.cjs');
 const EXTRA_HOMES = [path.join(os.homedir(), '.codex', 'bin')];
 
 /** The codex binary and the directories walked to find it (see where.cjs). */
-const findCodex = createLocator('codex', EXTRA_HOMES);
-const childEnv = () => envWith(EXTRA_HOMES);
+const findCodex = createCodexLaunchResolver({ extraHomes: EXTRA_HOMES });
 
 /** The guard file the canvas writes per working directory, as Codex policy:
  *  ask → the workspace sandbox, escalations asked of the person; auto → the
@@ -182,11 +182,13 @@ function createCodexRuntime({ log } = {}) {
   const say = log || (() => {});
   let proc = null;            // the app-server child
   let ready = null;           // initialize handshake
+  let launching = null;       // concurrent first runs share one launch/handshake
   let buf = '';
   let nextId = 1;
   const pending = new Map();  // our request id → resolve
   const runs = new Map();     // runId → run state
   const byThread = new Map(); // threadId → runId
+  const threadReservations = new Map(); // hold a continuation from validation through completion
   const serverAsks = new Map(); // question id → { rpcId, respond(answer) }
 
   const write = (obj) => { try { proc.stdin.write(JSON.stringify(obj) + '\n'); return true; } catch { return false; } };
@@ -221,14 +223,15 @@ function createCodexRuntime({ log } = {}) {
 
   async function ensureServer(lookup) {
     if (proc && ready) return ready;
+    if (!launching) launching = launchServer(lookup).finally(() => { launching = null; });
+    return launching;
+  }
+
+  async function launchServer(lookup) {
     const found = lookup ?? await findCodex();
     const b = found.path;
     if (!b) throw new Error(found.error || 'The local agent executable was not found on PATH or in the usual installation directories.');
-    // Node cannot spawn an npm .cmd shim directly on Windows. Run the
-    // package entrypoint without involving a shell or interpolated commands.
-    const npmEntry = path.join(path.dirname(b), 'node_modules', '@openai', 'codex', 'bin', 'codex.js');
-    const npmShim = process.platform === 'win32' && /\.(cmd|bat)$/i.test(b) && fs.existsSync(npmEntry);
-    proc = spawn(npmShim ? process.execPath : b, npmShim ? [npmEntry, 'app-server'] : ['app-server'], { env: childEnv(), stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
+    proc = spawn(found.command, found.args, { env: found.env, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
     buf = '';
     const decoder = new StringDecoder('utf8');
     proc.stdout.on('data', (d) => {
@@ -288,6 +291,8 @@ function createCodexRuntime({ log } = {}) {
       }
       return;
     }
+    // Raw protocol events must never enter the display adapter (or leak reasoning).
+    if (msg.method === 'rawResponseItem/completed') return;
     run.projector.notification(msg.method, params, msg.emittedAtMs);
     switch (msg.method) {
       case 'item/started': {
@@ -367,22 +372,22 @@ function createCodexRuntime({ log } = {}) {
       case 'item/commandExecution/requestApproval': {
         const cmd = Array.isArray(params.command) ? params.command.join(' ') : String(params.command ?? '');
         const rule = cmd ? 'codex:cmd:' + cmd : null;
-        const title = 'command needs approval'; const message = [params.command, params.reason].filter(Boolean).join('\n');
+        const title = 'command needs approval'; const message = cmd;
         const respondYes = (forSession) => reply({ decision: forSession ? 'acceptForSession' : 'accept' });
-        if (settle(rule, title, message, respondYes)) return;
-        return ask({ kind: 'confirm', title, message, rule, options: [], placeholder: null, prefill: null, paths: [], suggest: null },
+        if (settle(rule, title, [message, params.reason].filter(Boolean).join('\n'), respondYes)) return;
+        return ask({ kind: 'confirm', title, message, reason: params.reason ?? null, rule, options: [], placeholder: null, prefill: null, paths: [], suggest: null },
           yesNo(rule, respondYes, () => reply({ decision: 'decline' })));
       }
       case 'item/fileChange/requestApproval': {
         const rule = 'codex:fileChange';
-        const title = 'file change needs approval'; const message = [params.reason, params.grantRoot].filter(Boolean).join('\n') || 'apply the proposed file changes';
+        const title = 'file change needs approval'; const message = params.grantRoot || '';
         const respondYes = (forSession) => reply({ decision: forSession ? 'acceptForSession' : 'accept' });
-        if (settle(rule, title, message, respondYes)) return;
-        return ask({ kind: 'confirm', title, message, rule, options: [], placeholder: null, prefill: null, paths: [], suggest: null },
+        if (settle(rule, title, [params.reason, message].filter(Boolean).join('\n') || 'apply the proposed file changes', respondYes)) return;
+        return ask({ kind: 'confirm', title, message, reason: params.reason ?? null, rule, options: [], placeholder: null, prefill: null, paths: [], suggest: null },
           yesNo(rule, respondYes, () => reply({ decision: 'decline' })));
       }
       case 'item/permissions/requestApproval':
-        return ask({ kind: 'confirm', title: 'more permissions requested', message: [params.reason, JSON.stringify(params.permissions ?? {})].filter(Boolean).join('\n'), options: [], placeholder: null, prefill: null, paths: [], suggest: null },
+        return ask({ kind: 'confirm', title: 'more permissions requested', message: JSON.stringify(params.permissions ?? {}), reason: params.reason ?? null, options: [], placeholder: null, prefill: null, paths: [], suggest: null },
           (a, id) => { const yes = !!a?.confirmed; reply({ permissions: yes ? (params.permissions ?? {}) : {}, scope: 'turn' }); decided(id, yes ? 'allowed-once' : 'rejected'); });
       case 'item/tool/requestUserInput': {
         // the questions as one form; the answers go back together, keyed by
@@ -451,11 +456,13 @@ function createCodexRuntime({ log } = {}) {
     async run(req, onEvent) {
       const cwd = String(req.cwd || '');
       if (!cwd || !path.isAbsolute(cwd)) throw new Error('run needs an absolute cwd');
+      const nativeInput = validateHistory(req.codexHistory);
       await fsp.mkdir(cwd, { recursive: true });
       await ensureServer();
       const runId = randomUUID();
       const emit = (event) => { try { onEvent({ runId, event }); } catch { /* renderer gone */ } };
       const state = { runId, threadId: null, turnId: null, text: '', final: null, waiting: false, emit, end: null, done: null,
+        reservedThreads: new Set(), userTexts: [String(req.prompt ?? '')],
         // what this conversation already allowed for good (see README: `rule`)
         allowRules: new Set(Array.isArray(req.allowRules) ? req.allowRules.filter((s) => typeof s === 'string' && s.startsWith('codex:')) : []) };
       state.projector = createCodexEventProjector(state);
@@ -476,23 +483,80 @@ function createCodexRuntime({ log } = {}) {
           const policy = await policyFor(cwd);
           const model = (req.model && typeof req.model === 'object' && req.model.id ? req.model.id : null) ?? await defaultModelId();
           let thread;
-          const resumeId = req.sessionPath ? threadIdOf(req.sessionPath) : null;
-          if (req.forkEntryId && resumeId) thread = (await send('thread/fork', { threadId: resumeId, cwd, ...policy, ...(model ? { model } : {}) })).thread;
-          else if (resumeId) thread = (await send('thread/resume', { threadId: resumeId, cwd, ...policy, ...(model ? { model } : {}) })).thread;
-          else thread = (await send('thread/start', { cwd, ...policy, ...(model ? { model } : {}) })).thread;
+          let continued = false;
+          let fresh = false;
+          let injectedCount = 0;
+          const settings = { cwd, ...policy, ...(model ? { model } : {}), ...(typeof req.instructions === 'string' ? { developerInstructions: req.instructions } : {}) };
+          const reserve = (id) => {
+            if (threadReservations.has(id) || byThread.has(id)) return false;
+            threadReservations.set(id, runId); state.reservedThreads.add(id); return true;
+          };
+          const release = (id) => {
+            if (threadReservations.get(id) === runId) threadReservations.delete(id);
+            state.reservedThreads.delete(id);
+          };
+          const base = nativeInput?.base;
+          if (base && reserve(base.threadId)) {
+            try {
+              const stored = (await send('thread/read', { threadId: base.threadId })).thread;
+              const file = stored?.path;
+              const beforeResume = await readRollout(file);
+              const idle = !['active', 'systemError'].includes(stored?.status?.type);
+              if (idle && beforeResume.sessionId === base.threadId && beforeResume.checkpoint === base.checkpoint && beforeResume.lastTurnId === base.turnId) {
+                const resumed = (await send('thread/resume', { threadId: base.threadId, excludeTurns: true, ...settings })).thread;
+                const afterResume = await readRollout(resumed.path ?? file);
+                if (afterResume.checkpoint === base.checkpoint && afterResume.lastTurnId === base.turnId) {
+                  thread = { ...resumed, path: resumed.path ?? file };
+                  continued = true;
+                  injectedCount = base.itemCount;
+                }
+              }
+            } catch (error) { say(`native continuation unavailable: ${error instanceof Error ? error.message : String(error)}`); }
+            if (!thread) release(base.threadId);
+          }
+          if (!thread && nativeInput) {
+            thread = (await send('thread/start', settings)).thread;
+            fresh = true;
+          } else if (!thread) {
+            const resumeId = typeof req.sessionId === 'string' && req.sessionId ? req.sessionId : req.sessionPath ? threadIdOf(req.sessionPath) : null;
+            if (resumeId && !reserve(resumeId)) throw new Error('The native thread already has an active run');
+            if (req.forkEntryId && resumeId) { thread = (await send('thread/fork', { threadId: resumeId, lastTurnId: req.forkEntryId, excludeTurns: true, ...settings })).thread; fresh = true; }
+            else if (resumeId) { thread = (await send('thread/resume', { threadId: resumeId, excludeTurns: true, ...settings })).thread; continued = true; }
+            else { thread = (await send('thread/start', settings)).thread; fresh = true; }
+          }
+          if (!thread?.id) throw new Error('The native runtime did not return a thread identity');
+          // Session-scoped permissions belong only to the thread actually resumed.
+          if (!continued) state.allowRules.clear();
           state.threadId = thread.id;
           byThread.set(thread.id, runId);
-          state.emit({ type: 'session', sessionId: thread.id, sessionFile: thread.path ?? null, model: model ? { provider: 'codex', id: model, name: model } : null, cwd });
+          const session = { type: 'session', sessionId: thread.id, sessionFile: thread.path ?? null, model: model ? { provider: 'codex', id: model, name: model } : null, cwd, continued };
+          try {
+            if (nativeInput && nativeInput.items.length > injectedCount) {
+              await send('thread/inject_items', { threadId: thread.id, items: nativeInput.items.slice(injectedCount) });
+            }
+          } catch (error) {
+            // A failed materialization is never used for inference or silently retried.
+            if (fresh) await send('thread/archive', { threadId: thread.id }).catch(() => {});
+            throw new Error(`Native history injection failed: ${error instanceof Error ? error.message : String(error)}`);
+          }
+          state.emit(session);
           const before = await snapshotDir(cwd).catch(() => null);
           const input = [{ type: 'text', text: String(req.prompt ?? ''), text_elements: [] }];
           for (const img of Array.isArray(req.images) ? req.images : []) if (img && typeof img.data === 'string') input.push({ type: 'image', url: `data:${img.mimeType};base64,${img.data}` });
           const effort = req.effort && model ? effortFor(model, req.effort) : null;
           const started = await send('turn/start', { threadId: thread.id, input, summary: 'auto', ...(model ? { model } : {}), ...(effort ? { effort } : {}) }, 60 * 1000);
           state.turnId = started?.turn?.id ?? null;
+          state.emit({ ...session, turnId: state.turnId });
           if (state.abortRequested && state.turnId) send('turn/interrupt', { threadId: state.threadId, turnId: state.turnId }).catch(() => {});
           const how = await state.done;
           const ran = await turnEffortOf(thread.path);
-          if (ran) state.emit({ type: 'session', sessionId: thread.id, sessionFile: thread.path ?? null, model: model ? { provider: 'codex', id: model, name: model } : null, cwd, effort: ran });
+          const capture = how === 'end'
+            ? await captureNativeTurn(thread.path, { turnId: state.turnId, userTexts: state.userTexts })
+            : { capture: 'unavailable', items: [], checkpoint: null, reason: 'The native turn did not complete successfully' };
+          state.emit({ ...session, turnId: state.turnId, ...(ran ? { effort: ran } : {}), nativeHistory: {
+            version: 1, threadId: thread.id, turnId: state.turnId,
+            historyFingerprint: nativeInput?.fingerprint ?? null, mappings: nativeInput?.mappings ?? [], ...capture,
+          } });
           if (before) {
             const after = await snapshotDir(cwd).catch(() => null);
             if (after) { const d = diffSnapshots(before, after); if (d.changed.length || d.added.length || d.removed.length || d.truncated) state.emit({ type: 'fs_changes', ...d }); }
@@ -504,7 +568,8 @@ function createCodexRuntime({ log } = {}) {
           state.emit({ type: 'run_end', text: state.final ?? state.text, how: 'error' });
         } finally {
           clearInterval(watchdog);
-          if (state.threadId) byThread.delete(state.threadId);
+          if (state.threadId && byThread.get(state.threadId) === runId) byThread.delete(state.threadId);
+          for (const id of state.reservedThreads) if (threadReservations.get(id) === runId) threadReservations.delete(id);
           for (const [id, ask] of serverAsks) if (ask.runId === runId) serverAsks.delete(id);
           runs.delete(runId);
         }
@@ -518,6 +583,7 @@ function createCodexRuntime({ log } = {}) {
       const run = runs.get(runId);
       if (!run || run.ended || run.abortRequested || !run.threadId || !run.turnId) throw new Error('The agent turn is no longer accepting messages');
       await send('turn/steer', { threadId: run.threadId, expectedTurnId: run.turnId, input: [{ type: 'text', text, text_elements: [] }] });
+      run.userTexts.push(text);
       run.projector.userInput(text);
       return true;
     },

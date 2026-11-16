@@ -2,11 +2,11 @@
 // turn of some agent's session or an entry of a memory file; "cite" quotes
 // it as a note (provenance kept) and wires that note as a reference into the
 // node being asked, so the quote enters exactly that context, priced like
-// any other material. "open" follows the hit's own link into the mirror.
+// any other material. "open" follows the hit's link to its source.
 import { whyBridge } from './why-bridge';
 import { useStore } from '../store';
 import { buildContentNode } from './content';
-import { openWhyLink } from './atlas/live-mirror';
+import { openWhyLink } from './source-navigation';
 import { toast, useUiStore } from './ui-store';
 import type { WhyBridge } from './why-bridge';
 import { judge, judgeAvailable, type JudgeQuestion } from './judge';
@@ -64,12 +64,11 @@ export async function citeHit(hit: Pick<WhyFindHit, 'session' | 'turn' | 'open'>
   return node.id;
 }
 
-/** Follow a turn hit into the mirror (the session opens on its canvas, the
- *  turn comes into view). Memory entries have no canvas to open; the caller
- *  shows them in place. */
-export async function openHit(hit: Pick<WhyFindHit, 'kind' | 'open'>): Promise<boolean> {
+/** Open a canvas node or hand an Agent session back to its runtime.
+ *  Memory entries unfold in place. */
+export async function openHit(hit: Pick<WhyFindHit, 'kind' | 'open' | 'runner' | 'session' | 'cwd'>): Promise<boolean> {
   if (hit.kind === 'memory') return false;
-  return openWhyLink(hit.open);
+  return openWhyLink(hit.open, hit);
 }
 
 // ─── recall into an ask ────────────────────────────────────────────────

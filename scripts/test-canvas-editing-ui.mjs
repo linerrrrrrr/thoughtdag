@@ -29,7 +29,6 @@ await context.route('**/api/**', async route => {
 await page.addInitScript(() => {
   localStorage.setItem('thoughtdag.seeded', 'yes');
   localStorage.setItem('thoughtdag.tutorialDone', '1');
-  localStorage.setItem('thoughtdag.autoRefreshPaused', 'yes');
 });
 
 const originalQuestion = '如何在画布中编辑问题与回答，并独立调整节点的宽度和高度？';
@@ -67,13 +66,11 @@ try {
   await page.evaluate(({ question, response, summary }) => {
     window.__ui.getState().setTutorialOpen(false);
     window.__ui.getState().setReleaseNotesOpen(false);
-    window.__ui.getState().setAutoRefreshPaused(true);
     window.__store.getState().setNodes([{ id: 'canvas-edit', type: 'thought', position: { x: 0, y: 0 }, selected: true, data: {
       question, response, responses: [response], responseIndex: 0, summaries: [summary],
       isCollapsed: false, isEditing: false, isEditingResponse: false, isLoading: false,
       tokenCount: 420, highlights: [], highlightMode: 'tag', attachments: [],
-      excludedAttachmentIds: [], includedAttachmentIds: [], roleMode: 'inherit', isRoot: true, isBranch: false,
-    } }]);
+      excludedAttachmentIds: [], includedAttachmentIds: [], roleMode: 'inherit'} }]);
     window.__store.getState().setEdges([]);
     window.__store.getState().setSelectedNodeId('canvas-edit');
     window.__ui.getState().setPanelOpen(true, 'canvas-edit');

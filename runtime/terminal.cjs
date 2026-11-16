@@ -7,6 +7,7 @@
 const path = require('node:path');
 const os = require('node:os');
 const fsp = require('node:fs/promises');
+const { thoughtdagTempRoot } = require('./local-temp.cjs');
 const { spawn } = require('node:child_process');
 
 const shq = (s) => `'${String(s).replace(/'/g, `'\\''`)}'`;
@@ -14,10 +15,15 @@ const fileExists = (p) => fsp.access(p).then(() => true, () => false);
 const dirExists = async (p) => { try { return (await fsp.stat(p)).isDirectory(); } catch { return false; } };
 
 /** The command that resumes a session in each runner's own CLI. */
+const sessionToken = (id) => {
+  const value = String(id);
+  if (!/^[\w.-]{4,}$/.test(value)) throw new Error('Invalid session ID');
+  return value;
+};
 const PROGRAMS = {
-  'claude-code': (id) => `claude --resume ${shq(id)}`,
-  codex: (id) => `codex resume ${shq(id)}`,
-  pi: (id) => `pi --session ${shq(id)}`,
+  'claude-code': (id) => `claude --resume ${sessionToken(id)}`,
+  codex: (id) => `codex resume ${sessionToken(id)}`,
+  pi: (id) => `pi --session ${sessionToken(id)}`,
 };
 
 const run = (bin, args) => new Promise((resolve) => {
@@ -37,7 +43,7 @@ async function binOnPath(name) {
 // macOS: a .command file runs in the user's default shell (right PATH,
 // zero automation permissions) inside any terminal app that accepts it.
 async function launchCommandFile(appPath, cwd, program) {
-  const file = path.join(os.tmpdir(), `thoughtdag-resume-${Date.now()}.command`);
+  const file = path.join(thoughtdagTempRoot(), `thoughtdag-resume-${Date.now()}.command`);
   try {
     await fsp.writeFile(file, `#!/bin/zsh\nrm -- ${shq(file)}\ncd ${shq(cwd)}\n${program}\n`, { mode: 0o755 });
   } catch { return false; }
@@ -86,7 +92,7 @@ function buildTerminalRegistry(customTerminals = []) {
 }
 
 /** Open a runner's session in a terminal: the preferred one, else the first
- *  that exists. Returns what the atlas expects. */
+ *  that exists. Returns the runtime navigation result. */
 async function openInTerminal(runner, cwd, sessionId, { preferred = '', customTerminals = [] } = {}) {
   const buildProgram = PROGRAMS[runner];
   if (!buildProgram || !/^[\w.-]{4,}$/.test(String(sessionId))) return { opened: false, via: '', command: '' };

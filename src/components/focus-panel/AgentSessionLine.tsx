@@ -19,6 +19,7 @@ export default function AgentSessionLine({ data }: { data: ThoughtData }) {
   const cwd = data.agentSession?.cwd ?? data.importSource?.cwd ?? null;
   if (!runner || !cwd) return null;
   const sessionId = data.agentSession?.sessionId ?? data.importSource?.sessionId ?? null;
+  const history = Array.isArray(data.codexHistories) ? data.codexHistories[data.responseIndex] : data.agentSession?.nativeHistory;
   // the pin is offered only when this directory is not already the canvas's:
   // neither the chosen one nor the canvas's own workspace by default
   const isOwnWorkspace = !chosen && !!activeId && cwd.endsWith(`/workspaces/${activeId}`);
@@ -32,6 +33,10 @@ export default function AgentSessionLine({ data }: { data: ThoughtData }) {
       <FolderOpen size={13} strokeWidth={1.75} className="text-ink-faint shrink-0" />
       <span className="font-mono text-ink-muted truncate flex-1 min-w-0" data-tooltip={cwd} data-agent-session-cwd={cwd}>{short}</span>
       {data.agentSession?.continued && <span className="text-control text-ink-faint shrink-0" >↩ {t('agent.continued')}</span>}
+      {history && <span className="text-meta text-ink-faint shrink-0" data-native-history-mapping
+        data-tooltip={history.capture === 'complete' ? t('agent.historyMappingHint') : t('agent.historyUnavailable')}>
+        {t('agent.structuredHistory')} · {new Set(history.mappings.map((mapping) => mapping.nodeId).filter(Boolean)).size}
+      </span>}
       {window.desktopLocal && (
         <button onClick={() => void window.desktopLocal!.open(cwd)} className="text-ink-faint hover:text-accent shrink-0" data-tooltip={t('agent.openDir')} aria-label={t('agent.openDir')}>
           <FolderOpen size={14} strokeWidth={1.75} />

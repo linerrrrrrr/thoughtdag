@@ -36,7 +36,8 @@ export function useCanvasSelectionCard(name: string, selectionKey: string, enabl
   const [request, setRequest] = useState(() => ({ selectionKey, reopen, open: !!selectionKey && enabled }));
   if (request.selectionKey !== selectionKey || request.reopen !== reopen) {
     // Locate actions inside search, chat, and other tools update the selection
-    // without replacing the tool the user is still using. Canvas clicks reopen explicitly.
+    // without replacing the tool the user is still using. Explicit canvas
+    // selection, including a completed marquee, reopens the inspector.
     const canReplace = request.reopen !== reopen || !active || active.name === 'selection-properties';
     setRequest({ selectionKey, reopen, open: !!selectionKey && enabled && canReplace });
   }

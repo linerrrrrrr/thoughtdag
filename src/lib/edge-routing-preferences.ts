@@ -1,10 +1,11 @@
+import { appSettings } from './disk-storage';
 import { create } from 'zustand';
 import { normalizeEdgeRoutingSettings, type EdgeRoutingSettings } from './edge-path';
 
 const KEY = 'thoughtdag.edgeRouting';
 
 function readSettings(): EdgeRoutingSettings {
-  try { return normalizeEdgeRoutingSettings(JSON.parse(localStorage.getItem(KEY) ?? '{}') ?? {}); }
+  try { return normalizeEdgeRoutingSettings(JSON.parse(appSettings.getItem(KEY) ?? '{}') ?? {}); }
   catch { return normalizeEdgeRoutingSettings(); }
 }
 
@@ -16,7 +17,7 @@ export const useEdgeRoutingPreferences = create<{
   settings: readSettings(),
   setSettings: (settings) => {
     const next = normalizeEdgeRoutingSettings(settings);
-    try { localStorage.setItem(KEY, JSON.stringify(next)); } catch { /* Keep the session preference when storage is unavailable. */ }
+    try { appSettings.setItem(KEY, JSON.stringify(next)); } catch { /* Keep the session preference when storage is unavailable. */ }
     set({ settings: next });
   },
 }));

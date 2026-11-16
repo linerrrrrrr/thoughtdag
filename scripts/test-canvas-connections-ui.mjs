@@ -27,7 +27,6 @@ await context.route('**/api/**', (route) => {
 await page.addInitScript(() => {
   localStorage.setItem('thoughtdag.seeded', 'yes');
   localStorage.setItem('thoughtdag.tutorialDone', '1');
-  localStorage.setItem('thoughtdag.autoRefreshPaused', 'yes');
 });
 const check = (name) => { checks.push(name); console.log(`PASS ${name}`); };
 const near = (a, b, name, tolerance = 1.5) => assert.ok(Math.abs(a - b) <= tolerance, `${name}: ${a} != ${b}`);
@@ -49,8 +48,7 @@ const fixture = async (mode = 'horizontal') => {
         responses: [`RESPONSE_${id} 节点分析。`.repeat(10)], responseIndex: 0, summaries: [name],
         isCollapsed: false, isEditing: false, isEditingResponse: false, isLoading: false, tokenCount: 100,
         highlights: [], highlightMode: 'tag', attachments: id !== 'c' ? [{ id: `att-${id}`, name: `材料-${id}.txt`, type: 'text/plain', content: `ATTACHMENT_${id}_SENTINEL` }] : [],
-        excludedAttachmentIds: [], includedAttachmentIds: [], roleMode: 'inherit', isRoot: id === 'a', isBranch: false,
-        layoutDirection: mode === 'vertical' ? 'vertical' : 'horizontal', edgeRouteDefault: 'auto' } });
+        excludedAttachmentIds: [], includedAttachmentIds: [], roleMode: 'inherit', layoutDirection: mode === 'vertical' ? 'vertical' : 'horizontal', edgeRouteDefault: 'auto' } });
     const nodes = [make('a', 60, 140, 420, 320, '来源 A'), make('b', 620, 140, 480, 500, '分析 B'), make('c', 1280, 140, 420, 380, '目标 C')];
     if (mode === 'vertical') nodes.forEach((n, i) => { n.position = { x: 300, y: [100, 600, 1300][i] }; });
     if (mode === 'mixed') {
@@ -65,8 +63,7 @@ const fixture = async (mode = 'horizontal') => {
       staleIds: [], staleFps: {}, staleVerdicts: {} });
     const ui = window.__ui.getState();
     window.__ui.setState({ drafts: {} });
-    ui.setPanelOpen(false); ui.setTutorialOpen(false); ui.setReleaseNotesOpen(false); ui.setAutoRefreshPaused(true);
-  }, mode);
+    ui.setPanelOpen(false); ui.setTutorialOpen(false); ui.setReleaseNotesOpen(false); }, mode);
   await page.waitForTimeout(650);
   if (mode === 'horizontal') await page.evaluate(() => window.__rf.setViewport({ x: 0, y: 20, zoom: 1 }, { duration: 0 }));
   else await page.evaluate(() => window.__rf.fitView({ duration: 0, padding: 0.18 }));
@@ -241,7 +238,7 @@ try {
   assert.equal(await inspector.locator('[data-edge-relation]').count(), 2);
   assert.equal(await inspector.locator('[data-edge-scope], [data-edge-context-toggle], [data-edge-context-preview]').count(), 0);
   const reference = (await storedGraph()).edges.find((e) => e.id === 'edge-b-c');
-  assert.equal(reference.data.isCrossLink, true); assert.equal(reference.data.contextDepth, undefined);
+  assert.equal(reference.data.isCrossLink, true);
   const payload = await page.evaluate(async () => {
     const { buildContext } = await import('/src/store/context-builder.ts');
     const state = window.__store.getState();
@@ -347,13 +344,12 @@ try {
   await inspector.waitFor();
   assert.equal(await inspector.locator('[data-edge-relation="continue"]').isDisabled(), true);
   check('structural cycle conversion is disabled');
-  for (const kind of ['watch', 'branch', 'material']) {
+  for (const kind of ['material']) {
     await fixture();
     await page.evaluate((kind) => {
       window.__store.setState((s) => ({
         nodes: kind === 'material' ? s.nodes.map((n) => n.id === 'a' ? { ...n, data: { ...n.data, stepKind: 'note' } } : n) : s.nodes,
-        edges: s.edges.map((e) => e.id === 'edge-a-b' ? { ...e, data: kind === 'watch' ? { isWatch: true, isCrossLink: true }
-          : kind === 'branch' ? { isBranchFromSelection: true } : {} } : e),
+        edges: s.edges,
       }));
       window.__store.setState(state => ({ edges: state.edges.map(edge => ({ ...edge, selected: edge.id === 'edge-a-b' })) }));
       window.__canvasEditing.getState().requestProperties();
@@ -363,7 +359,7 @@ try {
     assert.equal(await inspector.locator('[data-edge-route="curve"]').isEnabled(), true);
     assert.equal(await (await labelInput()).isEnabled(), true);
   }
-  check('watch, exploration and material connections retain fixed roles with editable appearance');
+  check('material connections retain fixed roles with editable appearance');
   await page.setViewportSize({ width: 640, height: 900 });
   await page.waitForTimeout(250);
   const box = await inspector.boundingBox();
@@ -447,7 +443,7 @@ try {
     const template = state.nodes[0];
     const make = (id, x, y, question, width = 360, height = 240) => ({ ...template, id, selected: false,
       position: { x, y }, width, height, measured: { width, height }, data: { ...template.data, attachments: [],
-        displayName: question, question, response: '用于检查连线弧度、重叠与避障。', responses: ['用于检查连线弧度、重叠与避障。'], isRoot: id === 'source' } });
+        displayName: question, question, response: '用于检查连线弧度、重叠与避障。', responses: ['用于检查连线弧度、重叠与避障。']} });
     const nodes = [make('source', 60, 160, '梳理设计规范'), make('target-1', 1260, 160, '继续深入分析'),
       make('target-2', 1260, 650, '引用这轮问答'), make('obstacle', 650, 370, '其他讨论', 420, 220)];
     const edges = [1, 2].map((number) => ({ id: `fan-${number}`, source: 'source', target: `target-${number}`, type: 'smoothstep',
@@ -489,7 +485,7 @@ try {
     const make = (id, x, y, name) => ({ ...template, id, position: { x, y }, width: 420,
       height: undefined, measured: undefined, selected: false, data: { ...template.data, displayName: name,
         question: name, summaries: [], response: '用于检查长距离错位连接。', responses: ['用于检查长距离错位连接。'],
-        isCollapsed: true, isRoot: id === 'source' } });
+        isCollapsed: true} });
     const nodes = [make('source', -800, -80, '上游对话'), make('compact-1', 200, 400, '汇总三轮讨论'),
       make('compact-2', 1000, 500, '继续汇总讨论')];
     const edges = [1, 2].map((number) => ({ id: `compact-${number}`, source: 'source', target: `compact-${number}`,

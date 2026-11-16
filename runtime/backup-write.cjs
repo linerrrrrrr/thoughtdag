@@ -34,8 +34,7 @@ async function writeBackup(body) {
   if (!dir || !isAbsolute(dir) || !name || json === null) {
     throw new BackupRequestError('dir must be an absolute path; name and json are required');
   }
-  // `name` is a RELATIVE path the canvas chose (native canvases at the folder
-  // root, session mirrors under cli/), so it is sanitized segment by segment
+  // `name` is a relative path chosen by the canvas, sanitized segment by segment.
   const parts = name.replace(/\\/g, '/').split('/').filter((p) => p && p !== '.' && p !== '..');
   if (parts.length === 0) throw new BackupRequestError('name must have at least one path segment');
   const last = parts[parts.length - 1].replace(/[<>:"|?*\u0000-\u001f]/g, '_').slice(0, 120);

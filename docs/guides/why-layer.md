@@ -128,5 +128,3 @@ thoughtdag recall <session-id> <turn-number>
 ```
 
 If the desktop app is installed, the `↗` link opens the matching turn or canvas node.
-
-For the visual session browser and editable context graph, continue with [Session Atlas](./session-atlas).

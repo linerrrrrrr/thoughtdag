@@ -250,7 +250,7 @@ export function buildGraphFromTurns(turns: PiTurn[], sessionId: string, cwd?: st
   const link = (a: ThoughtNode, b: ThoughtNode) => edges.push({ id: generateId(), source: a.id, target: b.id, type: 'smoothstep' } as ThoughtEdge);
   let prev: ThoughtNode | null = null;
   for (const turn of turns) {
-    const node = makeNode(turn.question || '(tool-only turn)', turn.response, prev === null);
+    const node = makeNode(turn.question || '(tool-only turn)', turn.response);
     node.data.importSource = { runner: 'pi', sessionId, itemIds: turn.itemIds, ...origin };
     node.data.source = { question: node.data.question, response: node.data.response };
     seatTurnWork(node, turn);

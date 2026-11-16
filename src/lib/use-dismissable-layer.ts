@@ -92,8 +92,12 @@ function onPointerDown(event: PointerEvent) {
   if (!ordered.some(layer => layer.options().modal)) {
     for (const layer of ordered) {
       const options = layer.options();
+      // A child may render outside its editor in a portal. Its trigger still
+      // belongs to this editor, so a click in that child is not an outside click.
+      const insideChild = ordered.some(child => child !== layer
+        && roots(child).some(root => contains(layer, root)) && contains(child, event.target as Node));
       if (options.independentOutside && options.dismissOnOutside !== false
-        && !contains(layer, event.target as Node) && !options.ignoreOutside?.(event)) dismiss(layer, 'outside');
+        && !contains(layer, event.target as Node) && !insideChild && !options.ignoreOutside?.(event)) dismiss(layer, 'outside');
     }
   }
   // Do not cancel the pointer event: its intended target still receives the click.

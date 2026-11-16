@@ -54,7 +54,7 @@ ThoughtDAG 在此模式提供输入、事件传输、审批转发、停止/补�
 | 模型与推理参数 | 沿用原生会话或 Agent 默认；支持时本轮覆盖 | 节点固定值或对话默认 API | 本次覆盖或对应辅助默认 API |
 | 主历史 | Agent 原生会话 | 图路径编译出的消息 | 当前操作选择的只读输入 |
 | 搜索、读写文件、CLI、MCP、子 Agent | 使用 Agent 自己的工具与配置 | 仅应用明确提供并启用的工具；不能假装拥有目录访问 | 文字整理默认不授予执行工具 |
-| 角色、项目指令、技能 | 原生 Agent 原有配置 | ThoughtDAG 的角色与图上下文 | 此辅助任务的固定提示 |
+| 项目指令、技能与上下文 | 原生 Agent 原有配置 | 图上下文与当前问题 | 此辅助任务的固定提示 |
 | 权限与沙箱 | 默认沿用原生策略并转发审批；覆盖必须明确 | 应用工具的权限 | 不继承主 Agent 的批准规则 |
 | compact | Agent 自己的会话压缩 | 不存在该 Agent 的 compact | 不是画布凝练按钮的含义 |
 | 输出业务文件 | Agent 在明确 cwd / 目标路径写入 | 通常先得到内容；显式下载/保存是另一步 | 写草稿、元信息、派生副本，非项目文件 |
@@ -68,11 +68,10 @@ ThoughtDAG 在此模式提供输入、事件传输、审批转发、停止/补�
 | --- | --- |
 | 自动标题、展示摘要、缩放摘要 | 不发额外模型请求；优先用源会话标题、问题首行和确定性截取 |
 | ThoughtDAG 记忆/画像与跨会话回忆 | 不自动查询、不注入、不在结束后自动提取 |
-| ThoughtDAG 角色与编译历史 | 不隐式插入；原生项目指令和用户已有技能保持原样 |
+| ThoughtDAG 编译历史 | 不隐式插入；原生项目指令和用户已有技能保持原样 |
 | ThoughtDAG 搜索与 MCP 开关 | 原生节点隐藏；显示“由当前 Agent 的工具配置控制” |
 | 材料预处理 | 不自动调用 API OCR/摘要，也不偷偷复制到业务目录 |
 | ThoughtDAG 自加工具/提示 | 不默认注册或激活，如历史查询工具和“修改前查询历史”提示 |
-| 自动重跑、持续评审 | 纯原生入口默认关闭；用户明确创建并授权的自动流程另行标识 |
 | guard 或权限策略覆盖 | 新增“沿用原生配置”；不因为选择原生模式就变成全放行 |
 
 如果用户原本就在 Agent 配置里安装了 ThoughtDAG 工具/技能，纯原生连接不会擅自删改该配置。需要“运行时也完全不包含这类能力”时，应使用用户确认的独立配置档；运行时不支持隔离配置时，要说明限制。
@@ -128,7 +127,6 @@ ThoughtDAG 在此模式提供输入、事件传输、审批转发、停止/补�
 | P16 | 记忆提取、画像整理、专题档案 | 文字生成用文字辅助 API，分类用判断模型 | 派生资料；可能影响以后画布请求 | 读写来源、模型、独立功能开关；纯原生默认不参与 |
 | P17 | 搜索历史、定位文件来源 | 本地索引/规则；语义扩展再按需调用辅助模型 | 只查索引；引用到节点须明确操作 | “本地检索”与“使用模型扩展”分开 |
 | P18 | 多模型对比、选区综合、高光串联 | 正式结果节点的执行者 | 每项是实际生成任务，可能调用 Agent | 各分支执行者、数量、输入与明确批量开始 |
-| P19 | 用户启用的持续评审/自动重跑 | 预先绑定的执行者 | 上游变化触发新执行；不等于普通连线 | 明确开关、触发条件、轮数/预算、暂停、影响目录 |
 | P20 | 排版、改名、连线、折叠、局部搜索 | 本地确定性逻辑 | 改显示/图结构；无需模型 | 不出现虚假的“正在调用 AI” |
 | P21 | 导出/下载已有结果、在编辑器打开文件 | 明确的本地/宿主文件动作 | 不是 LLM 生成；可能读写用户选定位置 | 路径、格式、覆盖确认；不使用主 Agent 额度 |
 | P22 | 停止、授权、补充指令 | 所属运行时的控制接口 | 针对同一原生任务；不更换模型执行者 | 当前任务身份、动作范围与确认结果 |
@@ -147,7 +145,7 @@ ThoughtDAG 在此模式提供输入、事件传输、审批转发、停止/补�
 
 | 编号 | 用户意图 | 推荐路径 | 下一步 GUI / 明确行为 | 文件或会话落点 |
 | --- | --- | --- | --- | --- |
-| U01 | 只看以前的 Agent 对话 | 只读导入/镜像 | 选择来源和会话；不必配置 API 或登录生成 | 原始历史留在 Agent；镜像入画布 |
+| U01 | 只看以前的 Agent 对话 | 在原运行环境查看，或查询本地历史 | 打开来源会话或历史记录；不必配置 API 生成 | 原始历史留在 Agent |
 | U02 | 在画布里像原应用一样持续工作 | 原生 Agent 节点 | 选 Agent、原会话/新会话、工作目录，发送 | 原生历史 + 原业务项目 |
 | U03 | 讨论方案，不操作项目 | 可直接继续原 Agent；也可明确新建 API 分支 | 不因任务“只是讨论”强迫切 API | 取决于用户选择的会话 |
 | U04 | 正在聊，突然要读项目文件 | 若当前原生，直接说路径；若 API，则交给 Agent | API 中产生 Agent 子节点草稿，明确目录与输入后发送 | Agent 读取业务文件，回传结果 |
@@ -174,7 +172,7 @@ ThoughtDAG 在此模式提供输入、事件传输、审批转发、停止/补�
 
 ## 6. 只有 Agent、没有 API 时应是什么体验
 
-主对话、原生工具、文件操作、原生历史、原生支持的 compact、已有会话镜像应照常可用，不用配置 ThoughtDAG API 来解锁。
+主对话、原生工具、文件操作、原生历史、原生支持的 compact 应照常可用，不用配置 ThoughtDAG API 来解锁。
 
 | 功能 | 没有辅助 API 的目标行为 |
 | --- | --- |
@@ -364,7 +362,7 @@ Codex 的状态根目录默认是 `~/.codex`，可由 `CODEX_HOME` 指定；这�
 2. Codex/Claude/Pi 续接路径只发本轮问题，跳过编译历史与材料，但前置回忆查询仍可能已经发生。不能把“界面打开了回忆”理解成一定写进原生续接。
 3. Codex/Claude/Pi 的发送路径先写 guard；Codex/Claude 将其映射到原生权限参数，Pi 加载额外 guard 扩展。Harness 原生执行使用宿主权限 preset，询问模式保留原设置，auto/allow 临时覆盖后恢复。现在没有统一的“沿用原设置且不附加策略”模式。
 4. Harness 插件默认加历史查询工具与提示；可以通过 `whyTools:false`、`whyPrompt:false` 关闭，但当前没有统一纯原生配置界面。
-5. 原生回答结束仍进入展示摘要、记忆判断和可能的自动重跑流程。它们不会都成为 Agent 原生轮次，但可能另发 API 请求。
+5. 原生回答结束仍进入展示摘要和记忆判断流程。它们不会都成为 Agent 原生轮次，但可能另发 API 请求。
 6. Harness 的续接/分支判断不完全等同 Codex 的上下文修改检查，不能承诺各运行时已统一。
 7. 原生续问当前仍会优先节点显式模型，再使用此前回答模型或同运行时的全局模型；默认标记也会从目录解析后显式发给运行时。本轮 effort 读取全局设置。因此“无覆盖时真正沿用原生会话模型/强度”还需改实际分派，不能只改 GUI 标签。
 
@@ -386,7 +384,7 @@ Codex 的状态根目录默认是 `~/.codex`，可由 `CODEX_HOME` 指定；这�
 | 记忆与画像、专题档案 | 判断 + `backgroundCall` 等 | 某些按目录 default 优先；开启条件下可自动生成/更新 |
 | 相关历史卡片、扩词、主题建议 | `backgroundCall` | 无 API 有的报错、有的退回原文截取 |
 | 相关性/分类/批量标注 | 独立 judge 配置；部分可用 API 代答 | 不是原生 Agent；批量标注等并非任意 API 都能替代 |
-| 多角色、选区综合、高光串联 | 正式 `runNodeGeneration` | 可以执行 Agent；持续评审具有用户启用的 watch/autoRerun |
+| 选区综合、高光串联 | 正式 `runNodeGeneration` | 由用户明确触发，可使用所选 Agent 执行 |
 
 当前通用辅助候选为：**调用方 prefer → 当前选择（仅 API）→ 上次 API → 目录默认 → 其他 API**；过滤 Agent，失败者暂时后移，每次最多尝试 3 个。故现在标题、摘要一般不会“继续调用 Codex”，但可能调用用户上次选过的另一个 API。这正是需要独立用途配置与可见来源的原因。[辅助路由](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/lib/background-model.ts)
 
@@ -409,7 +407,6 @@ OpenAI 的公开 app-server 提供 `thread/compact/start`；这说明可以针�
 | 手动 JSON 导出缺 sourceSession；项目 cwd/guard 未完整导出 | 换机器不能直接恢复执行环境 | 完整备份契约与导出字段统一，恢复时重新绑定 |
 | API key 可明文序列化到 localStorage | 不能声称“不落盘”或已使用系统凭据库 | 桌面/本地宿主采用凭据引用；纯浏览器如实说明可用存储方式 |
 | API 固定模型不可用时可回退全局选择 | 全局是 Agent 时可能跨执行方式 | 不跨方式自动回退，等待用户重选 |
-| 已有持续评审自动重跑 | 仅说“所有边都绝不执行”不准确 | 普通上下文边不自动执行；显式自动流程单独展示和控制 |
 
 本次没有读取任何实际密钥。以上凭据结论来自类型与存取代码，见 [runtime-providers](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/lib/runtime-providers.ts)；索引记录与备份见 [canvas-record](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/lib/canvas-record.ts)、[local-backup](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/lib/local-backup.ts)、[export](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/lib/export.ts)。
 
@@ -421,7 +418,6 @@ OpenAI 的公开 app-server 提供 `thread/compact/start`；这说明可以针�
 - 分离主执行默认、对话 API 默认、辅助用途配置；无 API 的纯原生流程独立可用。
 - 统一各 Agent 的“原生续接/画布快照新会话”判定与发送前预览。
 - GUI 上拆分展示摘要、凝练副本、原生 compact；每次操作可看到实际执行者和产物位置。
-- 普通上下文关系与明确开启的持续评审分别建模，避免原生会话意外自动重跑。
 
 ### 第二阶段：初始化与文件归属可见
 
@@ -441,7 +437,7 @@ OpenAI 的公开 app-server 提供 `thread/compact/start`；这说明可以针�
 7. 换全局默认不改变正在运行的主任务，也不悄悄更换辅助模型用途。
 8. 所有模型或 Agent 不可用时保持原选择与草稿；不能跨方式启动另一条任务。
 9. 数据面板能回答“哪台机器、Agent home 在哪、实际改哪里、画布在哪、备份包含什么”。
-10. 删除镜像、清理索引、卸载 Agent、删除业务项目是不同操作，不相互代替。
+10. 删除画布、清理索引、卸载 Agent、删除业务项目是不同操作，不相互代替。
 11. 仅查看设置或预览会话去向不会创建工作区、复制材料或覆盖权限。
 12. 各运行时的协议支持、未实现能力和原应用入口如实展示，不宣称所有 Agent 的功能完全等价。
 
@@ -450,11 +446,11 @@ OpenAI 的公开 app-server 提供 `thread/compact/start`；这说明可以针�
 - [background-model.ts](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/lib/background-model.ts)：辅助模型过滤与候选顺序。
 - [node-metadata.ts](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/lib/node-metadata.ts)、[NodeMetadataEditor.tsx](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/components/NodeMetadataEditor.tsx)：AI 标题/摘要只写草稿。
 - [CondenseDialog.tsx](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/components/ui/CondenseDialog.tsx)、[condense.ts](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/lib/condense.ts)：API 凝练与副本树。
-- [streaming.ts](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/store/streaming.ts)：主执行、记忆回忆、结束后辅助任务、自动重跑。
+- [streaming.ts](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/store/streaming.ts)：主执行、记忆回忆、结束后辅助任务。
 - [agent-runtime.ts](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/lib/agents/agent-runtime.ts)：会话路由、上下文编译、材料、guard 与原生发送。
 - [runtime/agents](https://github.com/linerrrrrrr/thoughtdag/blob/main/runtime/agents/README.md)：各运行时能力和统一事件接口。
 - [content.ts](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/lib/content.ts)、[judge.ts](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/lib/judge.ts)：视觉与判断的独立调用路径。
-- [dsh-bridge.ts](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/lib/atlas/dsh-bridge.ts)、[Harness 插件](https://github.com/linerrrrrrr/thoughtdag/blob/main/dsh/lib/index.js)：宿主会话、工具及提示扩展。
+- [harness-bridge.ts](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/lib/agents/harness-bridge.ts)、[Harness 插件](https://github.com/linerrrrrrr/thoughtdag/blob/main/dsh/lib/index.js)：宿主会话、工具及提示扩展。
 - [desktop/main.js](https://github.com/linerrrrrrr/thoughtdag/blob/main/desktop/main.js)、[HTTP bridge](https://github.com/linerrrrrrr/thoughtdag/blob/main/runtime/agents/http.cjs)、[ops.cjs](https://github.com/linerrrrrrr/thoughtdag/blob/main/runtime/agents/ops.cjs)：扫描、工作区、材料和权限文件。
 - [projects.ts](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/store/projects.ts)、[persistence.ts](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/lib/persistence.ts)：画布与附件持久化。
 - [OpenAI App Server](https://learn.chatgpt.com/docs/app-server)、[Codex 环境变量](https://learn.chatgpt.com/docs/config-file/environment-variables)：公开能力与状态目录，不替代本项目实测。

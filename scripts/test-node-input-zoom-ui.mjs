@@ -26,7 +26,6 @@ await page.route('**/api/**', route => {
 await page.addInitScript(() => {
   localStorage.setItem('thoughtdag.seeded', 'yes');
   localStorage.setItem('thoughtdag.tutorialDone', '1');
-  localStorage.setItem('thoughtdag.autoRefreshPaused', 'yes');
 });
 const node = (id = 'input-a') => page.locator(`.react-flow__node[data-id="${id}"]`);
 const question = (id = 'input-blank') => node(id).locator('[data-canvas-question-editor]');
@@ -50,9 +49,9 @@ try {
     window.__ui.getState().setCanvasDetail('auto');
     const base = { response: '把阅读层级与编辑状态分开。概览用来查看结构，正在编辑的输入保持打开，草稿在当前会话中保留。',
       responseIndex: 0, isCollapsed: false, isEditing: false, isEditingResponse: false, isLoading: false,
-      tokenCount: 60, highlights: [], highlightMode: 'tag', attachments: [], excludedAttachmentIds: [], includedAttachmentIds: [], roleMode: 'inherit', isRoot: false, isBranch: false };
+      tokenCount: 60, highlights: [], highlightMode: 'tag', attachments: [], excludedAttachmentIds: [], includedAttachmentIds: [], roleMode: 'inherit'};
     const nodes = ['a', 'b'].map((id, i) => ({ id: `input-${id}`, type: 'thought', dragHandle: '.drag-handle', position: { x: i * 650, y: 0 },
-      data: { ...base, question: i ? '其他节点保持一致的显示规则' : '缩放时如何稳定地继续输入？', responses: [base.response], isRoot: i === 0 } }));
+      data: { ...base, question: i ? '其他节点保持一致的显示规则' : '缩放时如何稳定地继续输入？', responses: [base.response]} }));
     window.__store.setState({ nodes, edges: [], selectedNodeId: null, selectedNodeIds: [], history: [{ nodes, edges: [] }], historyIndex: 0 });
   });
   await node().waitFor();
@@ -68,7 +67,7 @@ try {
   await page.evaluate(() => {
     const first = window.__store.getState().nodes[0];
     const idle = { ...first, id: 'input-blank', position: { x: 0, y: 410 }, selected: false,
-      data: { ...first.data, question: '', response: '', responses: [], responseIndex: -1, isRoot: false, isEditing: false } };
+      data: { ...first.data, question: '', response: '', responses: [], responseIndex: -1, isEditing: false } };
     window.__store.getState().setNodes([...window.__store.getState().nodes, idle]);
   });
   await question().waitFor();

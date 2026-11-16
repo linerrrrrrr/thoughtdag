@@ -27,7 +27,6 @@ await context.route('**/api/**', route => {
 await page.addInitScript(() => {
   localStorage.setItem('thoughtdag.seeded', 'yes');
   localStorage.setItem('thoughtdag.tutorialDone', '1');
-  localStorage.setItem('thoughtdag.autoRefreshPaused', 'yes');
   localStorage.setItem('thoughtdag.lang', 'zh');
 });
 const check = name => { checks.push(name); console.log(`PASS ${name}`); };
@@ -53,7 +52,7 @@ const seed = async ({ direction = 'vertical', reference = false, shared = false,
         responses: ['这一路内容将沿单向箭头进入下游问题。'], responseIndex: 0, summaries: [],
         isCollapsed: false, isEditing: false, isEditingResponse: false, isLoading: false, tokenCount: 100,
         highlights: [], highlightMode: 'tag', attachments: [], excludedAttachmentIds: [], includedAttachmentIds: [],
-        roleMode: 'inherit', isRoot: false, isBranch: false, detailLevel: 'full', layoutDirection: direction,
+        roleMode: 'inherit', detailLevel: 'full', layoutDirection: direction,
       } });
     const nodes = direction === 'horizontal'
       ? [make('source-a', 40, 130, '上游 A：今晚吃什么'), make('source-b', 40, 560, '上游 B：整理研究讨论'), make('target', 770, 290, '同一问题：总结我们聊了什么')]
@@ -73,8 +72,7 @@ const seed = async ({ direction = 'vertical', reference = false, shared = false,
     window.__store.setState({ nodes, edges, selectedNodeId: null, selectedNodeIds: [], staleIds: [], staleFps: {}, staleVerdicts: {},
       history: [{ nodes, edges }], historyIndex: 0 });
     const ui = window.__ui.getState();
-    ui.setPanelOpen(false); ui.setTutorialOpen(false); ui.setReleaseNotesOpen(false); ui.setAutoRefreshPaused(true);
-    window.__rf.setViewport({ x: 30, y: shared ? 140 : 40, zoom }, { duration: 0 });
+    ui.setPanelOpen(false); ui.setTutorialOpen(false); ui.setReleaseNotesOpen(false); window.__rf.setViewport({ x: 30, y: shared ? 140 : 40, zoom }, { duration: 0 });
   }, { direction, reference, shared, zoom });
   // Use the visible settings entry so Vite HMR cannot leave a second imported store.
   await page.locator('[data-toolbar-more]').click();
@@ -223,13 +221,6 @@ try {
   await page.waitForFunction(() => window.__contextInspection.getState().activeEdgeId === 'edge-reference');
   await capture('reference-source');
   check('reference source is counted and traceable but excluded from structural ordering');
-  await page.evaluate(() => window.__store.setState(state => ({ edges: state.edges.map(edge => edge.id === 'edge-reference'
-    ? { ...edge, data: { ...edge.data, isWatch: true } } : edge) })));
-  assert.equal(await popover().locator('[data-context-reference-item]').count(), 0);
-  assert.equal(await popover().locator('[data-context-special-item]').count(), 1);
-  assert.equal(await popover().locator('.context-source-hint').count(), 0);
-  check('watch context stays separate and does not inherit the single-turn reference explanation');
-
   await seed({ direction: 'horizontal', lighting: 'light', lang: 'en', zoom: 0.9 });
   await trigger().click();
   await assertFits();

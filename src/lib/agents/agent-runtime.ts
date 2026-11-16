@@ -1,21 +1,22 @@
 // Agent runtimes as models the canvas can pick. The desktop shell runs the
 // agent (window.desktopAgents), the canvas compiles what it wired in and
-// hands over one prompt, the agent answers with its own tools in a working
+// hands Codex separate native history items plus the current prompt; legacy
+// runtimes receive their existing text context. Agents use their own tools in a working
 // directory, and its events come back as the same callbacks a streamed
 // model call uses. The runtime keeps the session file, the keys and the
 // catalog; the canvas keeps the context.
 //
 // THE CONTRACT — the only things this file asks of a runtime, whichever it
-// is (Pi today; Codex and Claude Code follow the same shape):
+// is (with a structured-history extension for Codex):
 //   1. start a run on a working directory with one prompt (and, if the
 //      person chose one, an effort level in the runtime's own words); abort it
 //   2. an event stream carrying eight kinds, nothing else is read:
 //        session · text · reasoning · tool_start · tool_end · question ·
 //        end · error  (plus fs_changes, which the shell produces itself)
-//   3. a session file on disk the atlas already knows how to read — the
+//   3. a session file on disk the runtime adapter can read — the
 //      finished turn is adopted from it, never rebuilt from the stream
 //   4. a model list
-// Everything runtime-specific lives in desktop/agents/<runtime>.js.
+// Runtime implementations live in runtime/agents/<runtime>.cjs.
 
 import type { ContextMessage, ImageAttachment, StreamCallbacks } from '../api';
 import type { ModelInfo } from '../use-models';
@@ -25,6 +26,8 @@ import { useStore } from '../../store';
 import { isAgentActivity } from '../agent-activity';
 import type { AppServerThread } from '../adapters/codex-appserver';
 import { t } from '../../i18n';
+import { DOCX_MIME_TYPE, documentCopyText, isEditableDocument } from '../document-copy';
+import { compileCodexHistory, selectCodexBase, scopeNativeItems, historyFingerprint, nodeHistoryRevision, toolAttachmentsFingerprint, type CodexNativeHistory } from './codex-history';
 
 /** The runtimes the shell can run, keyed by the prefix of their picker ids. */
 export const AGENT_RUNTIMES: Record<AgentRuntime, { prefix: string; label: string; rootKey: string }> = {
@@ -109,10 +112,10 @@ const normalizedHostPath = (value: string): string => {
 };
 const sameHostPath = (left: string, right: string): boolean => normalizedHostPath(left) === normalizedHostPath(right);
 
-export type CwdChoice = { cwd: string; kind: 'chosen' | 'mirrored' | 'session' | 'workspace' };
+export type CwdChoice = { cwd: string; kind: 'chosen' | 'source' | 'session' | 'workspace' };
 
 /** The working directory the active canvas's agent turns run in: the one
- *  the person chose for this canvas, else the project its mirrored nodes
+ *  the person chose for this canvas, else the project its source nodes
  *  came from, else the canvas's own workspace. */
 export async function resolveAgentCwd(forHarness = false, previewOnly = false): Promise<CwdChoice | null> {
   if (!window.desktopAgents) return null;
@@ -129,11 +132,11 @@ export async function resolveAgentCwd(forHarness = false, previewOnly = false): 
     }
     let best: string | null = null; let bestN = 0;
     for (const [c, n] of counts) if (n > bestN) { best = c; bestN = n; }
-    if (best) return { cwd: best, kind: 'mirrored' };
+    if (best) return { cwd: best, kind: 'source' };
     // a Harness Agent turn without a choice of its own follows the session
     // the chat shows, not the canvas's workspace folder
     if (forHarness) {
-      const { currentDshSession } = await import('../atlas/dsh-bridge');
+      const { currentDshSession } = await import('./harness-bridge');
       const session = currentDshSession()?.cwd;
       if (session) return { cwd: session, kind: 'session' };
     }
@@ -144,8 +147,8 @@ export async function resolveAgentCwd(forHarness = false, previewOnly = false): 
   }
 }
 
-/** The mirrored project directory of the active canvas, if any. */
-export async function mirroredCwd(): Promise<string | null> {
+/** The source project directory of the active canvas, if any. */
+export async function sourceCwd(): Promise<string | null> {
   try {
     const { useStore } = await import('../../store');
     const { useProjects } = await import('../../store/projects');
@@ -200,10 +203,10 @@ export async function agentOutbound(model: string | undefined, nodeId?: string):
 /** Read-only composer preview. Unlike dispatch it never creates a workspace
  * directory merely because the reader opened a node. */
 export async function previewAgentFollowup(nodeId: string, model: string | undefined, options?: {
-  branchContext?: string; hasAttachments?: boolean; recall?: boolean; hasReferences?: boolean; excludeAttachments?: boolean;
+  hasContextChanges?: boolean; hasAttachments?: boolean; recall?: boolean; hasReferences?: boolean; excludeAttachments?: boolean;
 }): Promise<AgentRoute | undefined> {
   const route = await routeForParent(model, nodeId, undefined, true);
-  return route && (options?.branchContext || options?.hasAttachments || options?.recall || options?.hasReferences || options?.excludeAttachments)
+  return route && (options?.hasContextChanges || options?.hasAttachments || options?.recall || options?.hasReferences || options?.excludeAttachments)
     ? { cwd: route.cwd } : route;
 }
 
@@ -221,23 +224,19 @@ async function routeForParent(model: string | undefined, parentId?: string, chil
   const cwd = meta?.agentCwd ?? sessionCwd ?? (await resolveAgentCwd(false, previewOnly))?.cwd;
   if (!cwd) return undefined;
   const fresh = { cwd };
-  const ss = meta?.sourceSession;
   if (!tail) return fresh;
-  const entries = ss ? [ss, ...(ss.chapters ?? []), ...(ss.branches ?? [])].filter((e) => e.runner === runtime && e.sessionId) : [];
   const own = tail.data.agentSession;
   // A successful run can have no readable rollout yet. Its acknowledged
   // native session remains usable without pretending that it was imported.
   const ownTail = own?.runtime === runtime && own.sessionId
     && !nodes.some((n) => n.id !== tail.id && (n.data.agentSession?.sessionId ?? n.data.importSource?.sessionId) === own.sessionId
       && edges.some((e) => e.source === tail.id && e.target === n.id));
-  const entry = entries.find((e) => e.tailNodeId === parentId)
-    ?? (ownTail && !entries.some((e) => e.sessionId === own.sessionId) ? { sessionId: own.sessionId! } : undefined);
-  if (!entry || (sessionCwd && !sameHostPath(sessionCwd, cwd))) return fresh;
+  if (!ownTail || !own?.sessionId || (sessionCwd && !sameHostPath(sessionCwd, cwd))) return fresh;
   const d = child?.data;
-  if (d?.branchContext || d?.rolePrompt || d?.roleMode === 'reset' || d?.instruction
+  if (d?.instruction
     || d?.attachments?.some((a) => !a.op) || d?.recall || d?.recallItems?.length
     || (d?.excludedAttachmentIds?.length && nodes.some((n) => n.data.attachments?.some((a) => !a.op && d.excludedAttachmentIds.includes(a.id))))
-    || edges.some((e) => e.target === child?.id && (e.data?.isBranchFromSelection || e.data?.isCrossLink))) return fresh;
+    || edges.some((e) => e.target === child?.id && e.data?.isCrossLink)) return fresh;
   // Native resume owns its old context. If that context was edited on the
   // canvas, use the compiled branch instead of silently ignoring the edit.
   const seen = new Set<string>();
@@ -249,44 +248,21 @@ async function routeForParent(model: string | undefined, parentId?: string, chil
     const node = nodes.find((n) => n.id === id);
     if (!node) continue;
     const data = node.data;
-    if (data.isLoading || data.archived || data.highlightMode === 'filter' || data.rolePrompt || data.instruction
+    if (data.isLoading || data.archived || data.highlightMode === 'filter' || data.instruction
       || (data.responses?.length && data.responseIndex !== data.responses.length - 1)) return fresh;
     if (data.source && (data.response !== data.source.response
       || (data.question !== data.source.question && !(data.agentSession && data.source.question.trim().endsWith(data.question.trim()))))) return fresh;
     if (edges.some((e) => e.target === id && e.data?.isCrossLink)) return fresh;
     queue.push(...edges.filter((e) => e.target === id).map((e) => e.source));
   }
-  const sessionPath = await agentSessionFile(runtime, entry.sessionId, tail);
-  return sessionPath ? { cwd, sessionId: entry.sessionId, sessionPath, continue: true } : fresh;
-}
-
-/**
- * The moment a continued turn names its session: the node becomes that
- * turn's mirror now — provenance stamped, ledger advanced — so the live
- * sweep, which polls the file every few seconds, does not append the
- * in-progress turn a second time. The completion stamp fills in the rest.
- */
-export async function claimAgentTurn(runtime: AgentRuntime, nodeId: string, sessionId: string, cwd: string): Promise<void> {
-  try {
-    const { useStore } = await import('../../store');
-    const { useProjects, patchLedgerEntry, subscribedSessionIds } = await import('../../store/projects');
-    const { projects, activeId } = useProjects.getState();
-    const meta = activeId ? projects.find((p) => p.id === activeId) : undefined;
-    if (!meta || !activeId || !subscribedSessionIds(meta).includes(sessionId)) return;
-    const ss = meta.sourceSession!;
-    const entry = [ss, ...(ss.chapters ?? []), ...(ss.branches ?? [])].find((e) => e.sessionId === sessionId);
-    if (!entry) return;
-    useStore.setState((st) => ({
-      nodes: st.nodes.map((n) => n.id === nodeId ? { ...n, data: { ...n.data, importSource: { runner: runtime, sessionId, itemIds: [], cwd } } } : n),
-    }));
-    await patchLedgerEntry(activeId, sessionId, { importedCount: entry.importedCount + 1, tailNodeId: nodeId });
-  } catch { /* the completion stamp still lands */ }
+  const sessionPath = await agentSessionFile(runtime, own.sessionId, tail);
+  return sessionPath ? { cwd, sessionId: own.sessionId, sessionPath, continue: true } : fresh;
 }
 
 /** The materials wired into a node's context — its own and its ancestors'
  *  document attachments — written where the agent can read them. Returns
  *  the note to append to the prompt, or '' when nothing was written. */
-async function materialsToDisk(nodeId: string | undefined, cwd: string): Promise<string> {
+async function materialsToDisk(nodeId: string | undefined, cwd: string, includedIds?: Set<string>): Promise<string> {
   if (!nodeId || !window.desktopAgents) return '';
   try {
     const { useStore } = await import('../../store');
@@ -305,23 +281,33 @@ async function materialsToDisk(nodeId: string | undefined, cwd: string): Promise
     for (const n of nodes) {
       if (!seen.has(n.id)) continue;
       for (const att of n.data.attachments ?? []) {
+        if (includedIds && !includedIds.has(att.id)) continue;
         if (att.op || /^(tool|🔧|⌨️)/.test(att.name)) continue; // tool footprints are not materials
-        if (names.has(att.name) || files.length >= 40) continue;
-        const isPdf = /^application\/pdf/.test(att.type);
+        if (files.length >= 40) continue;
+        const isBinaryDocument = /^application\/pdf/.test(att.type) || att.type === DOCX_MIME_TYPE;
         const isImage = att.type.startsWith('image/');
         if (isImage) continue;
+        if (isEditableDocument(att) && att.editedText !== undefined) {
+          const copyName = `${att.name}.${att.id}.working.md`;
+          if (!names.has(copyName)) {
+            files.push({ name: copyName, content: documentCopyText(att) });
+            names.add(copyName);
+          }
+        }
+        if (names.has(att.name) || files.length >= 40) continue;
         let content = '';
         try { content = await loadAttachmentContent(att); } catch { content = att.content; }
         if (!content) continue;
         names.add(att.name);
-        if (isPdf) files.push({ name: att.name, content, encoding: 'base64' });
+        if (isBinaryDocument) files.push({ name: att.name, content, encoding: 'base64' });
         else files.push({ name: att.name, content });
       }
     }
     if (files.length === 0) return '';
     const r = await window.desktopAgents.writeMaterials(cwd, files);
     if (!r.dir || r.written.length === 0) return '';
-    return `The canvas's materials are also on disk, readable with your tools, under ${r.dir}:\n` + r.written.map((f) => '- ' + f).join('\n');
+    return `The canvas's materials are also on disk, readable with your tools, under ${r.dir}:\n` + r.written.map((f) => '- ' + f).join('\n')
+      + '\nA .working.md file is the user-saved working copy and takes precedence over the source document for its text.';
   } catch {
     return '';
   }
@@ -458,29 +444,44 @@ export async function agentCallStream(
   const cwd = route?.cwd ?? (await agentOutbound(modelId))?.cwd;
   if (!cwd) throw new Error('no working directory for this canvas');
   signal?.throwIfAborted();
-  const { question, context } = compileForAgent(messages);
+  const native = target.runtime === 'codex' ? await compileCodexHistory(messages, useStore.getState().nodes, nodeId, images) : undefined;
+  const { question, context } = native ? { question: native.question, context: '' } : compileForAgent(messages);
   await writeGuard(cwd, true);
   signal?.throwIfAborted();
-  const continuing = !!route?.continue && !!route?.sessionPath;
-  const materials = continuing ? '' : await materialsToDisk(nodeId, cwd);
+  const continuing = !native && !!route?.continue && !!route?.sessionPath;
+  const materialIds = native ? new Set(messages.flatMap((m) => m.canvasSource?.attachmentIds ?? (m.canvasSource?.attachmentId ? [m.canvasSource.attachmentId] : []))) : undefined;
+  const materials = continuing && !native ? '' : await materialsToDisk(nodeId, cwd, materialIds);
   signal?.throwIfAborted();
-  const ahead = continuing ? '' : [context, materials].filter(Boolean).join('\n\n');
+  if (native) {
+    if (materials) {
+      const itemStart = native.history.items.length;
+      native.history.items.push({ type: 'message', role: 'user', content: [{ type: 'input_text', text: materials }] });
+      native.history.mappings.push({ nodeId: null, revision: await nodeHistoryRevision(materials, ''), itemStart, itemEnd: itemStart + 1, representation: 'messages' });
+      native.history.fingerprint = await historyFingerprint(native.history.items, native.instructions);
+    }
+    await selectCodexBase(native.history, native.instructions, useStore.getState().nodes, cwd);
+  }
+  const ahead = native ? '' : continuing ? '' : [context, materials].filter(Boolean).join('\n\n');
   const prompt = ahead ? `${ahead}\n\n---\n\n${question}` : question;
   const effort = useUiStore.getState().agentEffort || undefined;
-  const allowRules = sessionAllowRules(target.runtime, route, useStore.getState().nodes);
+  const permissionRoute = native ? (native.history.base ? { cwd, continue: true, sessionId: native.history.base.threadId } : { cwd }) : route;
+  const allowRules = sessionAllowRules(target.runtime, permissionRoute, useStore.getState().nodes);
   subscribe();
 
   let full = '';
   let reasoning = '';
   let finalText: string | null = null;
   let stopRejected = false;
+  let lastSession: NonNullable<ThoughtData['agentSession']> | undefined;
   startingRuns++;
   const done = new Promise<{ how: string; error?: string }>((resolve) => {
     void bridge.run({
       runtime: target.runtime, cwd, prompt,
-      ...(route?.sessionPath ? { sessionPath: route.sessionPath } : {}),
-      ...(route?.forkEntryId ? { forkEntryId: route.forkEntryId } : {}),
-      images: (images ?? []).map((img) => ({ type: 'image' as const, data: img.data, mimeType: img.mimeType })),
+      ...(native ? { codexHistory: native.history, instructions: native.instructions } : {
+        ...(route?.sessionPath ? { sessionPath: route.sessionPath } : {}),
+        ...(route?.forkEntryId ? { forkEntryId: route.forkEntryId } : {}),
+      }),
+      images: (native?.images ?? images ?? []).map((img) => ({ type: 'image' as const, data: img.data, mimeType: img.mimeType })),
       model: { provider: target.provider, id: target.id },
       ...(effort ? { effort } : {}),
       ...(allowRules.length ? { allowRules } : {}),
@@ -513,13 +514,17 @@ export async function agentCallStream(
             // an alias (`opus`) resolved inside the CLI: the picker learns the real name
             const resolved = (event.model as { resolved?: string } | null | undefined)?.resolved;
             if (resolved) window.dispatchEvent(new CustomEvent('td:agent-model-resolved', { detail: { id: modelId, resolved } }));
-            callbacks?.onAgentSession?.({
+            lastSession = {
               runtime: target.runtime,
               sessionId: (event.sessionId as string | null) ?? null,
               sessionFile: (event.sessionFile as string | null) ?? null,
               cwd: (event.cwd as string) ?? cwd,
               ...(typeof event.effort === 'string' && event.effort ? { effort: event.effort } : {}),
-            });
+              ...(typeof event.turnId === 'string' ? { turnId: event.turnId } : {}),
+              ...(typeof event.continued === 'boolean' ? { continued: event.continued } : {}),
+              ...(event.nativeHistory ? { nativeHistory: event.nativeHistory as CodexNativeHistory } : {}),
+            };
+            callbacks?.onAgentSession?.(lastSession);
             break;
           }
           case 'message_update': {
@@ -560,7 +565,7 @@ export async function agentCallStream(
             callbacks?.onApproval?.({
               id: String(event.id), kind: (event.kind as 'confirm' | 'select' | 'input' | 'editor' | 'form') ?? 'confirm',
               ...(Array.isArray(event.questions) ? { questions: event.questions as import('../../types').FormQuestion[] } : {}),
-              toolName: target.runtime, callId: null, reason: null,
+              toolName: target.runtime, callId: null, reason: typeof event.reason === 'string' ? event.reason : null,
               name: String(event.title ?? ''), query: String(event.message ?? ''), arguments: null,
               options: Array.isArray(event.options) ? (event.options as string[]) : [],
               placeholder: typeof event.placeholder === 'string' ? event.placeholder : null,
@@ -603,16 +608,26 @@ export async function agentCallStream(
   const r = await done;
   if (r.how === 'error') throw new Error(r.error ?? 'agent run failed');
   if ((signal?.aborted && !stopRejected) || r.how === 'aborted' || r.how === 'interrupted') throw new DOMException('The operation was aborted.', 'AbortError');
+  const saved = lastSession as NonNullable<ThoughtData['agentSession']> | undefined;
+  if (native && saved?.nativeHistory && nodeId) {
+    const captured = saved.nativeHistory;
+    const ownItems = await scopeNativeItems(captured.items, nodeId);
+    const all = [...native.history.items, ...ownItems];
+    const currentQuestion = captured.items.flatMap((item) => item.type === 'message' && item.role === 'user' && Array.isArray(item.content)
+      ? item.content.filter((part: { type?: string; text?: string }) => part.type === 'input_text' && typeof part.text === 'string').map((part: { text: string }) => part.text) : []).join('\n\n') || question;
+    callbacks?.onAgentSession?.({ ...saved, nativeHistory: {
+      ...captured, question: currentQuestion, response: finalText ?? full,
+      mappings: [...captured.mappings, { nodeId, revision: await nodeHistoryRevision(currentQuestion, finalText ?? full), itemStart: native.history.items.length, itemEnd: all.length, representation: 'native', turnId: captured.turnId }],
+      outputFingerprint: captured.capture === 'complete' ? await historyFingerprint(all, native.instructions) : undefined,
+      itemCount: all.length,
+      toolAttachmentsFingerprint: await toolAttachmentsFingerprint(useStore.getState().nodes.find((n) => n.id === nodeId)),
+    } });
+  }
   return finalText ?? full;
 }
 
-/** After a Pi run: the node becomes the mirror of the turn Pi just wrote —
- *  the turn's tool calls as attachments (footprints), provenance
- *  (runner, session, item ids, cwd), the source snapshot — and the canvas
- *  subscribes to the session so turns added later, from the terminal,
- *  append here. The live sweep never appends this turn a second time: the
- *  ledger records it as imported with this node as the tail. */
-export async function adoptAgentTurn(nodeId: string, session: { runtime: AgentRuntime; sessionFile: string | null; sessionId: string | null; cwd: string }, question: string): Promise<boolean> {
+/** Attach the completed agent turn's recorded activity and provenance to its node. */
+export async function adoptAgentTurn(nodeId: string, session: NonNullable<ThoughtData['agentSession']>, question: string): Promise<boolean> {
   const why = (reason: string): false => { console.warn('[agent] turn not adopted:', reason, session.runtime, session.sessionFile); return false; };
   const bridge = window.desktopSessions;
   if (!bridge) return why('no sessions bridge');
@@ -639,7 +654,6 @@ export async function adoptAgentTurn(nodeId: string, session: { runtime: AgentRu
       conv = appServerThreadConversation(thread);
     }
     const { useStore } = await import('../../store');
-    const { useProjects, registerLedgerEntry, updateSourceSession, subscribedSessionIds } = await import('../../store/projects');
     if (!conv?.sessionId) return why('no conversation recognized');
     const built = conv.build();
     const qa = built.nodes.filter((n) => n.data.importSource);
@@ -664,36 +678,16 @@ export async function adoptAgentTurn(nodeId: string, session: { runtime: AgentRu
             attachments: [...(n.data.attachments ?? []).filter((a) => !a.op), ...agentAtts],
             // footprints are pointers, not contents: an agent turn's tool
             // outputs stay out of downstream context unless brought back by hand
-            excludedAttachmentIds: [...new Set([...(n.data.excludedAttachmentIds ?? []), ...agentAtts.map((a) => a.id)])],
+            excludedAttachmentIds: [...new Set([...(n.data.excludedAttachmentIds ?? []), ...(session.runtime === 'codex' && session.nativeHistory?.capture === 'complete' ? [] : agentAtts.map((a) => a.id))])],
             // the thinking the session file counted, on the version this run answered
             ...(turn.data.reasoningTokens?.[0] ? { reasoningTokens: Object.assign([...(n.data.reasoningTokens ?? [])], { [n.data.responseIndex]: turn.data.reasoningTokens[0] }) } : {}),
             importSource: turn.data.importSource,
-            // the snapshot is what Pi recorded — the compiled context ahead of
-            // the question — so the node reads as edited (the question as
-            // asked) and the live sweep never rewrites it from the file
+            // Preserve the recorded question and response for provenance.
             source: turn.data.source ?? { question: turn.data.question, response: turn.data.response },
             agentTrace: undefined,
           } }
         : n),
     }));
-    const { projects, activeId } = useProjects.getState();
-    const meta = activeId ? projects.find((p) => p.id === activeId) : undefined;
-    if (!meta) return true;
-    const entry = { sessionId: conv.sessionId, runner: session.runtime, importedCount: idx + 1, tailNodeId: nodeId };
-    if (subscribedSessionIds(meta).includes(conv.sessionId)) {
-      const { patchLedgerEntry } = await import('../../store/projects');
-      await patchLedgerEntry(activeId!, conv.sessionId, { importedCount: idx + 1, tailNodeId: nodeId });
-    } else if (!meta.sourceSession) {
-      await updateSourceSession(activeId!, entry);
-      if (!useProjects.getState().projects.find((p) => p.id === activeId)?.sourceSession) {
-        // updateSourceSession only patches an existing ledger: create it
-        useProjects.setState((st) => ({ projects: st.projects.map((p) => (p.id === activeId ? { ...p, sourceSession: entry } : p)) }));
-        await registerLedgerEntry(activeId!, 'chapter', entry).catch(() => {});
-        useProjects.setState((st) => ({ projects: st.projects.map((p) => (p.id === activeId && p.sourceSession ? { ...p, sourceSession: { ...p.sourceSession, chapters: (p.sourceSession.chapters ?? []).filter((c) => c.sessionId !== entry.sessionId) } } : p)) }));
-      }
-    } else {
-      await registerLedgerEntry(activeId!, 'chapter', entry);
-    }
     return true;
   } catch (e) {
     return why('threw: ' + (e instanceof Error ? e.message : String(e)));

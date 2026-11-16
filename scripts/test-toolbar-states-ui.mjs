@@ -25,7 +25,6 @@ await page.route('**/*', route => {
 await page.addInitScript(() => {
   localStorage.setItem('thoughtdag.seeded', 'yes');
   localStorage.setItem('thoughtdag.tutorialDone', '1');
-  localStorage.setItem('thoughtdag.autoRefreshPaused', 'yes');
 });
 const output = 'local-tests/toolbar-states';
 await mkdir(output, { recursive: true });
@@ -60,8 +59,7 @@ try {
     const nodes = ['a', 'b'].map((id, i) => ({ id, type: 'thought', width: 380, height: 280,
       position: { x: 80 + i * 440, y: 180 }, data: {
         displayName: `节点 ${id}`, question: `研究问题 ${id}`, response: `回答 ${id}`,
-        responses: [`回答 ${id}`], responseIndex: 0, isRoot: i === 0,
-        isCollapsed: false, isEditing: false, isLoading: false, tokenCount: 10, highlights: [], attachments: [],
+        responses: [`回答 ${id}`], responseIndex: 0, isCollapsed: false, isEditing: false, isLoading: false, tokenCount: 10, highlights: [], attachments: [],
       } }));
     window.__store.setState({ nodes, edges: [], selectedNodeIds: [], selectedNodeId: null,
       history: [{ nodes, edges: [] }], historyIndex: 0 });
@@ -115,7 +113,7 @@ try {
   await none();
   await item('layout-entry').click();
   await item('canvas-layout-panel').waitFor();
-  assert.equal(await value('scope'), 'all', 'Escape cancels the session draft and restores the default scope');
+  assert.equal(await value('scope'), 'selection', 'Escape closes the panel while preserving its session draft');
   await item('layout-entry').click();
   console.log('PASS layout toggles, retains scope and options, clears previews, and never revives covered cards');
 

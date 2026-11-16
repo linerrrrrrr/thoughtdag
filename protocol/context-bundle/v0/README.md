@@ -28,7 +28,7 @@ The v0 acceptance test, and the reason this format is trustworthy:
 ## Provenance
 
 Every message item carries a `source`: which layer produced it
-(`system | material | reference | chain | branch`), which node, and — for
+(`system | material | reference | chain`), which node, and — for
 rendered attachments — which attachment. `context.materials` lists every
 attachment that reached the model channel, with its projection mode
 (`extracted_text`, `pixels`, both, or `placeholder`).

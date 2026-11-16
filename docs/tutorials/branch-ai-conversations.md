@@ -35,10 +35,10 @@ Suppose the branch suggests a weekly bookmark review, and you want to include it
 
 Alternatively, use `@` in the new node’s question input to select a named branch node and ask: “Incorporate the weekly bookmark review schedule into the plan.” The reference joins the new question. Use a new downstream node as the meeting point; do not wire a branch back into its own ancestor.
 
-Check the wire direction and context preview to confirm which content you added. A summary reference carries the referenced question and answer plus its upstream question trail. It does not make those claims a conclusion you have accepted.
+Check the wire direction and the new node’s **Context · N sources** card to confirm which sources you added. A summary reference carries the referenced question and answer plus its upstream question trail. It does not make those claims a conclusion you have accepted.
 
 Use this workflow to compare research directions, question evidence, or explore alternatives. For a straightforward question, a single thread may be enough.
 
 ---
 
-Related guides: [Getting started](/) · [Context controls](/guides/context-control) · [Conversations and branches](/guides/conversations) · [Session Atlas](/guides/session-atlas)
+Related guides: [Getting started](/) · [Context controls](/guides/context-control) · [Conversations and branches](/guides/conversations)

@@ -1,9 +1,10 @@
+import { appSettings } from '../lib/disk-storage';
 import { create } from 'zustand';
 import { en } from './en';
 import { zh } from './zh';
 
-// Minimal i18n: two flat dictionaries, a zustand lang store persisted to
-// localStorage, and a hook that re-renders consumers on language change.
+// Minimal i18n: two flat dictionaries, a zustand lang store persisted in
+// application settings, and a hook that re-renders on language change.
 // LLM prompts are NOT translated here — they already adapt to content
 // language (see store/streaming.ts and batchMergeSummarize).
 
@@ -18,10 +19,10 @@ function initialLang(): Lang {
   // link) outranks everything and persists as the choice
   const q = new URLSearchParams(window.location.search).get('lang');
   if (q === 'en' || q === 'zh') {
-    try { localStorage.setItem(LANG_KEY, q); } catch { /* private mode */ }
+    try { appSettings.setItem(LANG_KEY, q); } catch { /* private mode */ }
     return q;
   }
-  const saved = localStorage.getItem(LANG_KEY);
+  const saved = appSettings.getItem(LANG_KEY);
   if (saved === 'en' || saved === 'zh') return saved;
   return navigator.language.toLowerCase().startsWith('zh') ? 'zh' : 'en';
 }
@@ -34,7 +35,7 @@ interface I18nState {
 export const useI18n = create<I18nState>((set) => ({
   lang: initialLang(),
   setLang: (lang) => {
-    localStorage.setItem(LANG_KEY, lang);
+    appSettings.setItem(LANG_KEY, lang);
     set({ lang });
   },
 }));

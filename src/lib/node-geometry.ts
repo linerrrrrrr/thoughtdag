@@ -1,7 +1,7 @@
 import type { ThoughtNode } from '../types';
 import { estimateNodeHeight } from './layout';
 import { isFrameNode, resolveCarriedNodeIds } from './frames';
-import { getNodeContentHeightLimit } from './node-content-height';
+import { contentHeightKey, getNodeContentHeightLimit, intendedContentHeight, pixelDimension } from './node-content-height';
 
 export interface NodeGeometryPatch {
   width?: number;
@@ -17,9 +17,10 @@ const positive = (value: number | undefined): value is number => value != null &
 
 /** Stored sizes describe the working card, even when semantic zoom changes its preview. */
 export function effectiveNodeGeometry(node: ThoughtNode): { width: number; height: number } {
+  const styleWidth = pixelDimension(node.style?.width), styleHeight = pixelDimension(node.style?.height);
   return {
-    width: positive(node.width) ? node.width : positive(node.measured?.width) ? node.measured.width : isFrameNode(node) ? 640 : 520,
-    height: positive(node.height) ? node.height : positive(node.measured?.height) ? node.measured.height : isFrameNode(node) ? 420 : isMaterial(node) ? 240 : estimateNodeHeight(node),
+    width: positive(node.width) ? node.width : styleWidth ?? (positive(node.measured?.width) ? node.measured.width : isFrameNode(node) ? 640 : 520),
+    height: positive(node.height) ? node.height : styleHeight ?? (positive(node.measured?.height) ? node.measured.height : isFrameNode(node) ? 420 : isMaterial(node) ? 240 : estimateNodeHeight(node)),
   };
 }
 
@@ -31,8 +32,9 @@ export function nodeGeometryMinimum(node: ThoughtNode): { width: number; height:
 
 export function nodeGeometryMaximum(node: ThoughtNode, width?: number): { width: number; height: number } {
   const limit = isFrameNode(node) || isMaterial(node) ? undefined : getNodeContentHeightLimit(node.id, width);
+  const intended = intendedContentHeight(node.data);
   return { width: isMaterial(node) ? 860 : Infinity,
-    height: Math.max(nodeGeometryMinimum(node).height, positive(limit) ? limit : Infinity) };
+    height: Math.max(nodeGeometryMinimum(node).height, positive(limit) ? Math.max(limit, intended ?? 0) : Infinity) };
 }
 
 /** Apply deltas from a frozen drag snapshot without moving nodes or replacing live content. */
@@ -51,17 +53,18 @@ export function resizeSelectionBy(nodes: ThoughtNode[], originals: ThoughtNode[]
       else delete patch.width;
     }
     const resized = applySelectionGeometry([node], [node.id], patch)[0];
-    return [node.id, { width: resized.width, height: resized.height,
+    return [node.id, { width: resized.width, height: resized.height, contentHeightIntent: resized.data.contentHeightIntent,
       keepOverviewHeight: node.data.keepOverviewHeight || resized.height !== node.height }];
   }));
   let changed = false;
   const result = nodes.map(node => {
     const size = sizes.get(node.id);
     if (!size || (size.width === node.width && size.height === node.height
-      && !!size.keepOverviewHeight === !!node.data.keepOverviewHeight)) return node;
+      && !!size.keepOverviewHeight === !!node.data.keepOverviewHeight
+      && size.contentHeightIntent === node.data.contentHeightIntent)) return node;
     changed = true;
     return { ...node, width: size.width, height: size.height,
-      data: { ...node.data, keepOverviewHeight: size.keepOverviewHeight || undefined } };
+      data: { ...node.data, keepOverviewHeight: size.keepOverviewHeight || undefined, contentHeightIntent: size.contentHeightIntent } };
   });
   return changed ? result : nodes;
 }
@@ -144,9 +147,15 @@ export function applySelectionGeometry(nodes: ThoughtNode[], nodeIds: string[], 
       if ((width !== undefined && width !== node.width) || (height !== undefined && height !== node.height)) {
         next = { ...next, ...(width !== undefined ? { width } : {}), ...(height !== undefined ? { height } : {}) };
       }
-      if (autoHeight && (node.height !== undefined || node.data.keepOverviewHeight || node.data.lockAspectRatio)) {
+      if (!autoHeight && height !== undefined && height !== node.height
+        && (patch.height !== undefined || (locked && patch.width !== undefined))
+        && !isFrameNode(node) && !isMaterial(node)) {
+        next = { ...next, data: { ...next.data, contentHeightIntent: { content: contentHeightKey(node.data), height } } };
+      }
+      if (autoHeight && (node.height !== undefined || node.style?.height != null || node.data.keepOverviewHeight || node.data.lockAspectRatio)) {
         next = { ...next, height: undefined,
-          data: { ...next.data, keepOverviewHeight: undefined, lockAspectRatio: false } };
+          ...(node.style?.height != null ? { style: { ...node.style, height: undefined } } : {}),
+          data: { ...next.data, keepOverviewHeight: undefined, lockAspectRatio: false, contentHeightIntent: undefined } };
       } else if (!autoHeight && patch.lockAspectRatio !== undefined && patch.lockAspectRatio !== !!node.data.lockAspectRatio) {
         next = { ...next, data: { ...next.data, lockAspectRatio: patch.lockAspectRatio } };
       }

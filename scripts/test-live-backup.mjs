@@ -61,8 +61,8 @@ try {
     ok('the bytes round-trip', await readFile(native.body.file, 'utf8') === payload);
   }
 
-  const mirror = await post({ dir, name: 'cli/Live mirror-abcd1234.thoughtdag.json', json: payload });
-  ok('a session mirror writes under cli/', mirror.status === 200 && existsSync(mirror.body?.file), JSON.stringify(mirror.body));
+  const nested = await post({ dir, name: 'nested/Live check.thoughtdag.json', json: payload });
+  ok('a nested path stays inside the folder', nested.status === 200 && existsSync(nested.body?.file), JSON.stringify(nested.body));
 
   await new Promise((r) => setTimeout(r, 200));
   ok('nothing landed outside the picked folder', !existsSync(join(dir, '..', 'escaped.thoughtdag.json')));

@@ -21,8 +21,6 @@ const errorKeys: Record<EdgeEditError, MessageKey> = {
 };
 const restrictionKeys = {
   material: ['edgeEditor.material', 'edgeEditor.materialHint'],
-  branch: ['edgeEditor.branch', 'edgeEditor.branchHint'],
-  watch: ['edgeEditor.watch', 'edgeEditor.watchHint'],
   frame: ['edgeEditor.frame', 'edgeEditor.frameHint'],
 } as const;
 

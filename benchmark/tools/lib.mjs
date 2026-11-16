@@ -54,10 +54,7 @@ export function toProductGraph(graph, positions = {}) {
       tokenCount: 0,
       highlights: [], highlightMode: 'off',
       attachments: [], excludedAttachmentIds: [], includedAttachmentIds: [],
-      roleMode: 'inherit',
-      isRoot: !incoming.has(n.id),
-      isBranch: false,
-    },
+      roleMode: 'inherit'},
   }));
   const edges = graph.edges.map((e, i) => ({
     id: `e-${e.from}-${e.to}-${i}`,
@@ -95,7 +92,7 @@ export function probeSequence(graph, finalId = 'final') {
     a person sees after deleting a turn without regenerating what followed. */
 export function compileGraph(graph, finalId, positions, staleIds = []) {
   const { nodes, edges } = toProductGraph(graph, positions);
-  const { messages } = buildContext(finalId, nodes, edges, undefined, undefined, undefined, staleIds);
+  const { messages } = buildContext(finalId, nodes, edges, undefined, undefined, staleIds);
   const inputTokens = countTokens(messages.map((m) => m.content).join('\n'));
   return {
     messages,

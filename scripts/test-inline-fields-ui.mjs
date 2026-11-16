@@ -24,11 +24,10 @@ await context.route('**/api/**', route => {
 await page.addInitScript(() => {
   localStorage.setItem('thoughtdag.seeded', 'yes');
   localStorage.setItem('thoughtdag.tutorialDone', '1');
-  localStorage.setItem('thoughtdag.autoRefreshPaused', 'yes');
 });
 const fixture = (id, type, question, extra = {}) => ({
   id, type: 'thought', position: { x: 0, y: 0 }, selected: true,
-  data: { question, response: '', responses: [], responseIndex: 0, summaries: [], isCollapsed: false, isEditing: false, isEditingResponse: false, isLoading: false, tokenCount: 0, highlights: [], highlightMode: 'tag', attachments: [], excludedAttachmentIds: [], includedAttachmentIds: [], roleMode: 'inherit', isRoot: true, isBranch: false, ...(type === 'frame' ? { stepKind: 'frame' } : {}), ...extra },
+  data: { question, response: '', responses: [], responseIndex: 0, summaries: [], isCollapsed: false, isEditing: false, isEditingResponse: false, isLoading: false, tokenCount: 0, highlights: [], highlightMode: 'tag', attachments: [], excludedAttachmentIds: [], includedAttachmentIds: [], roleMode: 'inherit', ...(type === 'frame' ? { stepKind: 'frame' } : {}), ...extra },
 });
 const install = async (nodes, edges = []) => {
   await page.evaluate(({ nodes, edges }) => {
@@ -75,8 +74,7 @@ try {
     window.__testRerun = window.__store.getState().rerunNode;
     window.__testCascadeCount = 0;
     window.__store.setState({ rerunNode: async () => { window.__testCascadeCount += 1; } });
-    window.__ui.getState().setAutoRefreshPaused(false);
-  });
+    });
   await node('note-test').locator('.markdown-body').dblclick();
   let noteEditor = node('note-test').locator('[data-note-editor]');
   await noteEditor.locator('textarea').fill('Kept note draft');
@@ -97,7 +95,7 @@ try {
   await noteEditor.getByRole('button', { name: '保存', exact: true }).click();
   assert.equal((await current('note-test')).question, 'Saved note');
   assert.equal(await page.evaluate(() => window.__testCascadeCount), 1);
-  await page.evaluate(() => { window.__store.setState({ rerunNode: window.__testRerun }); window.__ui.getState().setAutoRefreshPaused(true); });
+  await page.evaluate(() => { window.__store.setState({ rerunNode: window.__testRerun }); });
   check('note outside keeps even empty drafts without cascade; Escape discards; explicit save advances once');
 
   await install([fixture('file-test', 'content', '', { stepKind: 'file', attachments: [{
@@ -121,28 +119,6 @@ try {
   assert.equal((await current('file-test')).attachments[0].extractedText, '');
   assert.equal(await toggle.count(), 1);
   check('image extraction keeps drafts, cancels safely, and can save an empty correction');
-
-  await page.evaluate(() => {
-    window.__ui.getState().setRoleLib({ hidden: [], custom: [{ id: 'custom-test', name: 'Custom role', prompt: 'Original prompt' }] });
-    window.__ui.getState().setRoleManagerOpen(true);
-  });
-  const builtin = page.locator('[data-role-template]').first();
-  const builtinId = await builtin.getAttribute('data-role-template');
-  await builtin.locator('input').fill('Renamed builtin');
-  await builtin.locator('textarea').click();
-  assert.equal(await page.locator(`[data-role-template="${builtinId}"]`).count(), 1);
-  assert.equal(await page.evaluate(() => window.__ui.getState().roleLib.custom.length), 1);
-  await builtin.locator('textarea').fill('Changed builtin prompt');
-  await builtin.locator('textarea').press('Tab');
-  const copied = await page.evaluate(() => window.__ui.getState().roleLib.custom.find(role => role.name === 'Renamed builtin'));
-  assert.equal(copied?.prompt, 'Changed builtin prompt');
-  const custom = page.locator('[data-role-template="custom-test"]');
-  await custom.locator('input').fill('Cancelled custom');
-  await custom.locator('input').press('Escape');
-  assert.equal(await custom.locator('input').inputValue(), 'Custom role');
-  assert.equal(await page.evaluate(() => window.__ui.getState().roleLib.custom.find(role => role.id === 'custom-test').name), 'Custom role');
-  await page.evaluate(() => window.__ui.getState().setRoleManagerOpen(false));
-  check('role fields share one boundary; builtin clones once after leaving; Escape reverts the row');
 
   const switcher = page.locator('[data-project-switcher]');
   await switcher.locator('.canvas-project-button').click();

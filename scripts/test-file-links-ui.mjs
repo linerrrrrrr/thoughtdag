@@ -105,8 +105,7 @@ try {
     const response = '已按章节拆成 **9 份 PDF**，并检查内容与页码。\n\n[下载全部分册（ZIP，含章节目录）](C:/work/论文_章节分割_9份.zip)\n\n' + ['00_Abstract', '01_Introduction', '02_Hypotheses_and_Research_Design', '03_Sample_Selection', '04_Results', '05_Robustness_and_Supplementary_Analysis', '06_Conclusion', '07_Appendix', '08_References'].map((name, i) => `${i === 0 ? '摘要与论文信息' : `第 ${i} 部分`}： :codex-file-citation{path="C:/work/${name}.pdf" purpose="output"}`).join('\n\n');
     window.__store.getState().setNodes([{ id: 'file-citations', type: 'thought', dragHandle: '.drag-handle', position: { x: 0, y: 0 }, width: 600, height: 780, data: {
       question: '识别、分割为数个章节 pdf', response, responses: [response], questions: ['识别、分割为数个章节 pdf'], responseIndex: 0,
-      isCollapsed: false, isEditing: false, isEditingResponse: false, isLoading: false, tokenCount: 300, highlights: [], highlightMode: 'tag', attachments: [], excludedAttachmentIds: [], includedAttachmentIds: [], roleMode: 'inherit', isRoot: true,
-      importSource: { runner: 'codex', sessionId: 'file-fixture', itemIds: [], cwd: 'C:/work' }, detailLevel: 'full',
+      isCollapsed: false, isEditing: false, isEditingResponse: false, isLoading: false, tokenCount: 300, highlights: [], highlightMode: 'tag', attachments: [], excludedAttachmentIds: [], includedAttachmentIds: [], roleMode: 'inherit', importSource: { runner: 'codex', sessionId: 'file-fixture', itemIds: [], cwd: 'C:/work' }, detailLevel: 'full',
     } }]);
     window.__store.getState().setEdges([]);
     window.__rf.setViewport({ x: 60, y: 90, zoom: 1 }, { duration: 0 });

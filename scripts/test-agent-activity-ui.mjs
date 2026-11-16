@@ -63,8 +63,7 @@ try {
       question: '检查构建失败的原因，并验证修复。', response: '', responses: [], responseIndex: 0,
       isCollapsed: false, isEditing: false, isEditingResponse: false, isLoading: true,
       tokenCount: 0, highlights: [], highlightMode: 'tag', attachments: [],
-      excludedAttachmentIds: [], includedAttachmentIds: [], roleMode: 'inherit', isRoot: true, isBranch: false,
-      agentActivity: activity,
+      excludedAttachmentIds: [], includedAttachmentIds: [], roleMode: 'inherit', agentActivity: activity,
     } }]);
     window.__store.getState().setEdges([]);
   }, entries);

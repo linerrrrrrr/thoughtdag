@@ -1,3 +1,4 @@
+import { appSettings } from './disk-storage';
 import { createContext } from 'react';
 import type { ReactFlowInstance } from '@xyflow/react';
 import { useStore } from '../store';
@@ -20,7 +21,7 @@ const viewportInputKey = (nodes: ThoughtNode[]) => JSON.stringify(nodes.map((nod
 /** Only committed preferences drive a quick layout; open panel drafts stay drafts. */
 export function readCanvasLayoutOptions(selectedIds?: string[]): CanvasLayoutOptions {
   let stored: Partial<CanvasLayoutOptions> = {};
-  try { stored = JSON.parse(localStorage.getItem(KEY) || '{}') ?? {}; } catch { /* Use defaults. */ }
+  try { stored = JSON.parse(appSettings.getItem(KEY) || '{}') ?? {}; } catch { /* Use defaults. */ }
   const state = useStore.getState();
   const scope = selectedIds ?? state.selectedNodeIds;
   const selected = new Set([...scope, ...frameContentIds(state.nodes, scope)]);
@@ -35,7 +36,7 @@ export function readCanvasLayoutOptions(selectedIds?: string[]): CanvasLayoutOpt
 }
 
 export function saveCanvasLayoutOptions(options: CanvasLayoutOptions) {
-  try { localStorage.setItem(KEY, JSON.stringify(options)); } catch { /* Graph preferences are still saved. */ }
+  try { appSettings.setItem(KEY, JSON.stringify(options)); } catch { /* Graph preferences are still saved. */ }
 }
 
 export function canvasLayoutErrorKey(error?: string): MessageKey {

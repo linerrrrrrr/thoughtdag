@@ -46,7 +46,7 @@ export function detectFormat(parsed: unknown): DetectedFormat {
 
 // ─── shared node factory ────────────────────────────────────────
 
-export function makeNode(question: string, response: string, isRoot: boolean): ThoughtNode {
+export function makeNode(question: string, response: string): ThoughtNode {
   return {
     id: generateId(),
     type: 'thought',
@@ -67,9 +67,6 @@ export function makeNode(question: string, response: string, isRoot: boolean): T
       attachments: [],
       excludedAttachmentIds: [],
       includedAttachmentIds: [],
-      roleMode: 'inherit',
-      isRoot,
-      isBranch: false,
     },
   };
 }
@@ -128,7 +125,7 @@ function convertChatGpt(mapping: Record<string, GptMappingNode>): { nodes: Thoug
     } else if (role === 'assistant' && text) {
       if (nextPending !== null) {
         // Q + A complete → one ThoughtDAG node
-        const node = makeNode(nextPending, text, parentNodeId === null);
+        const node = makeNode(nextPending, text);
         nodes.push(node);
         if (parentNodeId) edges.push(edge(parentNodeId, node.id));
         nextParent = node.id;
@@ -186,7 +183,7 @@ function convertClaude(messages: ClaudeMessage[]): { nodes: ThoughtNode[]; edges
       pendingQuestion = text;
     } else if (m.sender === 'assistant') {
       if (pendingQuestion !== null) {
-        const node = makeNode(pendingQuestion, text, parentNodeId === null);
+        const node = makeNode(pendingQuestion, text);
         nodes.push(node);
         if (parentNodeId) edges.push(edge(parentNodeId, node.id));
         parentNodeId = node.id;

@@ -128,5 +128,3 @@ thoughtdag recall <session-id> <turn-number>
 ```
 
 如果已安装桌面版，`↗` 链接会打开对应的轮次或画布节点。
-
-需要可视化浏览会话、编辑上下文图时，继续阅读 [Agent 对话地图](./session-atlas)。

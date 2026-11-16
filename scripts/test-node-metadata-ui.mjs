@@ -41,7 +41,6 @@ await page.route('**/api/**', async route => {
 await page.addInitScript(() => {
   localStorage.setItem('thoughtdag.seeded', 'yes');
   localStorage.setItem('thoughtdag.tutorialDone', '1');
-  localStorage.setItem('thoughtdag.autoRefreshPaused', 'yes');
   localStorage.setItem('thoughtdag.lighting', 'light');
 });
 const node = () => page.locator('.react-flow__node[data-id="metadata-a"]');
@@ -83,7 +82,7 @@ try {
         summaries: ['后台自动摘要不应覆盖用户修改。'], summaryTopics: ['后台主题'],
         isCollapsed: false, isEditing: false, isEditingResponse: false, isLoading: false,
         tokenCount: 180, highlights: [], highlightMode: 'tag', attachments: [], excludedAttachmentIds: [],
-        includedAttachmentIds: [], roleMode: 'inherit', isRoot: true, isBranch: false } }];
+        includedAttachmentIds: [], roleMode: 'inherit'} }];
     window.__store.setState({ nodes, edges: [], selectedNodeId: null, selectedNodeIds: [], history: [{ nodes, edges: [] }], historyIndex: 0 });
   });
   await node().waitFor();

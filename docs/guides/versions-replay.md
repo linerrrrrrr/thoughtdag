@@ -12,7 +12,7 @@ Generated nodes record a fingerprint of their upstream context. Editing an ances
 
 <img src="../illus/versions-en.svg" alt="One node keeps several answer versions; upstream changes mark it stale without overwriting those versions" width="100%" loading="lazy"/>
 
-The **Upstream changed** mark only reports that the input changed. Inspect the difference in the [context tree and next-request preview](/guides/context-control#inspect-the-next-request) before choosing whether to replay.
+The **Upstream changed** mark only reports that the input changed. Review the changed source content and [canvas input connections](/guides/context-control#inspect-the-next-request) before choosing whether to replay.
 
 ## Replay dependent work
 
@@ -26,7 +26,3 @@ Dependency order prevents a downstream answer from regenerating before the upstr
 **Replay** updates existing downstream nodes along the current structure. If you would rather test the same question with another context or model, create a new sibling from the same parent so both answers remain side by side. Use replay to refresh existing work, and a new node to compare answers or models.
 
 <img src="../illus/replay-en.svg" alt="After an upstream version changes, two stale nodes replay in dependency order while older answers remain as versions" width="100%" loading="lazy"/>
-
-## Use a sliding reviewer
-
-A reviewer is an ordinary conversation node with a critic role and a red dashed sliding-review wire. It can re-evaluate newly added work while retaining previous review versions. You can question or branch from it like any other node.

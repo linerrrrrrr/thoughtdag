@@ -27,9 +27,7 @@
         "attachments": [],
         "excludedAttachmentIds": [],
         "includedAttachmentIds": [],
-        "roleMode": "inherit",
-        "isRoot": true,
-        "isBranch": false
+        "roleMode": "inherit"
       }
     },
     {
@@ -56,9 +54,7 @@
         "attachments": [],
         "excludedAttachmentIds": [],
         "includedAttachmentIds": [],
-        "roleMode": "inherit",
-        "isRoot": true,
-        "isBranch": false
+        "roleMode": "inherit"
       }
     },
     {
@@ -85,9 +81,7 @@
         "attachments": [],
         "excludedAttachmentIds": [],
         "includedAttachmentIds": [],
-        "roleMode": "inherit",
-        "isRoot": true,
-        "isBranch": false
+        "roleMode": "inherit"
       }
     },
     {
@@ -114,9 +108,7 @@
         "attachments": [],
         "excludedAttachmentIds": [],
         "includedAttachmentIds": [],
-        "roleMode": "inherit",
-        "isRoot": false,
-        "isBranch": false
+        "roleMode": "inherit"
       }
     },
     {
@@ -143,9 +135,7 @@
         "attachments": [],
         "excludedAttachmentIds": [],
         "includedAttachmentIds": [],
-        "roleMode": "inherit",
-        "isRoot": true,
-        "isBranch": false
+        "roleMode": "inherit"
       }
     }
   ],

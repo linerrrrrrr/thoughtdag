@@ -9,6 +9,8 @@ interface InlineEditDismissOptions<T extends HTMLElement> {
   onCancel: () => void;
   ignoreOutside?: (event: PointerEvent) => boolean;
   ignoreFocusOutside?: (target: EventTarget | null) => boolean;
+  /** A persistent work panel must not shield this canvas editor from outside clicks. */
+  independentOutside?: boolean;
   restoreFocusRef?: RefObject<HTMLElement | null>;
   restoreFocus?: boolean;
 }
@@ -30,6 +32,7 @@ export function useInlineEditDismiss<T extends HTMLElement>(options: InlineEditD
     refs: [options.ref],
     onDismiss: reason => finish(reason === 'escape'),
     ignoreOutside: options.ignoreOutside,
+    independentOutside: options.independentOutside,
     restoreFocusRef: options.restoreFocusRef,
     restoreFocus: options.restoreFocus,
   });

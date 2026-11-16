@@ -26,7 +26,6 @@ await context.route('**/api/**', route => {
 await page.addInitScript(() => {
   localStorage.setItem('thoughtdag.seeded', 'yes');
   localStorage.setItem('thoughtdag.tutorialDone', '1');
-  localStorage.setItem('thoughtdag.autoRefreshPaused', 'yes');
 });
 const fixture = async (zoom, theme, paper) => {
   await page.evaluate(async ({ theme, paper }) => {
@@ -39,7 +38,7 @@ const fixture = async (zoom, theme, paper) => {
         question: '继续分析这项研究', response: '从这个节点拖线，在预期位置松开。', responses: ['已有回答'], responseIndex: 0,
         isCollapsed: false, isEditing: false, isEditingResponse: false, isLoading: false, tokenCount: 30,
         highlights: [], attachments: [], excludedAttachmentIds: [], includedAttachmentIds: [],
-        roleMode: 'inherit', isRoot: true, isBranch: false, layoutDirection: 'vertical',
+        roleMode: 'inherit', layoutDirection: 'vertical',
       } };
     window.__store.setState({ nodes: [node], edges: [], history: [{ nodes: [node], edges: [] }], historyIndex: 0,
       selectedNodeIds: [], selectedNodeId: null, staleIds: [], staleFps: {}, staleVerdicts: {} });

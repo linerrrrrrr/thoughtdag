@@ -1,10 +1,11 @@
 import type { Attachment, ThoughtNode } from '../types';
+import { documentCopyText, isEditableDocument } from '../lib/document-copy';
 import type { ThoughtEdge } from '../types';
-import { isSingleNodeReference, partitionContext, type ContextReference } from '../lib/graph';
-import { attachmentFingerprint } from '../lib/attachments';
+import { partitionContext, type ContextReference } from '../lib/graph';
+import { attachmentContextKey } from '../lib/attachment-fingerprint';
 import { isNotebook, notebookContext, notebookForAgent } from '../lib/notebook';
 import { countTokens } from '../utils';
-import { fuzzyHighlightRegex } from '../lib/highlight-match';
+import { fuzzyHighlightRegex, highlightFoundIn } from '../lib/highlight-match';
 import type { ContextMessage, ImageAttachment } from '../lib/api';
 
 // Build the prompt from the layered context partition (lib/graph.ts).
@@ -12,8 +13,7 @@ import type { ContextMessage, ImageAttachment } from '../lib/api';
 // conversation in chain order → the current question last. Solid edges are
 // the conversation (full turns); dashed edges become fenced [Reference]
 // blocks containing the source turn only; content nodes are
-// identity-prefixed material blocks. Specialized watch/exploration edges
-// retain their established input behavior. Highlight filters and archive
+// identity-prefixed material blocks. Highlight filters and archive
 // can reduce a node's contribution; collapse and display summaries cannot.
 // This ordering is deliberately independent of edge creation
 // history: the same graph always produces the same prompt.
@@ -22,7 +22,7 @@ import type { ContextMessage, ImageAttachment } from '../lib/api';
  *  needs them, so they ride as a separate array instead of widening the
  *  wire format. */
 export interface MessageSource {
-  layer: 'system' | 'material' | 'reference' | 'chain' | 'branch';
+  layer: 'system' | 'material' | 'reference' | 'chain';
   nodeId?: string;
   attachmentId?: string;
   /** a message several attachments render into together (a turn's
@@ -30,7 +30,7 @@ export interface MessageSource {
   attachmentIds?: string[];
   /** reference blocks: the referenced (dashed-edge source) node */
   refSourceId?: string;
-  part?: 'role' | 'attachment' | 'question' | 'response' | 'reference' | 'passage';
+  part?: 'attachment' | 'question' | 'response' | 'reference';
 }
 
 interface BuildContextResult {
@@ -59,11 +59,14 @@ function renderResponse(node: ThoughtNode): string {
   }
   if (mode === 'tag' && highlights.length > 0) {
     let tagged = node.data.response;
+    const fallback: string[] = [];
     for (const h of highlights) {
       const re = fuzzyHighlightRegex(h.text);
-      if (re) tagged = tagged.replace(re, (m) => `[Important] ${m} [/Important]`);
+      let matched = false;
+      if (re) tagged = tagged.replace(re, (m) => { matched = true; return `[Important] ${m} [/Important]`; });
+      if (!matched && highlightFoundIn(node.data.response, h.text)) fallback.push(`[Important] ${h.text} [/Important]`);
     }
-    return tagged;
+    return fallback.length ? `${tagged}\n\n${fallback.join('\n')}` : tagged;
   }
   return node.data.response;
 }
@@ -82,23 +85,7 @@ function transcriptLines(node: ThoughtNode): string[] {
     chip and the follow-up preview can price a reference without drift. */
 export function referenceBlockContent(ref: ContextReference): string {
   const lines: string[] = [`[Reference: ${nodeTitle(ref.source)}]`];
-  if (isSingleNodeReference(ref.edge)) {
-    // Ignore old full-depth metadata at the consumption boundary without
-    // rewriting stored graphs. A single-node reference includes neither
-    // ancestor titles/answers nor attachments, materials or inherited roles.
-    lines.push(...transcriptLines(ref.source));
-  } else if (ref.depth === 'quote') {
-    const trail = ref.chain
-      .filter((n) => !n.data.archived)
-      .map((n) => nodeTitle(n));
-    if (trail.length > 0) lines.push(`Trail (upstream questions): ${trail.join(' → ')}`);
-    lines.push(...transcriptLines(ref.source));
-  } else {
-    for (const n of [...ref.chain, ref.source]) {
-      if (n.data.archived) continue;
-      lines.push(...transcriptLines(n));
-    }
-  }
+  lines.push(...transcriptLines(ref.source));
   return lines.join('\n');
 }
 
@@ -230,60 +217,10 @@ export const recordParts = (parts: Record<string, UpstreamPart>): Record<string,
 
 const STALE_MARK = '[Stale: this answer was written against an earlier version of its upstream]';
 
-/**
- * THE role resolution. One walk, two consumers: buildContext injects the
- * result as the system prompt, the panel displays it — so what the UI shows
- * is by construction what the model receives. Semantics: an explicit
- * roleSourceNodeId on the node wins ('__none__' blocks); otherwise the
- * nearest rolePrompt along the STRUCTURAL mainline, honoring legacy
- * roleMode ('reset' stops inheritance, 'set-next' applies to descendants
- * only). ignoreOwn=true resolves what the node INHERITS (panel display).
- */
-export function resolveRoleFor(
-  nodeId: string,
-  nodes: ThoughtNode[],
-  edges: ThoughtEdge[],
-  opts?: { ignoreOwn?: boolean },
-): string | undefined {
-  const { mainline } = partitionContext(nodeId, nodes, edges);
-  return resolveRoleFromMainline(mainline, nodes, opts);
-}
-
-function resolveRoleFromMainline(
-  mainline: ThoughtNode[],
-  nodes: ThoughtNode[],
-  opts?: { ignoreOwn?: boolean },
-): string | undefined {
-  const self = mainline[mainline.length - 1];
-  if (!self) return undefined;
-  if (!opts?.ignoreOwn && self.data.roleSourceNodeId) {
-    if (self.data.roleSourceNodeId === '__none__') return undefined;
-    const src = nodes.find((n) => n.id === self.data.roleSourceNodeId);
-    return src?.data.rolePrompt || undefined;
-  }
-  for (let i = mainline.length - 1; i >= 0; i--) {
-    const n = mainline[i];
-    const isSelf = i === mainline.length - 1;
-    const own = isSelf && opts?.ignoreOwn ? undefined : n.data.rolePrompt;
-    const mode = n.data.roleMode || 'inherit';
-    if (mode === 'reset') {
-      // legacy "reset for this node": only self gets the role, ancestors blocked
-      return isSelf ? (own || undefined) : undefined;
-    }
-    if (mode === 'set-next' && n.data.rolePrompt) {
-      if (isSelf) continue; // for descendants only
-      return n.data.rolePrompt;
-    }
-    if (mode === 'inherit' && own) return own;
-  }
-  return undefined;
-}
-
 export function buildContext(
   nodeId: string,
   nodes: ThoughtNode[],
   edges: ThoughtEdge[],
-  branchContext?: string,
   excludedAttachmentIds?: string[],
   includedAttachmentIds?: string[],
   /** Nodes whose stored answers predate upstream changes: their responses
@@ -291,7 +228,7 @@ export function buildContext(
       transcript never silently contradicts itself. */
   staleIds?: ReadonlySet<string> | string[],
 ): BuildContextResult {
-  return compileContext(nodeId, nodes, edges, 'record', branchContext, excludedAttachmentIds, includedAttachmentIds, staleIds);
+  return compileContext(nodeId, nodes, edges, 'record', excludedAttachmentIds, includedAttachmentIds, staleIds);
 }
 
 /** Compile every incoming edge of a newly created turn, including @-mention
@@ -300,7 +237,6 @@ export function buildIncomingContext(
   nodeId: string,
   nodes: ThoughtNode[],
   edges: ThoughtEdge[],
-  branchContext?: string,
   excludedAttachmentIds?: string[],
   includedAttachmentIds?: string[],
   staleIds?: ReadonlySet<string> | string[],
@@ -308,7 +244,7 @@ export function buildIncomingContext(
   const upstreamNodes = nodes.map((node) => node.id === nodeId ? {
     ...node, data: { ...node.data, question: '', response: '', attachments: [] },
   } : node);
-  return buildContext(nodeId, upstreamNodes, edges, branchContext, excludedAttachmentIds, includedAttachmentIds, staleIds);
+  return buildContext(nodeId, upstreamNodes, edges, excludedAttachmentIds, includedAttachmentIds, staleIds);
 }
 
 /** buildContext with the tool-step rendering chosen: 'record' is what a
@@ -318,7 +254,6 @@ function compileContext(
   nodes: ThoughtNode[],
   edges: ThoughtEdge[],
   toolSteps: 'record' | 'raw',
-  branchContext?: string,
   excludedAttachmentIds?: string[],
   includedAttachmentIds?: string[],
   staleIds?: ReadonlySet<string> | string[],
@@ -364,7 +299,7 @@ function compileContext(
         }
         continue;
       }
-      const fp = attachmentFingerprint(att);
+      const fp = attachmentContextKey(att);
       if (seenAttachmentFingerprints.has(fp)) continue;
       seenAttachmentFingerprints.add(fp);
       if (att.type.startsWith('image/')) {
@@ -379,15 +314,19 @@ function compileContext(
           images.push({ data: att.content, mimeType: att.type, ...(att.extractedText?.trim() ? { hasCompanion: true } : {}) });
           imageSources.push({ nodeId: node.id, attachmentId: att.id });
         }
-      } else if (att.type === 'application/pdf') {
-        // PDF: the extracted text IS the model channel. Page images never
+      } else if (isEditableDocument(att)) {
+        // Documents use the saved working copy (or extraction) as model text. PDF page images never
         // flow into generation — sending one per page trips provider image
         // limits (Zhipu 1210) exactly on small PDFs; pages exist for the
         // reader and its per-page Recognize, which writes better text here.
-        if (att.extractedText) {
-          messages.push({ role: 'user', content: `[PDF: ${att.name}]\n${att.extractedText}` });
+        const body = documentCopyText(att);
+        const label = att.type === 'application/pdf' ? 'PDF' : 'File';
+        if (body || att.editedText !== undefined) {
+          messages.push({ role: 'user', content: `[${label}: ${att.name}]\n${body}` });
         } else {
-          messages.push({ role: 'user', content: `[PDF: ${att.name} — no extracted text yet (scanned or still extracting). The reader's Recognize can turn its pages into readable text.]` });
+          messages.push({ role: 'user', content: att.type === 'application/pdf'
+            ? `[PDF: ${att.name} — no extracted text yet (scanned or still extracting). The reader's Recognize can turn its pages into readable text.]`
+            : `[File: ${att.name} — no extracted text yet]` });
         }
         sources.push(attSource(att));
       } else if (att.type === 'text/html') {
@@ -481,47 +420,7 @@ function compileContext(
     }
   }
 
-  // If this is a branch from selection, add the selected text
-  if (branchContext) {
-    messages.push({ role: 'user', content: `[Regarding this passage: "${branchContext}"]` });
-    sources.push({ layer: 'branch', nodeId, part: 'passage' });
-  }
-
   closeLayer('chain');
 
-  // Role: THE shared resolution (see resolveRoleFor) — display and
-  // injection can never drift apart again.
-  const resolvedRole = resolveRoleFromMainline(mainline, nodes);
-  if (resolvedRole) {
-    messages.unshift({ role: 'system', content: resolvedRole });
-    sources.unshift({ layer: 'system', part: 'role' });
-  }
-
-  return { messages, images, layerTokens, sources, imageSources };
-}
-
-// Explicit role for a freshly created node (addQuestion / regenerate),
-// covering the cases buildContext can't see because it treats the parent
-// as "self":
-//   1. New node is reset → its own role
-//   2. New root with inherit + own rolePrompt (e.g. set on the landing page)
-//   3. Parent has set-next → parent's role
-export function resolveExplicitRole(
-  selfData: { roleMode?: string; rolePrompt?: string } | undefined,
-  parentData: { roleMode?: string; rolePrompt?: string } | undefined,
-  hasParent: boolean,
-): string | undefined {
-  if (selfData?.roleMode === 'reset' && selfData.rolePrompt) return selfData.rolePrompt;
-  if (selfData?.rolePrompt && selfData.roleMode === 'inherit' && !hasParent) return selfData.rolePrompt;
-  if (parentData?.roleMode === 'set-next' && parentData.rolePrompt) return parentData.rolePrompt;
-  return undefined;
-}
-
-// Replace any system message in-place with the given role (no-op if undefined).
-export function applyRoleOverride(messages: ContextMessage[], role: string | undefined): void {
-  if (!role) return;
-  const filtered = messages.filter((m) => m.role !== 'system');
-  filtered.unshift({ role: 'system', content: role });
-  messages.length = 0;
-  messages.push(...filtered);
+  return { messages: messages.map((message, i) => ({ ...message, canvasSource: sources[i] })), images: images.map((image, i) => ({ ...image, canvasSource: imageSources[i] })), layerTokens, sources, imageSources };
 }

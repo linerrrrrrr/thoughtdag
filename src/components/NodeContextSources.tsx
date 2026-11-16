@@ -5,6 +5,7 @@ import { useStore } from '../store';
 import { useProjects } from '../store/projects';
 import { useContextInspection } from '../lib/context-inspection';
 import { useDismissableLayer } from '../lib/use-dismissable-layer';
+import { uiRect, uiViewport } from '../lib/ui-scale';
 import { useT, fmt } from '../i18n';
 import ContextOrderSection from './focus-panel/ContextOrderSection';
 import './NodeContextSources.css';
@@ -38,12 +39,13 @@ export default function NodeContextSources({ nodeId }: { nodeId: string }) {
     const place = () => {
       const anchor = trigger.current, element = panel.current;
       if (!anchor || !element) return;
-      const rect = anchor.getBoundingClientRect();
+      const rect = uiRect(anchor);
+      const viewport = uiViewport();
       const width = element.offsetWidth, height = element.offsetHeight;
-      const left = Math.max(8, Math.min(rect.left, window.innerWidth - width - 8));
+      const left = Math.max(8, Math.min(rect.left, viewport.width - width - 8));
       const below = rect.bottom + 8;
-      const top = below + height <= window.innerHeight - 8 ? below
-        : Math.max(8, Math.min(rect.top - height - 8, window.innerHeight - height - 8));
+      const top = below + height <= viewport.height - 8 ? below
+        : Math.max(8, Math.min(rect.top - height - 8, viewport.height - height - 8));
       const nextLeft = `${left}px`, nextTop = `${top}px`;
       if (element.style.left !== nextLeft) element.style.left = nextLeft;
       if (element.style.top !== nextTop) element.style.top = nextTop;

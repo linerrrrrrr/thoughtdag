@@ -1,15 +1,13 @@
+import { appSettings } from '../../lib/disk-storage';
 import { useLayoutEffect, useRef, useState } from 'react';
 import { X } from 'lucide-react';
 import { useStore } from '../../store';
 import { useUiStore } from '../../lib/ui-store';
-import { partitionContext } from '../../lib/graph';
-import { buildContext, resolveRoleFor } from '../../store/context-builder';
 import { PANEL_WIDTH_KEY, PANEL_MIN_WIDTH, PANEL_DEFAULT_WIDTH, PANEL_INSET } from '../../lib/constants';
 import { activeSummary, awaitingInput } from '../../utils';
 import { useT } from '../../i18n';
 import { isViewerMode } from '../../lib/viewer';
-import RoleLine from './RoleLine';
-import RoleEditor from './RoleEditor';
+import NodeInfoLine from './NodeInfoLine';
 import AgentSessionLine from './AgentSessionLine';
 import HandoffLine from './HandoffLine';
 import AttachmentsSection from './AttachmentsSection';
@@ -20,8 +18,6 @@ import ResponseSection from './ResponseSection';
 import NodeHighlightsSection from '../NodeHighlightsSection';
 import { useTextHighlighter } from '../../lib/use-text-highlighter';
 import HeaderActions from './HeaderActions';
-import ContextChainSection from './ContextChainSection';
-import ContextOrderSection from './ContextOrderSection';
 import { useDismissableLayer } from '../../lib/use-dismissable-layer';
 import { handleCanvasPanelKeyDown } from '../../lib/canvas-shortcuts';
 import { getNodeNameSource } from '../../lib/node-display-name';
@@ -29,21 +25,21 @@ import NodeMetadataEditor from '../NodeMetadataEditor';
 import ConversationSplit from '../ConversationSplit';
 import './FocusPanel.css';
 import { activeAgentActivity, originalQuestionBeforeInstructions } from '../../lib/agent-activity';
-import { attachPageScrollChain } from '../../lib/page-scroll-chain';
+import { screenToUi, uiViewport } from '../../lib/ui-scale';
 
-// The panel reads one turn and its context. Further questions belong to a
+// The panel reads one turn. Further questions belong to a
 // new linked node, whose own question editor opens before any request runs.
 
 export default function FocusPanel({ nodeId, onFocusNode }: { nodeId: string; onFocusNode?: (id: string) => void }) {
   const {
-    nodes, edges,
+    nodes,
     addAttachment, removeAttachment, toggleExcludeAttachment, setAttachmentRenderMode, getInheritedAttachments,
   } = useStore();
   const t = useT();
   const panelRef = useRef<HTMLDivElement>(null);
-  const headerRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const preludeRef = useRef<HTMLDivElement>(null);
+  const inspectRef = useRef<HTMLDivElement>(null);
   const responseRef = useRef<HTMLDivElement>(null);
   const [availableHeight, setAvailableHeight] = useState(420);
   // This working panel can outlive its opener; restoring stale canvas focus would reselect it.
@@ -67,27 +63,25 @@ export default function FocusPanel({ nodeId, onFocusNode }: { nodeId: string; on
   };
   const onResizePointerMove = (e: React.PointerEvent) => {
     if (!resizing) return;
-    const maxW = Math.floor(window.innerWidth * 0.7);
-    setPanelWidth(Math.min(maxW, Math.max(PANEL_MIN_WIDTH, window.innerWidth - PANEL_INSET - e.clientX)));
+    const width = uiViewport().width;
+    const maxW = Math.floor(width * 0.7);
+    setPanelWidth(Math.min(maxW, Math.max(PANEL_MIN_WIDTH, width - PANEL_INSET - screenToUi(e.clientX))));
   };
   const onResizePointerUp = (e: React.PointerEvent) => {
     if (!resizing) return;
     setResizing(false);
     (e.target as HTMLElement).releasePointerCapture(e.pointerId);
-    localStorage.setItem(PANEL_WIDTH_KEY, String(useUiStore.getState().panelWidth));
+    appSettings.setItem(PANEL_WIDTH_KEY, String(useUiStore.getState().panelWidth));
   };
   const onResizeDoubleClick = () => {
     setPanelWidth(PANEL_DEFAULT_WIDTH);
-    localStorage.removeItem(PANEL_WIDTH_KEY);
+    appSettings.removeItem(PANEL_WIDTH_KEY);
   };
 
   // Close transient editors when switching nodes (adjust-during-render).
   const [prevNodeId, setPrevNodeId] = useState(nodeId);
-  // the role editor's text while it is open (null = closed); it closes with the node
-  const [roleEdit, setRoleEdit] = useState<string | null>(null);
   if (prevNodeId !== nodeId) {
     setPrevNodeId(nodeId);
-    setRoleEdit(null);
     setMetadataOpen(false);
   }
 
@@ -100,28 +94,22 @@ export default function FocusPanel({ nodeId, onFocusNode }: { nodeId: string; on
   });
   const nodeExists = !!node;
   useLayoutEffect(() => {
-    if (contentRef.current) return attachPageScrollChain(contentRef.current);
-  }, [nodeId, nodeExists]);
-  useLayoutEffect(() => {
-    const panel = panelRef.current;
-    const header = headerRef.current;
     const content = contentRef.current;
     const prelude = preludeRef.current;
-    if (!panel || !header || !content || !prelude) return;
+    const inspect = inspectRef.current;
+    if (!content || !prelude || !inspect) return;
     const measure = () => {
       const style = getComputedStyle(content);
       const padding = (parseFloat(style.paddingTop) || 0) + (parseFloat(style.paddingBottom) || 0);
-      const border = panel.offsetHeight - panel.clientHeight;
-      // Long metadata stays in the page flow. Keep the conversation readable
-      // and let the page scroll when the prelude exceeds the viewport.
-      setAvailableHeight(Math.max(160, Math.floor(window.innerHeight
-        - panel.getBoundingClientRect().top - PANEL_INSET - header.offsetHeight
-        - prelude.offsetHeight - padding - border)));
+      // The outer panel never scrolls. Auxiliary sections have their own
+      // bounded scrollports; the conversation uses the remaining space.
+      setAvailableHeight(Math.max(0, content.clientHeight - padding
+        - prelude.offsetHeight - inspect.offsetHeight));
     };
     const observer = new ResizeObserver(measure);
-    observer.observe(header);
     observer.observe(content);
     observer.observe(prelude);
+    observer.observe(inspect);
     window.addEventListener('resize', measure);
     measure();
     return () => {
@@ -141,26 +129,14 @@ export default function FocusPanel({ nodeId, onFocusNode }: { nodeId: string; on
   const hasAnswer = !!(data.response || data.isLoading || data.isEditingResponse
     || data.generationFailed || activeAgentActivity(data).length);
 
-  // Inherited role for the status line: the SAME resolution buildContext
-  // injects (structural mainline, legacy roleMode honored) — what the panel
-  // shows is by construction what the model receives.
-  const inheritedRole = data.rolePrompt
-    ? ''
-    : resolveRoleFor(nodeId!, nodes, edges, { ignoreOwn: true }) ?? '';
-
-  // Layered context view — same partition the prompt builder uses, so the
-  // tree the user reads and the prompt the model reads never drift apart.
-  const partition = partitionContext(nodeId!, nodes, edges);
-  const { layerTokens } = buildContext(nodeId!, nodes, edges);
-  const totalContextTokens = layerTokens.material + layerTokens.reference + layerTokens.chain;
   const highlightedTexts = new Set(data.highlights.map((h) => h.text));
 
   return (
     <div
       ref={panelRef} data-focus-panel data-focus-node-id={nodeId}
       role="complementary" aria-label={t('panel.reading')}
-      className={`focus-panel-shell absolute right-canvas-inset top-canvas-inset bottom-canvas-inset z-20 border rounded-panel overflow-hidden flex flex-col max-w-[calc(100vw-32px)] md:max-w-[70vw] ${resizing ? 'select-none' : ''}`}
-      style={{ width: panelWidth, minWidth: `min(${PANEL_MIN_WIDTH}px, calc(100vw - ${PANEL_INSET * 2}px))` }}
+      className={`focus-panel-shell absolute right-canvas-inset top-0 bottom-0 z-20 border rounded-panel overflow-clip flex flex-col ${resizing ? 'select-none' : ''}`}
+      style={{ width: panelWidth, maxWidth: 'calc(70 * var(--ui-vw))', minWidth: `min(${PANEL_MIN_WIDTH}px, calc(100 * var(--ui-vw) - ${PANEL_INSET * 2}px))` }}
       onKeyDown={handleCanvasPanelKeyDown}
     >
       {/* Resize handle on the left edge */}
@@ -177,7 +153,7 @@ export default function FocusPanel({ nodeId, onFocusNode }: { nodeId: string; on
         <div className={`w-[3px] h-9 rounded-control transition-colors ${resizing ? 'bg-accent' : 'bg-line-strong'}`} />
       </div>
       {/* Reading identity stays quiet; operational details follow the conversation. */}
-      <div ref={headerRef} className="focus-panel-header flex items-center gap-related shrink-0">
+      <div className="focus-panel-header flex items-center gap-related shrink-0">
         <div className="min-w-0 flex-1">
           <h2 className="focus-panel-title" data-tooltip={getNodeNameSource(data, t('ctx.unnamedNode'))} data-tooltip-overflow data-reading-node-name>{getNodeNameSource(data, t('ctx.unnamedNode'))}</h2>
         </div>
@@ -192,9 +168,9 @@ export default function FocusPanel({ nodeId, onFocusNode }: { nodeId: string; on
           </button>
         </div>
       </div>
-      {/* Pane boundaries hand scrolling back to this page; inspection follows it. */}
+      {/* Only the inner regions scroll; the panel and its layout stay fixed. */}
       <div ref={contentRef} data-conversation-scroll-page
-        className={`focus-panel-content min-h-0 overflow-y-auto nowheel nopan ${hasAnswer ? 'focus-panel-content--split' : ''}`}>
+        className={`focus-panel-content min-h-0 nowheel nopan ${hasAnswer ? 'focus-panel-content--split' : ''}`}>
         <div ref={preludeRef} className="focus-panel-prelude">
           <NodeMetadataEditor key={`metadata-${nodeId}`} id={nodeId} data={data}
             name={getNodeNameSource(data, t('ctx.unnamedNode'))}
@@ -206,41 +182,41 @@ export default function FocusPanel({ nodeId, onFocusNode }: { nodeId: string; on
           <AgentSessionLine data={data} />
           <HandoffLine nodeId={nodeId!} data={data} />
         </div>
-        <ConversationSplit nodeId={nodeId} surface="panel" enabled={hasAnswer} availableHeight={availableHeight}
-          question={
-            <QuestionSection
-              key={`q-${nodeId}-${data.isEditing ? 'edit' : 'view'}`}
-              nodeId={nodeId!}
-              base={data.agentSession?.cwd ?? data.importSource?.cwd}
-              question={data.question}
-              displayQuestion={originalQuestionBeforeInstructions(data.question, activeAgentActivity(data))}
-              isEditing={data.isEditing && data.questionEditor === 'panel'}
-              isHuman={data.stepKind === 'human'}
-              awaiting={!!awaiting}
-              placeholder={awaiting ? (data.instruction || t('node.askPlaceholder')) : undefined}
-              branchContext={data.branchContext}
-            />
-          }
-          answer={
-            <ResponseSection
-              key={`r-${nodeId}`}
-              nodeId={nodeId!}
-              data={data}
-              hasMultipleVersions={hasMultipleVersions}
-              highlightedTexts={highlightedTexts}
-              highlighter={highlighter}
-              responseRef={responseRef}
-              onFocusNode={onFocusNode}
-            />
-          }
-        />
-        <div className="focus-panel-inspect">
-          <div className="focus-panel-role">
-            <RoleLine data={data} inheritedRole={inheritedRole} onEdit={(initial) => setRoleEdit(initial)} />
+        <div className={`focus-panel-conversation${hasAnswer ? '' : ' focus-panel-conversation--unsplit'}`}
+          style={hasAnswer ? undefined : { maxHeight: availableHeight }}>
+          <ConversationSplit nodeId={nodeId} surface="panel" enabled={hasAnswer} availableHeight={availableHeight}
+            question={
+              <QuestionSection
+                key={`q-${nodeId}`}
+                nodeId={nodeId!}
+                base={data.agentSession?.cwd ?? data.importSource?.cwd}
+                question={data.question}
+                displayQuestion={originalQuestionBeforeInstructions(data.question, activeAgentActivity(data))}
+                isEditing={data.isEditing && data.questionEditor === 'panel'}
+                isHuman={data.stepKind === 'human'}
+                awaiting={!!awaiting}
+                generationFailed={data.generationFailed && !data.isLoading}
+                placeholder={awaiting ? (data.instruction || t('node.askPlaceholder')) : undefined}
+              />
+            }
+            answer={
+              <ResponseSection
+                key={`r-${nodeId}`}
+                nodeId={nodeId!}
+                data={data}
+                hasMultipleVersions={hasMultipleVersions}
+                highlightedTexts={highlightedTexts}
+                highlighter={highlighter}
+                responseRef={responseRef}
+                onFocusNode={onFocusNode}
+              />
+            }
+          />
+        </div>
+        <div ref={inspectRef} className="focus-panel-inspect">
+          <div className="focus-panel-info">
+            <NodeInfoLine data={data} />
           </div>
-          {roleEdit !== null && !isViewerMode && (
-            <RoleEditor nodeId={nodeId} initial={roleEdit} inherited={!data.rolePrompt && !!inheritedRole} hasOwn={!!data.rolePrompt} onClose={() => setRoleEdit(null)} />
-          )}
           <AttachmentsSection
             nodeId={nodeId!}
             attachments={data.attachments || []}
@@ -254,13 +230,6 @@ export default function FocusPanel({ nodeId, onFocusNode }: { nodeId: string; on
           />
           <RecallSection nodeId={nodeId!} items={data.recallItems} meta={data.recallMeta} recallOn={data.recall ?? recallEnabled} progress={data.recallProgress} />
           <RelatedSection key={`rel-${nodeId}`} question={data.question} answer={data.response ?? ''} />
-          <ContextOrderSection nodeId={node.id} />
-          <ContextChainSection
-            key={`c-${nodeId}`}
-            partition={partition}
-            totalContextTokens={totalContextTokens}
-            onFocusNode={onFocusNode}
-          />
         </div>
       </div>
     </div>

@@ -1,3 +1,4 @@
+import { appSettings } from './disk-storage';
 import { create } from 'zustand';
 import type { NodeDetailLevel } from '../types';
 
@@ -30,7 +31,7 @@ const EFFORT_KEY = 'thoughtdag.agentEffort';
 /** The effort level for the next agent turn, in that runtime's own words; '' = the runtime's own default. */
 export type AgentEffort = string;
 const MCP_KEY = 'thoughtdag.mcpTools';
-const AUTO_PAUSE_KEY = 'thoughtdag.autoRefreshPaused';
+try { appSettings.removeItem('thoughtdag.autoRefreshPaused'); } catch { /* Retired preference has no runtime effect. */ }
 const HIDE_ANNOTATIONS_KEY = 'thoughtdag.hideAnnotations';
 /** Pan by default; preserve an explicitly saved opt-out. */
 const WHEEL_PANS_KEY = 'thoughtdag.wheelPans';
@@ -66,7 +67,6 @@ interface UiState {
   judge: import('./judge').JudgeSettings;
   scholarSearchEnabled: boolean;
   mcpEnabled: boolean;
-  autoRefreshPaused: boolean;
   /** View mode: hide frames + unlinked content nodes (annotation layer off). */
   annotationsHidden: boolean;
   /** Canvas wheel: true (default) pans; modified wheel always zooms at the viewport center. */
@@ -84,9 +84,10 @@ interface UiState {
   panelWidth: number;
   /** Material node currently open in the reading overlay (session only). */
   readerNodeId: string | null;
+  readerAttachmentId: string | null;
   /** One-shot landing spot for the reader: scroll to this page and open this
       thread on mount (set by canvas p.N chips, consumed by the overlay). */
-  readerJump: { page?: number; threadId?: string } | null;
+  readerJump: { page?: number; threadId?: string; attachmentId?: string } | null;
   /** How the reader shows: docked as a column on the canvas's left, the
       canvas and the node panel staying live beside it, or the full-screen
       overlay. Persisted; the dock falls back to the overlay in narrow windows. */
@@ -104,16 +105,10 @@ interface UiState {
   setJudge: (patch: Partial<import('./judge').JudgeSettings>) => void;
   setScholarSearchEnabled: (enabled: boolean) => void;
   setMcpEnabled: (enabled: boolean) => void;
-  setAutoRefreshPaused: (paused: boolean) => void;
   setAnnotationsHidden: (hidden: boolean) => void;
   setWheelPans: (pans: boolean) => void;
   setDraft: (key: string, text: string, keepEmpty?: boolean) => void;
   setPanelWidth: (w: number) => void;
-  /** User-editable role option library (persisted). */
-  roleLib: import('./role-templates').RoleLib;
-  setRoleLib: (lib: import('./role-templates').RoleLib) => void;
-  roleManagerOpen: boolean;
-  setRoleManagerOpen: (open: boolean) => void;
   /** Image reading / Recognize model: 'auto' = strongest first (persisted). */
   visionModelPref: string;
   setVisionModelPref: (id: string) => void;
@@ -154,8 +149,8 @@ interface UiState {
   /** Browser-side API key dialog (the .env-free path in). */
   apiKeyModalOpen: boolean;
   /** which part the dialog opens on: the interfaces (default), or the judge alone (from the picker's judge row and the memory page) */
-  apiKeyModalSection: 'providers' | 'judge';
-  setApiKeyModalOpen: (open: boolean, section?: 'providers' | 'judge') => void;
+  apiKeyModalSection: 'providers' | 'judge' | 'agents';
+  setApiKeyModalOpen: (open: boolean, section?: 'providers' | 'judge' | 'agents') => void;
   /** Monotonic signal: each bump asks the global model picker to drop open
       (the "look, your models are here" moment after a connect succeeds). */
   modelPickerPing: number;
@@ -212,7 +207,7 @@ interface UiState {
   /** Viewer boot failed to decode the #view= hash (truncated link). */
   viewerLoadError: boolean;
   setViewerLoadError: (v: boolean) => void;
-  setReaderNodeId: (id: string | null, jump?: { page?: number; threadId?: string }) => void;
+  setReaderNodeId: (id: string | null, jump?: { page?: number; threadId?: string; attachmentId?: string }) => void;
   setReaderMode: (mode: 'dock' | 'full') => void;
   setReaderWidth: (w: number) => void;
   setPanelOpen: (open: boolean, nodeId?: string) => void;
@@ -225,128 +220,113 @@ export const useUiStore = create<UiState>((set, get) => ({
   confirmRequest: null,
   tutorialOpen: false,
   // the three per-ask permissions (web, scholar, recall) start off: an ask sends nothing anywhere but the model until the person opens a door
-  webSearchEnabled: localStorage.getItem(WEB_SEARCH_KEY) === 'on',
-  recallEnabled: localStorage.getItem(RECALL_KEY) === 'on',
-  ladderModel: localStorage.getItem('thoughtdag.ladderModel') || 'answering',
-  setLadderModel: (id) => { localStorage.setItem('thoughtdag.ladderModel', id); set({ ladderModel: id }); },
+  webSearchEnabled: appSettings.getItem(WEB_SEARCH_KEY) === 'on',
+  recallEnabled: appSettings.getItem(RECALL_KEY) === 'on',
+  ladderModel: appSettings.getItem('thoughtdag.ladderModel') || 'answering',
+  setLadderModel: (id) => { appSettings.setItem('thoughtdag.ladderModel', id); set({ ladderModel: id }); },
   ladderJob: null,
   setLadderJob: (job) => set((st) => ({ ladderJob: typeof job === 'function' ? job(st.ladderJob) : job })),
-  recallScale: ((): 'lean' | 'standard' | 'generous' => { const v = localStorage.getItem('thoughtdag.recallScale'); return v === 'lean' || v === 'generous' ? v : 'standard'; })(),
-  setRecallScale: (s) => { localStorage.setItem('thoughtdag.recallScale', s); set({ recallScale: s }); },
-  recallReach: ((): 'light' | 'deep' | 'full' => { const v = localStorage.getItem('thoughtdag.recallReach'); return v === 'deep' || v === 'full' ? v : 'light'; })(),
-  setRecallReach: (r) => { localStorage.setItem('thoughtdag.recallReach', r); set({ recallReach: r }); },
+  recallScale: ((): 'lean' | 'standard' | 'generous' => { const v = appSettings.getItem('thoughtdag.recallScale'); return v === 'lean' || v === 'generous' ? v : 'standard'; })(),
+  setRecallScale: (s) => { appSettings.setItem('thoughtdag.recallScale', s); set({ recallScale: s }); },
+  recallReach: ((): 'light' | 'deep' | 'full' => { const v = appSettings.getItem('thoughtdag.recallReach'); return v === 'deep' || v === 'full' ? v : 'light'; })(),
+  setRecallReach: (r) => { appSettings.setItem('thoughtdag.recallReach', r); set({ recallReach: r }); },
   recallOverride: null,
   setRecallOverride: (o) => set((s) => ({ recallOverride: o === null ? null : { ...(s.recallOverride ?? {}), ...o } })),
   judge: (() => {
     const base = { enabled: true, provider: 'none' as const, openrouterKey: '', typesafeKey: '', cloudflareAccount: '', cloudflareToken: '', customUrl: '', customKey: '' };
     let j: import('./judge').JudgeSettings = base;
-    try { const raw = localStorage.getItem(JUDGE_KEY); if (raw) j = { ...base, ...JSON.parse(raw) }; } catch { /* the defaults */ }
+    try { const raw = appSettings.getItem(JUDGE_KEY); if (raw) j = { ...base, ...JSON.parse(raw) }; } catch { /* the defaults */ }
     // the on/off switch became the provider dropdown's "off" entry: a judge switched off before stays off
     if (j.enabled === false) j = { ...j, enabled: true, provider: 'off' };
     return j;
   })(),
-  scholarSearchEnabled: localStorage.getItem(SCHOLAR_SEARCH_KEY) === 'on',
+  scholarSearchEnabled: appSettings.getItem(SCHOLAR_SEARCH_KEY) === 'on',
   // MCP is parked until the personalization system is designed (external
   // knowledge needs its own provenance surface first) — hidden AND off.
-  mcpEnabled: localStorage.getItem(MCP_KEY) === 'on',
-  autoRefreshPaused: localStorage.getItem(AUTO_PAUSE_KEY) === 'yes',
-  annotationsHidden: localStorage.getItem(HIDE_ANNOTATIONS_KEY) === 'yes',
-  wheelPans: localStorage.getItem(WHEEL_PANS_KEY) !== 'off',
+  mcpEnabled: appSettings.getItem(MCP_KEY) === 'on',
+  annotationsHidden: appSettings.getItem(HIDE_ANNOTATIONS_KEY) === 'yes',
+  wheelPans: appSettings.getItem(WHEEL_PANS_KEY) !== 'off',
   canvasDetail: (() => {
-    const saved = localStorage.getItem(CANVAS_DETAIL_KEY);
+    const saved = appSettings.getItem(CANVAS_DETAIL_KEY);
     return saved === 'compact' || saved === 'summary' || saved === 'full' ? saved : 'auto';
   })(),
   setCanvasDetail: (canvasDetail) => {
-    try { localStorage.setItem(CANVAS_DETAIL_KEY, canvasDetail); } catch { /* Keep the choice for this session. */ }
+    try { appSettings.setItem(CANVAS_DETAIL_KEY, canvasDetail); } catch { /* Keep the choice for this session. */ }
     set({ canvasDetail });
   },
   panelOpen: false,
   panelNodeId: null,
-  panelWidth: (() => { const raw = localStorage.getItem('thoughtdag.panelWidth'); const n = raw ? parseInt(raw, 10) : NaN; return Number.isFinite(n) ? n : 520; })(),
-  selectedModel: localStorage.getItem(MODEL_KEY) || null,
-  agentEffort: localStorage.getItem(EFFORT_KEY) || '',
+  panelWidth: (() => { const raw = appSettings.getItem('thoughtdag.panelWidth'); const n = raw ? parseInt(raw, 10) : NaN; return Number.isFinite(n) ? n : 520; })(),
+  selectedModel: appSettings.getItem(MODEL_KEY) || null,
+  agentEffort: appSettings.getItem(EFFORT_KEY) || '',
   dismissToast: (id) => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })),
   resolveConfirm: (ok) => {
     get().confirmRequest?.resolve(ok);
     set({ confirmRequest: null });
   },
   setTutorialOpen: (open) => {
-    if (!open) localStorage.setItem('thoughtdag.tutorialDone', '1');
+    if (!open) appSettings.setItem('thoughtdag.tutorialDone', '1');
     set({ tutorialOpen: open });
   },
-  setJudge: (patch) => set((s) => { const judge = { ...s.judge, ...patch }; localStorage.setItem(JUDGE_KEY, JSON.stringify(judge)); return { judge }; }),
+  setJudge: (patch) => set((s) => { const judge = { ...s.judge, ...patch }; appSettings.setItem(JUDGE_KEY, JSON.stringify(judge)); return { judge }; }),
   setRecallEnabled: (enabled) => {
-    localStorage.setItem(RECALL_KEY, enabled ? 'on' : 'off');
+    appSettings.setItem(RECALL_KEY, enabled ? 'on' : 'off');
     set({ recallEnabled: enabled });
   },
   setWebSearchEnabled: (enabled) => {
-    localStorage.setItem(WEB_SEARCH_KEY, enabled ? 'on' : 'off');
+    appSettings.setItem(WEB_SEARCH_KEY, enabled ? 'on' : 'off');
     set({ webSearchEnabled: enabled });
   },
   setScholarSearchEnabled: (enabled) => {
-    localStorage.setItem(SCHOLAR_SEARCH_KEY, enabled ? 'on' : 'off');
+    appSettings.setItem(SCHOLAR_SEARCH_KEY, enabled ? 'on' : 'off');
     set({ scholarSearchEnabled: enabled });
   },
   setMcpEnabled: (enabled) => {
-    localStorage.setItem(MCP_KEY, enabled ? 'on' : 'off');
+    appSettings.setItem(MCP_KEY, enabled ? 'on' : 'off');
     set({ mcpEnabled: enabled });
   },
   setPanelOpen: (open, nodeId) => set((state) => ({ panelOpen: open, panelNodeId: open ? nodeId ?? state.panelNodeId : null })),
   setPanelWidth: (w) => set({ panelWidth: w }),
-  roleLib: (() => {
-    try {
-      const raw = localStorage.getItem('thoughtdag.roleLib');
-      const parsed = raw ? JSON.parse(raw) : null;
-      if (parsed && Array.isArray(parsed.custom) && Array.isArray(parsed.hidden)) return parsed;
-    } catch { /* fall through to empty */ }
-    return { custom: [], hidden: [] };
-  })(),
-  setRoleLib: (lib) => {
-    localStorage.setItem('thoughtdag.roleLib', JSON.stringify(lib));
-    set({ roleLib: lib });
-  },
-  roleManagerOpen: false,
-  setRoleManagerOpen: (open) => set({ roleManagerOpen: open }),
-  visionModelPref: localStorage.getItem('thoughtdag.visionModel') || 'auto',
+  visionModelPref: appSettings.getItem('thoughtdag.visionModel') || 'auto',
   setVisionModelPref: (id) => {
-    localStorage.setItem('thoughtdag.visionModel', id);
+    appSettings.setItem('thoughtdag.visionModel', id);
     set({ visionModelPref: id });
   },
-  searchEnginePref: localStorage.getItem('thoughtdag.searchEngine') || 'server',
+  searchEnginePref: appSettings.getItem('thoughtdag.searchEngine') || 'server',
   setSearchEnginePref: (id) => {
-    localStorage.setItem('thoughtdag.searchEngine', id);
+    appSettings.setItem('thoughtdag.searchEngine', id);
     set({ searchEnginePref: id });
   },
-  anysearchKey: localStorage.getItem('thoughtdag.anysearchKey') || '',
+  anysearchKey: appSettings.getItem('thoughtdag.anysearchKey') || '',
   setAnysearchKey: (key) => {
-    if (key) localStorage.setItem('thoughtdag.anysearchKey', key);
-    else localStorage.removeItem('thoughtdag.anysearchKey');
+    if (key) appSettings.setItem('thoughtdag.anysearchKey', key);
+    else appSettings.removeItem('thoughtdag.anysearchKey');
     set({ anysearchKey: key });
   },
-  memoryEnabled: localStorage.getItem('thoughtdag.memoryEnabled') !== 'off',
+  memoryEnabled: appSettings.getItem('thoughtdag.memoryEnabled') !== 'off',
   setMemoryEnabled: (on) => {
-    localStorage.setItem('thoughtdag.memoryEnabled', on ? 'on' : 'off');
+    appSettings.setItem('thoughtdag.memoryEnabled', on ? 'on' : 'off');
     set({ memoryEnabled: on });
   },
   memories: (() => {
     try {
-      const raw = localStorage.getItem('thoughtdag.memory');
+      const raw = appSettings.getItem('thoughtdag.memory');
       const parsed = raw ? JSON.parse(raw) : null;
       if (Array.isArray(parsed)) return parsed;
     } catch { /* fresh start */ }
     return [];
   })(),
   setMemories: (entries) => {
-    localStorage.setItem('thoughtdag.memory', JSON.stringify(entries));
+    appSettings.setItem('thoughtdag.memory', JSON.stringify(entries));
     set({ memories: entries });
   },
   profile: (() => {
     const empty = { preferences: { text: '', updatedAt: null, changelog: [] }, identity: { text: '', updatedAt: null, changelog: [] } };
-    try { const raw = localStorage.getItem('thoughtdag.profile'); const p = raw ? JSON.parse(raw) : null; return p && typeof p === 'object' ? { ...empty, ...p } : empty; } catch { return empty; }
+    try { const raw = appSettings.getItem('thoughtdag.profile'); const p = raw ? JSON.parse(raw) : null; return p && typeof p === 'object' ? { ...empty, ...p } : empty; } catch { return empty; }
   })(),
-  setProfile: (p) => { localStorage.setItem('thoughtdag.profile', JSON.stringify(p)); set({ profile: p }); },
-  memoryInbox: (() => { try { const raw = localStorage.getItem('thoughtdag.memoryInbox'); const v = raw ? JSON.parse(raw) : null; return Array.isArray(v) ? v : []; } catch { return []; } })(),
-  setMemoryInbox: (items) => { localStorage.setItem('thoughtdag.memoryInbox', JSON.stringify(items)); set({ memoryInbox: items }); },
+  setProfile: (p) => { appSettings.setItem('thoughtdag.profile', JSON.stringify(p)); set({ profile: p }); },
+  memoryInbox: (() => { try { const raw = appSettings.getItem('thoughtdag.memoryInbox'); const v = raw ? JSON.parse(raw) : null; return Array.isArray(v) ? v : []; } catch { return []; } })(),
+  setMemoryInbox: (items) => { appSettings.setItem('thoughtdag.memoryInbox', JSON.stringify(items)); set({ memoryInbox: items }); },
   memoryManagerOpen: false,
   highlightsOverviewOpen: false,
   setHighlightsOverviewOpen: (open) => set({ highlightsOverviewOpen: open }),
@@ -381,8 +361,8 @@ export const useUiStore = create<UiState>((set, get) => ({
   setCondenseHighlightIds: (ids) => set({ condenseHighlightIds: ids }),
   condenseRun: { status: 'idle', current: 0, total: 0, streaming: '', originalIds: [], distillIds: [] },
   setCondenseRun: (patch) => set((s) => ({ condenseRun: { ...s.condenseRun, ...patch } })),
-  advancedMode: localStorage.getItem('thoughtdag.advanced') === '1',
-  setAdvancedMode: (v) => { localStorage.setItem('thoughtdag.advanced', v ? '1' : '0'); set({ advancedMode: v }); },
+  advancedMode: appSettings.getItem('thoughtdag.advanced') === '1',
+  setAdvancedMode: (v) => { appSettings.setItem('thoughtdag.advanced', v ? '1' : '0'); set({ advancedMode: v }); },
   apiKeyPresetHint: null,
   setApiKeyPresetHint: (id) => set({ apiKeyPresetHint: id }),
   oauthMintedKey: null,
@@ -397,11 +377,13 @@ export const useUiStore = create<UiState>((set, get) => ({
   viewerLoadError: false,
   setViewerLoadError: (v) => set({ viewerLoadError: v }),
   readerNodeId: null,
+  readerAttachmentId: null,
   readerJump: null,
-  setReaderNodeId: (id, jump) => set({ readerNodeId: id, readerJump: id ? (jump ?? null) : null }),
-  readerMode: localStorage.getItem('thoughtdag.readerMode') === 'full' ? 'full' : 'dock',
-  readerWidth: (() => { const raw = localStorage.getItem('thoughtdag.readerWidth'); const n = raw ? parseInt(raw, 10) : NaN; return Number.isFinite(n) ? n : 560; })(),
-  setReaderMode: (mode) => { localStorage.setItem('thoughtdag.readerMode', mode); set({ readerMode: mode }); },
+  setReaderNodeId: (id, jump) => set(state => ({ readerNodeId: id, readerJump: id ? (jump ?? null) : null,
+    readerAttachmentId: id ? (jump?.attachmentId ?? (id === state.readerNodeId ? state.readerAttachmentId : null)) : null })),
+  readerMode: appSettings.getItem('thoughtdag.readerMode') === 'full' ? 'full' : 'dock',
+  readerWidth: (() => { const raw = appSettings.getItem('thoughtdag.readerWidth'); const n = raw ? parseInt(raw, 10) : NaN; return Number.isFinite(n) ? n : 560; })(),
+  setReaderMode: (mode) => { appSettings.setItem('thoughtdag.readerMode', mode); set({ readerMode: mode }); },
   setReaderWidth: (w) => set({ readerWidth: w }),
   drafts: {},
   setDraft: (key, text, keepEmpty = false) => set((s) => {
@@ -414,25 +396,21 @@ export const useUiStore = create<UiState>((set, get) => ({
     return { drafts: { ...s.drafts, [key]: text } };
   }),
   setAnnotationsHidden: (hidden) => {
-    localStorage.setItem(HIDE_ANNOTATIONS_KEY, hidden ? 'yes' : 'no');
+    appSettings.setItem(HIDE_ANNOTATIONS_KEY, hidden ? 'yes' : 'no');
     set({ annotationsHidden: hidden });
   },
   setWheelPans: (pans) => {
-    try { localStorage.setItem(WHEEL_PANS_KEY, pans ? 'on' : 'off'); } catch { /* the choice still holds for this session */ }
+    try { appSettings.setItem(WHEEL_PANS_KEY, pans ? 'on' : 'off'); } catch { /* the choice still holds for this session */ }
     set({ wheelPans: pans });
   },
-  setAutoRefreshPaused: (paused) => {
-    localStorage.setItem(AUTO_PAUSE_KEY, paused ? 'yes' : 'no');
-    set({ autoRefreshPaused: paused });
-  },
   setSelectedModel: (model) => {
-    if (model) localStorage.setItem(MODEL_KEY, model);
-    else localStorage.removeItem(MODEL_KEY);
+    if (model) appSettings.setItem(MODEL_KEY, model);
+    else appSettings.removeItem(MODEL_KEY);
     set({ selectedModel: model });
   },
   setAgentEffort: (level) => {
-    if (level) localStorage.setItem(EFFORT_KEY, level);
-    else localStorage.removeItem(EFFORT_KEY);
+    if (level) appSettings.setItem(EFFORT_KEY, level);
+    else appSettings.removeItem(EFFORT_KEY);
     set({ agentEffort: level });
   },
 }));

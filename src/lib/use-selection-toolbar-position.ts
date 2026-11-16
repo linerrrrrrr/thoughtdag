@@ -1,5 +1,6 @@
 import { useLayoutEffect, useState, type CSSProperties, type RefObject } from 'react';
 import { useStore as useFlowStore } from '@xyflow/react';
+import { uiRect, uiViewport } from './ui-scale';
 
 /** Selection controls share the right card dock, independent of canvas geometry. */
 export function useSelectionToolbarPosition(ref: RefObject<HTMLDivElement | null>, visible: boolean) {
@@ -12,12 +13,13 @@ export function useSelectionToolbarPosition(ref: RefObject<HTMLDivElement | null
     const toolbar = header?.querySelector('[data-top-toolbar]');
     const measure = () => {
       const gap = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--spacing-canvas-inset'));
-      const canvasBounds = canvas.getBoundingClientRect();
-      const headerBounds = header?.getBoundingClientRect();
-      const toolbarBounds = toolbar?.getBoundingClientRect();
-      const right = Math.max(16, window.innerWidth - (toolbarBounds?.right ?? window.innerWidth - 16));
+      const canvasBounds = uiRect(canvas);
+      const headerBounds = header ? uiRect(header) : undefined;
+      const toolbarBounds = toolbar ? uiRect(toolbar) : undefined;
+      const viewport = uiViewport();
+      const right = Math.max(16, viewport.width - (toolbarBounds?.right ?? viewport.width - 16));
       const next = {
-        left: Math.max(canvasBounds.left + 16, window.innerWidth - right - control.offsetWidth) - canvasBounds.left,
+        left: Math.max(canvasBounds.left + 16, viewport.width - right - control.offsetWidth) - canvasBounds.left,
         top: (headerBounds?.bottom ?? 66) + gap - canvasBounds.top,
         ready: true,
       };

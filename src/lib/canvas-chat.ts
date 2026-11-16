@@ -12,6 +12,7 @@ import { levelText, sentencesOf } from './ladder-core';
 import type { ContextMessage } from './api';
 import { backgroundCall } from './background-model';
 import { activeSummary, activeTopic } from '../utils';
+import { documentCopyText, isEditableDocument } from './document-copy';
 
 export type ChatLayer = 'outline' | 'chain' | 'material' | 'reference';
 export interface ChatContextItem { layer: ChatLayer; node: string; chars: number }
@@ -119,7 +120,7 @@ export function buildCanvasChat(nodes: ThoughtNode[], edges: ThoughtEdge[], focu
     }
     const mats = p.materials.filter((n) => byId.has(n.id));
     if (mats.length) {
-      const block = mats.map((n) => { const text = (n.data.attachments ?? []).map((a) => a.extractedText ?? '').join('\n') || n.data.question || ''; const s = `${label(n)}\n${clip(text, 900)}`; context.push({ layer: 'material', node: n.id, chars: s.length }); return s; }).join('\n');
+      const block = mats.map((n) => { const text = (n.data.attachments ?? []).map((a) => isEditableDocument(a) ? documentCopyText(a) : a.extractedText ?? '').join('\n') || n.data.question || ''; const s = `${label(n)}\n${clip(text, 900)}`; context.push({ layer: 'material', node: n.id, chars: s.length }); return s; }).join('\n');
       if (used + block.length <= budget) { parts.push(`${lang === 'zh' ? '【材料】' : '[Materials]'}\n${block}`); used += block.length; }
     }
     const refs = p.references.map((r) => r.source).filter((n) => byId.has(n.id) && n.id !== focus.id);
@@ -167,17 +168,17 @@ export async function askCanvas(nodes: ThoughtNode[], edges: ThoughtEdge[], focu
   }
 }
 
-/** The answer as markdown with its citations as explore marks (the sanitizer lets these through): the dialog
+/** The answer as markdown with explicit node citation chips: the dialog
  *  renders it with the numbers as chips, a dropped node with the nodes' titles, since a number only means
  *  something within its request. A number the canvas lacks is a mark with no target, styled as a doubt. */
 export function answerForCanvas(text: string, byAlias: Map<string, string>, nodes: ThoughtNode[], lang: 'zh' | 'en', label: 'alias' | 'title' = 'title'): string {
   const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   return citations(text, byAlias).map((p) => {
     if (p.kind === 'text') return p.text;
-    if (p.kind === 'unknown') return `<mark class="explore-mark" data-explore-target="">${esc(p.alias)}?</mark>`;
+    if (p.kind === 'unknown') return `<mark class="cite-chip" data-node-cite="">${esc(p.alias)}?</mark>`;
     const n = nodes.find((x) => x.id === p.id);
     const full = n ? nodeLabel(n.data, lang) : p.alias;
     const shown = label === 'alias' ? p.alias : one(clip(full.split('：')[0], 40));
-    return `<mark class="explore-mark" data-explore-target="${esc(p.id)}">${esc(shown)}</mark>`;
+    return `<mark class="cite-chip" data-node-cite="${esc(p.id)}">${esc(shown)}</mark>`;
   }).join('');
 }

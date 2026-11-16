@@ -242,7 +242,6 @@ export function buildCondensedCopy(segments: CondenseSegment[], distillates: str
         tokenCount: countTokens(`${question}\n${response}`),
         highlights: [], highlightMode: 'tag',
         attachments: [], excludedAttachmentIds: [], includedAttachmentIds: [],
-        roleMode: 'inherit', isRoot: false, isBranch: false,
       } as ThoughtData,
     } as ThoughtNode);
     seg.nodeIds.forEach((oid) => idMap.set(oid, id));

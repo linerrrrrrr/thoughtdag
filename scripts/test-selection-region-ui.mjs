@@ -27,10 +27,10 @@ await context.route('**/api/**', route => {
 await page.addInitScript(() => {
   localStorage.setItem('thoughtdag.seeded', 'yes');
   localStorage.setItem('thoughtdag.tutorialDone', '1');
-  localStorage.setItem('thoughtdag.autoRefreshPaused', 'yes');
   localStorage.setItem('thoughtdag.lang', 'zh');
 });
 const near = (actual, expected, label) => assert.ok(Math.abs(actual - expected) < 1.5, `${label}: ${actual} != ${expected}`);
+const canvasInset = () => page.evaluate(() => 16 * (parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--ui-scale')) || 1));
 const region = () => page.evaluate(() => window.__canvasEditing.getState().selectionRegion);
 const selection = () => page.evaluate(() => ({
   nodes: [...window.__store.getState().selectedNodeIds].sort(),
@@ -42,16 +42,17 @@ const choose = target => page.locator(`[data-selection-target="${target}"]`).cli
 const node = id => page.locator(`.react-flow__node[data-id="${id}"]`);
 const contextBox = () => page.locator('[data-selection-target-control]').boundingBox();
 async function assertDock(selector = '[data-selection-properties]') {
-  await page.waitForFunction(selector => {
+  const inset = await canvasInset();
+  await page.waitForFunction(({ selector, inset }) => {
     const control = document.querySelector('[data-selection-target-control]')?.getBoundingClientRect();
     const panel = document.querySelector(selector)?.getBoundingClientRect();
     return control && panel && Math.abs(control.right - panel.right) < 1.5
-      && Math.abs(panel.top - control.bottom - 16) < 1.5;
-  }, selector);
+      && Math.abs(panel.top - control.bottom - inset) < 1.5;
+  }, { selector, inset });
   const control = await contextBox(), panel = await page.locator(selector).boundingBox();
   assert.ok(control && panel);
   near(control.x + control.width, panel.x + panel.width, 'context controls align with the right card edge');
-  near(panel.y - control.y - control.height, 16, 'context controls share the toolbar-to-card gap');
+  near(panel.y - control.y - control.height, inset, 'context controls share the toolbar-to-card gap');
   return control;
 }
 async function assertContextPosition(expected) {
@@ -86,8 +87,7 @@ async function fixture(mixed = false) {
   await page.evaluate(mixed => {
     const data = id => ({ question: `区域节点 ${id}`, displayName: `区域节点 ${id}`,
       response: 'A stable answer for marquee region tests.', responses: ['A stable answer for marquee region tests.'], responseIndex: 0,
-      isCollapsed: false, isEditing: false, isEditingResponse: false, isLoading: false, isRoot: false, isBranch: false,
-      highlights: [], attachments: [], excludedAttachmentIds: [], includedAttachmentIds: [], tokenCount: 10, roleMode: 'inherit' });
+      isCollapsed: false, isEditing: false, isEditingResponse: false, isLoading: false, highlights: [], attachments: [], excludedAttachmentIds: [], includedAttachmentIds: [], tokenCount: 10, roleMode: 'inherit' });
     const nodes = (mixed ? [
       { id: 'a', x: 800, y: 250 }, { id: 'b', x: 800, y: 650 },
       { id: 'c', x: 1450, y: -100 }, { id: 'd', x: 1450, y: 1000 },
@@ -100,7 +100,7 @@ async function fixture(mixed = false) {
     }));
     window.__canvasEditing.getState().reset();
     window.__store.setState({ nodes, edges, selectedNodeIds: [], selectedNodeId: null, history: [{ nodes, edges }], historyIndex: 0 });
-    window.__ui.setState({ panelOpen: false, panelNodeId: null, tutorialOpen: false, releaseNotesOpen: false, autoRefreshPaused: true, drafts: {} });
+    window.__ui.setState({ panelOpen: false, panelNodeId: null, tutorialOpen: false, releaseNotesOpen: false, drafts: {} });
   }, mixed);
   await page.waitForTimeout(650);
   await page.evaluate(() => window.__rf.setViewport({ x: 80, y: 70, zoom: 0.55 }, { duration: 0 }));
@@ -113,11 +113,12 @@ async function linePoint(id, fraction = 0.5) {
     return { x: point.x, y: point.y };
   }, fraction);
 }
-async function marquee(rect) {
+async function marquee(rect, beforeRelease) {
   const toolbarBefore = await page.locator('[data-top-toolbar]').boundingBox();
   await page.mouse.move(rect.x, rect.y); await page.mouse.down();
   await page.mouse.move(rect.x + rect.width, rect.y + rect.height, { steps: 12 });
   assert.equal(await page.locator('[data-selection-target-control]').count(), 0, 'type choices appear only after release');
+  if (beforeRelease) await beforeRelease();
   await page.mouse.up();
   await page.locator('[data-selection-region]').waitFor();
   await page.locator('[data-selection-target-control]').waitFor();
@@ -137,12 +138,12 @@ async function lineMarquee() {
   await choose('edges');
   await selected([], ['ab']);
 }
-async function mixedMarquee() {
+async function mixedMarquee(beforeRelease) {
   const a = await node('a').boundingBox(), b = await node('b').boundingBox(), p = await linePoint('cd');
   assert.ok(a && b);
   const x = Math.min(a.x, b.x) - 12, y = Math.min(a.y, b.y) - 12;
   await marquee({ x, y, width: Math.max(a.x + a.width, b.x + b.width, p.x) + 24 - x,
-    height: Math.max(a.y + a.height, b.y + b.height) + 12 - y });
+    height: Math.max(a.y + a.height, b.y + b.height) + 12 - y }, beforeRelease);
   await selected(['a', 'b'], []);
 }
 async function assertProjection(saved) {
@@ -166,6 +167,83 @@ async function assertProjection(saved) {
 try {
   await page.goto(process.env.APP_URL ?? 'http://127.0.0.1:5198', { waitUntil: 'networkidle', timeout: 30000 });
   await page.waitForFunction(() => window.__store?.persist.hasHydrated() && window.__rf && window.__ui && window.__canvasEditing);
+  await probe('a completed marquee replaces layout, keeps its draft and can reopen the same selection', async () => {
+    await fixture(true);
+    await page.locator('[data-layout-entry]').click();
+    await page.locator('[data-canvas-layout-panel]').waitFor();
+    await page.locator('[data-layout-direction] label:has(input[value="horizontal"])').click();
+    const geometry = await page.evaluate(() => window.__store.getState().nodes.map(({ id, position }) => ({ id, position })));
+    await mixedMarquee(async () => {
+      assert.equal(await page.locator('[data-canvas-layout-panel]').isVisible(), true, 'layout remains open until the marquee is released');
+    });
+    await page.locator('[data-selection-properties]').waitFor();
+    assert.equal(await page.locator('[data-canvas-layout-panel]').count(), 0);
+    assert.equal(await page.evaluate(() => window.__canvasEditing.getState().layoutOpen), false);
+    assert.deepEqual(await page.evaluate(() => window.__store.getState().nodes.map(({ id, position }) => ({ id, position }))), geometry);
+    assert.equal(await page.locator('.canvas-tool-panel:visible').count(), 1);
+
+    await page.locator('[data-layout-entry]').click();
+    await page.locator('[data-canvas-layout-panel]').waitFor();
+    assert.equal(await page.locator('[data-layout-direction] input:checked').inputValue(), 'horizontal');
+    await selected(['a', 'b'], []);
+    await choose('nodes');
+    await page.locator('[data-selection-properties]').waitFor();
+    assert.equal(await page.locator('[data-canvas-layout-panel]').count(), 0, 'choosing the current type reopens the same selection');
+    await page.locator('[data-selection-properties-close]').click();
+    await page.waitForTimeout(400);
+    assert.equal(await page.locator('[data-canvas-layout-panel]').count(), 0, 'the replaced layout must not reopen');
+    await selected(['a', 'b'], []);
+  });
+  await probe('a marquee replaces another tool card, while an empty marquee leaves it open', async () => {
+    for (const [entry, panel] of [['toolbar-more', 'toolbar-more-panel'], ['routing-entry', 'canvas-routing-panel']]) {
+      await fixture(true);
+      await page.locator(`[data-${entry}]`).click();
+      await page.locator(`[data-${panel}]`).waitFor();
+      await mixedMarquee();
+      await page.locator('[data-selection-properties]').waitFor();
+      assert.equal(await page.locator(`[data-${panel}]`).count(), 0);
+      await selected(['a', 'b'], []);
+    }
+
+    await fixture(true);
+    await page.locator('[data-layout-entry]').click();
+    await page.locator('[data-canvas-layout-panel]').waitFor();
+    await page.mouse.move(300, 650); await page.mouse.down();
+    await page.mouse.move(360, 690, { steps: 10 }); await page.mouse.up();
+    await page.waitForFunction(() => window.__canvasEditing.getState().selectionRegion !== null);
+    await selected([], []);
+    assert.equal(await page.locator('[data-selection-target-control]').count(), 0);
+    assert.equal(await page.locator('[data-canvas-layout-panel]').isVisible(), true, 'an empty marquee does not replace the active card');
+  });
+  await probe('a marquee with only line candidates keeps layout until lines are selected', async () => {
+    await fixture();
+    await page.locator('[data-layout-entry]').click();
+    await page.locator('[data-canvas-layout-panel]').waitFor();
+    const p = await linePoint('ab');
+    await marquee({ x: p.x - 24, y: p.y - 24, width: 48, height: 48 });
+    await selected([], []);
+    assert.equal(await page.locator('[data-canvas-layout-panel]').isVisible(), true);
+    assert.match(await page.locator('[data-selection-target="edges"]').innerText(), /1/);
+    await choose('edges'); await selected([], ['ab']);
+    await page.locator('[data-selection-properties]').waitFor();
+    assert.equal(await page.locator('[data-canvas-layout-panel]').count(), 0);
+  });
+  await probe('a node click replaces a layout preview without applying it', async () => {
+    await fixture(true);
+    await page.locator('[data-layout-entry]').click();
+    await page.locator('[data-canvas-layout-panel]').waitFor();
+    await page.locator('[data-layout-method] label:has(input[value="chains"])').click();
+    const geometry = await page.evaluate(() => window.__store.getState().nodes.map(({ id, position }) => ({ id, position })));
+    await page.locator('[data-layout-preview]').click();
+    await page.waitForFunction(() => window.__canvasEditing.getState().layoutPreview !== null);
+    await page.waitForTimeout(400);
+    await node('a').locator('[data-node-details-header]').click();
+    await page.locator('[data-selection-properties]').waitFor();
+    assert.equal(await page.locator('[data-canvas-layout-panel]').count(), 0);
+    assert.equal(await page.evaluate(() => window.__canvasEditing.getState().layoutPreview), null);
+    assert.deepEqual(await page.evaluate(() => window.__store.getState().nodes.map(({ id, position }) => ({ id, position }))), geometry);
+    await selected(['a'], []);
+  });
   await probe('type choices are absent before a marquee, including ordinary selection and select all', async () => {
     await fixture(true);
     assert.equal(await page.locator('[data-selection-target-control]').count(), 0);
@@ -216,17 +294,20 @@ try {
       await assertContextPosition(dock);
     }
   });
-  await probe('line draft and original values survive object type switches; Escape cancels draft, inspector, then region', async () => {
+  await probe('live line values survive object type switches and layered Escape', async () => {
     await fixture(true); await mixedMarquee(); await choose('edges'); await selected([], ['ab', 'cd']);
-    const saved = await region(), before = await wiring();
-    await page.locator('[data-batch-edge-label]').fill('保留的区域草稿');
+    const saved = await region();
+    await page.locator('[data-batch-edge-label]').fill('保留的连线标注');
+    const savedEdges = await wiring();
+    assert.deepEqual(savedEdges.map(edge => edge.data.label), ['保留的连线标注', '保留的连线标注']);
     await choose('nodes'); await selected(['a', 'b'], []); assert.deepEqual(await region(), saved);
     await choose('edges'); await selected([], ['ab', 'cd']);
-    assert.equal(await page.locator('[data-batch-edge-label]').inputValue(), '保留的区域草稿');
-    assert.deepEqual(await wiring(), before); assert.deepEqual(await region(), saved);
+    assert.equal(await page.locator('[data-batch-edge-label]').inputValue(), '保留的连线标注');
+    assert.deepEqual(await wiring(), savedEdges); assert.deepEqual(await region(), saved);
+    await page.locator('[data-batch-edge-label]').focus();
     await page.keyboard.press('Escape');
-    assert.equal(await page.locator('[data-batch-edge-label]').inputValue(), '');
-    await selected([], ['ab', 'cd']); assert.deepEqual(await region(), saved); assert.deepEqual(await wiring(), before);
+    assert.equal(await page.locator('[data-batch-edge-label]').inputValue(), '保留的连线标注');
+    await selected([], ['ab', 'cd']); assert.deepEqual(await region(), saved); assert.deepEqual(await wiring(), savedEdges);
     await page.keyboard.press('Escape');
     assert.equal(await page.locator('[data-selection-properties]').count(), 0);
     await selected([], ['ab', 'cd']); assert.deepEqual(await region(), saved);
@@ -273,6 +354,7 @@ try {
   await probe('context choices remain readable and clickable across themes, languages, widths and inspector replacement', async () => {
     await fixture(true); await mixedMarquee(); await choose('edges');
     const saved = await region();
+    const inset = await canvasInset();
     for (const lang of ['zh', 'en']) for (const theme of ['light', 'dark']) {
       await page.evaluate(async ({ lang, theme }) => {
         const live = path => import([...performance.getEntriesByType('resource')].reverse()
@@ -284,7 +366,8 @@ try {
         await page.setViewportSize({ width, height: 1000 }); await page.waitForTimeout(250);
         const control = page.locator('[data-selection-target-control]');
         const box = await control.boundingBox();
-        assert.ok(box && box.x >= 16 && box.x + box.width <= width - 15 && box.y >= 16 && box.y + box.height <= 984);
+        assert.ok(box && box.x >= inset - 1 && box.x + box.width <= width - inset + 1
+          && box.y >= inset - 1 && box.y + box.height <= 1000 - inset + 1);
         await assertDock();
         for (const target of ['nodes', 'edges', 'frames']) {
           const button = page.locator(`[data-selection-target="${target}"]`);
@@ -312,13 +395,13 @@ try {
     await page.setViewportSize({ width: 1600, height: 1000 });
     await page.evaluate(() => window.__ui.getState().setPanelOpen(true, 'a'));
     await page.locator('[data-focus-panel]').waitFor();
-    await page.waitForFunction(() => {
+    await page.waitForFunction(inset => {
       const control = document.querySelector('[data-selection-target-control]')?.getBoundingClientRect();
       const reader = document.querySelector('[data-focus-panel]')?.getBoundingClientRect();
-      return control && reader && control.right <= reader.left - 15;
-    });
+      return control && reader && control.right <= reader.left - inset + 1;
+    }, inset);
     const besideReader = await assertDock(), reader = await page.locator('[data-focus-panel]').boundingBox(); assert.ok(reader);
-    assert.ok(besideReader.x + besideReader.width <= reader.x - 15, 'context controls follow the card into the available canvas beside the reader');
+    assert.ok(besideReader.x + besideReader.width <= reader.x - inset + 1, 'context controls follow the card into the available canvas beside the reader');
     await page.evaluate(() => window.__ui.getState().setPanelOpen(false));
     await page.locator('[data-focus-panel]').waitFor({ state: 'hidden' });
     await assertDock();

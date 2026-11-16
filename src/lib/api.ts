@@ -52,6 +52,8 @@ export async function answerApproval(request: { id: string; channel?: { runId: s
 export interface ContextMessage {
   role: 'user' | 'assistant' | 'system';
   content: string;
+  /** Internal canvas provenance; removed before ordinary API dispatch. */
+  canvasSource?: import('../store/context-builder').MessageSource;
 }
 
 export interface ImageAttachment {
@@ -59,6 +61,7 @@ export interface ImageAttachment {
   mimeType: string;
   /** The image's companion text (its index) is already in the messages. */
   hasCompanion?: boolean;
+  canvasSource?: { nodeId: string; attachmentId: string };
 }
 
 export interface PdfExtractResult {
@@ -170,7 +173,8 @@ export async function llmCall(contextMessages: ContextMessage[], images?: ImageA
 export async function llmCallAnswered(contextMessages: ContextMessage[], images?: ImageAttachment[], modelOverride?: string, opts?: LlmCallOptions): Promise<{ text: string; model: string | undefined }> {
   opts?.signal?.throwIfAborted();
   const modelId = modelOverride || useUiStore.getState().selectedModel || undefined;
-  images = await imagesForModel(modelId, images);
+  contextMessages = contextMessages.map(({ role, content }) => ({ role, content }));
+  images = await imagesForModel(modelId, images?.map(({ data, mimeType, hasCompanion }) => ({ data, mimeType, hasCompanion })));
   opts?.signal?.throwIfAborted();
   // The deadline cancels the request itself, on the proxy lane and the direct one alike (the proxy then stops the
   // upstream call, server.mjs), and its message names the wait
@@ -232,12 +236,12 @@ export interface StreamCallbacks {
   /** An agent runtime in the desktop app: what changed on disk during the turn. */
   onAgentChanges?: (changes: { changed: string[]; added: string[]; removed: string[]; truncated?: boolean }) => void;
   /** An agent runtime in the desktop app: which session this turn ran in. */
-  onAgentSession?: (session: { runtime: import('../types').AgentRuntime; sessionId: string | null; sessionFile: string | null; cwd: string }) => void;
+  onAgentSession?: (session: NonNullable<import('../types').ThoughtData['agentSession']>) => void;
   /** Inside DeepSeek Harness: the harness session this generation ran in
-      (a fresh one, or the mirrored session it continued). */
+      (a fresh one, or the session it continued). */
   onHarnessSession?: (session: string, continued: boolean) => void;
   /** Inside DeepSeek Harness: the dsh turn a harness-agent question created —
-      the canvas node becomes that turn's mirror. */
+      the canvas node retains the turn's identity. */
   onHarnessTurn?: (turn: { session: string; turn: number | null; userMessageId: string | null; seq: number | null }) => void;
   /** An agent runtime asks whether one action may proceed; the turn waits. */
   onApproval?: (request: Omit<import('../types').ApprovalRequest, 'askedAt'>) => void;
@@ -288,14 +292,15 @@ export async function llmCallStream(
   // browser — the proxy's CPU allowance can't survive big contexts + heavy
   // thinking models, and the key staying local is a feature in itself.
   const modelId = modelOverride || useUiStore.getState().selectedModel || undefined;
-  // An agent runtime in the desktop app: Pi runs the turn with its own
-  // tools; the canvas's compiled context rides ahead of the question.
+  // Codex materializes structured history before its current turn. Legacy
+  // agent runtimes keep their own context transport contract.
   if (modelId && isAgentModel(modelId)) {
     if (!window.desktopAgents) throw new Error('The local agent connection is unavailable. Start the local server or desktop app and retry.');
     callbacks?.onDispatch?.({ messages: contextMessages, images: images ?? [], model: modelId, toolPrefs: toolPrefs ?? {}, lane: 'proxy' });
     return agentCallStream(contextMessages, onChunk, signal, images, callbacks, modelId, harness?.cwd ? { cwd: harness.cwd, sessionPath: harness.sessionPath, sessionId: harness.sessionId, forkEntryId: harness.forkEntryId, continue: harness.continue } : undefined, harness?.nodeId);
   }
-  images = await imagesForModel(modelId, images);
+  contextMessages = contextMessages.map(({ role, content }) => ({ role, content }));
+  images = await imagesForModel(modelId, images?.map(({ data, mimeType, hasCompanion }) => ({ data, mimeType, hasCompanion })));
 
   // The proxy substituting a vision stand-in is a verdict on the model's
   // OWN eyes — a run that got rerouted must not teach vision:true below.

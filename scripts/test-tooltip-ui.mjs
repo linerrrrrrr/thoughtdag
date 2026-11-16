@@ -25,7 +25,6 @@ await page.route('**/*', route => {
 await page.addInitScript(() => {
   localStorage.setItem('thoughtdag.seeded', 'yes');
   localStorage.setItem('thoughtdag.tutorialDone', '1');
-  localStorage.setItem('thoughtdag.autoRefreshPaused', 'yes');
 });
 const output = 'local-tests/tooltip-cleanup';
 await mkdir(output, { recursive: true });
@@ -51,8 +50,7 @@ try {
     const nodes = ['a', 'b'].map((id, i) => ({ id, type: 'thought', width: 380, height: 280,
       position: { x: 180 + i * 440, y: 220 }, data: {
         displayName: `节点 ${id}`, question: `研究问题 ${id}`, response: `回答 ${id}`,
-        responses: [`回答 ${id}`], responseIndex: 0, isRoot: i === 0,
-        isCollapsed: false, isEditing: false, isLoading: false, tokenCount: 10, highlights: [], attachments: [],
+        responses: [`回答 ${id}`], responseIndex: 0, isCollapsed: false, isEditing: false, isLoading: false, tokenCount: 10, highlights: [], attachments: [],
       } }));
     window.__store.setState({ nodes, edges: [], selectedNodeIds: [], selectedNodeId: null,
       history: [{ nodes, edges: [] }], historyIndex: 0 });
@@ -71,6 +69,7 @@ try {
 
   // Verify the real toolbar after its visible labels collapse to icons.
   let compactSeen = false;
+  let routingTipSeen = false;
   for (const width of [1000, 760, 520, 360]) {
     await page.setViewportSize({ width, height: 1000 });
     await page.waitForTimeout(150);
@@ -80,8 +79,15 @@ try {
       assert.ok((await tip.innerText()).includes('排版'), 'icon-only layout control keeps its name');
       compactSeen = true;
     }
+    const routing = page.locator('[data-routing-entry]');
+    if (!routingTipSeen && ['compact', 'overflow'].includes(density) && await routing.isVisible()) {
+      await hover(routing);
+      assert.ok((await tip.innerText()).includes('连线'), 'icon-only connections control keeps its name');
+      routingTipSeen = true;
+    }
   }
   assert.ok(compactSeen, 'responsive icon controls were exercised');
+  assert.ok(routingTipSeen, 'the responsive connections icon was exercised');
   await page.setViewportSize({ width: 1760, height: 1000 });
   await page.waitForTimeout(150);
 

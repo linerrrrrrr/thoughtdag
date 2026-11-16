@@ -13,7 +13,6 @@ ThoughtDAG is an open-source AI conversation canvas that can retrieve supported 
 
 Use the ThoughtDAG desktop version, which has access to the local index, and ensure a model is configured to answer questions. The past discussion needs to be stored in a supported local source; chat histories that exist solely in a web-based account will not automatically appear here.
 
-Open **Agent conversations** from the welcome screen, or **Session Atlas** from the top-left canvas menu. Check the directories under **Sources**, then return to the session list. Find the discussion by project and session title, and click its card to open a canvas mirror.
 
 <TutorialMedia clip="history" alt="Illustration: connect a new paper with earlier judgments, constraints, and follow-up questions" />
 
@@ -31,13 +30,13 @@ Seeing a search result does not add it to the current canvas context. If you fin
 
 Open the hit from the source list and read the relevant conversation turns: what exactly caused you to rule out the method back then? Which conditions might have changed by now? Do not treat a past conclusion as absolute truth today based solely on a brief summary.
 
-Viewing the source might switch your view to the mirrored canvas of that old session. Once you finish verifying the details, make sure to navigate back to your original canvas, re-select the new question node you want to cite into, and expand the "Related Conversations" panel again.
+Opening a canvas source switches to its node. An Agent source opens in its own runtime when available. After verifying the details, return to the original canvas and re-select the question node before citing.
 
 ## 3. Cite the useful parts and continue
 
 Click **Cite** on the result you want. With a target node selected, this creates a material node with source information and wires it into that target. Without a selected target, the material is placed on the canvas; connect it where you want to use it.
 
-Read the cited material. Long turns may be truncated; an ellipsis means you may need to return to the source and supply missing context. Remove irrelevant parts while keeping the conditions needed for your judgment. If a condition has changed, explain the change rather than silently presenting an edited statement as the original. Then check the context preview.
+Read the cited material. Long turns may be truncated; an ellipsis means you may need to return to the source and supply missing context. Remove irrelevant parts while keeping the conditions needed for your judgment. If a condition has changed, explain the change rather than silently presenting an edited statement as the original. Then check the target node’s incoming connections and attachments.
 
 Adding a reference does not rewrite an existing answer. Regenerate it, or continue with a follow-up: “We abandoned this route due to compute costs. Considering the method in this new paper, which constraints might improve, and which still need verification?”
 
@@ -55,4 +54,4 @@ Your past discussions now have a traceable entry point, allowing you to evaluate
 
 ---
 
-Related guides: [Getting started](/) · [Context controls](/guides/context-control) · [Conversations and branches](/guides/conversations) · [Session Atlas](/guides/session-atlas)
+Related guides: [Getting started](/) · [Context controls](/guides/context-control) · [Conversations and branches](/guides/conversations)

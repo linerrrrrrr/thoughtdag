@@ -1,3 +1,4 @@
+import { appSettings } from './disk-storage';
 import { create } from 'zustand';
 
 // Appearance: two independent axes, four quadrants.
@@ -37,15 +38,15 @@ interface AppearanceState {
 }
 
 export const useAppearance = create<AppearanceState>((set, get) => ({
-  lighting: (localStorage.getItem(LS_LIGHTING) as Lighting) || 'light',
-  paper: (localStorage.getItem(LS_PAPER) as Paper) || 'plain',
+  lighting: (appSettings.getItem(LS_LIGHTING) as Lighting) || 'light',
+  paper: (appSettings.getItem(LS_PAPER) as Paper) || 'plain',
   resolved: 'light',
   setLighting: (lighting) => {
-    localStorage.setItem(LS_LIGHTING, lighting);
+    appSettings.setItem(LS_LIGHTING, lighting);
     set({ lighting, resolved: apply(lighting, get().paper) });
   },
   setPaper: (paper) => {
-    localStorage.setItem(LS_PAPER, paper);
+    appSettings.setItem(LS_PAPER, paper);
     apply(get().lighting, paper);
     set({ paper });
   },
@@ -63,18 +64,18 @@ export function initAppearance(): void {
   });
 }
 
-/** The four semantic edge colors as CURRENTLY rendered (theme-resolved).
+/** Theme-resolved colors for conversation edges and context highlights.
     Edge styles are persisted with light-theme hex values; the render layer
     maps them through this palette so old graphs theme correctly without a
     data migration. */
-export function edgePalette(): { accent: string; warm: string; trace: string; watch: string } {
+export function edgePalette(): { accent: string; warm: string; trace: string; danger: string } {
   const cs = getComputedStyle(document.documentElement);
   const read = (name: string, fallback: string) => cs.getPropertyValue(name).trim() || fallback;
   return {
     accent: read('--color-accent', '#6B5CE7'),
     warm: read('--color-warm', '#E08A3C'),
     trace: read('--color-trace', '#F59E0B'),
-    watch: read('--color-watch', '#DC2626'),
+    danger: read('--color-danger', '#DC2626'),
   };
 }
 
@@ -83,5 +84,5 @@ export const LEGACY_EDGE_HEX: Record<string, keyof ReturnType<typeof edgePalette
   '#6B5CE7': 'accent',
   '#E08A3C': 'warm',
   '#F59E0B': 'trace',
-  '#DC2626': 'watch',
+  '#DC2626': 'danger',
 };

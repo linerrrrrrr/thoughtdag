@@ -47,6 +47,15 @@ export default function ThoughtEdgeView({
   // and thicken the stroke as selection feedback.
   const edgeStyle = selected || active ? { ...style, strokeWidth: 2.5, opacity: 1 }
     : inspecting ? { ...style, opacity: activeEdgeId ? 0.45 : 1 } : style;
+  // Follow the canvas scale down to 32%, then keep a thin, proportional
+  // screen-space minimum without changing the separate interaction path.
+  const strokeScale = Math.max(1, 0.32 / Math.max(zoom, 0.01));
+  const baseStrokeWidth = edgeStyle?.strokeWidth;
+  const visibleEdgeStyle = strokeScale === 1 ? edgeStyle : {
+    ...edgeStyle,
+    strokeWidth: typeof baseStrokeWidth === 'number' ? baseStrokeWidth * strokeScale
+      : `calc((${baseStrokeWidth ?? 'var(--xy-edge-stroke-width, var(--xy-edge-stroke-width-default, 1))'}) * ${strokeScale})`,
+  };
 
   // Order is inspection information, not a permanent part of the wire.
   const mergeIndex = useMemo(() => {
@@ -71,7 +80,7 @@ export default function ThoughtEdgeView({
     <g data-context-edge-active={active || undefined}>
       <BaseEdge
         path={path}
-        style={edgeStyle}
+        style={visibleEdgeStyle}
         interactionWidth={Math.max(interactionWidth ?? 20, 14 / Math.max(zoom, 0.01))}
       />
       {adornments && <path

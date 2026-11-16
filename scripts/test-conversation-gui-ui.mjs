@@ -34,7 +34,6 @@ await page.route('**/api/**', route => {
 await page.addInitScript(() => {
   localStorage.setItem('thoughtdag.seeded', 'yes');
   localStorage.setItem('thoughtdag.tutorialDone', '1');
-  localStorage.setItem('thoughtdag.autoRefreshPaused', 'yes');
   localStorage.setItem('thoughtdag.lighting', 'light');
   localStorage.setItem('thoughtdag.lang', 'zh');
 });
@@ -150,8 +149,7 @@ try {
       displayName: fixture.title, displaySummary: fixture.summary, question: fixture.question, response: fixture.response,
       responses: [fixture.response], responseIndex: 0, detailLevel: 'full', isCollapsed: false,
       isEditing: false, isEditingResponse: false, isLoading: false, tokenCount: 735, highlights: [], highlightMode: 'tag',
-      attachments: [], excludedAttachmentIds: [], includedAttachmentIds: [], roleMode: 'inherit', isRoot: true, isBranch: false,
-    } }];
+      attachments: [], excludedAttachmentIds: [], includedAttachmentIds: [], roleMode: 'inherit'} }];
     window.__store.setState({ nodes, edges: [], selectedNodeId: null, selectedNodeIds: [], history: [{ nodes, edges: [] }], historyIndex: 0 });
   }, fixture);
   await node().waitFor();

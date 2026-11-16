@@ -39,7 +39,7 @@ try {
     bundle: true, platform: 'node', format: 'esm', outfile: bundle, logLevel: 'silent',
     define: { 'import.meta.env.VITE_API_BASE': '""', 'import.meta.env.DEV': 'false' },
     plugins: [{ name: 'unrelated-runtime-stubs', setup(builder) {
-      builder.onResolve({ filter: /(condense-guard|ui-store|i18n|context-builder|streaming|atlas\/canonical|stale-judge|projects)$/ }, args => ({ path: args.path.split('/').pop(), namespace: 'stub' }));
+      builder.onResolve({ filter: /(condense-guard|ui-store|i18n|context-builder|streaming|stale-judge|projects)$/ }, args => ({ path: args.path.split('/').pop(), namespace: 'stub' }));
       builder.onLoad({ filter: /.*/, namespace: 'stub' }, args => ({ contents: stubs[args.path], loader: 'js' }));
     } }],
   });
@@ -66,6 +66,9 @@ try {
     assert.equal(measureConversationContentHeight(root), 413);
     assert.equal(measureConversationContentHeight(root, 300), 613);
     assert.equal(style.width, '600px');
+    split.offsetHeight = 0;
+    assert.equal(measureConversationContentHeight(root), undefined, 'A transient unlaid-out split cannot define a content ceiling');
+    split.offsetHeight = 600;
     root.dataset.nodeDetailLevel = 'summary';
     assert.equal(measureConversationContentHeight(root), undefined);
   });
@@ -73,6 +76,15 @@ try {
     const n = { ...node('a'), measured: { width: 520, height: 90 } };
     assert.deepEqual(effectiveNodeGeometry(n), { width: 600, height: 300 });
     assert.deepEqual(effectiveNodeGeometry({ ...n, width: undefined, height: undefined }), { width: 520, height: 90 });
+  });
+  test('legacy style dimensions define the card until automatic height is restored', () => {
+    const legacy = { ...node('a'), width: undefined, height: undefined,
+      style: { width: '640px', height: '380px' }, measured: { width: 520, height: 90 } };
+    assert.deepEqual(effectiveNodeGeometry(legacy), { width: 640, height: 380 });
+    const automatic = apply([legacy], ['a'], { autoHeight: true })[0];
+    assert.equal(automatic.height, undefined);
+    assert.equal(automatic.style.height, undefined);
+    assert.equal(automatic.style.width, '640px');
   });
   test('unlocked size edits preserve untouched dimensions and positions', () => {
     const nodes = [node('a', 600, 300, {}, 85, -40), node('b')];
@@ -186,6 +198,27 @@ try {
     assert.equal(resizeSelectionBy(nodes, nodes, undefined, 10)[0].height, 500);
     assert.equal(apply(nodes, ['a'], { width: 700 })[0].height, 500);
   }));
+  test('a chosen height survives view collapse and is released when the actual answer changes', () => {
+    let measured = 700;
+    withHeightLimits({ a: () => measured }, () => {
+      const original = node('a', 600, 300);
+      const chosen = apply([original], ['a'], { height: 650 })[0];
+      measured = 350;
+      assert.equal(nodeGeometryMaximum(chosen).height, 650);
+      assert.equal(apply([chosen], ['a'], { width: 700 })[0].height, 650);
+      const store = makeStore(), edges = [], nodes = [chosen];
+      store.setState({ nodes, edges, history: [{ nodes, edges }], historyIndex: 0 });
+      store.getState().normalizeNodeContentHeight('a', 350);
+      assert.equal(store.getState().nodes[0].height, 650);
+      const revised = { ...chosen, data: { ...chosen.data, response: 'A shorter answer.' } };
+      store.setState({ nodes: [revised], history: [{ nodes: [revised], edges }], historyIndex: 0 });
+      store.getState().normalizeNodeContentHeight('a', 350);
+      assert.equal(store.getState().nodes[0].height, 350);
+      const automatic = apply([chosen], ['a'], { autoHeight: true })[0];
+      assert.equal(automatic.height, undefined);
+      assert.equal(automatic.data.contentHeightIntent, undefined);
+    });
+  });
   test('batch height edits respect each measured content cap without moving nodes', () => withHeightLimits({ a: 500, b: 420 }, () => {
     const nodes = [node('a', 600, 300, {}, 40, 50), node('b', 600, 300, {}, 750, 80)];
     const next = apply(nodes, ['a', 'b'], { height: 900 });

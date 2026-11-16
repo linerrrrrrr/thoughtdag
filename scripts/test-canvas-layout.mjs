@@ -34,7 +34,7 @@ const assertClear = (nodes, heightOf = (n) => n.height ?? n.measured?.height ?? 
 };
 const assertOrder = (nodes, edges, direction, heightOf = (n) => n.height) => {
   const axis = direction === 'horizontal' ? 'x' : 'y';
-  for (const e of edges.filter((e) => !e.data?.isWatch && !e.data?.isCrossLink)) {
+  for (const e of edges.filter((e) => !e.data?.isCrossLink)) {
     const source = get(nodes, e.source), target = get(nodes, e.target);
     if (!source || !target || source.data.stepKind === 'frame' || target.data.stepKind === 'frame') continue;
     assert.ok(target.position[axis] + 0.001 >= source.position[axis] + (direction === 'horizontal' ? widthOf(source) : heightOf(source)),
@@ -110,7 +110,7 @@ try {
     await test(`${direction} chains align continuations, order merges and clear resized cards`, async () => {
       const nodes = [node('a', 0, 0, 900, 400), node('b', 20, 10, 300, 800), node('c', 30, 50, 700, 300),
         node('merge', 40, 40, 500, 300), node('root', 700, 300, 400, 650)];
-      const edges = [edge('a', 'b'), edge('a', 'c', { isBranchFromSelection: true }), edge('b', 'merge'), edge('c', 'merge')];
+      const edges = [edge('a', 'b'), edge('a', 'c'), edge('b', 'merge'), edge('c', 'merge')];
       const original = JSON.stringify(nodes);
       const result = (await plan(nodes, edges, { direction }));
       assert.equal(result.error, undefined);
@@ -143,7 +143,7 @@ try {
           node('branch', 900, 500, 700, 200), node('branch-next', 900, 900, 400, 500),
           node('merge', 0, 1500, 350, 250), node('other-root', 1800, 0, 280, 160),
           node('other-next', 1800, 400, 300, 400), node('isolated', 2400, 0)];
-        const edges = [edge('root', 'continue'), edge('root', 'branch', { isBranchFromSelection: true }),
+        const edges = [edge('root', 'continue', { createdAt: '2026-01-01T00:00:00Z' }), edge('root', 'branch', { createdAt: '2026-01-02T00:00:00Z' }),
           edge('branch', 'branch-next'), edge('continue', 'merge', { createdAt: '2026-01-01T00:00:00Z' }),
           edge('branch-next', 'merge', { createdAt: '2026-01-02T00:00:00Z' }), edge('other-root', 'other-next')];
         const expected = (await plan(nodes, edges, { direction, method }));
@@ -218,7 +218,7 @@ try {
     const nodes = [node('a', 500, 800, 200, 100, {}),
       node('b', 300, 100, 200, 100, {}),
       node('branch', 900, -500, 200, 100, { stepKind: 'note' })];
-    const edges = [edge('a', 'b'), edge('a', 'branch', { isBranchFromSelection: true })];
+    const edges = [edge('a', 'b'), edge('a', 'branch')];
     for (const direction of ['vertical', 'horizontal']) for (const method of ['chains', 'layers']) {
       for (const ids of [undefined, ['a', 'b', 'branch']]) {
         const result = (await plan(nodes, edges, { direction, method }, ids));
@@ -453,8 +453,8 @@ try {
       node('region-b', 4000, 0, 2500, 2000, { stepKind: 'frame' }),
       node('a-root', 100, 100), node('z-root', 1500, 100), node('a-next', 100, 900), node('m-a-branch', 1000, 900),
       node('b-root', 4100, 100), node('y-root', 5500, 100), node('b-next', 4100, 900), node('m-b-branch', 5000, 900)];
-    const edges = [edge('a-root', 'a-next'), edge('a-root', 'm-a-branch', { isBranchFromSelection: true }),
-      edge('b-root', 'b-next'), edge('b-root', 'm-b-branch', { isBranchFromSelection: true })];
+    const edges = [edge('a-root', 'a-next'), edge('a-root', 'm-a-branch'),
+      edge('b-root', 'b-next'), edge('b-root', 'm-b-branch')];
     for (const direction of ['vertical', 'horizontal']) for (const method of ['chains', 'layers']) {
       const result = (await plan(nodes, edges, { direction, method }, nodes.map((n) => n.id)));
       assert.equal(result.error, undefined); assertOrder(result.nodes, edges, direction); assertClear(result.nodes);
@@ -490,7 +490,7 @@ try {
   await test('a region with upstream and downstream turns does not absorb an unrelated outside node', async () => {
     const nodes = [node('region', 0, 0, 2200, 2200, { stepKind: 'frame' }),
       node('a-root', 100, 100), node('z-next', 100, 1400), node('m-branch', 1400, 1400), node('b-outside', 5000, 100)];
-    const edges = [edge('a-root', 'z-next'), edge('a-root', 'm-branch', { isBranchFromSelection: true })];
+    const edges = [edge('a-root', 'z-next'), edge('a-root', 'm-branch')];
     for (const direction of ['vertical', 'horizontal']) for (const method of ['chains', 'layers']) {
       const result = (await plan(nodes, edges, { direction, method }));
       assert.equal(result.error, undefined); assertOrder(result.nodes, edges, direction); assertClear(result.nodes);
@@ -553,24 +553,24 @@ try {
   });
   await test('edge handle geometry never changes continuation or branch semantics', async () => {
     const nodes = [node('root'), node('main'), node('branch'), node('next')];
-    const edges = [edge('root', 'main'), edge('root', 'branch', { isBranchFromSelection: true }), edge('main', 'next')];
+    const edges = [edge('root', 'main'), edge('root', 'branch'), edge('main', 'next')];
     for (const direction of ['vertical', 'horizontal']) {
       const expected = (await plan(nodes, edges, { direction }));
       const changed = (await plan(nodes, edges.map((e, i) => ({ ...e, sourceHandle: i % 2 ? 'left' : 'bottom', targetHandle: i % 2 ? 'right' : 'top' })), { direction }));
       assert.equal(changed.error, undefined); assert.deepEqual(normalized(changed.nodes), normalized(expected.nodes));
     }
   });
-  await test('sole-reference parent adoption is stable when cross-links are reordered', async () => {
+  await test('reference links do not alter structural chain placement', async () => {
     const nodes = [node('a'), node('b'), node('child'), node('next')];
-    const edges = [edge('a', 'child', { isCrossLink: true, createdAt: '2026-01-01T00:00:00Z' }),
-      edge('b', 'child', { isCrossLink: true, createdAt: '2026-01-02T00:00:00Z' }), edge('child', 'next'),
-      edge('next', 'a', { isWatch: true })];
-    const expected = (await plan(nodes, edges));
-    const reversed = (await plan([...nodes].reverse(), [...edges].reverse()));
-    assert.equal(expected.error, undefined); assert.equal(reversed.error, undefined);
-    assert.deepEqual(normalized(reversed.nodes), normalized(expected.nodes));
-    assert.equal(get(expected.nodes, 'a').position.x, get(expected.nodes, 'child').position.x);
-    assert.ok(get(expected.nodes, 'child').position.y >= get(expected.nodes, 'a').position.y + 120);
+    const structural = [edge('child', 'next')];
+    const edges = [...structural, edge('a', 'child', { isCrossLink: true }),
+      edge('b', 'child', { isCrossLink: true }), edge('next', 'a', { isCrossLink: true })];
+    const expected = await plan(nodes, structural);
+    const actual = await plan([...nodes].reverse(), [...edges].reverse());
+    assert.equal(expected.error, undefined); assert.equal(actual.error, undefined);
+    assert.deepEqual(normalized(actual.nodes), normalized(expected.nodes));
+    assert.equal(get(actual.nodes, 'child').position.x, get(actual.nodes, 'next').position.x);
+    assertOrder(actual.nodes, structural, 'vertical');
   });
   await test('selection avoids unselected obstacles without moving them', async () => {
     const nodes = [node('a'), node('b'), node('fixed', 0, 400, 400, 400)];
@@ -612,7 +612,7 @@ try {
   await test('horizontal sibling branches use separate rows', async () => {
     const p = node('p', 0, 0, 200, 200, { layoutDirection: 'horizontal' });
     const siblings = [node('a', 0, 0, 400, 300), node('b', 0, 0, 700, 600)];
-    const result = placeNewNodes([p, ...siblings], siblings.map((n) => edge('p', n.id, { isBranchFromSelection: true })), ['a', 'b']);
+    const result = placeNewNodes([p, ...siblings], siblings.map((n) => edge('p', n.id)), ['a', 'b']);
     assertClear(result); assert.ok(result[1].position.x >= 200 && result[2].position.x >= 200);
     assert.notEqual(result[1].position.y, result[2].position.y);
   });

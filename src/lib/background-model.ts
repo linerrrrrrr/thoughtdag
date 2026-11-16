@@ -1,3 +1,4 @@
+import { appSettings } from './disk-storage';
 // Background calls: what the canvas asks a model on the person's behalf
 // without them choosing one for it. Plaques and ladders, material labels,
 // memory and profile lines, recall cards and topics, the journey line, the
@@ -25,7 +26,7 @@
 import { llmCallAnswered, type ContextMessage, type ImageAttachment } from './api';
 import { getModelsOnce } from './use-models';
 import { isAgentModel } from './agents/agent-runtime';
-import { isHarnessAgentModel } from './atlas/dsh-bridge';
+import { isHarnessAgentModel } from './agents/harness-bridge';
 import { useUiStore } from './ui-store';
 
 /** An ordinary API model: not an agent runtime, not the Harness Agent. */
@@ -42,12 +43,12 @@ const COOL_DOWN_MS = 10 * 60_000;
 /** a background call that has not answered by then has failed (a slow thinking model writes a ladder in about a minute) */
 export const BACKGROUND_TIMEOUT_MS = 180_000;
 
-const readLast = (): string | null => { try { return localStorage.getItem(LAST_API_KEY); } catch { return null; } };
+const readLast = (): string | null => { try { return appSettings.getItem(LAST_API_KEY); } catch { return null; } };
 let lastApi: string | null = readLast();
 const remember = (id: string | null) => {
   if (!isApiModel(id) || id === lastApi) return;
   lastApi = id;
-  try { localStorage.setItem(LAST_API_KEY, id); } catch { /* kept for this session */ }
+  try { appSettings.setItem(LAST_API_KEY, id); } catch { /* kept for this session */ }
 };
 // Watched from the moment the module graph has loaded, not while it loads: the agent check lives in a module
 // that may still be initialising when this one runs (store → streaming → here → agents → store), and touching

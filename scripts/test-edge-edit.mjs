@@ -16,7 +16,7 @@ const test = (name, run) => {
 const node = (id, extra = {}) => ({
   id, type: 'thought', position: { x: 0, y: 0 }, data: {
     question: `Question ${id}`, response: `Answer ${id}`, responses: [`Answer ${id}`], responseIndex: 0,
-    isCollapsed: false, isLoading: false, isRoot: id === 'a', isBranch: false,
+    isCollapsed: false, isLoading: false,
     highlights: [], highlightMode: 'off', attachments: [], excludedAttachmentIds: [], includedAttachmentIds: [],
     roleMode: 'inherit', ...extra,
   },
@@ -63,18 +63,6 @@ try {
     assert.ok(ctx.includes('Question b') && ctx.includes('Answer b'));
     assert.ok(!ctx.includes('Question a') && !ctx.includes('Answer a') && !ctx.includes('ATTACHMENT EVIDENCE'));
   });
-  test('legacy reference depth stays stored on visual edits but cannot expand ordinary references', () => {
-    const legacy = { ...reference, data: { ...reference.data, contextDepth: 'full' } };
-    const legacyEdges = [parent, legacy];
-    const result = change(legacy, { route: 'curve', label: 'Legacy reference' }, nodes, legacyEdges);
-    assert.equal(result.ok, true);
-    assert.equal(result.semanticChanged, false);
-    assert.equal(result.edge.data.contextDepth, 'full', 'appearance edits do not migrate stored fields');
-    assert.equal(upstreamFingerprint('c', nodes, legacyEdges), upstreamFingerprint('c', nodes, replace(result.edge)));
-    const ctx = buildContext('c', nodes, replace(result.edge)).messages.map((message) => message.content).join('\n');
-    assert.ok(ctx.includes('Question b') && ctx.includes('Answer b'));
-    assert.ok(!ctx.includes('Question a') && !ctx.includes('Answer a') && !ctx.includes('ATTACHMENT EVIDENCE'));
-  });
   test('semantic changes invalidate recorded upstream content while cancellation preserves it', () => {
     const recorded = upstreamFingerprint('c', nodes, edges);
     const continued = change(reference, { relation: 'continue' });
@@ -87,18 +75,16 @@ try {
     assert.equal(result.ok, true);
     assert.equal(result.semanticChanged, true);
     assert.equal(result.edge.data.isCrossLink, undefined);
-    assert.equal(result.edge.data.contextDepth, undefined);
     assert.equal(result.edge.data.contextOrder, 2);
     assert.equal(result.edge.data.createdAt, reference.data.createdAt);
     const ctx = buildContext('c', nodes, replace(result.edge)).messages.map((message) => message.content).join('\n');
     assert.ok(ctx.includes('Answer a') && ctx.includes('ATTACHMENT EVIDENCE'));
   });
-  test('switching to a single-node reference clears obsolete depth without losing visual choices', () => {
-    const continued = edge('b', 'c', { contextDepth: 'full', route: 'orthogonal', label: 'Existing note', contextOrder: 4 });
+  test('switching to a single-node reference preserves visual choices and ordering', () => {
+    const continued = edge('b', 'c', { route: 'orthogonal', label: 'Existing note', contextOrder: 4 });
     const result = change(continued, { relation: 'reference' }, nodes, [parent, continued]);
     assert.equal(result.ok, true);
     assert.equal(result.edge.data.isCrossLink, true);
-    assert.equal(result.edge.data.contextDepth, undefined);
     assert.equal(result.edge.data.route, 'orthogonal');
     assert.equal(result.edge.data.contextOrder, 4);
     assert.equal(result.edge.data.label, 'Existing note');
@@ -116,25 +102,14 @@ try {
     assert.equal(result.ok, true);
     assert.equal(result.edge.data.isCrossLink, true);
   });
-  test('watch edges retain their purpose and follow-tip metadata', () => {
-    const watch = edge('b', 'c', { isCrossLink: true, isWatch: true, followsTip: true, contextDepth: 'full' });
-    assert.equal(edgeEditRestriction(watch, nodes), 'watch');
-    assert.deepEqual(change(watch, { relation: 'continue' }), { ok: false, error: 'restricted' });
-    const visual = change(watch, { route: 'curve', label: 'Observation' });
-    assert.equal(visual.ok, true);
-    assert.equal(visual.semanticChanged, false);
-    assert.equal(visual.edge.data.isWatch, true);
-    assert.equal(visual.edge.data.followsTip, true);
-    assert.equal(visual.edge.data.contextDepth, 'full');
-  });
-  test('exploration links preserve selected-passage semantics and handles', () => {
-    const branch = { ...edge('b', 'c', { isBranchFromSelection: true, branchYRatio: .3 }), sourceHandle: 'branch', targetHandle: 'left' };
-    assert.deepEqual(change(branch, { relation: 'reference' }), { ok: false, error: 'restricted' });
-    const visual = change(branch, { label: 'Exploration' });
-    assert.equal(visual.ok, true);
-    assert.equal(visual.edge.data.branchYRatio, .3);
-    assert.equal(visual.edge.sourceHandle, 'branch');
-    assert.equal(visual.edge.targetHandle, 'left');
+  test('edge handles do not restrict relationship edits', () => {
+    const connection = { ...edge('b', 'c'), sourceHandle: 'left', targetHandle: 'right' };
+    assert.equal(edgeEditRestriction(connection, nodes), null);
+    const result = change(connection, { relation: 'reference', label: 'Evidence' });
+    assert.equal(result.ok, true);
+    assert.equal(result.edge.data.isCrossLink, true);
+    assert.equal(result.edge.sourceHandle, 'left');
+    assert.equal(result.edge.targetHandle, 'right');
   });
   test('material and frame links permit appearance edits but no role conversions', () => {
     for (const stepKind of ['file', 'note', 'link', 'frame']) {
@@ -147,12 +122,12 @@ try {
     }
   });
   test('inherited route and empty notes clear only their own optional fields', () => {
-    const customized = edge('b', 'c', { isCrossLink: true, route: 'curve', label: 'Note', followsTip: true });
+    const customized = edge('b', 'c', { isCrossLink: true, route: 'curve', label: 'Note', contextOrder: 3 });
     const result = change(customized, { route: 'inherit', label: '  ' });
     assert.equal(result.ok, true);
     assert.equal(result.edge.data.route, undefined);
     assert.equal(result.edge.data.label, undefined);
-    assert.equal(result.edge.data.followsTip, true);
+    assert.equal(result.edge.data.contextOrder, 3);
     assert.equal(result.edge.data.isCrossLink, true);
   });
   test('missing endpoints and invalid drafts fail without touching the graph', () => {

@@ -137,7 +137,7 @@ export default function NodeMetadataEditor({ id, data, name, preview, overview, 
 
   if (isViewerMode && !open) return null;
   return (
-    <div ref={editorRef} onBlur={dismiss.onBlur} className={`node-metadata node-metadata--${variant}${open ? ' node-metadata--editing' : ''} nodrag nopan`}
+    <div ref={editorRef} onBlur={dismiss.onBlur} className={`node-metadata node-metadata--${variant}${open ? ' node-metadata--editing nowheel' : ''} nodrag nopan`}
       data-node-metadata data-node-metadata-editor={open || undefined}>
       <button ref={triggerRef} type="button" onClick={() => open ? close() : begin()} disabled={!open && data.isLoading}
         className="node-metadata-toggle"
@@ -153,13 +153,13 @@ export default function NodeMetadataEditor({ id, data, name, preview, overview, 
           }
         }}>
         <label className="node-metadata-field">
-          {t('node.metadataTitle')}
+          <span>{t('node.metadataTitle')}</span>
           <input value={title} onChange={event => writeTitle(event.target.value)} autoFocus data-node-title-input
             placeholder={t('node.metadataTitlePlaceholder')} />
         </label>
         <label className="node-metadata-field">
-          {t('node.metadataSummary')}
-          <textarea value={summary} onChange={event => writeSummary(event.target.value)} rows={3} data-node-summary-input
+          <span>{t('node.metadataSummary')}</span>
+          <textarea value={summary} onChange={event => writeSummary(event.target.value)} rows={2} data-node-summary-input
             placeholder={t('node.metadataSummaryPlaceholder')}
             className="nowheel" />
         </label>

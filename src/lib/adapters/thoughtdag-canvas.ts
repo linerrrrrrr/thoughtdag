@@ -5,6 +5,8 @@ import type {
 } from '../events/types';
 import { fragmentTag, sessionKey, urlArtifact, EXCERPT_CHARS } from '../events/project';
 import { THOUGHTDAG_MANIFEST } from '../events/manifests';
+import { normalizeConversationGraph } from '../normalize-graph';
+import { documentCopyText, isEditableDocument } from '../document-copy';
 
 // The canvas is ThoughtDAG's own record — a backup (.thoughtdag.json) is
 // its source file. This adapter projects it onto the same contract the
@@ -12,10 +14,6 @@ import { THOUGHTDAG_MANIFEST } from '../events/manifests';
 // turns), structure (wires), materials (attachments, references, page
 // anchors), a person's interventions (edits, highlights) and what a
 // request was actually built from (commits) all have to fit.
-//
-// Mirrored nodes (importSource) are placed, not restated: their turn
-// events carry `mirrorOf` and no message text — those facts live in the
-// runner's session and would otherwise be counted twice.
 //
 // Archived nodes are out of the record: the person put them aside, so
 // they leave the context, the search and the recall pool together (#51).
@@ -59,6 +57,7 @@ export function canvasNativeId(file: string): string {
 }
 
 export function canvasToEvents(backup: CanvasBackup, opts: { file: string; sourceId?: string }): CanvasProjection {
+  backup = normalizeConversationGraph(backup);
   // identity: the project's own id when the backup carries it; the file
   // name otherwise (older backups) — the deep link says which it got
   const nativeId = backup.projectId?.trim() || canvasNativeId(opts.file);
@@ -88,13 +87,12 @@ export function canvasToEvents(backup: CanvasBackup, opts: { file: string; sourc
     const i = index.get(n.id) ?? 0;
     const at = d.createdAt ?? d.lastGeneratedAt;
     const base = { sessionId: sid, turnId: tid, turnIndex: i, ...(at ? { at } : {}) };
-    const mirror = d.importSource ? { sessionId: sessionKey(d.importSource.runner, d.importSource.sessionId), item: d.importSource.itemIds[0] ?? n.id } : undefined;
     const isMaterial = d.stepKind === 'file' || d.stepKind === 'link' || d.stepKind === 'frame';
     const isNote = d.stepKind === 'note';
 
     const ts: TurnStarted = {
       id: `${tid}/turn`, kind: 'turn.started', ...base, source: src(n.id), ...OBS_FULL,
-      humanAuthored: !isMaterial, ...(mirror ? { mirrorOf: mirror } : {}),
+      humanAuthored: !isMaterial,
     };
     out.push(ts);
 
@@ -103,7 +101,7 @@ export function canvasToEvents(backup: CanvasBackup, opts: { file: string; sourc
       const held = (d.attachments ?? []).filter((a) => !a.name.startsWith('tool: ')).map((a) => a.name);
       texts.set(tid, { question: held.length ? `[${d.stepKind}] ${held.join(', ')}` : `[${d.stepKind}] ${clip(d.question ?? '', 80)}`, response: '' });
     }
-    if (!mirror && !isMaterial) {
+    if (!isMaterial) {
       texts.set(tid, { question: d.question ?? '', response: d.response ?? '' });
       if (d.question?.trim()) {
         const m: MessageRecorded = {
@@ -124,7 +122,7 @@ export function canvasToEvents(backup: CanvasBackup, opts: { file: string; sourc
     }
 
     // a person changed what the runner wrote
-    if (mirror && d.source) {
+    if (d.importSource && d.source) {
       for (const field of ['question', 'response'] as const) {
         const now = d[field] ?? ''; const was = d.source[field] ?? '';
         if (now !== was) {
@@ -183,8 +181,10 @@ export function canvasToEvents(backup: CanvasBackup, opts: { file: string; sourc
     // what the node's materials SAY (their extracted text, head only): the
     // words a paper is found by, whatever the file is called now
     const material = (d.attachments ?? [])
-      .filter((a) => !a.name.startsWith('tool: ') && !a.op && typeof a.extractedText === 'string' && a.extractedText.trim())
-      .map((a) => `[${a.name}]\n${a.extractedText!.slice(0, 4000)}`)
+      .filter((a) => !a.name.startsWith('tool: ') && !a.op)
+      .map((a) => ({ name: a.name, text: isEditableDocument(a) ? documentCopyText(a) : a.extractedText ?? '' }))
+      .filter((a) => a.text.trim())
+      .map((a) => `[${a.name}]\n${a.text.slice(0, 4000)}`)
       .join('\n\n');
     if (material) {
       const prev = texts.get(tid) ?? { question: '', response: '' };
@@ -193,7 +193,7 @@ export function canvasToEvents(backup: CanvasBackup, opts: { file: string; sourc
 
     // the upstream fingerprint recorded at generation: real, but it blanks
     // the node itself and names no members — partial, and says so
-    if (d.lastContextHash && !mirror) {
+    if (d.lastContextHash) {
       const c: ContextCommitted = {
         id: `${tid}/ctx:upstream`, kind: 'context.committed', ...base, ...(d.lastGeneratedAt ? { at: d.lastGeneratedAt } : {}), source: src(`${n.id}:lastContextHash`), ...OBS_PART,
         requestId: `${n.id}@${d.lastGeneratedAt ?? 'unknown'}`, members: [], contentHash: d.lastContextHash, hashOf: 'upstream', decidedBy: 'user', confirmed: true,

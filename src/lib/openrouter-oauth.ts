@@ -6,7 +6,7 @@ import { API_BASE } from './constants';
 // door. No app registration, no client secret, no server of ours anywhere
 // in the loop — the verifier waits in sessionStorage for the round-trip,
 // the code→key exchange happens in this browser (the endpoint sends CORS),
-// and the minted key lands in localStorage exactly like a pasted one. The
+// and the minted key lands in local application settings like a pasted one. The
 // user can revoke it any time from their OpenRouter keys page.
 //
 // Two shapes of the same flow:

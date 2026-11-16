@@ -1,3 +1,4 @@
+import { appSettings } from '../lib/disk-storage';
 import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
 import { useDismissableLayer } from '../lib/use-dismissable-layer';
 import { useCanvasPanelPosition } from '../lib/use-canvas-panel-position';
@@ -23,8 +24,8 @@ import type { ThoughtEdge } from '../types';
 
 const KEY = (projectId: string) => `thoughtdag.canvasChat.${projectId}`;
 const CAP = 40;
-const loadTurns = (projectId: string): CanvasChatTurn[] => { try { const v = JSON.parse(localStorage.getItem(KEY(projectId)) ?? '[]'); return Array.isArray(v) ? v : []; } catch { return []; } };
-const saveTurns = (projectId: string, turns: CanvasChatTurn[]) => { try { localStorage.setItem(KEY(projectId), JSON.stringify(turns.slice(-CAP))); } catch { /* the dialog still works for this page */ } };
+const loadTurns = (projectId: string): CanvasChatTurn[] => { try { const v = JSON.parse(appSettings.getItem(KEY(projectId)) ?? '[]'); return Array.isArray(v) ? v : []; } catch { return []; } };
+const saveTurns = (projectId: string, turns: CanvasChatTurn[]) => { try { appSettings.setItem(KEY(projectId), JSON.stringify(turns.slice(-CAP))); } catch { /* the dialog still works for this page */ } };
 
 export default function CanvasChat({ open, onClose, onLocate }: { open: boolean; onClose: () => void; onLocate: (id: string) => void }) {
   const t = useT();
@@ -88,15 +89,15 @@ export default function CanvasChat({ open, onClose, onLocate }: { open: boolean;
     const position = anchor
       ? { x: anchor.position.x + (turn.focus ? 0 : 560), y: turn.focus ? Math.max(anchor.position.y + 420, ...below.map((n) => n.position.y + 420)) : anchor.position.y }
       : { x: Math.max(0, ...st.nodes.map((n) => n.position.x + 560)), y: 0 };
-    const node = makeNode(question, answerForCanvas(turn.text, mapOf(turn), st.nodes, lang), !turn.focus);
+    const node = makeNode(question, answerForCanvas(turn.text, mapOf(turn), st.nodes, lang));
     node.position = position;
-    node.data = { ...node.data, isCollapsed: false, createdAt: turn.at, lastGeneratedAt: turn.at, generatedBy: [turn.model ?? null], isBranch: !!turn.focus };
+    node.data = { ...node.data, isCollapsed: false, createdAt: turn.at, lastGeneratedAt: turn.at, generatedBy: [turn.model ?? null] };
     st.pushHistory();
     const newEdges: ThoughtEdge[] = [];
     if (turn.focus && st.nodes.some((n) => n.id === turn.focus)) {
       newEdges.push({ id: `edge-${turn.focus}-${node.id}`, source: turn.focus, target: node.id, type: 'smoothstep', sourceHandle: 'continue', targetHandle: 'top', style: { stroke: COLORS.accent, strokeWidth: 2 }, markerEnd: { type: 'arrowclosed', color: COLORS.accent, width: 18, height: 18 } as ThoughtEdge['markerEnd'], data: {} });
     }
-    // the citations as quote-depth references, the shape addCrossLink draws, wired in one go: that action's
+    // The citations as single-node references, the shape addCrossLink draws, wired in one go: that action's
     // per-edge price toast would stack fifteen times here, and the summary toast below says it once
     const now = new Date().toISOString();
     for (const id of cited) {
@@ -120,10 +121,10 @@ export default function CanvasChat({ open, onClose, onLocate }: { open: boolean;
     const n = nodes.find((x) => x.id === id);
     return <button key={key} type="button" className="cite-chip" data-tooltip={n ? nodeLabel(n.data, lang) : undefined} onClick={() => onLocate(id)} onMouseEnter={() => beacon(id)} onMouseLeave={() => beacon(null)} data-cite={id}>{alias}</button>;
   };
-  // the answer is markdown with its citations as explore marks: one click handler locates the node a mark names,
+  // The answer uses inline node citations; clicking one locates its node.
   // and hovering a mark lights that node on the canvas with the beacon the "continue last thought" button uses
   // (a ripple that shows on cards, plaques and glyphs alike), so the reader sees where a claim rests
-  const markId = (e: ReactMouseEvent): string | null => (e.target as HTMLElement).closest?.('mark[data-explore-target]')?.getAttribute('data-explore-target') || null;
+  const markId = (e: ReactMouseEvent): string | null => (e.target as HTMLElement).closest?.('mark[data-node-cite]')?.getAttribute('data-node-cite') || null;
   const onAnswerClick = (e: ReactMouseEvent) => { const id = markId(e); if (id) { e.stopPropagation(); onLocate(id); } };
   const beacon = (id: string | null) => useUiStore.getState().setBeaconNodeId(id);
   const onAnswerOver = (e: ReactMouseEvent) => beacon(markId(e));
@@ -131,7 +132,7 @@ export default function CanvasChat({ open, onClose, onLocate }: { open: boolean;
   const suggest = (q: string) => { setDraft(q); window.setTimeout(() => { const ta = document.querySelector<HTMLTextAreaElement>('[data-chat-input]'); ta?.focus(); ta?.setSelectionRange(q.length, q.length); }, 0); };
   const SUGGESTIONS: { k: 'Overview' | 'Locate' | 'Grounds' | 'Compare' | 'Progress' }[] = [{ k: 'Overview' }, { k: 'Locate' }, { k: 'Grounds' }, { k: 'Compare' }, { k: 'Progress' }];
   return (
-    <div ref={layerRef} className="fixed z-[85] w-[440px] flex flex-col rounded-panel border border-line bg-card shadow-lg" style={{ ...panelPosition, maxHeight: 'min(72vh, max(0px, calc(100dvh - var(--canvas-tools-top, 82px) - 16px)))' }} data-canvas-chat>
+    <div ref={layerRef} className="fixed z-[85] w-[440px] flex flex-col rounded-panel border border-line bg-card shadow-lg" style={{ ...panelPosition, maxHeight: 'min(calc(72*var(--ui-vh)), max(0px, calc(calc(100*var(--ui-dvh)) - var(--canvas-tools-top, 82px) - 16px)))' }} data-canvas-chat>
       <div className="flex items-center gap-2 px-4 py-2.5 border-b border-line shrink-0">
         <MessageCircleQuestion size={15} strokeWidth={1.75} className="text-accent" />
         <span className="text-title font-semibold text-ink flex-1">{t('chat.title')}</span>

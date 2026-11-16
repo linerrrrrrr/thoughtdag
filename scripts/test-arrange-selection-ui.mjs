@@ -27,7 +27,6 @@ await context.route('**/api/**', (route) => {
 await page.addInitScript(() => {
   localStorage.setItem('thoughtdag.seeded', 'yes');
   localStorage.setItem('thoughtdag.tutorialDone', '1');
-  localStorage.setItem('thoughtdag.autoRefreshPaused', 'yes');
   localStorage.setItem('thoughtdag.lang', 'zh');
 });
 const check = (name) => { checks.push(name); console.log(`PASS ${name}`); };
@@ -61,8 +60,7 @@ const fixture = async (ids = ['arrange-a', 'arrange-b', 'arrange-c']) => {
       response: '', responses: [''], responseIndex: 0, isCollapsed: false,
       isEditing: false, isEditingResponse: false, isLoading: false, tokenCount: 20,
       highlights: [], highlightMode: 'tag', attachments: [], excludedAttachmentIds: [], includedAttachmentIds: [],
-      roleMode: 'inherit', isRoot: false, isBranch: false,
-    });
+      roleMode: 'inherit'});
     const nodes = [
       { id: 'arrange-a', type: 'thought', position: { x: 80, y: 240 }, width: 360, height: 220, data: data('示例 A · 研究问题') },
       { id: 'arrange-b', type: 'thought', position: { x: 680, y: 580 }, width: 420, height: 260, data: data('示例 B · 分析材料') },
@@ -73,8 +71,7 @@ const fixture = async (ids = ['arrange-a', 'arrange-b', 'arrange-c']) => {
     window.__ui.getState().setPanelOpen(false);
     window.__ui.getState().setTutorialOpen(false);
     window.__ui.getState().setReleaseNotesOpen(false);
-    window.__ui.getState().setAutoRefreshPaused(true);
-  }, ids);
+    }, ids);
   await page.waitForTimeout(550);
   await page.evaluate(() => window.__rf.setViewport({ x: 70, y: 100, zoom: 0.6 }, { duration: 0 }));
   await page.waitForFunction(() => window.__store.getState().nodes.every((node) => node.measured?.width && node.measured?.height));

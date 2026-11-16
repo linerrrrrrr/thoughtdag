@@ -11,6 +11,8 @@ const browser = await chromium.launch({ executablePath, headless: true });
 const page = await browser.newPage({ viewport: { width: 1716, height: 1000 }, locale: 'zh-CN' });
 page.setDefaultTimeout(10000);
 const output = 'local-tests/toolbar-responsive';
+const uiScale = 0.75;
+const inset = 16 * uiScale;
 await mkdir(output, { recursive: true });
 const errors = [], writes = [];
 page.on('pageerror', error => errors.push(error.message));
@@ -22,7 +24,6 @@ await page.route('**/api/**', route => {
 await page.addInitScript(() => {
   localStorage.setItem('thoughtdag.seeded', 'yes');
   localStorage.setItem('thoughtdag.tutorialDone', '1');
-  localStorage.setItem('thoughtdag.autoRefreshPaused', 'yes');
 });
 const item = name => page.locator(`[data-${name}]`);
 const geometry = () => page.evaluate(() => {
@@ -53,15 +54,15 @@ const leftDock = async name => {
   const panel = await item(name).boundingBox();
   const { header, left } = await geometry();
   assert.ok(Math.abs(panel.x - left.x) <= 1, `${name} aligns with left toolbar`);
-  assert.ok(Math.abs(panel.y - header.bottom - 16) <= 1, `${name} opens below toolbar`);
-  assert.ok(panel.x + panel.width <= page.viewportSize().width - 15, `${name} fits the viewport`);
+  assert.ok(Math.abs(panel.y - header.bottom - inset) <= 1, `${name} opens below toolbar`);
+  assert.ok(panel.x + panel.width <= page.viewportSize().width - inset + 1, `${name} fits the viewport`);
 };
 const rightDock = async name => {
   const panel = await item(name).boundingBox();
   const { header, right } = await geometry();
   assert.ok(Math.abs(panel.x + panel.width - right.right) <= 1, `${name} aligns with right toolbar`);
-  assert.ok(Math.abs(panel.y - header.bottom - 16) <= 1, `${name} opens below toolbar`);
-  assert.ok(panel.x >= 16 && panel.x + panel.width <= page.viewportSize().width - 15, `${name} fits the viewport`);
+  assert.ok(Math.abs(panel.y - header.bottom - inset) <= 1, `${name} opens below toolbar`);
+  assert.ok(panel.x >= inset && panel.x + panel.width <= page.viewportSize().width - inset + 1, `${name} fits the viewport`);
 };
 try {
   await page.goto(process.env.APP_URL ?? 'http://127.0.0.1:5193');
@@ -75,8 +76,7 @@ try {
     const nodes = ['a', 'b'].map((id, i) => ({ id, type: 'thought', width: 380, height: 280,
       position: { x: 100 + i * 430, y: 200 }, data: {
         displayName: `节点 ${id}`, question: `研究问题 ${id}`, response: `回答 ${id}`,
-        responses: [`回答 ${id}`], responseIndex: 0, isRoot: i === 0,
-        isCollapsed: false, isEditing: false, isLoading: false, tokenCount: 10, highlights: [], attachments: [],
+        responses: [`回答 ${id}`], responseIndex: 0, isCollapsed: false, isEditing: false, isLoading: false, tokenCount: 10, highlights: [], attachments: [],
       } }));
     nodes.push({ id: 'frame', type: 'frame', position: { x: 80, y: 600 }, width: 600, height: 200,
       data: { stepKind: 'frame', question: '研究区域', response: '', responses: [] } });
@@ -98,7 +98,7 @@ try {
       await page.evaluate(width => {
         window.__ui.setState({ panelOpen: width > 0, panelNodeId: width ? 'a' : null, panelWidth: width || 520 });
       }, panelWidth);
-      for (const width of [1760, 1440, 1200, 1024, 960, 959, 760, 520, 390, 320]) {
+      for (const width of [1760, 1440, 1200, 1024, 960, 959, 760, 520, 390, 320, 240]) {
         await page.setViewportSize({ width, height: 1000 });
         await page.waitForTimeout(280);
         const g = await fits(`${lang}, viewport ${width}, reader ${panelWidth}`);
@@ -119,7 +119,7 @@ try {
     }
   }
   assert.deepEqual([...densities].sort(), ['compact', 'full', 'minimal', 'overflow']);
-  console.log('PASS 60 width/language/reader combinations stay on one row without overlap');
+  console.log('PASS 66 width/language/reader combinations stay on one row without overlap');
 
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.evaluate(() => window.__ui.setState({ panelOpen: true, panelNodeId: 'a', panelWidth: 520 }));
@@ -185,7 +185,10 @@ try {
   assert.equal(await item('toolbar-more').evaluate(el => el === document.activeElement), true);
   await page.evaluate(async () => {
     (await window.__importLive('/src/i18n/index.ts')).useI18n.getState().setLang('zh');
-    window.desktopAgents = { workspace: async () => 'E:/toolbar-test', capabilities: { nativePicker: false } };
+    window.desktopAgents = { workspace: async () => 'E:/toolbar-test', capabilities: { nativePicker: false },
+      models: async runtime => runtime === 'codex'
+        ? { installed: true, models: [{ provider: 'test', id: 'model', name: 'A long agent model name' }], default: 'test/model' }
+        : { installed: false, models: [], default: null } };
     const id = 'codex/test/model';
     (await window.__importLive('/src/lib/use-models.ts')).setModelsCache({ models: [{ id, name: 'A long agent model name', provider: '__agent__', vision: false }], default: id });
     window.__ui.setState({ selectedModel: id, panelOpen: true, panelNodeId: 'a', panelWidth: 900 });
@@ -194,21 +197,24 @@ try {
       ? { ...node, data: { ...node.data, isLoading: true, pendingApprovals: [{ id: 'test', name: 'Review', askedAt: Date.now(), answered: false }] } } : node) }));
   });
   await page.waitForTimeout(400);
-  for (const entry of ['agent-cwd', 'agent-permission-chip']) {
-    assert.equal(await item('project-switcher').locator(`[data-${entry}]`).count(), 1, entry);
-    assert.equal(await item('top-toolbar').locator(`[data-${entry}]`).count(), 0, entry);
+  for (const entry of ['agents', 'providers']) {
+    assert.equal(await item('project-switcher').locator(`[data-connection-entry="${entry}"]`).count(), 1, entry);
+    assert.equal(await item('top-toolbar').locator(`[data-connection-entry="${entry}"]`).count(), 0, entry);
   }
+  assert.equal(await item('canvas-header').locator('[data-agent-cwd], [data-agent-permission-chip]').count(), 0);
   await page.setViewportSize({ width: 1760, height: 1000 });
   await page.evaluate(() => window.__ui.getState().setPanelOpen(false));
   await page.waitForTimeout(300);
+  await page.locator('[data-connection-entry="agents"]').click();
+  await item('agent-connection-settings').waitFor();
+  await leftDock('model-connection-panel');
   await item('agent-cwd').click();
   await item('agent-cwd-menu').waitFor();
-  await leftDock('agent-cwd-menu');
   await item('agent-cwd-input').fill('E:/session-draft');
   await page.screenshot({ path: `${output}/agent-directory-wide.png` });
   await item('agent-permission-chip').click();
   await item('agent-permission-menu').waitFor();
-  await leftDock('agent-permission-menu');
+  assert.equal(await item('agent-connection-page').isVisible(), true);
   await page.evaluate(async () => {
     (await window.__importLive('/src/i18n/index.ts')).useI18n.getState().setLang('en');
     (await window.__importLive('/src/lib/appearance.ts')).useAppearance.getState().setLighting('dark');
@@ -227,29 +233,43 @@ try {
   }
   const labels = await page.evaluate(async () => {
     const { t } = await window.__importLive('/src/i18n/index.ts');
-    return { cwd: `${t('agent.cwd')} · ${t('agent.cwdWorkspace')}`, permission: `${t('agent.perm')} · ${t('agent.permAsk')}` };
+    return { agent: t('connection.agent'), api: t('connection.api') };
   });
   await item('toolbar-more').click();
-  await item('toolbar-more-panel').getByRole('button', { name: labels.cwd, exact: true }).click();
+  await item('toolbar-more-panel').getByRole('button', { name: labels.agent, exact: true }).click();
+  await item('agent-cwd').click();
   await item('agent-cwd-menu').waitFor();
-  await leftDock('agent-cwd-menu');
+  await leftDock('model-connection-panel');
   assert.equal(await item('agent-cwd-input').inputValue(), 'E:/session-draft');
   await item('agent-cwd-input').fill('');
   await page.screenshot({ path: `${output}/agent-directory-narrow.png` });
   await page.keyboard.press('Escape');
-  assert.equal(await item('toolbar-more').evaluate(el => el === document.activeElement), true);
-  await item('toolbar-more').click();
-  await item('toolbar-more-panel').getByRole('button', { name: labels.permission, exact: true }).click();
-  await item('agent-permission-menu').waitFor();
-  await leftDock('agent-permission-menu');
+  assert.equal(await item('agent-cwd').evaluate(el => el === document.activeElement), true);
+  assert.equal(await item('agent-connection-page').isVisible(), true);
   await page.keyboard.press('Escape');
   assert.equal(await item('toolbar-more').evaluate(el => el === document.activeElement), true);
   await item('toolbar-more').click();
-  await item('toolbar-more-panel').getByRole('button', { name: labels.cwd, exact: true }).click();
+  await item('toolbar-more-panel').getByRole('button', { name: labels.agent, exact: true }).click();
+  await item('agent-permission-chip').click();
+  await item('agent-permission-menu').waitFor();
+  await leftDock('model-connection-panel');
+  await page.keyboard.press('Escape');
+  assert.equal(await item('agent-permission-chip').evaluate(el => el === document.activeElement), true);
+  await page.keyboard.press('Escape');
+  assert.equal(await item('toolbar-more').evaluate(el => el === document.activeElement), true);
+  await item('toolbar-more').click();
+  await item('toolbar-more-panel').getByRole('button', { name: labels.agent, exact: true }).click();
+  await item('agent-cwd').click();
   await item('agent-cwd-menu').waitFor();
   assert.equal(await item('agent-cwd-input').inputValue(), '');
   await page.keyboard.press('Escape');
-  console.log('PASS agent settings and transient statuses fit and remain accessible from More');
+  await page.keyboard.press('Escape');
+  await item('toolbar-more').click();
+  await item('toolbar-more-panel').getByRole('button', { name: labels.api, exact: true }).click();
+  assert.equal(await page.locator('[data-connection-page="api"]').isVisible(), true);
+  assert.equal(await item('agent-connection-settings').count(), 0);
+  await page.keyboard.press('Escape');
+  console.log('PASS separate Agent/API entries, nested settings, and transient statuses fit and remain accessible from More');
   await page.evaluate(async () => {
     const { useProjects } = await window.__importLive('/src/store/projects.ts');
     useProjects.setState(state => ({ projects: state.projects.map(project => ({ ...project, kind: 'paradigm' })) }));
@@ -272,7 +292,7 @@ try {
     const toolbar = document.querySelector('[data-top-toolbar]').getBoundingClientRect();
     return { left: toolbar.left, right: toolbar.right, availableRight: header.right, height: toolbar.height };
   });
-  assert.ok(viewer.left >= 16 && viewer.right <= viewer.availableRight + 1 && viewer.height === 50, JSON.stringify(viewer));
+  assert.ok(viewer.left >= inset && viewer.right <= viewer.availableRight + 1 && Math.abs(viewer.height - 50 * uiScale) <= 1, JSON.stringify(viewer));
   console.log('PASS paradigm and read-only toolbars also fit narrow windows');
   assert.deepEqual(errors, []);
   assert.deepEqual(writes, []);

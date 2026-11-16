@@ -10,6 +10,9 @@ import { backgroundCall, apiVisionModels, BACKGROUND_TIMEOUT_MS } from './backgr
 import { getModelsOnce } from './use-models';
 import { toast, useUiStore } from './ui-store';
 import { t, fmt, useI18n } from '../i18n';
+import { documentCopyText, isEditableDocument } from './document-copy';
+import { adjacentFilePosition } from './single-file-nodes';
+import { documentSourceKey, rememberImportedDocument } from './original-document';
 
 // Content nodes: canvas material (note / file / link). Shared creation and
 // ingestion used by the palette, canvas paste, and canvas drop.
@@ -43,7 +46,6 @@ export function buildContentNode(
       tokenCount: countTokens(question),
       highlights: [], highlightMode: 'tag',
       attachments: [], excludedAttachmentIds: [], includedAttachmentIds: [],
-      roleMode: 'inherit', isRoot: false, isBranch: false,
     },
   };
   return node;
@@ -109,22 +111,71 @@ export function generateMaterialSummary(nodeId: string, name: string, text: stri
 }
 
 export async function ingestFiles(nodeId: string, files: FileList | File[]): Promise<void> {
+  // An asynchronous file read must never land in a different project.
+  const projectKey = useStore.persist.getOptions().name;
+  const { useProjects } = await import('../store/projects');
+  if (useStore.persist.getOptions().name !== projectKey || useProjects.getState().switching) return;
+  const projectId = useProjects.getState().activeId ?? 'default';
+  let notified = false;
   for (const file of Array.from(files)) {
+    // Browsers do not expose local paths. The desktop shell can resolve a
+    // user-selected file; synthetic and pasted files simply have no location.
+    let sourcePath = '';
+    try { sourcePath = window.desktop?.getPathForFile?.(file) ?? ''; } catch { /* older shells may not support File objects */ }
+    let destinationId: string | undefined;
     await processFile(file, {
       add: (att) => {
-        useStore.getState().addAttachment(nodeId, att);
-        triggerParadigmCascade(useStore.getState, nodeId);
+        if (sourcePath) att = { ...att, sourcePath };
+        if (useStore.persist.getOptions().name !== projectKey) return;
+        const state = useStore.getState();
+        const target = state.nodes.find(node => node.id === nodeId);
+        if (!target || target.data.stepKind !== 'file') return;
+        if ((target.data.attachments?.length ?? 0) === 0) {
+          destinationId = nodeId;
+          state.addAttachment(destinationId, att);
+        } else {
+          // Create the new node and its file in one history step, so Undo
+          // removes the imported document instead of leaving an empty card.
+          // A file added to a connected material inherits its outgoing
+          // connections, just as it did inside the original multi-file node.
+          const next = buildContentNode('file', adjacentFilePosition(state.nodes, target));
+          destinationId = next.id;
+          const outgoing = state.edges.filter(edge => edge.source === nodeId).map(edge => ({
+            ...edge, id: `edge-${next.id}-${generateId()}`, source: next.id, selected: false,
+          }));
+          state.pushHistory();
+          useStore.setState(current => ({
+            nodes: [...current.nodes, { ...next, data: { ...next.data, attachments: [att] } }],
+            edges: [...current.edges, ...outgoing],
+          }));
+          state.logEvent('material-add', next.id, { type: att.type });
+          for (const edge of outgoing) state.logEvent('connect', edge.id);
+          state.pushHistory();
+        }
+        if (!useStore.getState().nodes.find(node => node.id === destinationId)?.data.attachments?.some(item => item.id === att.id)) {
+          destinationId = undefined;
+          return;
+        }
+        rememberImportedDocument(documentSourceKey(projectId, destinationId, att.id), file);
+        if (destinationId !== nodeId && !notified) {
+          toast('info', t('content.filesInSeparateNodes'));
+          notified = true;
+        }
+        triggerParadigmCascade(useStore.getState, destinationId);
         // Images auto-extract on arrival: one VLM call, cached forever as
         // the image's companion text (same slot PDFs use)
-        if (att.type.startsWith('image/')) void extractImage(nodeId, att.id);
+        if (att.type.startsWith('image/')) void extractImage(destinationId, att.id);
       },
       update: (attId, patch) => {
-        useStore.getState().setAttachmentData(nodeId, attId, patch);
+        if (!destinationId || useStore.persist.getOptions().name !== projectKey) return;
+        const target = useStore.getState().nodes.find(node => node.id === destinationId);
+        if (!target?.data.attachments?.some(att => att.id === attId)) return;
+        useStore.getState().setAttachmentData(destinationId, attId, patch);
         // PDF text arrives late — re-check readiness after extraction
-        triggerParadigmCascade(useStore.getState, nodeId);
+        triggerParadigmCascade(useStore.getState, destinationId);
         if (patch.extractedText) {
-          const att = useStore.getState().nodes.find((n) => n.id === nodeId)?.data.attachments?.find((a) => a.id === attId);
-          generateMaterialSummary(nodeId, att?.name ?? '', patch.extractedText);
+          const att = useStore.getState().nodes.find((n) => n.id === destinationId)?.data.attachments?.find((a) => a.id === attId);
+          generateMaterialSummary(destinationId, att?.name ?? '', patch.extractedText);
         }
       },
     });
@@ -315,7 +366,7 @@ export async function recognizePdfPages(
 export async function generateDigest(nodeId: string, attId: string): Promise<boolean> {
   const st = useStore.getState();
   const att = st.nodes.find((n) => n.id === nodeId)?.data.attachments?.find((a) => a.id === attId);
-  if (!att?.extractedText?.trim()) return false;
+  if (!att || !(isEditableDocument(att) ? documentCopyText(att) : att.extractedText)?.trim()) return false;
 
   let digestNode = st.nodes.find((n) => n.data.digestOf === attId);
   if (!digestNode) {
@@ -334,7 +385,6 @@ export async function generateDigest(nodeId: string, attId: string): Promise<boo
         tokenCount: countTokens(question),
         highlights: [], highlightMode: 'tag',
         attachments: [], excludedAttachmentIds: [], includedAttachmentIds: [],
-        roleMode: 'inherit', isRoot: false, isBranch: false,
       },
     };
     const edge = {

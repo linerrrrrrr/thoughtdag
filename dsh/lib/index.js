@@ -27,15 +27,7 @@
 //   GET  /sessions/<id>/turns     turn boundaries with their seqs, so the
 //                                 canvas can name a fork point by turn
 //
-// The other agents on this machine: the host is a local Node process, so it
-// can read what the desktop shell reads — Claude Code's ~/.claude/projects
-// and Codex's ~/.codex/sessions — and serve them with the desktop bridge's
-// own primitives, so Session Atlas inside the harness sees all three:
-//   GET  /roots                          the two file roots (key, path, exists)
-//   GET  /roots/<key>/list               every .jsonl under a root (rel, size, mtime)
-//   GET  /roots/<key>/head?rel&bytes     the first bytes of one file, as text
-//   GET  /roots/<key>/read?rel           one whole file
-//   GET  /roots/<key>/range?rel&start&length   a line-aligned byte window
+// Agent execution can read its own recorded turn through fenced local roots.
 // Everything the model then sees is on the child's log, in DSH's own
 // event vocabulary: switching back to the chat shows exactly that.
 //
@@ -56,19 +48,18 @@
 // as a /why command a person types in the chat, and as a short system-prompt
 // section that says when to ask. Relative paths resolve against the session's
 // working directory.
-// These are canvas-native calls (summaries, condensing, a canvas that is
-// not a mirrored session) — they run on the harness's models but do not
-// enter any session log; a mirrored session's turns go through /followup.
+// Canvas-native calls such as summaries run on the harness's models without
+// entering a session log; Agent turns use the harness session controller.
 //
 // One entry in that catalog is not a model: "harness/agent". Picking it
 // sends the question INTO the harness — a fresh session per call, the
 // canvas's wired context injected first, the harness running its own agent
 // loop with tools — and streams the agent's text, reasoning and tool calls
-// back as the same SSE frames. The session stays: the Chat lists it, the
-// atlas can open it, and the canvas gets its id in the first frame.
+// back as the same SSE frames. The chat retains the session and the canvas
+// receives its id in the first frame.
 
 import { randomUUID } from 'node:crypto'
-import { open, readFile, readdir, realpath, stat } from 'node:fs/promises'
+import { readFile, readdir, realpath, stat } from 'node:fs/promises'
 import { extname, join, normalize, resolve, sep } from 'node:path'
 import { createRequire } from 'node:module'
 import os from 'node:os'
@@ -241,14 +232,9 @@ function eventsJsonlSince(session, since) {
 // container walk the DSH persistence backend performs). A final torn frame
 // (live tail) is dropped; the next read picks it up whole.
 
-// The container walk and the prefix decoder live in runtime/zstd-frames.cjs:
-// the desktop shell needs the same two and a second copy would drift.
-const { scanZstdFrames, decompressZstdToText: decodeFrames, readZstdHead: readZstdHeadOf } = zstdFrames
+// The concatenated-frame decoder lives in runtime/zstd-frames.cjs.
+const { decompressZstdToText: decodeFrames } = zstdFrames
 const decompressZstdToText = (raw) => decodeFrames(raw, zstdDecompressSync)
-/** The first `bytes` bytes of a .zstd log's text (#80): a head read costs a
- *  window, never the whole decoded log. */
-const readZstdHead = (logPath, bytes, stopWhen, maxBytes) => readZstdHeadOf(logPath, bytes, { open, inflate: zstdDecompressSync, ...(stopWhen ? { stopWhen, maxBytes } : {}) })
-
 /** Walk $DSH_HOME/sessions for the session log (2 levels deep). DSH writes the
  *  session format version into the file name: early builds used
  *  `session.jsonl.zstd`, while session format V3 (0.1.5-rc.2 and later) uses
@@ -259,11 +245,7 @@ const readZstdHead = (logPath, bytes, stopWhen, maxBytes) => readZstdHeadOf(logP
 // version is found before this file learns its name (the 0.2 desktop's own sessions were invisible
 // while only v3 was probed)
 const SESSION_LOG_RE = /^session(?:\.v(\d+))?\.jsonl\.zstd?$/
-// A short memo on the walk: the atlas asks for one head per session (#80), and
-// this walk reads every workspace/session directory — 644 of them here, ~70 ms
-// each, which would dominate a scan that now decodes in 2.5 ms per log. Two
-// seconds is short enough that a session created in between still shows up on
-// the next poll.
+// Cache repeated runtime lookups briefly.
 const SESSION_WALK_MS = 2000
 let sessionWalk = null
 async function findSessionFiles(dshHome) {
@@ -295,59 +277,6 @@ async function walkSessionDirs(dshHome) {
     }
   }
   return out
-}
-
-/** Cheap title from a bounded PREFIX of the log: the session header names the
- *  id+cwd; session/title arrives right after in live logs. Falls back to the
- *  session id when the prefix cuts early.
- *
- *  The prefix comes from readZstdHead, the same decoder /disksessions/<id>/head
- *  answers with (#80): a fixed 256 KB window used to be read here, and when a
- *  single frame was larger than that, the whole frame was dropped — the listing
- *  then fell back to an id-shaped title for a session whose title was in reach.
- *  The decoder widens until it has what it was asked for, so the window is a
- *  starting size rather than a ceiling. */
-const HEAD_READ_BYTES = 64 * 1024 // start here: header + title usually ride the first frames
-const TITLE_EVENT = '"type":"session/title"' // the early-stop marker for a listing's title
-// past this the title is not near the top (a huge pasted first message can push
-// session/title far down): give up and use the id-shaped fallback, as before
-const HEAD_READ_BYTES_MAX = 4 * 1024 * 1024
-// a session's head is decoded once per (path, size, mtime): the listing is
-// polled, and a poll must not decompress sixty files it already knows
-const headCache = new Map()
-async function cachedHead(f) {
-  const key = `${f.log}|${f.size}|${f.mtime}`
-  const hit = headCache.get(key)
-  if (hit) return hit
-  const head = await sessionTitleFromHead(f.log)
-  if (headCache.size > 4000) headCache.clear()
-  headCache.set(key, head)
-  return head
-}
-async function sessionTitleFromHead(logPath) {
-  try {
-    // The window widens until session/title appears, so a title that rides
-    // past the old fixed 256 KB (a giant pasted first message) is still found.
-    // 4 MB is the give-up point: past it the id-shaped fallback stands, as it
-    // always did.
-    const stopWhen = (t) => t.includes(TITLE_EVENT)
-    stopWhen.overlapBytes = TITLE_EVENT.length + 16 // a marker split across two frames still matches
-    const text = await readZstdHead(logPath, HEAD_READ_BYTES, stopWhen, HEAD_READ_BYTES_MAX)
-    let title = null
-    let id = null
-    let cwd = null
-    for (const raw of text.split('\n')) {
-      try {
-        const o = JSON.parse(raw)
-        if (o.type === 'session') {
-          if (typeof o.id === 'string') id = o.id
-          if (typeof o.cwd === 'string') cwd = o.cwd
-        }
-        if (o.type === 'session/title' && typeof o.data?.title === 'string') { title = o.data.title; break }
-      } catch { /* partial tail */ }
-    }
-    return { title, id, cwd }
-  } catch { return { title: null, id: null } }
 }
 
 // ── write direction helpers ────────────────────────────────────────────
@@ -456,35 +385,6 @@ async function listRoot(rootKey) {
   await walk(root, 0)
   listCache.set(rootKey, { at: Date.now(), files: out })
   return out
-}
-
-/** The first `bytes` of a file, as text (the desktop bridge's head). */
-async function headOfFile(abs, bytes) {
-  const n = Math.min(Math.max(1024, bytes | 0), 524288)
-  const fh = await open(abs, 'r')
-  try { const buf = Buffer.alloc(n); const { bytesRead } = await fh.read(buf, 0, n, 0); return buf.subarray(0, bytesRead).toString('utf8') } finally { await fh.close() }
-}
-
-/** A byte window cut on a line boundary (the desktop bridge's read-range). */
-async function rangeOfFile(abs, start, length) {
-  const fh = await open(abs, 'r')
-  try {
-    const from = Math.max(0, Number(start) || 0)
-    const want = Math.min(Math.max(65536, Number(length) || 0), 32 * 1024 * 1024)
-    const total = (await fh.stat()).size
-    const size = Math.min(want, Math.max(0, total - from))
-    if (size === 0) return { text: '', nextStart: from, eof: true }
-    const b = Buffer.alloc(size)
-    const { bytesRead } = await fh.read(b, 0, size, from)
-    let slice = b.subarray(0, bytesRead)
-    const eof = from + size >= total
-    if (!eof) {
-      const lastNl = slice.lastIndexOf(0x0a)
-      if (lastNl >= 0) slice = slice.subarray(0, lastNl + 1)
-      else return { text: '', nextStart: from + size, eof: false }
-    }
-    return { text: slice.toString('utf8'), nextStart: from + slice.length, eof }
-  } finally { await fh.close() }
 }
 
 // ── model connection helpers ───────────────────────────────────────────
@@ -1094,14 +994,14 @@ async function sessionCreateRequest(cwd) {
   return { cwd }
 }
 
-/** Run one question through the harness's agent loop, continuing a mirrored
- *  session, forking a dsh mirror at the parent's exact turn, or creating a
+/** Run one question through the harness's agent loop, continuing a session,
+ *  forking at the parent's exact turn, or creating a
  *  fresh session. Report progress as SSE-style frames via `emit`; resolves
  *  when the turn ends. */
 async function runAgentTurn(ctx, body, emit, isClosed, { answerApprovals = true } = {}) {
   const { question, context } = compileForAgent(body)
-  // A parent that is a current ledger tail continues in place. A historical
-  // dsh mirror forks at the exact turn named by its user-message id, so later
+  // A parent at the session tail continues in place. An older turn forks at
+  // the exact point named by its user-message id, so later
   // turns (including sibling work) cannot leak into the branch. Otherwise a
   // fresh session receives the compiled canvas context.
   const continueId = typeof body?.harness?.session === 'string' && body.harness.session ? body.harness.session : null
@@ -1189,9 +1089,8 @@ async function runAgentTurn(ctx, body, emit, isClosed, { answerApprovals = true 
       return
     }
     // the person's question entering the surface: THIS is the turn the
-    // canvas node stands for — with its id the canvas marks the node as the
-    // mirror of that turn, and the live mirror does not append it a second
-    // time. Only our own message counts; a message the person typed in the
+    // canvas node stands for, so it can retain the turn identity. Only our own
+    // message counts; a message the person typed in the
     // chat meanwhile belongs to their turn, not to this node.
     if (event.type === 'user/message') {
       const source = event.data?.source
@@ -1373,51 +1272,6 @@ export async function apply(ctx, config) {
       const url = new URL(req.url ?? '/', 'http://dsh.local')
       // full pathname is /<prefix>/api/<rest>; the register prefix strips /api
       const path = url.pathname.slice((prefix + '/api').length)
-      // Durable sessions on disk — the archive ThoughtDAG's canvas imports.
-      if (path === '/disksessions' && req.method === 'GET') {
-        const dshHome = process.env.DSH_HOME || join(os.homedir(), '.dsh')
-        const files = await findSessionFiles(dshHome)
-        const sessions = []
-        for (const f of files) {
-          const head = await cachedHead(f)
-          sessions.push({
-            id: head.id ?? f.sessionDir,
-            title: head.title,
-            cwd: head.cwd,
-            workspaceDir: f.dir,
-            size: f.size,
-            mtime: f.mtime,
-          })
-        }
-        sessions.sort((a, b) => b.mtime - a.mtime)
-        return sendJson(res, 200, { sessions })
-      }
-      // The first `bytes` of a log's TEXT, without decoding the whole log (#80).
-      // The atlas reads a 16-256 KB head per session to name it; this used to go
-      // through /log, which decodes tens of MB of zstd per session.
-      const diskHead = /^\/disksessions\/([^/]+?)\/head$/.exec(path)
-      if (diskHead !== null && req.method === 'GET') {
-        const name = decodeURIComponent(diskHead[1])
-        const dshHome = process.env.DSH_HOME || join(os.homedir(), '.dsh')
-        const files = await findSessionFiles(dshHome)
-        const hit = files.find(f => f.sessionDir === name || f.sessionDir.startsWith(name))
-        if (!hit) return sendJson(res, 404, { error: 'no such session on disk' })
-        const bytes = Math.min(Math.max(Number(url.searchParams.get('bytes')) || 16384, 1024), 524288)
-        return sendFile(res, 'application/x-ndjson; charset=utf-8', await readZstdHead(hit.log, bytes))
-      }
-      const diskOne = /^\/disksessions\/([^/]+?)(\/log)?$/.exec(path)
-      if (diskOne !== null && req.method === 'GET') {
-        const name = decodeURIComponent(diskOne[1])
-        const dshHome = process.env.DSH_HOME || join(os.homedir(), '.dsh')
-        const files = await findSessionFiles(dshHome)
-        const hit = files.find(f => f.sessionDir === name || f.sessionDir.startsWith(name))
-        if (!hit) return sendJson(res, 404, { error: 'no such session on disk' })
-        const raw = await readFile(hit.log).catch(() => null)
-        if (!raw) return sendJson(res, 500, { error: 'session unreadable' })
-        if (diskOne[2] === '/log') return sendFile(res, 'application/x-ndjson; charset=utf-8', decompressZstdToText(raw))
-        const head = await sessionTitleFromHead(hit.log)
-        return sendJson(res, 200, { session: { id: head.id ?? hit.sessionDir, title: head.title, cwd: head.cwd, size: hit.size, mtime: hit.mtime } })
-      }
       // Live sessions (this process's in-memory store).
       if (path === '/sessions' && req.method === 'GET') {
         const list = ctx.sessions.list()
@@ -1467,21 +1321,18 @@ export async function apply(ctx, config) {
         for (const [key, p] of Object.entries(FILE_ROOTS)) roots.push({ key, path: p, builtin: true, exists: await stat(p).then(st => st.isDirectory()).catch(() => false) })
         return sendJson(res, 200, { roots })
       }
-      const rootRoute = /^\/roots\/([a-z-]+)\/(list|head|read|range|stat)$/.exec(path)
+      const rootRoute = /^\/roots\/([a-z-]+)\/(list|read)$/.exec(path)
       if (rootRoute !== null && req.method === 'GET') {
         const key = rootRoute[1]
         if (rootRoute[2] === 'list') return sendJson(res, 200, { files: await listRoot(key) })
         const rel = url.searchParams.get('rel') ?? ''
         const abs = fileInRoot(key, rel)
-        if (rootRoute[2] === 'stat') { const st = await stat(abs).catch(() => null); return st ? sendJson(res, 200, { size: st.size, mtime: st.mtimeMs }) : sendJson(res, 404, { error: 'no such file' }) }
-        if (rootRoute[2] === 'head') return sendFile(res, 'text/plain; charset=utf-8', await headOfFile(abs, Number(url.searchParams.get('bytes')) || 16384).catch(() => ''))
         if (rootRoute[2] === 'read') {
           const st = await stat(abs).catch(() => null)
           if (!st) return sendJson(res, 404, { error: 'no such file' })
-          if (st.size > FILE_READ_MAX) return sendJson(res, 413, { error: 'file too large to read whole; use range' })
+          if (st.size > FILE_READ_MAX) return sendJson(res, 413, { error: 'file too large to read whole' })
           return sendFile(res, 'application/x-ndjson; charset=utf-8', await readFile(abs))
         }
-        return sendJson(res, 200, await rangeOfFile(abs, url.searchParams.get('start'), url.searchParams.get('length')))
       }
       // ── link snapshots: the SPA's /api/fetch-url on the harness's bounded fetcher ──
       // ── topics: the table and the labelling job (POST) ──

@@ -1,62 +1,47 @@
-import { useEffect, useId, useRef, useState } from 'react';
-import { useDismissableLayer } from '../../lib/use-dismissable-layer';
-import { useCanvasPanelPosition } from '../../lib/use-canvas-panel-position';
-import { useCanvasToolCard } from '../../lib/use-canvas-tool-card';
-import { FolderOpen, Check, ChevronDown } from 'lucide-react';
-import { useT } from '../../i18n';
+import { useEffect, useId, useRef, useState, type RefObject } from 'react';
+import { useSessionDraft } from '../../lib/use-session-draft';
 import { useUiStore } from '../../lib/ui-store';
+import { FolderOpen, Check, ChevronDown, ChevronRight } from 'lucide-react';
+import { useT } from '../../i18n';
 import { useProjects, setProjectAgentCwd } from '../../store/projects';
 import { useStore } from '../../store';
-import { isAgentModel, resolveAgentCwd, mirroredCwd, type CwdChoice } from '../../lib/agents/agent-runtime';
-import { isHarnessAgentModel } from '../../lib/atlas/dsh-bridge';
-import { IN_HARNESS } from '../../lib/embedded';
+import { resolveAgentCwd, sourceCwd, type CwdChoice } from '../../lib/agents/agent-runtime';
 import { parseAgentCwd } from '../../lib/agents/cwd-path';
 import { isImeComposing } from '../../utils';
-import CanvasToolbarOverflowAction from '../CanvasToolbarOverflowAction';
-import { restoreCanvasToolbarFocus } from '../../lib/use-responsive-canvas-header';
 
-// Where the agent works, on the toolbar, whenever an agent model is the
-// pick: the chosen folder, the mirrored project, or the canvas's own
-// workspace. One click shows the choices; the folder dialog adds a new one.
-// Nothing is mandatory — the default stays the workspace.
+// Canvas-wide directory settings inside the connected Agent page.
+// Its inline menu is a child layer; it never replaces the connection page.
 
 const tail = (p: string) => p.split(/[\\/]/).filter(Boolean).slice(-1)[0] ?? p;
 
-export default function AgentCwdChip() {
+export default function AgentCwdChip({ open, onOpenChange, triggerRef }: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  triggerRef: RefObject<HTMLButtonElement | null>;
+}) {
   const t = useT();
-  const selectedModel = useUiStore((s) => s.selectedModel);
   const activeId = useProjects((s) => s.activeId);
   const projects = useProjects((s) => s.projects);
   const nodeCount = useStore((s) => s.nodes.length);
   const [choice, setChoice] = useState<CwdChoice | null>(null);
-  const [mirrored, setMirrored] = useState<string | null>(null);
-  const [requestedOpen, setOpen] = useState(false);
-  const open = useCanvasToolCard('directory', requestedOpen, () => setOpen(false));
-  const panelPosition = useCanvasPanelPosition(open, 'left');
-  const [typed, setTyped] = useState('');
+  const [sourceDirectory, setSourceDirectory] = useState<string | null>(null);
+  const draftKey = `agent-cwd:${activeId}`;
+  const [typed, setTyped] = useSessionDraft(draftKey);
   const [invalidPath, setInvalidPath] = useState(false);
   const pathErrorId = useId();
+  const menuId = useId();
   const [, rerender] = useState(0);
-  const rootRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   useEffect(() => { if (open) panelRef.current?.focus({ preventScroll: true }); }, [open]);
-  // the runtimes the canvas launches itself, and inside the harness its own
-  // agent too: a fresh harness session runs where this says
-  const harness = IN_HARNESS && !!window.desktopSessions && isHarnessAgentModel(selectedModel);
-  const visible = !!window.desktopAgents && (isAgentModel(selectedModel) || harness);
+  const visible = !!window.desktopAgents;
 
   useEffect(() => {
     if (!visible) return;
     let alive = true;
-    void resolveAgentCwd(harness).then((c) => { if (alive) setChoice(c); });
-    void mirroredCwd().then((m) => { if (alive) setMirrored(m); });
+    void resolveAgentCwd().then((c) => { if (alive) setChoice(c); });
+    void sourceCwd().then((m) => { if (alive) setSourceDirectory(m); });
     return () => { alive = false; };
-  }, [visible, harness, activeId, projects, nodeCount]);
-
-  useDismissableLayer({ dismissOnFocusOutside: true, open, refs: [rootRef], restoreFocus: false, onDismiss: reason => {
-    setOpen(false);
-    if (reason === 'escape') restoreCanvasToolbarFocus(rootRef.current?.querySelector('[data-agent-cwd]') ?? null);
-  } });
+  }, [visible, activeId, projects, nodeCount]);
 
   if (!visible || !choice) return null;
   const meta = projects.find((p) => p.id === activeId);
@@ -65,7 +50,8 @@ export default function AgentCwdChip() {
   const choose = async (cwd: string | undefined) => {
     if (!activeId) return;
     await setProjectAgentCwd(activeId, cwd);
-    setOpen(false);
+    useUiStore.getState().setDraft(draftKey, '');
+    onOpenChange(false);
   };
   const nativePicker = window.desktopAgents?.capabilities?.nativePicker !== false;
   const pick = async () => {
@@ -81,33 +67,31 @@ export default function AgentCwdChip() {
   };
 
   return (
-    <div ref={rootRef} className="contents">
-      <CanvasToolbarOverflowAction label={`${t('agent.cwd')} · ${choice.kind === 'workspace' ? t('agent.cwdWorkspace') : tail(choice.cwd)}`} icon={<FolderOpen size={14} />}>
-      <button
-        onClick={(e) => { e.stopPropagation(); setOpen((v) => !v); }}
-        className="bg-card border border-line rounded-control h-8 px-2.5 flex items-center gap-1.5 hover:bg-wash transition-colors text-control text-ink max-w-[220px]"
+    <div className="node-metadata">
+      <button ref={triggerRef} type="button"
+        onClick={(e) => { e.stopPropagation(); onOpenChange(!open); }}
+        className="node-metadata-toggle"
         data-tooltip={`${t('agent.cwd')} · ${choice.cwd}`}
         aria-label={`${t('agent.cwd')} · ${choice.cwd}`}
         data-agent-cwd={choice.kind}
         aria-expanded={open}
+        aria-controls={menuId}
       >
-        <FolderOpen size={14} strokeWidth={1.75} className="text-ink-faint shrink-0" />
-        <span className="truncate">{choice.kind === 'workspace' ? t('agent.cwdWorkspace') : tail(choice.cwd)}</span>
-        <ChevronDown size={12} strokeWidth={1.75} className="text-ink-faint shrink-0" />
+        {open ? <ChevronDown size={12} aria-hidden="true" /> : <ChevronRight size={12} aria-hidden="true" />}
+        <span>{t('agent.cwd')}</span>
+        <span className="agent-connection-setting-value">{choice.kind === 'workspace' ? t('agent.cwdWorkspace') : tail(choice.cwd)}</span>
       </button>
-      </CanvasToolbarOverflowAction>
       {open && (
-        <div ref={panelRef} tabIndex={-1} className="canvas-tool-panel canvas-tool-menu py-1.5" style={panelPosition} onClick={(e) => e.stopPropagation()} data-agent-cwd-menu>
-          <p className="text-control text-ink-faint uppercase tracking-wider font-medium px-3 pt-1 pb-1">{t('agent.cwd')}</p>
-          <button onClick={() => void choose(undefined)} className="w-full text-left px-3 py-2 text-control hover:bg-wash flex items-center gap-2">
+        <div id={menuId} ref={panelRef} tabIndex={-1} aria-label={t('agent.cwd')} className="node-metadata-fields agent-connection-setting-menu" onClick={(e) => e.stopPropagation()} data-agent-cwd-menu>
+          <button aria-pressed={!meta?.agentCwd} onClick={() => void choose(undefined)} className="w-full text-left px-3 py-2 text-control hover:bg-wash flex items-center gap-2">
             <span className="flex-1 min-w-0">
-              <span className="block text-ink">{mirrored ? t('agent.cwdMirrored') : choice.kind === 'session' ? t('agent.cwdSession') : t('agent.cwdWorkspace')}</span>
-              <span className="block text-control text-ink-faint truncate">{mirrored ?? (choice.kind === 'session' ? choice.cwd : t('agent.cwdWorkspaceHint'))}</span>
+              <span className="block text-ink">{sourceDirectory ? t('agent.cwdSource') : choice.kind === 'session' ? t('agent.cwdSession') : t('agent.cwdWorkspace')}</span>
+              <span className="block text-control text-ink-faint truncate">{sourceDirectory ?? (choice.kind === 'session' ? choice.cwd : t('agent.cwdWorkspaceHint'))}</span>
             </span>
             {!meta?.agentCwd && <Check size={13} strokeWidth={2} className="shrink-0 text-accent" />}
           </button>
           {meta?.agentCwd && (
-            <button onClick={() => void choose(meta.agentCwd)} className="w-full text-left px-3 py-2 text-control hover:bg-wash flex items-center gap-2">
+            <button aria-pressed="true" onClick={() => void choose(meta.agentCwd)} className="w-full text-left px-3 py-2 text-control hover:bg-wash flex items-center gap-2">
               <span className="flex-1 min-w-0"><span className="block text-ink">{tail(meta.agentCwd)}</span><span className="block text-control text-ink-faint truncate">{meta.agentCwd}</span></span>
               <Check size={13} strokeWidth={2} className="shrink-0 text-accent" />
             </button>
@@ -134,12 +118,12 @@ export default function AgentCwdChip() {
                   aria-label={t('agent.cwdType')}
                   aria-invalid={invalidPath || undefined}
                   aria-describedby={invalidPath ? pathErrorId : undefined}
-                  className="flex-1 min-w-0 text-control font-mono bg-wash border border-line rounded-control px-2 py-1 focus:outline-none focus:border-accent/60"
+                  className="flex-1 min-w-0 min-h-8 text-control font-mono bg-wash/45 border border-transparent rounded-control px-2 py-1 hover:border-line focus:outline-none focus:border-accent"
                   data-agent-cwd-input
                 />
-                <button onClick={() => void submitTyped()} className="text-control text-accent hover:underline shrink-0">{t('agent.cwdUse')}</button>
+                <button onClick={() => void submitTyped()} className="node-metadata-action node-metadata-save shrink-0">{t('agent.cwdUse')}</button>
               </div>
-              {invalidPath && <p id={pathErrorId} role="alert" className="mt-1.5 text-control text-red-600 break-words">{t('agent.cwdInvalid')}</p>}
+              {invalidPath && <p id={pathErrorId} role="alert" className="node-metadata-error mt-1.5 break-words">{t('agent.cwdInvalid')}</p>}
             </div>
           )}
         </div>

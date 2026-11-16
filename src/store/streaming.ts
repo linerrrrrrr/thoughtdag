@@ -1,11 +1,11 @@
 import type { StoreApi } from 'zustand';
-import { walkUpAncestors } from '../lib/graph';
+import { getContextPath, isConversationStart } from '../lib/graph';
 import { upstreamFingerprint, upstreamParts, recordParts, recordsForAgent, recordsWithTools, type MessageSource } from './context-builder';
 import { sha256Hex, canonicalStringify } from '../lib/context-bundle';
 import { pruneHighlights } from '../lib/highlight-match';
 import { llmCallStream, declaresTools, type ContextMessage, type ImageAttachment } from '../lib/api';
-import { harnessOutbound, claimHarnessTurn, stampHarnessTurn, isHarnessAgentModel } from '../lib/atlas/dsh-bridge';
-import { agentOutbound, adoptAgentTurn, claimAgentTurn, deriveFollowupModel, isAgentModel } from '../lib/agents/agent-runtime';
+import { harnessOutbound, markHarnessTurn, stampHarnessTurn, isHarnessAgentModel } from '../lib/agents/harness-bridge';
+import { agentOutbound, adoptAgentTurn, deriveFollowupModel, isAgentModel } from '../lib/agents/agent-runtime';
 import { countTokens, activeSummary } from '../utils';
 import { toast, useUiStore } from '../lib/ui-store';
 import { getModelsOnce, reconcileModelId, describeModel } from '../lib/use-models';
@@ -24,6 +24,8 @@ import { isViewerMode } from '../lib/viewer';
 import type { Reference } from '../types';
 import type { StoreState } from './types';
 import { settleAgentActivity, upsertAgentActivity } from '../lib/agent-activity';
+import { resolveNodeModel } from '../lib/node-execution';
+import { toolAttachmentsFingerprint, type CodexNativeHistory } from '../lib/agents/codex-history';
 import type { AgentActivityEntry } from '../types';
 
 // Background summary generation — fire and forget. Display channel ONLY:
@@ -107,7 +109,7 @@ function noteSummaryFailure(e: unknown): void {
     tagged takeaways (nearest 8), prefixed by the map's opening question. */
 export function collectMapLines(nodeId: string, nodes: StoreState['nodes'], edges: StoreState['edges']): string[] {
   // an archived step is out of the context, so out of the map the summariser aligns with (as in ladderContextFor)
-  const ordered = walkUpAncestors(nodeId, nodes, edges).ordered.filter((n) => !n.data.archived);
+  const ordered = getContextPath(nodeId, nodes, edges).filter((n) => !n.data.archived);
   const TAG: Record<string, string> = { ruleout: 'RULEOUT', decision: 'DECISION', pivot: 'PIVOT', open: 'OPEN' };
   const lines = ordered
     .filter((n) => n.id !== nodeId)
@@ -119,7 +121,9 @@ export function collectMapLines(nodeId: string, nodes: StoreState['nodes'], edge
     })
     .filter((l): l is string => !!l)
     .slice(-8);
-  const root = ordered.find((n) => n.data.isRoot && n.id !== nodeId);
+  const root = ordered.find((n) => n.id !== nodeId
+    && !['note', 'file', 'link', 'frame'].includes(n.data.stepKind ?? '')
+    && isConversationStart(n.id, edges));
   if (root?.data.question) lines.unshift(`Opening question of the map: ${root.data.question.slice(0, 200)}`);
   return lines;
 }
@@ -132,12 +136,6 @@ export const activeAbortControllers = new Map<string, AbortController>();
 // dropped). Without this, edit-question + rerun raced two streams into the
 // same node — alternating reasoning, clobbered answers.
 const generationSeq = new Map<string, number>();
-
-// Auto-chain budget: how many times each autoRerun node has fired since the
-// last MANUAL action. A fresh user action resets all counters, so budgets
-// mean "auto rounds per user action" — and loops (writer->critic->writer)
-// terminate deterministically when every node exhausts its rounds.
-export const autoRunCounts = new Map<string, number>();
 
 type Set = StoreApi<StoreState>['setState'];
 type Get = StoreApi<StoreState>['getState'];
@@ -157,10 +155,8 @@ export async function runNodeGeneration(
     question: string;
     messages: ContextMessage[];
     images?: ImageAttachment[];
-    /** append = keep earlier responses as versions (evaluator critique history). */
+    /** append = keep earlier responses as versions. */
     versionMode?: 'replace' | 'append';
-    /** True when fired by the auto-refresh chain; manual generations reset all budgets. */
-    autoChain?: boolean;
     /** Extra work after the final state write, before settleNode (e.g. re-layout). */
     onSuccess?: (response: string) => void;
     /** where each context message came from — the members of this request */
@@ -172,7 +168,6 @@ export async function runNodeGeneration(
   if (isViewerMode) return;
   const { question, images, onSuccess, versionMode = 'replace' } = opts;
   let { messages } = opts;
-  if (!opts.autoChain) autoRunCounts.clear(); // a fresh user action starts a new wave
   // Supersede: abort any generation already running on this node; its late
   // callbacks are dropped via the sequence check below.
   activeAbortControllers.get(nodeId)?.abort();
@@ -194,13 +189,15 @@ export async function runNodeGeneration(
   }));
 
   let references: Reference[] | undefined;
+  let capturedForRun: CodexNativeHistory | undefined;
 
   // Model provenance: pinned override, else the global pick, else the
   // server default. A pin that isn't reachable here (imported canvas,
   // revoked key) reconciles to the same family locally, or falls back to
   // the global pick — SAID OUT LOUD and recorded as what actually ran,
   // never silently mismatched between execution and provenance.
-  const pinnedRaw = deriveFollowupModel(get().nodes.find((n) => n.id === nodeId)?.data, useUiStore.getState().selectedModel);
+  const executionData = get().nodes.find((n) => n.id === nodeId)?.data;
+  const pinnedRaw = deriveFollowupModel(executionData, useUiStore.getState().selectedModel);
   let pinnedModel = pinnedRaw;
   const modelData = await getModelsOnce();
   const serverDefaultModel: string | null = modelData?.default ?? null;
@@ -216,19 +213,14 @@ export async function runNodeGeneration(
   // what generatedBy must record (execution and provenance never diverge).
   let actualModel: string | undefined;
   let gatewaySearched = false;
-  // Inside DeepSeek Harness a generation runs as a real dsh turn: the bridge
-  // reports which session it ran in and the turn it created, so this node can
-  // become that turn's mirror (and the live mirror not append it again).
+  // Capture the runtime and session that actually answer this node.
   // Resolved ONCE, here: the picker may change while this node runs, and the
   // node must record what it was asked with, not what the picker says later
-  const requestedModel = pinnedModel ?? useUiStore.getState().selectedModel ?? serverDefaultModel ?? undefined;
+  const requestedModel = resolveNodeModel(executionData ? { ...executionData, model: pinnedModel } : undefined, useUiStore.getState().selectedModel ?? serverDefaultModel, modelData?.models);
   const harnessRoute = await harnessOutbound(nodeId, requestedModel);
   const agentRoute = harnessRoute ? undefined : await agentOutbound(requestedModel, nodeId);
   let harnessSession: string | undefined;
   let harnessTurn: { session: string; turn: number | null; userMessageId: string | null; seq: number | null } | null = null;
-  // the turn is claimed the moment the bridge names it (mid-generation), so a
-  // live sweep firing while the agent works does not append it a second time
-  let harnessClaim: Promise<boolean> | null = null;
 
   const writeFinal = (response: string, failed = false, activityStatus: Exclude<AgentActivityEntry['status'], 'running'> = failed ? 'failed' : 'completed') => {
     if (!isCurrent()) return; // superseded: a newer generation owns this node
@@ -249,7 +241,7 @@ export async function runNodeGeneration(
         // so repeated retries don't stack failure entries.
         const failText = new Set([t('node.failedPlaceholder'), t('node.emptyResponse')]);
         const kept = versionMode === 'append' || failed || activityStatus === 'interrupted'
-          ? n.data.responses.map((r, i) => ({ r, q: n.data.questions?.[i], by: n.data.generatedBy?.[i], rs: n.data.reasonings?.[i], rt: n.data.reasoningTokens?.[i], at: n.data.generatedAts?.[i], ed: n.data.editedAts?.[i], gw: n.data.gatewaySearches?.[i], ef: n.data.generatedEfforts?.[i], ac: n.data.agentActivities?.[i] })).filter(({ r, ac }) => r && !(failed && failText.has(r) && !ac?.length))
+          ? n.data.responses.map((r, i) => ({ r, q: n.data.questions?.[i], by: n.data.generatedBy?.[i], rs: n.data.reasonings?.[i], rt: n.data.reasoningTokens?.[i], at: n.data.generatedAts?.[i], ed: n.data.editedAts?.[i], gw: n.data.gatewaySearches?.[i], ef: n.data.generatedEfforts?.[i], ac: n.data.agentActivities?.[i], ch: n.data.codexHistories?.[i] })).filter(({ r, ac }) => r && !(failed && failText.has(r) && !ac?.length))
           : [];
         const now = new Date().toISOString();
         const responses = [...kept.map(({ r }) => r), response];
@@ -266,7 +258,9 @@ export async function runNodeGeneration(
         const generatedAts = [...kept.map(({ at }) => at), now];
         const editedAts = [...kept.map(({ ed }) => ed), undefined];
         const agentActivities = [...kept.map(({ ac }) => ac), settleAgentActivity(n.data.agentActivity, activityStatus)];
-        return { ...n, data: { ...n.data, response, responses, questions, generatedBy, gatewaySearches, generatedEfforts, reasonings, reasoningTokens, generatedAts, editedAts, agentActivities, agentActivity: undefined, reasoning: undefined, restreaming: undefined, pendingApprovals: undefined, agentTrace: undefined, responseIndex: responses.length - 1, isLoading: false, tokenCount, generationFailed: failed || undefined, references, highlights: pruneHighlights(n.data.highlights, response), lastContextHash: contextHash, lastContextParts: contextParts, lastGeneratedAt: now } };
+        const native = !failed && activityStatus === 'completed' && modelUsed?.startsWith('codex/') ? capturedForRun : undefined;
+        const codexHistories = [...kept.map(({ ch }) => ch), native];
+        return { ...n, data: { ...n.data, response, responses, questions, generatedBy, gatewaySearches, generatedEfforts, reasonings, reasoningTokens, generatedAts, editedAts, agentActivities, codexHistories, agentActivity: undefined, reasoning: undefined, restreaming: undefined, pendingApprovals: undefined, agentTrace: undefined, responseIndex: responses.length - 1, isLoading: false, tokenCount, generationFailed: failed || undefined, references, highlights: pruneHighlights(n.data.highlights, response), lastContextHash: contextHash, lastContextParts: contextParts, lastGeneratedAt: now } };
       }),
     }));
   };
@@ -333,6 +327,9 @@ export async function runNodeGeneration(
 
   let flushStream = () => {};
   try {
+    if (executionData?.executionKind === 'api' && !requestedModel && isAgentModel(useUiStore.getState().selectedModel)) {
+      throw new Error('No API chat model is available. Configure an API provider before sending this node.');
+    }
     // Context budget: browser-configured models carry their probed window.
     // When the wired context alone clearly exceeds it, fail fast with the
     // reason (and no spend) instead of a guaranteed upstream 400. countTokens
@@ -473,10 +470,15 @@ export async function runNodeGeneration(
       },
       onAgentSession: (session) => {
         if (!isCurrent()) return;
-        const continued = !!agentRoute?.continue;
+        if (session.nativeHistory) capturedForRun = session.nativeHistory;
+        const continued = session.continued ?? !!agentRoute?.continue;
         // a later session event (the file found, the effort read) adds to the record, never wipes it
-        set((state) => ({ nodes: state.nodes.map((n) => n.id === nodeId ? { ...n, data: { ...n.data, agentSession: { ...n.data.agentSession, ...session, continued } } } : n) }));
-        if (continued && session.sessionId) void claimAgentTurn(session.runtime, nodeId, session.sessionId, session.cwd);
+        set((state) => ({ nodes: state.nodes.map((n) => n.id === nodeId ? { ...n, data: { ...n.data,
+          // Retain the audit but never relabel an old session grant as a new one.
+          approvals: session.runtime === 'codex' && n.data.agentSession?.sessionId !== session.sessionId
+            ? n.data.approvals?.map((approval) => approval.outcome === 'allowed-session' && approval.rule?.startsWith('codex:') ? { ...approval, rule: null } : approval)
+            : n.data.approvals,
+          agentSession: { ...n.data.agentSession, ...session, nativeHistory: session.nativeHistory, continued } } } : n) }));
       },
       onAgentChanges: (changes) => {
         if (!isCurrent()) return;
@@ -484,7 +486,7 @@ export async function runNodeGeneration(
       },
       onHarnessTurn: (turn) => {
         harnessTurn = turn;
-        if (harnessRoute && !harnessClaim) harnessClaim = claimHarnessTurn(set, nodeId, harnessRoute, turn).catch(() => false);
+        if (harnessRoute) markHarnessTurn(set, nodeId, harnessRoute, turn);
       },
       onApproval: (request) => {
         if (!isCurrent()) return;
@@ -539,19 +541,19 @@ export async function runNodeGeneration(
       return;
     }
     // an agent turn is adopted from its session file BEFORE the node is marked
-    // done: footprints, provenance and the ledger land in the same step as the
+    // done: footprints and provenance land in the same step as the
     // answer, so a follow-up asked right away already continues the session
     if (agentRoute) {
       const currentNode = get().nodes.find((n) => n.id === nodeId)?.data;
       if (currentNode?.agentSession) await adoptAgentTurn(nodeId, currentNode.agentSession, currentNode.question).catch(() => false);
     }
+    if (capturedForRun) {
+      capturedForRun = { ...capturedForRun, toolAttachmentsFingerprint: await toolAttachmentsFingerprint(get().nodes.find((n) => n.id === nodeId)) };
+    }
     writeFinal(response);
-    // this node is the mirror of the dsh turn it just ran: stamp provenance,
-    // and on a tail follow-up advance the mirror's ledger so the live sweep
-    // does not append the same turn a second time
+    // Record the completed harness turn on its node.
     if (harnessRoute) {
-      const ledgerAdvanced = harnessClaim ? await harnessClaim : false;
-      await stampHarnessTurn(set, get, nodeId, { question, response }, harnessRoute, harnessSession, harnessTurn, ledgerAdvanced);
+      stampHarnessTurn(set, nodeId, { question, response }, harnessRoute, harnessSession, harnessTurn);
     }
     onSuccess?.(response);
     get().settleNode(nodeId);
@@ -568,7 +570,6 @@ export async function runNodeGeneration(
         judgeMemory(question, response, active ? { id: active.id, name: active.name } : undefined);
       });
     }
-    triggerAutoReruns(set, get, nodeId);
     triggerParadigmCascade(get, nodeId);
   } catch (err) {
     flushStream();
@@ -581,7 +582,7 @@ export async function runNodeGeneration(
       // User pressed Stop — keep whatever streamed, no error surfacing
       writeFinal(partial || t('node.stoppedPlaceholder'), false, 'interrupted');
     } else {
-      // Real failure: details go to a toast, the node gets a Retry affordance
+      // Real failure: toast the details and reopen the question composer.
       const message = err instanceof Error ? err.message : t('toast.unknownError');
       if (/no model configured/i.test(message)) {
         // The one failure with an obvious remedy: summon the key dialog
@@ -605,17 +606,6 @@ export async function runNodeGeneration(
 }
 
 /**
- * Two generic primitives fire after any node finishes generating:
- *
- * 1. followsTip edges slide forward — an edge marked followsTip keeps
- *    pointing at the newest node of the thread it grew from, so whatever
- *    consumes it (a reviewer, a live summary) always sees the tip.
- * 2. autoRerun nodes regenerate — any node with autoRerun whose ancestor
- *    set (standard context walk, after edges slid) contains the completed
- *    node reruns itself in place. Chains of autoRerun nodes cascade
- *    naturally; the DAG has no cycles to worry about.
- */
-/**
  * Paradigm cascade: an instantiated paradigm executes itself forward. When a
  * node completes, every STRUCTURAL child tagged stepKind 'prompt' that has
  * never produced a response starts automatically — but only once ALL of its
@@ -626,7 +616,6 @@ export async function runNodeGeneration(
  * Ordinary canvases are untouched: nothing there carries stepKind 'prompt'.
  */
 export function triggerParadigmCascade(get: Get, completedNodeId: string): void {
-  if (useUiStore.getState().autoRefreshPaused) return; // same global brake
   const { nodes, edges } = get();
   const byId = new Map(nodes.map((n) => [n.id, n]));
   const isComplete = (id: string): boolean => {
@@ -649,52 +638,6 @@ export function triggerParadigmCascade(get: Get, completedNodeId: string): void 
     if (!parentIds.every(isComplete)) continue; // fan-in: wait for all parents
     // rerunNode sets isLoading synchronously before awaiting, so a sibling
     // completion arriving next tick sees the child as busy — no double fire.
-    void get().rerunNode(child.id, { auto: true });
-  }
-}
-
-function triggerAutoReruns(set: Set, get: Get, completedNodeId: string): void {
-  if (useUiStore.getState().autoRefreshPaused) return; // global kill switch
-  // 1) slide followsTip edges whose source thread just grew: the completed
-  //    node's STRUCTURAL ancestor chain reaching an edge's source means
-  //    that edge's thread extended past its current anchor.
-  const chain = new Set<string>([completedNodeId]);
-  const queue = [completedNodeId];
-  while (queue.length > 0) {
-    const current = queue.shift()!;
-    for (const e of get().edges) {
-      if (e.target === current && !e.data?.isCrossLink && !chain.has(e.source)) {
-        chain.add(e.source);
-        queue.push(e.source);
-      }
-    }
-  }
-  const needsSlide = get().edges.some(
-    (e) => e.data?.followsTip && e.source !== completedNodeId && chain.has(e.source)
-  );
-  if (needsSlide) {
-    set((state) => ({
-      edges: state.edges.map((e) =>
-        e.data?.followsTip && e.source !== completedNodeId && chain.has(e.source)
-          ? { ...e, id: `watch-${completedNodeId}-${e.target}`, source: completedNodeId }
-          : e
-      ),
-    }));
-  }
-
-  // 2) rerun any autoRerun node that (now) has the completed node upstream,
-  //    within its per-wave budget (autoRerunRounds, default 1)
-  const { nodes, edges } = get();
-  for (const n of nodes) {
-    const auto = n.data.autoRerun ?? n.data.evaluatorTrigger === 'auto'; // legacy graphs
-    if (!auto || n.id === completedNodeId) continue;
-    if (n.data.isLoading || activeAbortControllers.has(n.id)) continue;
-    const spent = autoRunCounts.get(n.id) ?? 0;
-    if (spent >= (n.data.autoRerunRounds ?? 1)) continue; // budget exhausted this wave
-    const { ordered } = walkUpAncestors(n.id, nodes, edges);
-    if (ordered.some((a) => a.id === completedNodeId)) {
-      autoRunCounts.set(n.id, spent + 1);
-      void get().rerunNode(n.id, { auto: true });
-    }
+    void get().rerunNode(child.id);
   }
 }

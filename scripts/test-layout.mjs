@@ -5,13 +5,12 @@
 //
 // The rules being checked are the canvas grammar, not aesthetics:
 //   - a node CONTINUES below every parent it continues from
-//   - a node EXPLORED out of a parent stands beside it, never above its top
 //   - no two thought cards overlap
 //   - the same graph, handed over in a different order, lays out the same way
 //   - adding a node moves no node already on the canvas
 //
 // Run: node scripts/test-layout.mjs
-import { execFileSync } from 'node:child_process';
+import { buildSync } from 'esbuild';
 import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
@@ -20,17 +19,10 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const tmp = mkdtempSync(join(tmpdir(), 'tdag-layout-'));
 const bundle = join(tmp, 'layout.mjs');
-execFileSync(process.execPath, [join(ROOT, 'node_modules/esbuild/bin/esbuild'),
-  join(ROOT, 'src/lib/layout.ts'), '--bundle', '--format=esm', '--platform=node',
-  `--outfile=${bundle}`, '--define:import.meta.env.VITE_API_BASE=""',
-  '--define:import.meta.env.DEV=false',
-], { stdio: ['ignore', 'ignore', 'pipe'] });
+buildSync({ entryPoints: [join(ROOT, 'src/lib/layout.ts')], bundle: true, format: 'esm', platform: 'node', outfile: bundle, define: { 'import.meta.env': '{}' }, logLevel: 'silent' });
 const { autoLayout, placeNewNodes, nodeHeight } = await import(pathToFileURL(bundle).href);
 const framesBundle = join(tmp, 'frames.mjs');
-execFileSync(process.execPath, [join(ROOT, 'node_modules/esbuild/bin/esbuild'),
-  join(ROOT, 'src/lib/frames.ts'), '--bundle', '--format=esm', '--platform=node', `--outfile=${framesBundle}`,
-  '--define:import.meta.env={}',
-], { stdio: ['ignore', 'ignore', 'pipe'] });
+buildSync({ entryPoints: [join(ROOT, 'src/lib/frames.ts')], bundle: true, format: 'esm', platform: 'node', outfile: framesBundle, define: { 'import.meta.env': '{}' }, logLevel: 'silent' });
 const { frameMembers } = await import(pathToFileURL(framesBundle).href);
 
 let failures = 0;
@@ -49,7 +41,7 @@ const th = (id, over = {}) => ({
     isCollapsed: true, isEditing: false, isEditingResponse: false, isLoading: false,
     tokenCount: 0, highlights: [], highlightMode: false, roleMode: 'assistant',
     attachments: [], excludedAttachmentIds: [], includedAttachmentIds: [],
-    isRoot: false, isBranch: false, ...over,
+    ...over,
   },
 });
 const file = (id, x) => ({ ...th(id, { stepKind: 'file' }), position: { x, y: 0 }, measured: { width: 120, height: 120 } });
@@ -72,9 +64,7 @@ function violations(laid, edges) {
     if (e.data?.isCrossLink) continue;
     const s = by.get(e.source), t = by.get(e.target);
     if (!s || !t || CONTENT.has(s.data?.stepKind) || CONTENT.has(t.data?.stepKind)) continue;
-    if (e.data?.isBranchFromSelection) {
-      if (t.position.y < s.position.y) out.push(`explore ${e.source}->${e.target} above parent top`);
-    } else if (t.position.y < s.position.y + nodeHeight(s)) {
+    if (t.position.y < s.position.y + nodeHeight(s)) {
       out.push(`structural ${e.source}->${e.target} above parent bottom`);
     }
   }
@@ -104,55 +94,59 @@ test('resized cards retain continuation alignment and clear neighboring columns'
     { ...th('branch', { isCollapsed: false }), width: 1600, height: 500 },
     { ...th('branch-follow', { isCollapsed: false }), width: 640, height: 360 },
   ];
-  const edges = [ed('root', 'continue'), ed('root', 'branch', { isBranchFromSelection: true }), ed('branch', 'branch-follow')];
+  const edges = [ed('root', 'continue', { createdAt: '2026-01-01T00:00:00Z' }),
+    ed('root', 'branch', { createdAt: '2026-01-02T00:00:00Z' }), ed('branch', 'branch-follow')];
   const laid = autoLayout(nodes, edges);
   assert(xOf(laid, 'root') === xOf(laid, 'continue'), 'continuation lost vertical alignment');
   assert(xOf(laid, 'branch') === xOf(laid, 'branch-follow'), 'branch continuation lost vertical alignment');
   assert(violations(laid, edges).length === 0, violations(laid, edges).join('; '));
 });
 
-test('a merge sits under the parent it was continued from: the first edge in, not the median', () => {
+test('a merge sits under its earliest connected parent, not the median', () => {
   const nodes = ['root', 'p1', 'p2', 'p3', 'merge'].map((i) => th(i));
   const edges = [ed('root', 'p1'), ed('root', 'p2'), ed('root', 'p3'),
-                 ed('p3', 'merge'), ed('p1', 'merge'), ed('p2', 'merge')];
+                 ed('p3', 'merge', { createdAt: '2026-01-01T00:00:00Z' }),
+                 ed('p1', 'merge', { createdAt: '2026-01-02T00:00:00Z' }), ed('p2', 'merge', { createdAt: '2026-01-03T00:00:00Z' })];
   const laid = autoLayout(nodes, edges);
   assert(xOf(laid, 'merge') === xOf(laid, 'p3'),
     `merge at ${xOf(laid, 'merge')}, first parent p3 at ${xOf(laid, 'p3')}`);
 });
 
-test('the same graph in a different node order lays out the same way', () => {
+test('the same graph in different node and edge orders lays out the same way', () => {
   const ids = ['root', 'p1', 'p2', 'p3', 'merge'];
   const edges = [ed('root', 'p1'), ed('root', 'p2'), ed('root', 'p3'),
                  ed('p1', 'merge'), ed('p2', 'merge'), ed('p3', 'merge')];
   const byId = new Map(ids.map((i) => [i, th(i)]));
-  const sig = (order) => autoLayout(order.map((i) => byId.get(i)), edges)
+  const sig = (order, wireOrder = edges) => autoLayout(order.map((i) => byId.get(i)), wireOrder)
     .map((n) => `${n.id}@${Math.round(n.position.x)},${Math.round(n.position.y)}`).sort().join('|');
-  const a = sig(ids), b = sig([...ids].reverse()), c = sig(['root', 'p3', 'p1', 'p2', 'merge']);
-  assert(a === b && b === c, 'layout changed when the node array was permuted');
+  const a = sig(ids), b = sig([...ids].reverse(), [...edges].reverse()),
+    c = sig(['root', 'p3', 'p1', 'p2', 'merge'], [...edges.slice(2), ...edges.slice(0, 2)]);
+  assert(a === b && b === c, 'layout changed when node and edge arrays were permuted');
 });
 
-test('an explore branch follows the merge that moves beneath its parents', () => {
+test('a child follows the merge that moves beneath its parents', () => {
   const nodes = ['rootA', 'rootB', 'B', 'merge', 'branch'].map((i) => th(i));
   const edges = [ed('rootB', 'B'), ed('rootA', 'merge'), ed('B', 'merge'),
-                 ed('merge', 'branch', { isBranchFromSelection: true })];
+                 ed('merge', 'branch')];
   const laid = autoLayout(nodes, edges);
   assert(violations(laid, edges).length === 0, violations(laid, edges).join('; '));
 });
 
-test('a merge continued from one parent and explored from another keeps the plain column', () => {
+test('a merge with two unrelated parent chains keeps its first parent column', () => {
   const nodes = ['explore', 'a', 'b', 'plain', 'merge'].map((i) => th(i));
   const edges = [ed('a', 'b'), ed('b', 'plain'),
-                 ed('explore', 'merge', { isBranchFromSelection: true }), ed('plain', 'merge')];
+                 ed('explore', 'merge'), ed('plain', 'merge')];
   const laid = autoLayout(nodes, edges);
-  assert(xOf(laid, 'merge') === xOf(laid, 'plain'),
-    `merge at ${xOf(laid, 'merge')}, plain parent at ${xOf(laid, 'plain')}`);
+  assert(xOf(laid, 'merge') === xOf(laid, 'explore'),
+    `merge at ${xOf(laid, 'merge')}, first parent at ${xOf(laid, 'explore')}`);
 });
 
 test('a merge of material-anchored chains follows its first parent, wherever that chain sits', () => {
   const nodes = [file('mLeft', 0), file('mMid', 1000), file('mRight', 2000),
                  th('qRight'), th('qLeft'), th('qMid'), th('merge')];
   const edges = [ed('mRight', 'qRight'), ed('mLeft', 'qLeft'), ed('mMid', 'qMid'),
-                 ed('qRight', 'merge'), ed('qLeft', 'merge'), ed('qMid', 'merge')];
+                 ed('qRight', 'merge', { createdAt: '2026-01-01T00:00:00Z' }),
+                 ed('qLeft', 'merge', { createdAt: '2026-01-02T00:00:00Z' }), ed('qMid', 'merge', { createdAt: '2026-01-03T00:00:00Z' })];
   const laid = autoLayout(nodes, edges);
   assert(xOf(laid, 'merge') === xOf(laid, 'qRight'),
     `merge at ${xOf(laid, 'merge')}, first parent qRight at ${xOf(laid, 'qRight')}`);
@@ -223,8 +217,8 @@ test('nested and overlapping frames are untouched by auto layout (#64)', () => {
 test('a partially overlapping frame is not a member, its own nodes stay with it', () => {
   const F1 = frame('F1', 0, 0, 1000, 800);
   const F2 = frame('F2', 700, 500, 600, 500); // centre (1000, 750) inside F1, but not contained
-  const a = placed(th('a'), 540, 540);        // centre (800, 600): inside both
-  const far = placed(th('far'), 1000, 880);   // centre (1260, 940): inside F2 only
+  const a = placed(th('a'), 740, 540, 200, 120); // fully inside both frames
+  const far = placed(th('far'), 1050, 850, 200, 120); // fully inside F2 only
   const all = [F1, F2, a, far];
   const ids = (f) => frameMembers(f, all).map((n) => n.id).sort();
   assert(JSON.stringify(ids(F1)) === JSON.stringify(['a']), `F1 owns ${ids(F1)} (expected only a)`);
@@ -234,7 +228,7 @@ test('a partially overlapping frame is not a member, its own nodes stay with it'
 test('a fully contained frame is a member of the outer frame, never the reverse', () => {
   const outer = frame('outer', 0, 0, 1000, 800);
   const inner = frame('inner', 100, 100, 400, 300);
-  const n = placed(th('n'), 120, 120);
+  const n = placed(th('n'), 120, 120, 200, 120);
   const all = [outer, inner, n];
   const ids = (f) => frameMembers(f, all).map((x) => x.id).sort();
   assert(JSON.stringify(ids(outer)) === JSON.stringify(['inner', 'n']), `outer owns ${ids(outer)}`);
@@ -299,7 +293,7 @@ test('a follow-up clears its resized parent after a compact measurement', () => 
 test('new wide branches fit beside resized cards without moving existing nodes', () => {
   const parent = { ...placed(th('parent', { isCollapsed: false }), 100, 100, 520, 128), width: 1300, height: 600 };
   const branches = ['a', 'b'].map((id) => ({ ...fresh(id), width: 1600, height: 360 }));
-  const edges = branches.map((n) => ed('parent', n.id, { isBranchFromSelection: true }));
+  const edges = branches.map((n) => ed('parent', n.id));
   const laid = placeNewNodes([parent, ...branches], edges, branches.map((n) => n.id));
   assert(violations(laid, edges).length === 0, violations(laid, edges).join('; '));
   assert(unmoved([parent], laid).length === 0, 'resized parent moved');
@@ -313,11 +307,11 @@ test('a second child stands one column right of the first, never on it', () => {
   assert(violations(laid, [ed('p', 'first'), ed('p', 'second')]).length === 0, violations(laid, [ed('p', 'first'), ed('p', 'second')]).join('; '));
 });
 
-test('an explored branch stands beside its parent', () => {
-  const edges = [ed('p', 'x', { isBranchFromSelection: true })];
+test('a single child continues below its parent', () => {
+  const edges = [ed('p', 'x')];
   const laid = placeNewNodes([placed(th('p'), 0, 0), fresh('x')], edges, ['x']);
   const x = nodeOf(laid, 'x');
-  assert(x.position.x >= NODE_W && x.position.y >= 0, `branch at ${x.position.x},${x.position.y}`);
+  assert(x.position.x === 0 && x.position.y >= nodeHeight(nodeOf(laid, 'p')), `branch at ${x.position.x},${x.position.y}`);
   assert(violations(laid, edges).length === 0, violations(laid, edges).join('; '));
 });
 
@@ -332,9 +326,9 @@ test('a question grown from documents hangs under the lowest one; a taken spot m
   assert(unmoved([...docs, blocker], taken).length === 0, 'an existing node moved');
 });
 
-test('a fan-out seats its branches side by side without overlap', () => {
+test('multiple children fit below their parent without overlap', () => {
   const ids = ['b1', 'b2', 'b3', 'b4'];
-  const edges = ids.map((i) => ed('p', i, { isBranchFromSelection: true }));
+  const edges = ids.map((i) => ed('p', i));
   const laid = placeNewNodes([placed(th('p'), 0, 0), ...ids.map((i) => fresh(i))], edges, ids);
   assert(violations(laid, edges).length === 0, violations(laid, edges).join('; '));
 });

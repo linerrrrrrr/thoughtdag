@@ -70,8 +70,8 @@ export const WHATS_NEW: WhatsNewEntry[] = [
     date: '2026-10-25',
     announce: false,
     lead: {
-      zh: '追问、探索、合并或重新生成时只摆放新节点，你拖好的卡片留在原处；想整体对齐时点「一键排版」。高亮和探索标记不再写进代码块，选区跨过代码块时只高亮正文部分。PDF 阅读器里的对话气泡移到页面右侧空白处，不再挡住文字。',
-      en: 'Asking a follow-up, exploring, merging or regenerating places only the new node, and the cards you arranged stay where they are; Tidy layout rearranges the whole canvas when you want it. Highlights and explore marks no longer go into code blocks, and a selection that crosses a code block highlights its text part. The conversation bubble in the PDF reader sits in the page margin and no longer covers text.',
+      zh: '追问、合并或重新生成时只摆放新节点，你拖好的卡片留在原处；想整体对齐时点「一键排版」。高亮不再写进代码块，选区跨过代码块时只高亮正文部分。PDF 阅读器里的对话气泡移到页面右侧空白处，不再挡住文字。',
+      en: 'Asking a follow-up, merging or regenerating places only the new node, and the cards you arranged stay where they are; Tidy layout rearranges the whole canvas when you want it. Highlights no longer go into code blocks, and a selection that crosses a code block highlights its text part. The conversation bubble in the PDF reader sits in the page margin and no longer covers text.',
     },
     items: [],
   },
@@ -284,10 +284,10 @@ export const WHATS_NEW: WhatsNewEntry[] = [
         },
       },
       {
-        title: { zh: '🔧 两处修复', en: '🔧 Two fixes' },
+        title: { zh: '🔧 回忆索引修复', en: '🔧 Recall index fix' },
         body: {
-          zh: '侧栏里点到已不存在的探索标记，面板不再空白（#56）。索引升级后第一次选「全量」回忆，不再卡住整个应用：索引在后台刷新，菜单里提示一句（#57）。',
-          en: 'Clicking a stale explore mark in the panel no longer blanks it (#56). The first "full" recall after an index upgrade no longer stalls the app: the index refreshes in the background and the menu says so (#57).',
+          zh: '索引升级后第一次选「全量」回忆，不再卡住整个应用：索引在后台刷新，菜单里提示一句（#57）。',
+          en: 'The first "full" recall after an index upgrade no longer stalls the app: the index refreshes in the background and the menu says so (#57).',
         },
       },
     ],
@@ -331,8 +331,8 @@ export const WHATS_NEW: WhatsNewEntry[] = [
     date: '2026-09-30',
     announce: false,
     lead: {
-      zh: '修复 0.5.7 的一处遗漏：回答里的消毒把画布自己加的标记也剥掉了，从回答文字跳到分支的入口失效，用户高亮和探索标记都退化成默认黄底。现在两种标记保留各自的类和目标，跳转、点状下划线、高亮填色都回来了。',
-      en: 'Fixes an oversight in 0.5.7: the answer sanitizer also stripped the marks the canvas adds itself, so the jump from an answer to the branch it bore stopped working and highlights and explore marks fell back to the browser\'s plain yellow. Both marks keep their class and target again; the jump, the dotted underline and the highlight fill are back.',
+      zh: '修复 0.5.7 的一处遗漏：回答里的消毒把用户高亮的样式也剥掉了，高亮退化成默认黄底。现在高亮保留自己的样式类和填色。',
+      en: 'Fixes an oversight in 0.5.7: the answer sanitizer stripped user highlight styles, leaving the browser\'s plain yellow. Highlights now retain their style classes and fill.',
     },
     items: [],
   },
@@ -526,8 +526,8 @@ export const WHATS_NEW: WhatsNewEntry[] = [
     date: '2026-09-23',
     announce: false,
     lead: {
-      zh: 'DeepSeek Harness 插件一轮实测后的整理。「对话 | 思维图」开关：对话页顶部仍是浮动的，切到思维图后它移到画布顶栏「画布名」右侧，不再压住画布工具栏。工作目录改用 Harness 自己的目录选择器：本机运行时弹的就是系统的文件夹对话框，远程访问时回落为输入路径；0.4.19 里自带的目录浏览器撤掉。Harness Agent 也能选工作目录，新会话按所选目录运行。插件里去掉配置模型 API 的入口。实时镜像刷新会话时不再把镜头拉回节点。节点记录的是发起请求时的模型，执行中切换选择器不再改写徽章。Harness 执行中的每个工具调用都列为一条步骤，思考尾巴显示在下方。备份提醒去掉。',
-      en: 'DeepSeek Harness plugin, after a round of hands-on testing. The 对话 | 思维图 switch still floats over the chat; on the canvas it sits in the canvas\'s own top bar next to the canvas chip, so it never covers the toolbar. The working directory is chosen in the harness\'s own picker: the system folder dialog when the harness runs on this machine, a typed path when reached remotely; the folder browser 0.4.19 carried is withdrawn. The Harness Agent gets the folder chip too, and a fresh session runs where it says. The API-key door is gone inside the plugin. The live mirror no longer drags the camera back to a node while its session refreshes. A node records the model it was asked with; switching the picker mid-run no longer relabels it. Every tool call of a harness run is listed as a step, the thinking beneath. The backup reminder is removed.',
+      zh: 'DeepSeek Harness 插件一轮实测后的整理。「对话 | 思维图」开关：对话页顶部仍是浮动的，切到思维图后它移到画布顶栏「画布名」右侧，不再压住画布工具栏。工作目录改用 Harness 自己的目录选择器：本机运行时弹的就是系统的文件夹对话框，远程访问时回落为输入路径；0.4.19 里自带的目录浏览器撤掉。Harness Agent 也能选工作目录，新会话按所选目录运行。插件里去掉配置模型 API 的入口。节点记录的是发起请求时的模型，执行中切换选择器不再改写徽章。Harness 执行中的每个工具调用都列为一条步骤，思考尾巴显示在下方。备份提醒去掉。',
+      en: 'DeepSeek Harness plugin, after a round of hands-on testing. The 对话 | 思维图 switch still floats over the chat; on the canvas it sits in the canvas\'s own top bar next to the canvas chip, so it never covers the toolbar. The working directory is chosen in the harness\'s own picker: the system folder dialog when the harness runs on this machine, a typed path when reached remotely; the folder browser 0.4.19 carried is withdrawn. The Harness Agent gets the folder chip too, and a fresh session runs where it says. The API-key door is gone inside the plugin. A node records the model it was asked with; switching the picker mid-run no longer relabels it. Every tool call of a harness run is listed as a step, the thinking beneath. The backup reminder is removed.',
     },
     items: [],
   },
@@ -536,8 +536,8 @@ export const WHATS_NEW: WhatsNewEntry[] = [
     date: '2026-09-23',
     announce: false,
     lead: {
-      zh: 'DeepSeek Harness 插件：Harness Agent 节点的回答不再「闪一下就没了」。新版 Harness（0.1.5-rc.3）不再把逐字流写进会话日志，一步只落一条 assistant/message；画布续读实时日志时按会话列表报的序号少读了一条，恰好是带答案的那条，节点随后被镜像成空回答。现在按实际持有的最后一条事件续读，且镜像永不把已有回答改写为空。思考过程重新同步显示：宿主订阅 Harness 新的流事件（agent/assistant-stream），正文和思考逐字到达节点，没有流的运行时从每步的 reasoning 块补发。「对话 | 思维图」开关回到浮动位置，空态也能切换（0.4.18 的标题栏开关撤回）。Agent 的工作目录改为浏览宿主机的文件夹来选，也仍可直接输入路径。',
-      en: 'DeepSeek Harness plugin: a Harness Agent node no longer shows its answer for a moment and then loses it. Newer Harness builds (0.1.5-rc.3) stop writing the token stream into the session log; a step lands as one assistant/message. When the canvas read the live log incrementally it asked from the seq the session list reported and skipped exactly one event, the one carrying the answer, and the node was then mirrored as an empty reply. It now continues from the last event it actually holds, and a mirror never rewrites an existing answer to nothing. Reasoning shows live again: the host subscribes to the Harness\'s new stream event (agent/assistant-stream), so text and reasoning reach the node as they are produced; a runtime without that stream gets each step\'s reasoning block instead. The 对话 | 思维图 switch floats again and works on the empty page (the 0.4.18 header switch is withdrawn). An agent\'s working directory is chosen by browsing the host\'s folders, with a path field still there for typing.',
+      zh: 'DeepSeek Harness 插件：思考过程重新同步显示：宿主订阅 Harness 新的流事件（agent/assistant-stream），正文和思考逐字到达节点，没有流的运行时从每步的 reasoning 块补发。「对话 | 思维图」开关回到浮动位置，空态也能切换（0.4.18 的标题栏开关撤回）。Agent 的工作目录改为浏览宿主机的文件夹来选，也仍可直接输入路径。',
+      en: 'DeepSeek Harness plugin: reasoning shows live again: the host subscribes to the Harness\'s new stream event (agent/assistant-stream), so text and reasoning reach the node as they are produced; a runtime without that stream gets each step\'s reasoning block instead. The 对话 | 思维图 switch floats again and works on the empty page (the 0.4.18 header switch is withdrawn). An agent\'s working directory is chosen by browsing the host\'s folders, with a path field still there for typing.',
     },
     items: [],
   },
@@ -666,18 +666,10 @@ export const WHATS_NEW: WhatsNewEntry[] = [
     date: '2026-09-06',
     announce: true,
     lead: {
-      zh: '🎉 Pi 的会话进了对话地图，「⋯」菜单里多了更新历史，随时能回看每一版改了什么。',
-      en: '🎉 Pi sessions join the Session Atlas, and the ⋯ menu gains a release history, so what every version changed is one click away.',
+      zh: '「⋯」菜单里多了更新历史，随时能回看每一版改了什么。',
+      en: 'The ⋯ menu gains a release history, so what every version changed is one click away.',
     },
     items: [
-      {
-        title: { zh: 'Pi 的会话也在地图上了', en: 'Pi sessions are on the map' },
-        body: {
-          zh: '本地 Pi 会话按项目聚在一起，打开就是一张图。Pi 里的每次分叉在图上就是一条支线，不再压成一条直线。命令行 why 和 MCP 也同步认识 Pi 留下的文件足迹。',
-          en: 'Local Pi sessions group by project and open as a graph. Every fork you made in Pi shows up as a branch instead of being flattened into one line. The why command and MCP index Pi\'s file footprints too.',
-        },
-        link: { label: { zh: '怎么用', en: 'How it works' }, href: `${DOCS}/zh/guides/session-atlas` },
-      },
       {
         title: { zh: '更新历史，随时补看', en: 'Release history, whenever you like' },
         body: {
@@ -692,18 +684,10 @@ export const WHATS_NEW: WhatsNewEntry[] = [
     date: '2026-09-06',
     announce: true,
     lead: {
-      zh: '🎉 这是 ThoughtDAG 到目前为止最大的一次升级：散在各个 Agent 里的对话接成了一张地图，能从画布里查，还能直接在 DeepSeek Harness 里用。四件新东西，都值得试一试。',
-      en: '🎉 The biggest ThoughtDAG release so far: the conversations scattered across your agents become one map, you can query them, and it all runs inside DeepSeek Harness. Four new things, each worth a try.',
+      zh: '命令行历史查询和 DeepSeek Harness 插件加入，文档站也已上线。',
+      en: 'History queries, the DeepSeek Harness plugin, and the documentation site are now available.',
     },
     items: [
-      {
-        title: { zh: '跨 Agent 的对话地图，终于连成一张', en: 'Session Atlas: all your agents, one map' },
-        body: {
-          zh: 'Claude Code、Codex 和 DeepSeek Harness 的本地会话按项目文件夹聚在一起，点开就是一张图，随对话实时生长。',
-          en: 'Local Claude Code, Codex and DeepSeek Harness sessions, grouped by project; open one as a graph and it follows the conversation live.',
-        },
-        link: { label: { zh: '怎么用', en: 'How it works' }, href: `${DOCS}/zh/guides/session-atlas` },
-      },
       {
         title: { zh: '命令行 why：一条命令找回塑造文件的那些对话', en: 'thoughtdag why: one command finds the conversations that shaped a file' },
         body: {
@@ -731,42 +715,12 @@ export const WHATS_NEW: WhatsNewEntry[] = [
     ],
   },
   {
-    version: '0.4.4',
-    date: '2026-09-04',
-    announce: false,
-    lead: {
-      zh: 'DeepSeek Harness 成为对话地图的内置来源：它的 zstd 日志由桌面壳逐帧解码，每条消息一个节点，工具调用与结果配对成附件。',
-      en: 'DeepSeek Harness becomes a built-in Atlas source: the shell decodes its zstd logs frame by frame, one node per message, tool calls paired with their results as attachments.',
-    },
-    items: [],
-  },
-  {
     version: '0.4.3',
     date: '2026-09-03',
     announce: false,
     lead: {
-      zh: '深链接可以直达某一轮，画布可以按稳定 id 打开；子 Agent 的会话文件不再打扰实时监听。',
-      en: 'A deep link can land on a turn and a canvas opens by its stable id; subagent session files no longer disturb the live watcher.',
-    },
-    items: [],
-  },
-  {
-    version: '0.4.2',
-    date: '2026-09-02',
-    announce: false,
-    lead: {
-      zh: '镜像节点列出那一轮碰过的文件（✏️ 改过、📖 读过），预览用结论而不是开头；子 Agent 的会话作为子线程识别，报告折回发起它的那一轮。',
-      en: 'A mirrored node lists the files its turn touched (✏️ edited, 📖 read) and previews the conclusion rather than the opening line; subagent files are recognized as sub-threads and their reports fold into the launching turn.',
-    },
-    items: [],
-  },
-  {
-    version: '0.4.1',
-    date: '2026-09-01',
-    announce: false,
-    lead: {
-      zh: 'Agent 对话地图首发：本地 Claude Code 与 Codex 的会话按项目文件夹聚成一张图，一键接入，随对话实时生长。',
-      en: 'Session Atlas debuts: local Claude Code and Codex sessions group by project folder into one map, connect in one click, and grow with the conversation.',
+      zh: '画布可以通过稳定 id 打开。',
+      en: 'A canvas opens by its stable id.',
     },
     items: [],
   },

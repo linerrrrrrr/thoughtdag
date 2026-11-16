@@ -21,12 +21,6 @@
 
 .conversation-split-content { display: flow-root; }
 
-/* Keep native touch chaining available. Wheel deltas are handed through
-   scrollports explicitly so a partial boundary step is not discarded. */
-[data-conversation-split='panel'] > :is(.conversation-split-question, .conversation-split-answer) {
-  overscroll-behavior-y: auto;
-}
-
 .conversation-divider {
   position: relative;
   display: flex;

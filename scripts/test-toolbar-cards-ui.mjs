@@ -20,12 +20,12 @@ await page.route('**/api/**', route => {
 await page.addInitScript(() => {
   localStorage.setItem('thoughtdag.seeded', 'yes');
   localStorage.setItem('thoughtdag.tutorialDone', '1');
-  localStorage.setItem('thoughtdag.autoRefreshPaused', 'yes');
 });
 const output = 'local-tests/toolbar-cards';
 await mkdir(output, { recursive: true });
+const uiScale = 0.75;
 const card = name => page.locator(`[data-${name}]`);
-const rightCards = new Set(['selection-properties', 'canvas-layout-panel',
+const rightCards = new Set(['selection-properties', 'canvas-layout-panel', 'canvas-routing-panel',
   'canvas-detail-panel', 'toolbar-more-panel', 'frame-nav-panel', 'diagnostics-panel']);
 const one = async name => {
   await card(name).waitFor();
@@ -33,8 +33,8 @@ const one = async name => {
   const panel = await card(name).boundingBox();
   const header = await card('canvas-header').boundingBox();
   const anchor = await card(rightCards.has(name) ? 'top-toolbar' : 'project-switcher').boundingBox();
-  assert.equal(Math.round(panel.width), 320, name);
-  assert.ok(Math.abs(panel.y - (header.y + header.height + 16)) <= 1, `${name} below toolbar`);
+  assert.equal(Math.round(panel.width), 320 * uiScale, name);
+  assert.ok(Math.abs(panel.y - (header.y + header.height + 16 * uiScale)) <= 1, `${name} below toolbar`);
   assert.ok(rightCards.has(name)
     ? Math.abs(panel.x + panel.width - (anchor.x + anchor.width)) <= 1
     : Math.abs(panel.x - anchor.x) <= 1, `${name} docks on its owning side`);
@@ -60,12 +60,7 @@ const selectConnection = async () => {
   await one('selection-properties');
 };
 const openConnection = async () => {
-  await card('model-picker-trigger').click();
-  await page.locator('[data-model-connection-panel], [data-model-picker-panel]').waitFor();
-  if (await card('model-picker-panel').isVisible()) {
-    await one('model-picker-panel');
-    await card('model-picker-panel').getByRole('button', { name: '配置模型 API', exact: true }).click();
-  }
+  await page.locator('[data-connection-entry="providers"]').click();
   await one('model-connection-panel');
 };
 try {
@@ -78,8 +73,7 @@ try {
     const nodes = ['a', 'b'].map((id, i) => ({ id, type: 'thought', width: 380, height: 280,
       position: { x: 80 + i * 440, y: 180 }, data: {
         displayName: `节点 ${id.toUpperCase()}`, question: `研究问题 ${id}`, response: `回答 ${id}`,
-        responses: [`回答 ${id}`], responseIndex: 0, isRoot: i === 0,
-        isCollapsed: false, isEditing: false, isLoading: false, tokenCount: 10, highlights: [], attachments: [],
+        responses: [`回答 ${id}`], responseIndex: 0, isCollapsed: false, isEditing: false, isLoading: false, tokenCount: 10, highlights: [], attachments: [],
       } }));
     nodes.push({ id: 'frame', type: 'frame', position: { x: 80, y: 600 }, width: 600, height: 200,
       data: { stepKind: 'frame', frameTitle: '研究区域', question: '', response: '', responses: [] } });
@@ -99,14 +93,24 @@ try {
     window.__store.getState().setSelectedNodeId('a');
   });
   await one('selection-properties');
-  assert.equal(await card('project-switcher').locator('[data-model-picker-trigger]').count(), 1);
+  assert.equal(await card('project-switcher').locator('[data-model-picker-trigger]').count(), 0);
+  assert.equal(await card('project-switcher').locator('[data-connection-entry]').count(), 2);
   assert.equal(await card('top-toolbar').locator('[data-model-picker-trigger]').count(), 0);
   for (const entry of ['search-entry', 'chat-entry', 'frame-nav-trigger', 'canvas-detail-trigger', 'toolbar-more']) {
     assert.equal(await card('project-switcher').locator(`[data-${entry}]`).count(), 0, entry);
     assert.equal(await card('top-toolbar').locator(`[data-${entry}]`).count(), 1, entry);
   }
   assert.equal(await card('top-toolbar').locator('[data-layout-entry]').count(), 1);
+  assert.equal(await card('top-toolbar').locator('[data-routing-entry]').count(), 1);
   check('session entries stay on the left; canvas tools and layout live on the right');
+
+  await card('layout-entry').click(); await one('canvas-layout-panel');
+  assert.equal(await card('selection-properties').count(), 0);
+  assert.equal(await card('layout-entry').getAttribute('aria-expanded'), 'true');
+  assert.deepEqual(await page.evaluate(() => window.__store.getState().selectedNodeIds), ['a']);
+  await card('layout-entry').click(); await none();
+  await selectFormat();
+  check('the layout entry replaces selection properties and toggles closed without reopening them');
 
   await page.locator('[data-node-format-field="width"]').fill('420');
   await card('canvas-detail-trigger').click(); await one('canvas-detail-panel');
@@ -125,7 +129,7 @@ try {
   await card('menu-diagnose').click(); await one('diagnostics-panel');
   await card('canvas-detail-trigger').click(); await one('canvas-detail-panel');
   await page.keyboard.press('Escape'); await none();
-  check('detail, overflow, and frame cards replace each other at 320px');
+  check('detail, overflow, and frame cards replace each other at 320 logical pixels');
 
   await card('search-entry').click();
   await card('search-input').fill('研究问题 b');
@@ -159,6 +163,11 @@ try {
   await page.evaluate(() => window.__store.getState().setSelectedNodeId('a'));
   await one('canvas-layout-panel');
   await card('layout-direction').locator('label:has(input[value="horizontal"])').click();
+  await card('routing-entry').click(); await one('canvas-routing-panel');
+  assert.equal(await card('layout-entry').getAttribute('aria-expanded'), 'false');
+  assert.equal(await card('routing-entry').getAttribute('aria-expanded'), 'true');
+  await card('layout-entry').click(); await one('canvas-layout-panel');
+  assert.equal(await card('layout-direction').locator('input:checked').inputValue(), 'horizontal');
   await card('toolbar-more').click(); await one('toolbar-more-panel');
   await card('layout-entry').click(); await one('canvas-layout-panel');
   assert.equal(await card('toolbar-more-panel').count(), 0);
@@ -203,7 +212,7 @@ try {
   const header = await card('canvas-header').boundingBox();
   const toolbar = await card('top-toolbar').boundingBox();
   assert.equal(chat.x + chat.width, toolbar.x + toolbar.width);
-  assert.equal(chat.y, header.y + header.height + 16);
+  assert.equal(chat.y, header.y + header.height + 16 * uiScale);
   await card('chat-input').fill('保留画布问答草稿');
   await card('toolbar-more').click(); await one('toolbar-more-panel');
   assert.equal(await card('canvas-chat').count(), 0);
@@ -259,7 +268,7 @@ try {
     await page.waitForTimeout(400);
     const panel = await card('canvas-detail-panel').boundingBox();
     assert.ok(panel.x >= 0 && panel.x + panel.width <= width + 1);
-    if (width >= 960) {
+    if (width >= 960 * uiScale) {
       const reader = await card('focus-panel').boundingBox();
       assert.ok(panel.x + panel.width <= reader.x + 1 || panel.y + panel.height <= reader.y + 1, JSON.stringify({ panel, reader }));
       assert.equal(await page.evaluate(() => window.__ui.getState().panelNodeId), 'a');

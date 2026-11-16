@@ -3,6 +3,8 @@ import { useProjects, beforeSwitchHooks } from '../store/projects';
 import { EXPORT_FORMAT_VERSION, activeProjectName } from './export';
 import { isViewerMode } from './viewer';
 import type { ThoughtNode } from '../types';
+import { normalizeConversationGraph } from './normalize-graph';
+import { documentCopyText, isEditableDocument } from './document-copy';
 
 // The canvas writes its own source record — the way a runner writes its
 // session file — so the why layer can read it whether or not the user
@@ -20,10 +22,19 @@ function slimNode(n: ThoughtNode): ThoughtNode {
   const attachments = (n.data.attachments ?? []).map((a) => ({
     id: a.id, name: a.name, type: a.type, size: a.size, content: '',
     ...(a.addedAt ? { addedAt: a.addedAt } : {}),
-    ...(a.extractedText ? { extractedText: a.extractedText.slice(0, MATERIAL_HEAD) } : {}),
+    ...(isEditableDocument(a) ? { extractedText: documentCopyText(a).slice(0, MATERIAL_HEAD) }
+      : a.extractedText ? { extractedText: a.extractedText.slice(0, MATERIAL_HEAD) } : {}),
+    ...(a.editedText !== undefined ? { editedText: a.editedText.slice(0, MATERIAL_HEAD) } : {}),
     ...(a.paths ? { paths: a.paths } : {}), ...(a.op ? { op: a.op } : {}),
   }));
-  return { ...n, data: { ...n.data, attachments } };
+  // Search/index records retain provenance, not replay payloads or image bytes.
+  // Full native records remain in the persisted canvas and explicit backups.
+  const slimHistory = (history: import('./agents/codex-history').CodexNativeHistory | null | undefined) => history
+    ? { ...history, items: [], capture: 'unavailable' as const, reason: 'Replay payloads are omitted from the lightweight canvas index.' } : history;
+  return { ...n, data: { ...n.data, attachments,
+    codexHistories: n.data.codexHistories?.map(slimHistory),
+    agentSession: n.data.agentSession ? { ...n.data.agentSession, nativeHistory: slimHistory(n.data.agentSession.nativeHistory) ?? undefined } : undefined,
+  } };
 }
 
 export function canvasRecordPayload(): { projectId: string; json: string } | null {
@@ -31,18 +42,17 @@ export function canvasRecordPayload(): { projectId: string; json: string } | nul
   const { projects, activeId } = useProjects.getState();
   if (!activeId || nodes.length === 0) return null;
   const meta = projects.find((p) => p.id === activeId);
-  const json = JSON.stringify({
+  const json = JSON.stringify(normalizeConversationGraph({
     version: EXPORT_FORMAT_VERSION,
     name: activeProjectName(),
     projectId: activeId,
     exportedAt: new Date().toISOString(),
     record: 'thoughtdag-canvas-record',
     instantiatedFrom: meta?.instantiatedFrom,
-    sourceSession: meta?.sourceSession,
     nodes: stripTransient(nodes).map(slimNode),
     edges,
     events,
-  });
+  }));
   return { projectId: activeId, json };
 }
 

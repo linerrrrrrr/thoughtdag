@@ -34,7 +34,6 @@ ThoughtDAG can inspect and change **what the model received**. It cannot prove *
 
 Workflow canvases often use wires for execution order or data dependencies. ThoughtDAG's core wires represent model-visible context. If runtime execution is added, execution state should remain distinguishable from context dependency.
 
-For external agent sessions, see [Session Atlas](/guides/session-atlas): it creates a read-only source mirror, not an in-place editor for the original log.
 
 ## From an interaction rule to a testable intervention
 

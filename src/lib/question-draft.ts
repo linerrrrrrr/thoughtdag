@@ -5,7 +5,7 @@ import { COLORS, EDGE_ARROW_GEOMETRY } from './constants';
 import { condenseGuard } from './condense-guard';
 import { placeNewNodes } from './layout';
 import { useUiStore } from './ui-store';
-import { deriveFollowupModel } from './agents/agent-runtime';
+import { inheritedNodeExecution } from './node-execution';
 import { positionNodeAtConnectionEnd } from './edge-anchors';
 
 export interface QuestionDraftOptions {
@@ -31,8 +31,7 @@ export function createQuestionDraft(options: QuestionDraftOptions = {}): string 
       isCollapsed: false, isEditing: true, questionEditor: options.editor ?? 'canvas',
       isEditingResponse: false, isLoading: false, tokenCount: 0,
       highlights: [], highlightMode: 'tag', attachments: [], excludedAttachmentIds: [], includedAttachmentIds: [],
-      roleMode: 'inherit', isRoot: !parent, isBranch: false,
-      model: deriveFollowupModel(parent?.data, useUiStore.getState().selectedModel),
+      ...inheritedNodeExecution(parent?.data, useUiStore.getState().selectedModel),
       layoutDirection: parent?.data.layoutDirection, edgeRouteDefault: parent?.data.edgeRouteDefault,
       // Search and recall choices are snapshotted only by an explicit send.
     },

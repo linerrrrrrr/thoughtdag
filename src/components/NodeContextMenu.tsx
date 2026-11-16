@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useDismissableLayer } from '../lib/use-dismissable-layer';
 import { useInlineEditDismiss } from '../lib/use-inline-edit-dismiss';
 import { createPortal } from 'react-dom';
-import { Archive, ArchiveRestore, BookOpen, ClipboardCopy, Files, FlaskConical, GitFork, Layers, Pencil, RefreshCw, StickyNote, Trash2 } from 'lucide-react';
+import { Archive, ArchiveRestore, BookOpen, ClipboardCopy, Files, GitFork, Layers, Pencil, RefreshCw, StickyNote, Trash2 } from 'lucide-react';
 import { useStore } from '../store';
 import { useUiStore, confirmDialog, toast } from '../lib/ui-store';
 import { recapToNote } from '../lib/recap';
@@ -11,6 +11,7 @@ import { useT, fmt, t as ti } from '../i18n';
 import { getNodeDisplayName } from '../lib/node-display-name';
 import { isImeComposing } from '../utils';
 import { NodeDetailControls } from './CanvasDetailControl';
+import { screenToUi, uiViewport } from '../lib/ui-scale';
 
 // Right-click on a node: the app's own context menu (same visual language
 // as the toolbar's ⋯ menu). The browser menu stays available where it is
@@ -56,13 +57,14 @@ export default function NodeContextMenu({ x, y, nodeId, onClose }: {
   // Keep the menu inside the viewport (it renders at the pointer)
   const MENU_W = renaming ? 260 : 272;
   const MENU_H = renaming ? 190 : 640;
-  const left = Math.max(8, Math.min(x, window.innerWidth - MENU_W - 8));
-  const top = Math.max(8, Math.min(y, window.innerHeight - MENU_H - 8));
+  const viewport = uiViewport();
+  const left = Math.max(8, Math.min(screenToUi(x), viewport.width - MENU_W - 8));
+  const top = Math.max(8, Math.min(screenToUi(y), viewport.height - MENU_H - 8));
 
   const run = (fn: () => void) => () => { onClose(); fn(); };
 
   return createPortal((
-    <div ref={ref} tabIndex={-1} data-selection-menu onBlur={renaming ? renameDismiss.onBlur : undefined} className="fixed z-[70] bg-card border border-line rounded-overlay shadow-lg py-1 overflow-y-auto animate-fade-in" style={{ left, top, width: MENU_W, maxHeight: `calc(100dvh - ${top + 8}px)` }}>
+    <div ref={ref} tabIndex={-1} data-selection-menu onBlur={renaming ? renameDismiss.onBlur : undefined} className="fixed z-[70] bg-card border border-line rounded-overlay shadow-lg py-1 overflow-y-auto animate-fade-in" style={{ left, top, width: MENU_W, maxHeight: Math.max(0, viewport.height - top - 8) }}>
       {renaming ? (
         <form className="p-3 space-y-2.5" onSubmit={(e) => {
           e.preventDefault();
@@ -131,14 +133,6 @@ export default function NodeContextMenu({ x, y, nodeId, onClose }: {
           : <Archive size={14} strokeWidth={1.75} className={icon} />}
         {node.data.archived ? t('ctx.unarchive') : t('archive.label')}
       </button>
-      {!isContent && (
-        // the pre-agent-lane door, kept for people who work in a terminal: the node's context to the clipboard, the session mounts back as a branch
-        <button className={item}  onClick={run(() => {
-          void import('../lib/experiment-loop').then((m) => m.takeToExperiment(nodeId, 'branch'));
-        })} data-take-to-experiment>
-          <FlaskConical size={14} strokeWidth={1.75} className={icon} /> {t('exp.copyForCli')}
-        </button>
-      )}
       <div className="h-px bg-line my-1" />
       <button
         className="w-full text-left px-3 py-2 text-control object-action-danger transition-colors flex items-center gap-2.5"

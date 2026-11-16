@@ -33,18 +33,16 @@ canvas in the main column, in a same-origin iframe.
 
   | Endpoint | Purpose |
   |---|---|
-  | `GET /thoughtdag/api/disksessions` | list durable sessions on disk (id, title, cwd from the session header; newest first) |
-  | `GET /thoughtdag/api/disksessions/<id>/log` | one disk session as JSONL — the exact dialect ThoughtDAG's `dsh-session` adapter parses, so a past harness session imports like a local file |
   | `GET /thoughtdag/api/sessions` | list live sessions in this process |
   | `GET /thoughtdag/api/sessions/<id>/log` | one live session's events as JSONL |
   | `GET /thoughtdag/api/sessions/<id>/turns` | turn boundaries (start/end seq, the person's message id) of a live or on-disk session — the fork points a canvas can name |
   | `POST /thoughtdag/api/sessions/<id>/fork` | `{ afterTurn }` or `{ atSeq }` → a child session inheriting the prefix through that completed turn (`sessionController.fork`, so the chat UI lists it) |
   | `POST /thoughtdag/api/sessions/<id>/inject` | `{ text }` or `{ blocks: [{type:'text',text}] }` → model-facing context for the next step (`agent.inject`; no wake; shown in the transcript as injected context from `dsh-thoughtdag`) |
   | `POST /thoughtdag/api/sessions/<id>/followup` | `{ text | blocks, mode?: 'queue' | 'steer' }` → a user prompt through `sessionController.prompt`, exactly as the composer sends one |
-  | `GET /thoughtdag/api/roots` · `GET /thoughtdag/api/roots/<key>/list\|head\|read\|range` | the other agents' session directories on this machine (`claude-projects` = `~/.claude/projects`, `codex-sessions` = `~/.codex/sessions`) with the desktop bridge's file primitives, so Session Atlas inside the harness lists all three sources and mirrors a Claude Code or Codex session as the desktop does; `rel` never escapes its root |
+  | `GET /thoughtdag/api/roots` · `GET /thoughtdag/api/roots/<key>/list\|read` | Read supported local session files for native agent execution; paths stay within their root |
   | `GET /thoughtdag/api/models` | the harness's model catalog in the SPA's list shape (`<provider>/<model>` ids, the harness default) |
-  | `POST /thoughtdag/api/stream` · `POST /thoughtdag/api/claude` | the SPA's own proxy protocol, answered on the harness's providers and credentials (`ctx.llm.stream`); the embedded SPA is built with `VITE_API_BASE=/thoughtdag`, so its model picker and every canvas-native generation (summaries, condensing, a canvas that is not a mirrored session) run on the harness's models. These calls do not enter a session log; a mirrored session's turns go through `/followup` |
-  | `harness/agent` (a catalog entry) | pick it in the picker and the question goes INTO the harness: a fresh session per call, the canvas's wired context injected first (`agent.inject`, source `dsh-thoughtdag`), the question as a user follow-up, the harness's own agent loop with tools; text, reasoning and tool calls stream back as the SPA's frames, the first frame names the session (`{ harnessSession }`) and, once the question enters the surface, the turn it created (`{ harnessTurn: { turn, userMessageId, seq } }`), so the canvas can mark its node as that turn's mirror instead of receiving it twice. The session stays in the Chat and the atlas. `harness: { cwd }` sets the session's working directory (the canvas passes the project it mirrors, else the current chat session's); `harness: { session }` continues a mirrored session instead of forking a fresh one (a tail follow-up); `images` (base64) are admitted through the controller's prompt and a vision model is selected for that turn, so a picture the canvas holds is read by the harness's own eyes |
+  | `POST /thoughtdag/api/stream` · `POST /thoughtdag/api/claude` | Generate canvas content using the harness's configured models and credentials |
+  | `harness/agent` (a catalog entry) | Run a canvas question through the harness agent loop with its wired context, tools, working directory, and supported session continuation or fork |
   | `POST /thoughtdag/api/fetch-url` | the SPA's link snapshot (`{ url }` → `{ title, text, fetchedAt, html? }`) through the harness's bounded, credential-free fetcher (`ctx.web.fetch`) |
 
   Disk logs are zstd *concatenated-frame* files; the bridge locates frame
@@ -60,17 +58,7 @@ canvas in the main column, in a same-origin iframe.
   index injection table lists `dsh-thoughtdag/client.js`
 - headless-browser walk: the ThoughtDAG entry appears in the sidebar, selecting it lays the
   same-origin iframe over the main column, and ThoughtDAG boots inside it
-- fetching the bridge from INSIDE the thoughtdag origin works with no extra
-  auth: `GET /thoughtdag/api/disksessions` lists every on-disk session (new
-  sessions created by the running instance appear automatically) and
-  `GET .../log` returns the full event stream
-- real session logs decode correctly (multi-frame zstd → 15k+ JSONL lines,
-  identical to the `zstd` CLI)
-- the live bridge (`/api/sessions`) reflects the running instance's active
-  session as soon as the GUI opens one (verified: opening the UI surfaces the
-  auto-created session with its live seq), complementing the disk archive
-
-### Canvas-side import
+### Canvas-side approvals
 
 When a turn launched from the canvas needs the person's approval (the
 harness's sandbox asking to escalate, a policy hook answering `ask`), the
@@ -81,14 +69,6 @@ tool, command, the harness's reason, allow once or reject. The decision
 returns through `POST /thoughtdag/api/approvals/:id` and stays on the node
 as part of the turn's record. If the canvas stream is gone, the request
 is handed down the chain to the harness's panel unchanged.
-
-Inside the iframe the canvas runs with this bridge as its session source
-(the SPA is built with `VITE_DSH_BRIDGE=/thoughtdag/api`): Session Atlas
-lists the harness's sessions beside Claude Code's, Codex's and Pi's (served by
-this host from their directories), opens one as a graph, and follows it
-live by polling the session's seq. The client half tells the canvas which
-session the chat shows (`td:current-session`) and switches the chat when the
-canvas names one (`td:select-session`).
 
 ## The why layer inside the harness
 

@@ -20,7 +20,6 @@ await page.route('**/api/**', route => {
 await page.addInitScript(() => {
   localStorage.setItem('thoughtdag.seeded', 'yes');
   localStorage.setItem('thoughtdag.tutorialDone', '1');
-  localStorage.setItem('thoughtdag.autoRefreshPaused', 'yes');
   localStorage.setItem('thoughtdag.canvasDetail', 'full');
 });
 const output = 'local-tests/node-details';
@@ -57,8 +56,7 @@ try {
     const nodes = ['a', 'b', 'c'].map((id, i) => ({ id, type: 'thought', width: 380, height: 300,
       position: { x: i === 1 ? 480 : 80, y: i === 2 ? 540 : 160 }, data: {
         displayName: `节点 ${id.toUpperCase()}`, question: `研究问题 ${id.toUpperCase()}`, response: `回答 ${id.toUpperCase()}`,
-        responses: [`回答 ${id.toUpperCase()}`], responseIndex: 0, isRoot: true,
-        isCollapsed: false, isEditing: false, isLoading: false, tokenCount: 10, highlights: [], attachments: [],
+        responses: [`回答 ${id.toUpperCase()}`], responseIndex: 0, isCollapsed: false, isEditing: false, isLoading: false, tokenCount: 10, highlights: [], attachments: [],
       } }));
     window.__store.setState({ nodes, edges: [], selectedNodeIds: [], selectedNodeId: null, history: [{ nodes, edges: [] }], historyIndex: 0 });
   });
@@ -199,6 +197,9 @@ try {
   await page.getByRole('button', { name: 'English', exact: true }).click();
   await page.locator('[data-appearance-lighting]').getByRole('button', { name: 'Dark', exact: true }).click();
   await page.keyboard.press('Escape');
+  // Replacing a tool card does not restore it when the replacement closes.
+  assert.equal(await format.count(), 0);
+  await page.evaluate(() => window.__canvasEditing.getState().requestProperties());
   await page.evaluate(() => window.__ui.getState().setCanvasDetail('compact'));
   await format.waitFor();
   assert.equal(await format.getByRole('button', { name: 'View details', exact: true }).count(), 0);

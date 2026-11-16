@@ -8,7 +8,7 @@ import { countTokens } from '../utils';
 // auto-fixed. Detection reads SHAPES, never asks the user to label nodes.
 
 export type FindingKind =
-  | 'residual-edge' | 'shadow-reference' | 'blind-pool-breach' | 'pool-asymmetry'
+  | 'residual-edge' | 'shadow-reference'
   | 'long-chain' | 'open-branches' | 'collider-continuation' | 'orphan-materials' | 'load-bearing';
 
 export interface Finding {
@@ -57,7 +57,6 @@ export function runDiagnostics(nodes: ThoughtNode[], edges: ThoughtEdge[]): Find
   const structural = edges.filter((e) => !e.data?.isCrossLink);
   const references = edges.filter((e) => e.data?.isCrossLink);
   const structAdj = adjacency(structural);
-  const allAdj = adjacency(edges);
 
   // ── Tier 1.1 residual solid edges: u→v shadowed by a longer solid path ──
   for (const e of structural) {
@@ -81,55 +80,6 @@ export function runDiagnostics(nodes: ThoughtNode[], edges: ThoughtEdge[]): Find
         nodeIds: [e.target, e.source], edgeIds: [e.id],
       });
     }
-  }
-
-  // ── candidate pools: paradigm prompt-siblings AND manual fan-out siblings
-  //    (isBranch), grouped by their shared structural parent ──
-  const childrenOf = new Map<string, string[]>();
-  for (const e of structural) {
-    if (!childrenOf.has(e.source)) childrenOf.set(e.source, []);
-    childrenOf.get(e.source)!.push(e.target);
-  }
-  const pools: string[][] = [];
-  for (const kids of childrenOf.values()) {
-    const prompts = kids.filter((k) => byId.get(k)?.data.stepKind === 'prompt');
-    const branches = kids.filter((k) => byId.get(k)?.data.isBranch);
-    if (prompts.length >= 2) pools.push(prompts);
-    if (branches.length >= 2) pools.push(branches);
-  }
-
-  // ── Tier 1.3 blind-pool breach: a candidate can read a sibling ──
-  for (const pool of pools) {
-    for (const a of pool) {
-      for (const b of pool) {
-        if (a === b) continue;
-        if (reachable(a, b, allAdj)) {
-          const direct = edges.find((e) => e.source === a && e.target === b);
-          findings.push({
-            tier: 1, kind: 'blind-pool-breach', fixable: !!direct,
-            params: { a: title(byId.get(b)), b: title(byId.get(a)) },
-            nodeIds: [b, a], edgeIds: direct ? [direct.id] : [],
-          });
-        }
-      }
-    }
-  }
-
-  // ── Tier 1.4 pool asymmetry: a candidate has private inputs its siblings
-  //    lack (someone fed one juror extra evidence) ──
-  for (const pool of pools) {
-    const inSources = pool.map((id) => new Set(edges.filter((e) => e.target === id).map((e) => e.source)));
-    const shared = new Set([...inSources[0]].filter((s) => inSources.every((set) => set.has(s))));
-    pool.forEach((id, i) => {
-      const extra = [...inSources[i]].filter((s) => !shared.has(s) && !pool.includes(s));
-      if (extra.length > 0) {
-        findings.push({
-          tier: 1, kind: 'pool-asymmetry', fixable: false,
-          params: { a: title(byId.get(id)), n: extra.length },
-          nodeIds: [id, ...extra], edgeIds: [],
-        });
-      }
-    });
   }
 
   // ── Tier 2: longest chains (depth + cumulative tokens, DP over the DAG) ──

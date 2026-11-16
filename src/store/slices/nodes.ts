@@ -18,6 +18,7 @@ import { applySelectionGeometry } from '../../lib/node-geometry';
 import { applyEdgeSettings, applyBatchEdgeSettings } from '../../lib/edge-edit';
 import { canvasLayoutInputKey, planCanvasLayout } from '../../lib/canvas-layout';
 import { questionHeightRatio } from '../../lib/conversation-split';
+import { modelExecutionKind, modelMatchesExecution, nodeExecutionKind } from '../../lib/node-execution';
 
 /** Do not propagate retired metadata when copying older saved documents. */
 function copiedNodeData(data: ThoughtNode['data']): ThoughtNode['data'] {
@@ -101,8 +102,6 @@ export const createNodeSlice: StateCreator<StoreState, [], [], NodeSlice> = (set
       edges: state.edges.filter((e) => !removeIds.has(e.source) && !removeIds.has(e.target)),
     }));
     get().pushHistory();
-    // deletion IS unsubscription — see canonical.unsubscribeOrphanedSessions
-    void import('../../lib/atlas/canonical').then((m) => m.unsubscribeOrphanedSessions());
   },
 
   deleteEdges: (edgeIds: string[]) => {
@@ -232,9 +231,8 @@ export const createNodeSlice: StateCreator<StoreState, [], [], NodeSlice> = (set
 
   addCrossLink: (sourceId: string, targetId: string) => {
     const { edges, nodes } = get();
-    // Block only an identical edge. The REVERSE direction is allowed on
-    // purpose: writer->critic->writer loops are how auto-refresh iterates
-    // (context walks are visited-guarded, and auto-chains are budgeted).
+    // References may point in either direction without becoming structural
+    // cycles. Only an identical source-target connection is redundant.
     const exists = edges.some((e) => e.source === sourceId && e.target === targetId);
     if (exists) return;
     // MATERIAL sources wire SOLID by default. A dashed reference carries a
@@ -297,12 +295,12 @@ export const createNodeSlice: StateCreator<StoreState, [], [], NodeSlice> = (set
     get().pushHistory();
     // Price tag at the moment of connection — BOTH prices, so it's a
     // decision, not a nudge. When the source has no upstream chain the two
-    // depths are the same thing; asking would be noise, so we don't.
+    // relationships carry the same conversation, so no choice is needed.
     if (src && !['note', 'file', 'link'].includes(src.data.stepKind ?? '')) {
       const { ordered } = walkUpAncestors(sourceId, nodes, edges.filter((e) => !e.data?.isCrossLink));
       const chain = ordered.filter((n) => n.id !== sourceId && !['note', 'file', 'link'].includes(n.data.stepKind ?? ''));
       if (chain.length > 0) {
-        const quoteTok = countTokens(referenceBlockContent({ source: src, edge: newEdge, depth: 'quote', chain }));
+        const quoteTok = countTokens(referenceBlockContent({ source: src, edge: newEdge }));
         // Full tier = SOLID wiring: the target reads the source's whole
         // upstream, files included — price the real thing, not a transcript.
         const ctx = buildContext(sourceId, nodes, edges);
@@ -368,7 +366,7 @@ export const createNodeSlice: StateCreator<StoreState, [], [], NodeSlice> = (set
         if (e.id !== edgeId) return e;
         if (structural) {
           const rest = { ...(e.data ?? {}) };
-          delete rest.isCrossLink; delete rest.contextDepth; delete rest.isWatch;
+          delete rest.isCrossLink;
           return {
             ...e,
             sourceHandle: 'continue', targetHandle: 'top',
@@ -383,7 +381,7 @@ export const createNodeSlice: StateCreator<StoreState, [], [], NodeSlice> = (set
           animated: true,
           style: { stroke: COLORS.accent, strokeDasharray: '8 4', strokeWidth: 2 },
           markerEnd: { type: 'arrowclosed' as const, color: COLORS.accent, width: 18, height: 18 },
-          data: { ...(e.data ?? {}), isCrossLink: true, contextDepth: undefined },
+          data: { ...(e.data ?? {}), isCrossLink: true },
         };
       }),
     }));
@@ -509,6 +507,7 @@ export const createNodeSlice: StateCreator<StoreState, [], [], NodeSlice> = (set
             reasonings: n.data.reasonings?.filter((_, i) => i !== versionIndex),
             reasoningTokens: n.data.reasoningTokens?.filter((_, i) => i !== versionIndex),
             agentActivities: n.data.agentActivities?.filter((_, i) => i !== versionIndex),
+            codexHistories: n.data.codexHistories?.filter((_, i) => i !== versionIndex),
             agentActivity: undefined,
             generatedAts: n.data.generatedAts?.filter((_, i) => i !== versionIndex),
             editedAts: n.data.editedAts?.filter((_, i) => i !== versionIndex),
@@ -548,11 +547,30 @@ export const createNodeSlice: StateCreator<StoreState, [], [], NodeSlice> = (set
   },
 
   setNodeModel: (nodeId: string, model: string | undefined) => {
+    const node = get().nodes.find(n => n.id === nodeId);
+    if (!node || node.data.isLoading || node.data.model === model) return;
+    const kind = model ? modelExecutionKind(model) : undefined;
+    get().pushHistory();
     set((state) => ({
       nodes: state.nodes.map((n) =>
-        n.id === nodeId ? { ...n, data: { ...n.data, model } } : n
+        n.id === nodeId ? { ...n, data: { ...n.data, model,
+          ...(kind && kind !== nodeExecutionKind(n.data) ? { agentSession: undefined } : {}),
+          ...(kind ? { executionKind: kind === 'legacy-agent' ? undefined : kind } : {}) } } : n
       ),
     }));
+    get().pushHistory();
+  },
+
+  setNodeExecutionKind: (nodeId, executionKind) => {
+    const node = get().nodes.find(n => n.id === nodeId);
+    if (!node || node.data.isLoading || node.data.executionKind === executionKind) return;
+    get().pushHistory();
+    set(state => ({ nodes: state.nodes.map(n => n.id === nodeId ? { ...n, data: {
+      ...n.data, executionKind,
+      agentSession: executionKind !== nodeExecutionKind(n.data) ? undefined : n.data.agentSession,
+      model: modelMatchesExecution(n.data.model, executionKind) ? n.data.model : undefined,
+    } } : n) }));
+    get().pushHistory();
   },
 
   arrangeSelection: (nodeIds, action, reference, viewport) => {
@@ -599,7 +617,6 @@ export const createNodeSlice: StateCreator<StoreState, [], [], NodeSlice> = (set
         isCollapsed: false, isEditing: false, isEditingResponse: false, isLoading: false,
         tokenCount: 0, highlights: [], highlightMode: 'tag',
         attachments: [], excludedAttachmentIds: [], includedAttachmentIds: [],
-        roleMode: 'inherit', isRoot: false, isBranch: false,
       },
     };
     state.pushHistory();
@@ -701,8 +718,6 @@ export const createNodeSlice: StateCreator<StoreState, [], [], NodeSlice> = (set
       };
     });
     get().pushHistory();
-    // deletion IS unsubscription — see canonical.unsubscribeOrphanedSessions
-    void import('../../lib/atlas/canonical').then((m) => m.unsubscribeOrphanedSessions());
   },
 
   duplicateSelection: (nodeIds: string[]) => {

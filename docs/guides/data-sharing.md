@@ -17,14 +17,13 @@ Pointing it at a synced folder lets the file follow that folder's existing sync 
 
 ### What it saves
 
-Each canvas gets a complete backup containing nodes, wires, attachment content, events, and the session identifiers needed to restore Session Atlas listening. The filename follows the canvas name, with unsupported filename characters replaced.
+Each canvas gets a complete backup containing nodes, wires, attachment content, and events. The filename uses the canvas name and ID to avoid collisions. Unsupported filename characters are replaced.
 
 | Situation | What automatic backup does |
 |---|---|
 | Backup is enabled while the active canvas contains work | Writes the active canvas immediately |
 | Nodes or wires are edited continuously | Waits until about one minute after the last change, avoiding repeated writes |
 | Another canvas becomes active and is edited | Writes that canvas to its own file |
-| A Session Atlas mirror | Saves it under the selected folder's `cli/` subfolder and adds a session-id fragment to avoid filename collisions |
 
 Automatic backup writes the **active canvas**. It does not rescan and rewrite every canvas once a minute. To verify immediately, reopen the backup control center and click **Back up this canvas now**. The same dialog shows the folder, last-write time, change-folder action, and stop control.
 
@@ -32,7 +31,7 @@ Whenever the desktop app opens, ThoughtDAG restores the previously recorded back
 
 ### Restore from a backup
 
-Open the canvas menu, choose **Import backup**, and select a `.thoughtdag.json` file. This restores the complete canvas rather than a read-only text export. If the backup came from Session Atlas and the matching source is still available on this machine, session listening can resume. Otherwise, the canvas remains usable as an archive.
+Open the canvas menu, choose **Import backup**, and select a `.thoughtdag.json` file. This restores the complete canvas rather than a read-only text export.
 
 The desktop app provides the complete experience; the browser entry appears only where folder access is supported.
 
@@ -40,7 +39,7 @@ The desktop app provides the complete experience; the browser entry appears only
 
 - **Export backup** for a complete graph file and later restoration.
 - Export a context chain or selected nodes as Markdown.
-- Export highlights, memory, roles, or event metadata when needed.
+- Export highlights, memory, or event metadata when needed.
 - Import a compatible ThoughtDAG backup or supported conversation export.
 
 Imported edits and regenerated alternatives can become visible graph branches rather than being flattened into one transcript.

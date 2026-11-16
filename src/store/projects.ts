@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { get as idbGet, set as idbSet, del as idbDel } from 'idb-keyval';
+import { get as idbGet, set as idbSet, del as idbDel } from '../lib/disk-storage';
 import { useStore } from './index';
 import { activeAbortControllers } from './streaming';
 import { flushPendingWrites } from '../lib/persistence';
@@ -8,8 +8,9 @@ import { buildRuleOutRuleIn } from '../lib/paradigms/rule-out-rule-in';
 import { toast } from '../lib/ui-store';
 import { t } from '../i18n';
 import type { AgentPermissionMode } from '../types';
+import { normalizeConversationGraph } from '../lib/normalize-graph';
 
-// Project layer: each canvas persists under its own IndexedDB key; this
+// Project layer: each canvas persists under its own storage key; this
 // module owns the metadata list and the switching choreography.
 // Metadata writes use bare idbSet — the debounced idbStorage has a single
 // pending slot reserved for the main store and must not be shared.
@@ -28,21 +29,8 @@ export interface ProjectMeta {
   kind?: 'chat' | 'paradigm';
   /** Provenance: which paradigm this run canvas was instantiated from. */
   instantiatedFrom?: { name: string; at: string };
-  /** The CANONICAL-canvas contract, chapter edition: this canvas
-      SUBSCRIBES to a sequence of runner sessions. The main entry is the
-      first chapter; `chapters` are later sessions CONTINUING the same
-      line of thought (context surgery, then onward — mounted at the main
-      line's tail); `branches` are experiment sessions mounted at an
-      anchor node. Every entry appends idempotently past its own
-      importedCount. One canvas = one line of thought; sessions are its
-      physical chapters. */
-  sourceSession?: {
-    sessionId: string; runner: string; importedCount: number; tailNodeId: string;
-    chapters?: { sessionId: string; runner: string; importedCount: number; tailNodeId: string }[];
-    branches?: { sessionId: string; runner: string; importedCount: number; tailNodeId: string; anchorNodeId: string }[];
-  };
   /** The working directory this canvas hands to agent runtimes, when the
-      person chose one; absent = the mirrored project, else the canvas's
+      person chose one; absent = the source project, else the canvas's
       own workspace. */
   agentCwd?: string;
   /** How the agent's boundary guard behaves for this canvas: ask on every
@@ -52,12 +40,7 @@ export interface ProjectMeta {
   /** Archived = hidden from the dropdown and Recent work, data untouched.
       Tidying and destroying are different verbs. */
   archived?: boolean;
-  /** DERIVED index: which sessions' provenance this canvas holds
-      (importSource sessionIds, deduped). Recomputed from the graph on
-      every debounced touch — never written by hand, so it cannot drift.
-      Lets provenance adoption skip canvases without parsing their
-      stored graphs. Absent on legacy metas → slow path fills it in. */
-  provenanceSessions?: string[];
+
 }
 
 /** Archive/restore a canvas. Archiving the ACTIVE canvas switches away
@@ -73,91 +56,6 @@ export async function setProjectArchived(id: string, archived: boolean): Promise
     projects: s.projects.map((p) => (p.id === id ? { ...p, archived } : p)),
   }));
   await saveMeta();
-}
-
-/** Update the canonical-canvas ledger after an appendix lands. */
-export async function updateSourceSession(projectId: string, patch: Partial<NonNullable<ProjectMeta['sourceSession']>>): Promise<void> {
-  useProjects.setState((s) => ({
-    projects: s.projects.map((p) => (p.id === projectId && p.sourceSession
-      ? { ...p, sourceSession: { ...p.sourceSession, ...patch } } : p)),
-  }));
-  await saveMeta();
-}
-
-type LedgerEntryPatch = { importedCount?: number; tailNodeId?: string };
-
-/** Patch whichever ledger entry (main / chapter / branch) holds this
- *  session — the append path doesn't care which kind it landed in. */
-export async function patchLedgerEntry(projectId: string, sessionId: string, patch: LedgerEntryPatch): Promise<void> {
-  useProjects.setState((s) => ({
-    projects: s.projects.map((p) => {
-      if (p.id !== projectId || !p.sourceSession) return p;
-      const ss = p.sourceSession;
-      if (ss.sessionId === sessionId) return { ...p, sourceSession: { ...ss, ...patch } };
-      return {
-        ...p,
-        sourceSession: {
-          ...ss,
-          chapters: ss.chapters?.map((c) => (c.sessionId === sessionId ? { ...c, ...patch } : c)),
-          branches: ss.branches?.map((b) => (b.sessionId === sessionId ? { ...b, ...patch } : b)),
-        },
-      };
-    }),
-  }));
-  await saveMeta();
-}
-
-/** Register a newly mounted session in the chapter or branch ledger. */
-export async function registerLedgerEntry(
-  projectId: string,
-  kind: 'chapter' | 'branch',
-  entry: { sessionId: string; runner: string; importedCount: number; tailNodeId: string; anchorNodeId?: string },
-): Promise<void> {
-  useProjects.setState((s) => ({
-    projects: s.projects.map((p) => {
-      if (p.id !== projectId) return p;
-      // a NATIVE canvas can host mounted sessions too: the ledger gains
-      // an empty main entry — a container, not a subscription
-      const ss = p.sourceSession ?? { sessionId: '', runner: '', importedCount: 0, tailNodeId: '' };
-      if (kind === 'chapter') {
-        return { ...p, sourceSession: { ...ss, chapters: [...(ss.chapters ?? []), { sessionId: entry.sessionId, runner: entry.runner, importedCount: entry.importedCount, tailNodeId: entry.tailNodeId }] } };
-      }
-      return { ...p, sourceSession: { ...ss, branches: [...(ss.branches ?? []), { ...entry, anchorNodeId: entry.anchorNodeId ?? '' }] } };
-    }),
-  }));
-  await saveMeta();
-}
-
-/** Deletion IS unsubscription: drop whichever ledger entry (main /
- *  chapter / branch) holds this session. The main entry degrades to an
- *  empty container while chapters or branches remain; when the last
- *  entry goes, sourceSession goes with it and the canvas is native
- *  again. Reopening the session from the atlas resubscribes. */
-export async function removeLedgerEntry(projectId: string, sessionId: string): Promise<void> {
-  useProjects.setState((s) => ({
-    projects: s.projects.map((p) => {
-      if (p.id !== projectId || !p.sourceSession) return p;
-      const ss = p.sourceSession;
-      const chapters = (ss.chapters ?? []).filter((c) => c.sessionId !== sessionId);
-      const branches = (ss.branches ?? []).filter((b) => b.sessionId !== sessionId);
-      const next = { ...ss, chapters: chapters.length ? chapters : undefined, branches: branches.length ? branches : undefined };
-      if (next.sessionId === sessionId) {
-        next.sessionId = ''; next.runner = ''; next.importedCount = 0; next.tailNodeId = '';
-      }
-      if (!next.sessionId && chapters.length === 0 && branches.length === 0) {
-        return { ...p, sourceSession: undefined };
-      }
-      return { ...p, sourceSession: next };
-    }),
-  }));
-  await saveMeta();
-}
-
-/** Every session id a canvas subscribes to, across all ledger kinds. */
-export function subscribedSessionIds(meta: ProjectMeta): string[] {
-  const ss = meta.sourceSession;
-  if (!ss) return [];
-  return [ss.sessionId, ...(ss.chapters ?? []).map((c) => c.sessionId), ...(ss.branches ?? []).map((b) => b.sessionId)].filter(Boolean);
 }
 
 /** Stamp paradigm provenance on a project (persisted with the meta list). */
@@ -251,7 +149,7 @@ export async function switchProject(id: string): Promise<void> {
     useStore.setState({ selectedNodeId: null, selectedNodeIds: [] });
     // opening IS unarchiving: archived means "hidden from the lists", and
     // a canvas the user just switched to is back in the working set —
-    // whatever road led here (atlas card, archived group, canonical open)
+    // whether opened from the canvas menu or a source link.
     useProjects.setState((s) => ({
       activeId: id,
       projects: s.projects.map((p) => (p.id === id && p.archived ? { ...p, archived: false } : p)),
@@ -316,7 +214,7 @@ export async function adoptImportedProject(
   id: string,
   name: string,
   kind: 'chat' | 'paradigm' = 'chat',
-  extras?: Partial<Pick<ProjectMeta, 'instantiatedFrom' | 'sourceSession'>>,
+  extras?: Partial<Pick<ProjectMeta, 'instantiatedFrom'>>,
 ): Promise<void> {
   const now = Date.now();
   useProjects.setState((s) => ({
@@ -329,7 +227,7 @@ export async function adoptImportedProject(
 // Seed a new paradigm project with the built-in rule-out/rule-in score and
 // switch to it (shared by the landing page and the project switcher).
 export async function createBuiltinParadigm(lang: 'en' | 'zh'): Promise<void> {
-  const { name, nodes, edges } = buildRuleOutRuleIn(lang);
+  const { name, nodes, edges } = normalizeConversationGraph(buildRuleOutRuleIn(lang));
   const id = crypto.randomUUID();
   await idbSet(projectStorageKey(id), JSON.stringify({ state: { nodes, edges }, version: 1 }));
   await adoptImportedProject(id, name, 'paradigm');
@@ -348,13 +246,8 @@ useStore.subscribe((state, prev) => {
   touchTimer = setTimeout(() => {
     const { activeId } = useProjects.getState();
     if (!activeId) return;
-    // the provenance fingerprint rides the same debounce: derived from
-    // the live graph each time, so it can never drift from the truth
-    const sids = [...new Set(useStore.getState().nodes
-      .map((n) => n.data.importSource?.sessionId)
-      .filter((x): x is string => !!x))];
     useProjects.setState((s) => ({
-      projects: s.projects.map((p) => (p.id === activeId ? { ...p, updatedAt: Date.now(), provenanceSessions: sids } : p)),
+      projects: s.projects.map((p) => (p.id === activeId ? { ...p, updatedAt: Date.now() } : p)),
     }));
     void saveMeta();
   }, 1000);

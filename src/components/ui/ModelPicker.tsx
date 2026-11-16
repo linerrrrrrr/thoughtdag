@@ -1,9 +1,12 @@
-import { useEffect, useRef, useState } from 'react';
+import { appSettings } from '../../lib/disk-storage';
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { useDismissableLayer } from '../../lib/use-dismissable-layer';
 import { useCanvasPanelPosition } from '../../lib/use-canvas-panel-position';
 import { useCanvasToolCard } from '../../lib/use-canvas-tool-card';
+import { uiRect, uiViewport } from '../../lib/ui-scale';
 import { isImeComposing } from '../../utils';
-import { Check, ChevronDown, Cpu, KeyRound, RefreshCw, Loader2, ChevronRight, Scale } from 'lucide-react';
+import { Check, ChevronDown, Cpu, KeyRound, RefreshCw, Loader2, ChevronRight, Scale, SquareTerminal } from 'lucide-react';
 import { toast, useUiStore } from '../../lib/ui-store';
 import { profileLines } from '../../lib/profile';
 import { useModels, setModelsCache, ensureAgentsFresh, recheckAgents, type ModelInfo } from '../../lib/use-models';
@@ -15,12 +18,13 @@ import { JUDGE_LABELS, effectiveProvider, judgeConfigured, judgeTripped } from '
 // name, count and a chevron. Which are open is remembered.
 const OPEN_RUNTIMES_KEY = 'thoughtdag.pickerOpenRuntimes';
 const runtimeLabelOf = (id: string): string => { const rt = runtimeOf(id); if (rt) return AGENT_RUNTIMES[rt].label; if (id.startsWith('harness/')) return 'Harness'; return id.split('/')[0] || 'agent'; };
-const loadOpenRuntimes = (): Set<string> => { try { const v = JSON.parse(localStorage.getItem(OPEN_RUNTIMES_KEY) ?? '[]'); return new Set(Array.isArray(v) ? v : []); } catch { return new Set(); } };
+const loadOpenRuntimes = (): Set<string> => { try { const v = JSON.parse(appSettings.getItem(OPEN_RUNTIMES_KEY) ?? '[]'); return new Set(Array.isArray(v) ? v : []); } catch { return new Set(); } };
 import { refreshStoredProviders, pushProviders, storedProviders } from '../../lib/runtime-providers';
 import { IN_HARNESS } from '../../lib/embedded';
 import { apiVisionModels } from '../../lib/background-model';
 import { fmt } from '../../i18n';
 import { useT } from '../../i18n';
+import { modelMatchesExecution, type NodeExecutionKind } from '../../lib/node-execution';
 
 interface PickerProps {
   /** Node mode: controlled value (undefined = inherit global) + change handler. */
@@ -28,13 +32,20 @@ interface PickerProps {
   onChange?: (id: string | undefined) => void;
   /** Compact styling for embedding in panel rows. */
   compact?: boolean;
+  /** A node's execution type restricts its model list and inherited default. */
+  executionKind?: NodeExecutionKind;
+  inheritedModel?: string;
+}
+
+function NodePickerPortal({ enabled, children }: { enabled: boolean; children: ReactNode }) {
+  return enabled ? createPortal(children, document.body) : children;
 }
 
 // Dropdown listing every model the server registered (driven by which API
 // keys exist in .env), grouped by provider. Without props it edits the
 // GLOBAL selection; with value/onChange it edits a per-node override and
 // offers an "inherit" entry.
-export default function ModelPicker({ value, onChange, compact }: PickerProps) {
+export default function ModelPicker({ value, onChange, compact, executionKind, inheritedModel }: PickerProps) {
   const t = useT();
   const nodeMode = !!onChange;
   const selectedModel = useUiStore((s) => s.selectedModel);
@@ -53,21 +64,45 @@ export default function ModelPicker({ value, onChange, compact }: PickerProps) {
   const [effortStepFor, setEffortStepFor] = useState<string | null>(null);
   const agentEffort = useUiStore((s) => s.agentEffort);
   const [openRuntimes, setOpenRuntimes] = useState<Set<string>>(loadOpenRuntimes);
-  const toggleRuntime = (label: string) => setOpenRuntimes((prev) => { const next = new Set(prev); if (next.has(label)) next.delete(label); else next.add(label); try { localStorage.setItem(OPEN_RUNTIMES_KEY, JSON.stringify([...next])); } catch { /* per-session then */ } return next; });
+  const toggleRuntime = (label: string) => setOpenRuntimes((prev) => { const next = new Set(prev); if (next.has(label)) next.delete(label); else next.add(label); try { appSettings.setItem(OPEN_RUNTIMES_KEY, JSON.stringify([...next])); } catch { /* per-session then */ } return next; });
   const rootRef = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useLayoutEffect(() => {
+    if (!nodeMode || !open) return;
+    let frame = 0;
+    // A node can scroll, move, or zoom while its menu is open. Keep the
+    // screen-space portal attached to its trigger and inside the viewport.
+    const place = () => {
+      const anchor = rootRef.current, menu = menuRef.current;
+      if (!anchor || !menu) return;
+      const rect = uiRect(anchor), viewport = uiViewport();
+      const inset = 8, gap = 6;
+      const belowSpace = Math.max(0, viewport.height - rect.bottom - gap - inset);
+      const aboveSpace = Math.max(0, rect.top - gap - inset);
+      const heightLimit = Math.max(0, Math.min(viewport.height * 0.6, viewport.height - inset * 2));
+      const contentHeight = Math.min(heightLimit, menu.scrollHeight + menu.offsetHeight - menu.clientHeight);
+      const below = belowSpace >= contentHeight || (aboveSpace < contentHeight && belowSpace >= aboveSpace);
+      const maxHeight = `${Math.min(heightLimit, below ? belowSpace : aboveSpace)}px`;
+      if (menu.style.maxHeight !== maxHeight) menu.style.maxHeight = maxHeight;
+      const width = menu.offsetWidth, height = menu.offsetHeight;
+      const left = Math.max(inset, Math.min(rect.right - width, viewport.width - width - inset));
+      const top = Math.max(inset, Math.min(below ? rect.bottom + gap : rect.top - height - gap, viewport.height - height - inset));
+      if (menu.style.left !== `${left}px`) menu.style.left = `${left}px`;
+      if (menu.style.top !== `${top}px`) menu.style.top = `${top}px`;
+      if (menu.style.visibility !== 'visible') menu.style.visibility = 'visible';
+      frame = requestAnimationFrame(place);
+    };
+    place();
+    return () => cancelAnimationFrame(frame);
+  }, [nodeMode, open]);
 
   // the runtimes are asked for their catalogs the first time a picker
   // opens, not at launch: a CLI to start is seconds and memory the launch
   // should not pay for
   useEffect(() => { if (open) ensureAgentsFresh(); }, [open]);
-  // …except on an install with no model at all: the button is then the
-  // "connect a model" door and the picker never opens, so the agents on this
-  // machine would never be asked — a fresh profile with Pi installed saw only
-  // "connect a model". Asking once here costs what opening the picker costs.
-  const bare = !nodeMode && (data?.models.length ?? 0) === 0 && typeof window !== 'undefined' && !!window.desktopAgents;
-  useEffect(() => { if (bare) ensureAgentsFresh(); }, [bare]);
 
-  useDismissableLayer({ dismissOnFocusOutside: true, open, refs: [rootRef], onDismiss: reason => {
+  useDismissableLayer({ dismissOnFocusOutside: true, open, refs: [rootRef, menuRef], onDismiss: reason => {
     if (reason === 'escape') setAnysearchDraft(anysearchKey);
     setOpen(false);
   } });
@@ -82,27 +117,23 @@ export default function ModelPicker({ value, onChange, compact }: PickerProps) {
     if (!nodeMode) setOpen(true);
   }
 
-  const models = data?.models ?? [];
-  // Node mode: with one model there is nothing to pin. The GLOBAL picker
-  // stays even when the list fetch failed outright (proxy not running) —
-  // its empty state IS the connect-a-model door, and a vanished picker
-  // would leave the canvas with no way into model setup at all.
-  if (nodeMode && models.length < 2) return null;
+  const models = (data?.models ?? []).filter(model => !executionKind || modelMatchesExecution(model.id, executionKind));
+  // Empty installations use the two explicit connection entries in the toolbar.
+  if (!nodeMode && models.length === 0) return null;
+  // A generic node picker needs alternatives; execution-specific pickers
+  // retain their setup action when their lane has no available model.
+  if (nodeMode && !executionKind && models.length < 2) return null;
 
-  // Empty install: the picker IS the call to action. A grey "no model"
-  // label reads as a dead control; a keyed accent button reads as the door.
-  const noModels = !nodeMode && models.length === 0;
-  const agentsAsked = !!data?.runtimes && Object.keys(data.runtimes).length > 0;
-
-  const globalId = selectedModel && models.some((m) => m.id === selectedModel) ? selectedModel : data?.default;
+  const globalId = nodeMode && executionKind ? inheritedModel
+    : selectedModel && models.some((m) => m.id === selectedModel) ? selectedModel : data?.default;
   const activeId = nodeMode ? (value ?? null) : globalId;
   const active = activeId ? models.find((m) => m.id === activeId) : null;
   const providers = [...new Set(models.map((m) => m.provider))];
   // the agent group is listed while the runtimes are still answering, so the
   // picker has somewhere to say so
-  if (data?.agentsPending && !providers.includes(AGENT_PROVIDER)) providers.push(AGENT_PROVIDER);
+  if (executionKind !== 'api' && data?.agentsPending && !providers.includes(AGENT_PROVIDER)) providers.push(AGENT_PROVIDER);
   // a host that looked for runtimes and found none still gets the group: that is where the "not found" rows live
-  if (!providers.includes(AGENT_PROVIDER) && data?.runtimes && Object.values(data.runtimes).some((s) => s && !s.installed)) providers.push(AGENT_PROVIDER);
+  if (executionKind !== 'api' && !providers.includes(AGENT_PROVIDER) && data?.runtimes && Object.values(data.runtimes).some((s) => s && !s.installed)) providers.push(AGENT_PROVIDER);
 
 
   // Picking an agent model that reports effort levels keeps the menu open and
@@ -126,7 +157,7 @@ export default function ModelPicker({ value, onChange, compact }: PickerProps) {
   // names that model in full (agent · model · effort), the tint says it is inherited
   const globalActive = globalId ? models.find((m) => m.id === globalId) : null;
   const label = nodeMode
-    ? (active ? withEffort(active) : value ? (value.endsWith('/default') ? `${runtimeLabelOf(value)} · ${t('agent.defaultModel')}` : value) : (globalActive ? withEffort(globalActive) : t('model.inherit')))
+    ? (active ? withEffort(active) : value ? (value.endsWith('/default') ? `${runtimeLabelOf(value)} · ${t('agent.defaultModel')}` : value) : (globalActive ? withEffort(globalActive) : executionKind === 'codex' ? t('nodeExecution.codexDefault') : executionKind ? t('nodeExecution.chooseModel') : t('model.inherit')))
     : (active ? withEffort(active) : (activeId ?? (models.length === 0 ? t('model.none') : null)));
 
   return (
@@ -134,41 +165,35 @@ export default function ModelPicker({ value, onChange, compact }: PickerProps) {
       <button
         onClick={(e) => {
           e.stopPropagation();
-          // no model yet: the door is the key dialog — unless the host looked for
-          // agent CLIs, in which case the picker has something to say (which
-          // runtime it did not find, and where; plus the same key entry)
-          if (noModels && !agentsAsked) useUiStore.getState().setApiKeyModalOpen(true);
-          else { setEffortStepFor(null); setOpen((v) => !v); }
+          setEffortStepFor(null); setOpen((v) => !v);
         }}
         className={compact
           ? `text-control px-3 py-2 rounded-control transition-colors flex items-center gap-1.5 max-w-[200px] ${value ? 'bg-accent/10 text-accent' : 'bg-wash hover:bg-line text-ink-muted'}`
-          : noModels
-            ? 'bg-accent/10 border border-accent/40 rounded-control h-8 px-2.5 flex items-center gap-1.5 hover:bg-accent/20 transition-colors text-accent max-w-[190px]'
-            : 'bg-card border border-line rounded-control h-8 px-2.5 flex items-center gap-1.5 hover:bg-wash transition-colors text-ink-muted max-w-[190px]'}
-        data-tooltip={noModels ? t('apikey.entryTitle') : nodeMode && !value ? t('model.inherit') : `${t('toolbar.model')} · ${label ?? t('model.none')}`}
+          : 'bg-card border border-line rounded-control h-8 px-2.5 flex items-center gap-1.5 hover:bg-wash transition-colors text-ink-muted max-w-[190px]'}
+        data-tooltip={nodeMode && !value ? t('model.inherit') : `${t('toolbar.model')} · ${label ?? t('model.none')}`}
         data-tooltip-icon-only={!(nodeMode && !value) || undefined}
-        data-tooltip-overflow={!noModels && !(nodeMode && !value) || undefined}
-        aria-label={noModels ? t('apikey.entryTitle') : `${t('toolbar.model')} · ${label ?? t('model.none')}`}
-        data-apikey-entry={noModels || undefined}
+        data-tooltip-overflow={!(nodeMode && !value) || undefined}
+        aria-label={`${t('toolbar.model')} · ${label ?? t('model.none')}`}
         aria-expanded={open}
         data-model-picker-trigger
       >
-        {noModels
-          ? (data?.agentsPending ? <Loader2 size={14} strokeWidth={1.75} className="shrink-0 animate-spin" /> : <KeyRound size={14} strokeWidth={1.75} className="shrink-0" />)
-          : <Cpu size={14} strokeWidth={1.75} className={`shrink-0 ${compact && !value ? '' : 'text-accent'}`} />}
-        <span className="text-control truncate font-medium">{noModels ? t('model.connectCta') : label}</span>
-        {!noModels && <ChevronDown size={12} strokeWidth={1.75} className="shrink-0" />}
+        <Cpu size={14} strokeWidth={1.75} className={`shrink-0 ${compact && !value ? '' : 'text-accent'}`} />
+        <span className="text-control truncate font-medium">{label}</span>
+        <ChevronDown size={12} strokeWidth={1.75} className="shrink-0" />
       </button>
 
       {open && (
-        <div className={nodeMode ? 'absolute top-9 right-0 z-30 bg-card border border-line rounded-overlay shadow-lg py-1.5 w-80 max-w-[calc(100vw-24px)] max-h-[60vh] overflow-y-auto nodrag nopan' : 'canvas-tool-panel canvas-tool-menu py-1.5'}
-          style={nodeMode ? undefined : panelPosition} data-model-picker-panel>
+        <NodePickerPortal enabled={nodeMode}>
+        <div ref={menuRef} className={nodeMode ? 'fixed z-[90] bg-card border border-line rounded-overlay shadow-lg py-1.5 w-80 max-w-[calc(calc(100*var(--ui-vw))-16px)] overflow-y-auto overscroll-contain nodrag nopan nowheel' : 'canvas-tool-panel canvas-tool-menu py-1.5'}
+          style={nodeMode ? { visibility: 'hidden' } : panelPosition} data-model-picker-panel
+          onPointerDown={event => { if (nodeMode) event.stopPropagation(); }}
+          onDoubleClick={event => { if (nodeMode) event.stopPropagation(); }}>
           {nodeMode && (
             <button
               onClick={() => pick(null)}
               className={`w-full text-left px-3 py-1.5 text-control flex items-center gap-2 transition-colors hover:bg-wash ${!value ? 'text-accent font-medium' : 'text-ink'}`}
             >
-              <span className="truncate flex-1">{t('model.inherit')}</span>
+              <span className="truncate flex-1">{t(executionKind ? 'nodeExecution.typeDefault' : 'model.inherit')}</span>
               {!value && <Check size={13} strokeWidth={2} className="shrink-0" />}
             </button>
           )}
@@ -188,7 +213,7 @@ export default function ModelPicker({ value, onChange, compact }: PickerProps) {
                 for (const m of agentModels) { const label = runtimeLabelOf(m.id); const list = groups.get(label) ?? []; list.push(m); groups.set(label, list); }
                 const activeLabel = activeId ? runtimeLabelOf(activeId) : null;
                 // runtimes the host looked for and did not find: named, with where it looked, and a way to ask again
-                const missing = LIVE_RUNTIMES.filter((rt) => data?.runtimes?.[rt] && !data.runtimes[rt]!.installed && !groups.has(AGENT_RUNTIMES[rt].label));
+                const missing = LIVE_RUNTIMES.filter((rt) => (!executionKind || (executionKind === 'codex' ? rt === 'codex' : rt !== 'codex')) && data?.runtimes?.[rt] && !data.runtimes[rt]!.installed && !groups.has(AGENT_RUNTIMES[rt].label));
                 const missingRows = missing.map((rt) => {
                   const def = AGENT_RUNTIMES[rt];
                   return (
@@ -246,10 +271,22 @@ export default function ModelPicker({ value, onChange, compact }: PickerProps) {
               ))}
             </div>
           ))}
+          {nodeMode && executionKind && models.length === 0 && (executionKind === 'api' || !data?.agentsPending) && (
+            <div className="px-3 py-2 text-control text-ink-muted" data-node-model-empty>
+              <p>{t(executionKind === 'codex' ? 'nodeExecution.noCodexModels' : 'nodeExecution.noApiModels')}</p>
+              <button type="button" className="mt-1 text-accent hover:underline" onClick={() => {
+                setOpen(false);
+                useUiStore.getState().setApiKeyModalOpen(true, executionKind === 'codex' ? 'agents' : 'providers');
+              }}>{t(executionKind === 'codex' ? 'connection.agent' : 'connection.api')}</button>
+            </div>
+          )}
           {!nodeMode && <JudgeRow onOpen={() => { setOpen(false); useUiStore.getState().setApiKeyModalOpen(true, 'judge'); }} />}
           {!nodeMode && (
             <div className="flex items-center pr-1 border-t border-line mt-1 pt-1">
-            <span className="text-control text-ink-faint uppercase tracking-wider font-medium px-3 py-1.5 shrink-0">{t('model.interfaces')}</span>
+            <button onClick={() => { setOpen(false); useUiStore.getState().setApiKeyModalOpen(true, 'agents'); }}
+              className="flex-1 text-left px-3 py-1.5 text-control flex items-center gap-2 hover:bg-wash text-ink-muted" data-picker-agent>
+              <SquareTerminal size={13} strokeWidth={1.75} className="shrink-0" /> {t('connection.agent')}
+            </button>
             {<button
               onClick={() => { setOpen(false); useUiStore.getState().setApiKeyModalOpen(true); }}
               className={`flex-1 text-left px-3 py-1.5 text-control flex items-center gap-2 transition-colors hover:bg-wash ${
@@ -257,7 +294,7 @@ export default function ModelPicker({ value, onChange, compact }: PickerProps) {
               }`}
               data-picker-apikey
             >
-              <KeyRound size={13} strokeWidth={1.75} className="shrink-0" /> {t('apikey.entryTitle')}
+              <KeyRound size={13} strokeWidth={1.75} className="shrink-0" /> {t('connection.api')}
             </button>}
             <button
               onClick={() => {
@@ -277,6 +314,7 @@ export default function ModelPicker({ value, onChange, compact }: PickerProps) {
           )}
           {!nodeMode && <GlobalCapabilities anysearchDraft={anysearchDraft} setAnysearchDraft={setAnysearchDraft} />}
         </div>
+        </NodePickerPortal>
       )}
     </div>
   );
@@ -346,7 +384,7 @@ function EffortStep({ model, onDone }: { model: ModelInfo; onDone: () => void })
 const CAPS_OPEN_KEY = 'thoughtdag.pickerCapsOpen';
 function GlobalCapabilities({ anysearchDraft, setAnysearchDraft }: { anysearchDraft: string; setAnysearchDraft: (value: string) => void }) {
   const t = useT();
-  const [capsOpen, setCapsOpen] = useState<boolean>(() => { try { return localStorage.getItem(CAPS_OPEN_KEY) === 'open'; } catch { return false; } });
+  const [capsOpen, setCapsOpen] = useState<boolean>(() => { try { return appSettings.getItem(CAPS_OPEN_KEY) === 'open'; } catch { return false; } });
   const data = useModels();
   const visionModelPref = useUiStore((s) => s.visionModelPref);
   const setVisionModelPref = useUiStore((s) => s.setVisionModelPref);
@@ -398,7 +436,7 @@ function GlobalCapabilities({ anysearchDraft, setAnysearchDraft }: { anysearchDr
   );
   return (
     <div className="border-t border-line mt-1.5 pt-1 pb-1" data-picker-caps data-picker-caps-open={capsOpen ? 'open' : 'closed'}>
-      <button onClick={() => setCapsOpen((v) => { try { localStorage.setItem(CAPS_OPEN_KEY, v ? 'closed' : 'open'); } catch { /* per-session */ } return !v; })} className="w-full text-left px-3 pt-1 pb-1 flex items-center gap-1.5 hover:bg-wash transition-colors" data-picker-caps-toggle>
+      <button onClick={() => setCapsOpen((v) => { try { appSettings.setItem(CAPS_OPEN_KEY, v ? 'closed' : 'open'); } catch { /* per-session */ } return !v; })} className="w-full text-left px-3 pt-1 pb-1 flex items-center gap-1.5 hover:bg-wash transition-colors" data-picker-caps-toggle>
         {capsOpen ? <ChevronDown size={12} strokeWidth={1.75} className="text-ink-faint" /> : <ChevronRight size={12} strokeWidth={1.75} className="text-ink-faint" />}
         <span className="text-control text-ink-faint uppercase tracking-wider font-medium">{t('caps.title')}</span>
         {!capsOpen && <span className="ml-auto flex items-center gap-1.5">{dot(!!caps?.webSearch)}<span className="text-control text-ink-faint">{t('caps.webSearch')}</span>{dot(memoryEnabled)}<span className="text-control text-ink-faint">{t('caps.memory')}</span></span>}

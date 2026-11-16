@@ -22,7 +22,6 @@ await context.route('**/api/**', route => {
 await page.addInitScript(() => {
   localStorage.setItem('thoughtdag.seeded', 'yes');
   localStorage.setItem('thoughtdag.tutorialDone', '1');
-  localStorage.setItem('thoughtdag.autoRefreshPaused', 'yes');
 });
 const check = name => { checks.push(name); console.log(`PASS ${name}`); };
 const geometry = () => page.evaluate(() => window.__store.getState().nodes.map(({ id, width, height, position, data }) => ({ id, width, height, position, keep: data.keepOverviewHeight })));
@@ -33,12 +32,11 @@ const fixture = async (zoom = 0.6) => {
     const nodes = ['a', 'b', 'c', 'outside'].map((id, index) => ({ id, type: 'thought', selected: index < 3,
       position: { x: index === 3 ? 1300 : 100, y: index === 3 ? 500 : 130 + index * 420 }, width: 440 + index * 20, height: 260 + index * 20,
       data: { question: `研究节点 ${id}`, displayName: `研究节点 ${id}`, response: 'A stable answer for selection tests.', responses: ['A stable answer for selection tests.'], responseIndex: 0,
-        isCollapsed: false, isEditing: false, isEditingResponse: false, isLoading: false, isRoot: index === 0, isBranch: false,
-        highlights: [], attachments: [], excludedAttachmentIds: [], includedAttachmentIds: [], tokenCount: 10, roleMode: 'inherit' } }));
+        isCollapsed: false, isEditing: false, isEditingResponse: false, isLoading: false, highlights: [], attachments: [], excludedAttachmentIds: [], includedAttachmentIds: [], tokenCount: 10, roleMode: 'inherit' } }));
     const edges = [{ id: 'ab', source: 'a', target: 'b', data: { label: 'first', route: 'curve' } }, { id: 'bc', source: 'b', target: 'c', data: { label: 'second', isCrossLink: true, route: 'orthogonal' } }, { id: 'co', source: 'c', target: 'outside', data: {} }].map(edge => ({ ...edge, type: 'smoothstep', sourceHandle: 'continue', targetHandle: 'top' }));
     window.__canvasEditing.getState().reset();
     window.__store.setState({ nodes, edges, selectedNodeIds: ['a', 'b', 'c'], selectedNodeId: null, history: [{ nodes, edges }], historyIndex: 0 });
-    window.__ui.setState({ panelOpen: false, tutorialOpen: false, releaseNotesOpen: false, autoRefreshPaused: true, drafts: {} });
+    window.__ui.setState({ panelOpen: false, tutorialOpen: false, releaseNotesOpen: false, drafts: {} });
     window.__canvasEditing.getState().requestProperties();
   });
   await page.waitForTimeout(600);
@@ -81,12 +79,15 @@ try {
   await undo(); assert.deepEqual(await geometry(), initial);
   await page.evaluate(() => window.__store.getState().redo()); assert.deepEqual(await geometry(), sized);
   check('horizontal drag resizes every selected node at canvas zoom, preserves positions and wiring, and undoes/redoes once');
+  const overviewHeights = await page.locator('.react-flow__node').evaluateAll(elements => elements.map(element => element.getBoundingClientRect().height));
   await drag('height', 0, 60);
   const tall = await geometry();
   for (let i = 0; i < 3; i++) { near(tall[i].height, sized[i].height + 100); assert.equal(tall[i].width, sized[i].width); assert.deepEqual(tall[i].position, sized[i].position); }
   await page.screenshot({ path: `${output}/nodes-light.png` });
   await drag('both', 30, 30, true); assert.deepEqual(await geometry(), tall);
-  check('vertical resize is visible in overview; Escape cancels the complete drag without changing selection');
+  const afterOverviewHeights = await page.locator('.react-flow__node').evaluateAll(elements => elements.map(element => element.getBoundingClientRect().height));
+  afterOverviewHeights.forEach((height, index) => near(height, overviewHeights[index]));
+  check('vertical resize saves full-card dimensions while overviews fit content; Escape cancels the complete drag');
   await page.locator('[data-selection-resize="width"]').focus();
   await page.keyboard.press('Shift+ArrowRight');
   sized = await geometry(); for (let i = 0; i < 3; i++) near(sized[i].width, tall[i].width + 10);
@@ -148,13 +149,26 @@ try {
   await page.screenshot({ path: `${output}/edges-dark.png` });
 
   await fixture(0.4);
+  // Leave a real visible gap at the current overview density. Fixed saved
+  // heights are not a proxy for the reduced card's rendered footprint.
+  await page.evaluate(() => {
+    let y = 130;
+    const zoom = window.__rf.getZoom();
+    window.__store.setState(state => ({ nodes: state.nodes.map(node => {
+      if (node.id === 'outside') return node;
+      const height = document.querySelector('.react-flow__node[data-id="' + node.id + '"]').getBoundingClientRect().height / zoom;
+      const position = { ...node.position, y };
+      y += height + 80 / zoom;
+      return { ...node, position };
+    }) }));
+  });
+  await page.waitForTimeout(250);
   await page.mouse.click(1050, 700);
   const point = await page.locator('.react-flow__edge[data-id="ab"] .react-flow__edge-path').evaluate(path => {
     const point = path.getPointAtLength(path.getTotalLength() / 2).matrixTransform(path.getScreenCTM());
     return { x: point.x, y: point.y };
   });
-  // At overview zoom the node's minimum rendered height leaves a short gap.
-  // Start in that gap, outside both the node and the edge-label hit area.
+  // Start in the gap, outside both the node and the edge-label hit area.
   await page.mouse.move(point.x - 38, point.y - 8); await page.mouse.down();
   await page.mouse.move(point.x + 38, point.y + 8, { steps: 10 }); await page.mouse.up();
   await page.waitForTimeout(150);

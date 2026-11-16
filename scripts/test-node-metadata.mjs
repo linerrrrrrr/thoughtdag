@@ -9,7 +9,7 @@ const stubs = {
   api: 'export const llmCallAnswered = (messages, images, model, opts) => globalThis.__metadataCall(messages, model, opts);',
   'use-models': 'export const getModelsOnce = async () => ({ default: "api/one", models: [{ id: "api/one" }, { id: "api/two" }] });',
   'agent-runtime': 'export const isAgentModel = (id) => id?.startsWith("agent/");',
-  'dsh-bridge': 'export const isHarnessAgentModel = (id) => id?.startsWith("harness/");',
+  'harness-bridge': 'export const isHarnessAgentModel = (id) => id?.startsWith("harness/");',
   'ui-store': 'export const useUiStore = { getState: () => ({ selectedModel: "api/one" }), subscribe: () => () => {} };',
 };
 const bundle = await build({
@@ -19,7 +19,7 @@ const bundle = await build({
   },
   bundle: true, format: 'esm', platform: 'node', write: false, logLevel: 'silent',
   plugins: [{ name: 'browser-stand-ins', setup(b) {
-    b.onResolve({ filter: /^\.\/(api|use-models|agents\/agent-runtime|atlas\/dsh-bridge|ui-store)$/ }, (a) => ({ path: a.path.split('/').pop(), namespace: 'stub' }));
+    b.onResolve({ filter: /^\.\/(api|use-models|agents\/agent-runtime|agents\/harness-bridge|ui-store)$/ }, (a) => ({ path: a.path.split('/').pop(), namespace: 'stub' }));
     b.onLoad({ filter: /.*/, namespace: 'stub' }, (a) => ({ contents: stubs[a.path], loader: 'js' }));
   } }],
 });

@@ -25,7 +25,6 @@ await context.route('**/api/**', route => {
 await context.addInitScript(() => {
   localStorage.setItem('thoughtdag.seeded', 'yes');
   localStorage.setItem('thoughtdag.tutorialDone', '1');
-  localStorage.setItem('thoughtdag.autoRefreshPaused', 'yes');
   localStorage.setItem('thoughtdag.lang', 'zh');
 });
 
@@ -118,8 +117,7 @@ const seed = async () => {
       responseIndex: 0, displayName: name, detailLevel: 'full', ...(material ? { stepKind: 'note' } : {}),
       isCollapsed: false, isEditing: false, isEditingResponse: false, isLoading: false,
       tokenCount: 60, highlights: [], highlightMode: 'tag', attachments: [],
-      excludedAttachmentIds: [], includedAttachmentIds: [], roleMode: 'inherit', isRoot: false, isBranch: false,
-    });
+      excludedAttachmentIds: [], includedAttachmentIds: [], roleMode: 'inherit'});
     const nodes = [
       { id: 'resize-a', type: 'thought', dragHandle: '.drag-handle', position: { x: 80, y: 180 }, width: 420, selected: true, data: data('对话节点') },
       { id: 'resize-b', type: 'thought', dragHandle: '.drag-handle', position: { x: 650, y: 180 }, width: 380, selected: false, data: data('材料节点', true) },
@@ -129,7 +127,6 @@ const seed = async () => {
     window.__ui.getState().setPanelOpen(false);
     window.__ui.getState().setTutorialOpen(false);
     window.__ui.getState().setReleaseNotesOpen(false);
-    window.__ui.getState().setAutoRefreshPaused(true);
     window.__ui.getState().setCanvasDetail('full');
   });
   await page.waitForFunction(() => window.__store.getState().nodes.every(item => item.measured?.width && item.measured?.height));

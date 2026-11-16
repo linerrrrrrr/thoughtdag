@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useMemo } from 'react';
+import { useState, useRef, useEffect, useMemo, useId } from 'react';
 import { Archive, ClipboardList, Files, FileDown, Highlighter, Layers, Trash2 } from 'lucide-react';
 import { useStore } from '../store';
 import { useProjects } from '../store/projects';
@@ -43,7 +43,8 @@ function GeometryEditor({ selectedNodes, allowPosition }: { selectedNodes: Thoug
     setDraftText(JSON.stringify(typeof value === 'function' ? value(draft) : value));
   };
   const [editing, setEditing] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState<{ field: GeometryField; message: string } | null>(null);
+  const errorId = useId();
   const lockedCount = selectedNodes.filter(node => node.data.lockAspectRatio).length;
   const mixedLock = lockedCount > 0 && lockedCount < selectedNodes.length;
   const anyLocked = lockedCount > 0;
@@ -68,23 +69,23 @@ function GeometryEditor({ selectedNodes, allowPosition }: { selectedNodes: Thoug
     if (!node.data.lockAspectRatio) return max[field];
     return field === 'width' ? Math.min(max.width, max.height * size.width / size.height) : Math.min(max.height, max.width * size.height / size.width);
   }));
-  const cancel = () => { useUiStore.getState().setDraft(draftKey, ''); setEditing(false); setError(''); };
+  const cancel = () => { useUiStore.getState().setDraft(draftKey, ''); setEditing(false); setError(null); };
   useSelectionDraftBoundary(dirty, cancel);
   const parsedDraft = (): Partial<Record<GeometryField, number>> | null => {
     const patch: Partial<Record<GeometryField, number>> = {};
     for (const field of Object.keys(draft) as GeometryField[]) {
       const value = Number(draft[field]);
       if (!draft[field]?.trim() || !Number.isFinite(value)) {
-        setError(t('format.invalidNumber'));
+        setError({ field, message: t('format.invalidNumber') });
         return null;
       }
       if (field === 'width' || field === 'height') {
         if (value < minimum(field)) {
-          setError(fmt(t('format.minimum'), { field: t(fieldLabels[field]), n: minimum(field) }));
+          setError({ field, message: fmt(t('format.minimum'), { field: t(fieldLabels[field]), n: minimum(field) }) });
           return null;
         }
         if (value > maximum(field)) {
-          setError(fmt(t('format.maximum'), { field: t(fieldLabels[field]), n: numericText(maximum(field)) }));
+          setError({ field, message: fmt(t('format.maximum'), { field: t(fieldLabels[field]), n: numericText(maximum(field)) }) });
           return null;
         }
       }
@@ -119,14 +120,15 @@ function GeometryEditor({ selectedNodes, allowPosition }: { selectedNodes: Thoug
   const field = (name: GeometryField) => <label className={name === 'width' || name === 'height'
     ? 'min-w-0 grid grid-cols-[minmax(0,1fr)_minmax(0,11rem)] items-center gap-3' : 'block min-w-0 space-y-1.5'}>
     <span className="block text-control text-ink-muted">{t(fieldLabels[name])}</span>
-    <span className={`flex min-w-0 items-center h-9 rounded-control border bg-card focus-within:border-accent focus-within:ring-1 focus-within:ring-accent ${error && draft[name] !== undefined ? 'border-watch' : 'border-line'}`}>
+    <span className={`flex min-w-0 items-center h-9 rounded-control border bg-card focus-within:border-accent focus-within:ring-1 focus-within:ring-accent ${error?.field === name ? 'border-danger' : 'border-line'}`}>
       <input type="text" inputMode="decimal" aria-label={t(fieldLabels[name])} data-node-format-field={name}
         {...displayFor(name)} autoComplete="off"
-        aria-invalid={error && draft[name] !== undefined ? true : undefined}
+        aria-invalid={error?.field === name ? true : undefined}
+        aria-describedby={error?.field === name ? errorId : undefined}
         onFocus={() => setEditing(true)}
         onChange={event => {
           const text = event.target.value;
-          setEditing(true); setError('');
+          setEditing(true); setError(null);
           setDraft(previous => {
             const next = { ...previous, [name]: text };
             // With a locked ratio, the most recently edited axis drives size.
@@ -147,6 +149,8 @@ function GeometryEditor({ selectedNodes, allowPosition }: { selectedNodes: Thoug
     <section className="px-4 py-3 space-y-3" aria-label={t('format.size')}>
       <h3 className="text-title font-semibold text-ink">{t('format.size')}</h3>
       <div className="grid gap-3">{field('width')}{field('height')}</div>
+      {error && (error.field === 'width' || error.field === 'height') &&
+        <p id={errorId} className="text-control text-danger" role="alert">{error.message}</p>}
       <label className="flex items-center gap-2 text-control text-ink-muted cursor-pointer w-fit min-h-6">
         <input ref={lock} type="checkbox" checked={allLocked} aria-checked={mixedLock ? 'mixed' : allLocked} data-node-format-lock
           onChange={event => {
@@ -161,13 +165,11 @@ function GeometryEditor({ selectedNodes, allowPosition }: { selectedNodes: Thoug
         {t('format.lockAspectRatio')}
       </label>
     </section>
-    {(canEditPosition || error || dirty) && <section className="px-4 py-3 border-t border-line space-y-3" aria-label={canEditPosition ? t('format.position') : undefined}>
-      {canEditPosition && <>
-        <h3 className="text-title font-semibold text-ink">{t('format.position')}</h3>
-        <div className="grid grid-cols-2 gap-3">{field('x')}{field('y')}</div>
-      </>}
-      {error && <p className="text-control text-watch" role="alert">{error}</p>}
-      {dirty && <p className="text-control text-ink-faint">{t('format.editHint')}</p>}
+    {canEditPosition && <section className="px-4 py-3 border-t border-line space-y-3" aria-label={t('format.position')}>
+      <h3 className="text-title font-semibold text-ink">{t('format.position')}</h3>
+      <div className="grid grid-cols-2 gap-3">{field('x')}{field('y')}</div>
+      {error && (error.field === 'x' || error.field === 'y') &&
+        <p id={errorId} className="text-control text-danger" role="alert">{error.message}</p>}
     </section>}
   </div>;
 }

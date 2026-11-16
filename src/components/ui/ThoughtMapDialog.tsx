@@ -1,3 +1,5 @@
+import { appSettings } from '../../lib/disk-storage';
+import { isConversationStart } from '../../lib/graph';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useDismissableLayer } from '../../lib/use-dismissable-layer';
 import { createPortal } from 'react-dom';
@@ -274,8 +276,8 @@ export default function ThoughtMapDialog() {
     setMapLang(uiLang);
     setCapLang(uiLang);
     // the signature is identity, not content: remembered, never AI-drafted
-    setSig(localStorage.getItem('thoughtdag.tmapSignature') ?? '');
-    setSigPos((localStorage.getItem('thoughtdag.tmapSigPos') as 'byline' | 'corner') || 'byline');
+    setSig(appSettings.getItem('thoughtdag.tmapSignature') ?? '');
+    setSigPos((appSettings.getItem('thoughtdag.tmapSigPos') as 'byline' | 'corner') || 'byline');
     setTitle(clampWeight(projectName, TITLE_MAX));
     setSubtitle('');
     setCaption(`${fallbackCaption(uiLang, projectName || 'ThoughtDAG', stats)}\n\n${attributionLine()}`);
@@ -315,7 +317,7 @@ export default function ThoughtMapDialog() {
   const draft = async (): Promise<void> => {
     setDrafting(true);
     try {
-      const root = nodes.find((n) => n.data.isRoot)?.data.question?.slice(0, 200) ?? '';
+      const root = nodes.find((n) => isConversationStart(n.id, edges))?.data.question?.slice(0, 200) ?? '';
       const plaques = nodes
         .map((n) => { const ss = n.data.summaries; return Array.isArray(ss) ? (ss[n.data.responseIndex] ?? ss[0]) : undefined; })
         .filter((x): x is string => !!x)
@@ -396,7 +398,7 @@ export default function ThoughtMapDialog() {
 
   return createPortal((
     <div className="fixed inset-0 z-[85] bg-ink/25 flex items-center justify-center animate-fade-in" data-thought-map>
-      <div ref={layerRef} role="dialog" aria-modal="true" aria-label={t('tmap.title')} tabIndex={-1} className="bg-surface rounded-panel shadow-lg border border-line w-[min(1128px,96vw)] max-h-[95vh] overflow-y-auto p-6" onClick={(e) => e.stopPropagation()}>
+      <div ref={layerRef} role="dialog" aria-modal="true" aria-label={t('tmap.title')} tabIndex={-1} className="bg-surface rounded-panel shadow-lg border border-line w-[min(1128px,calc(96*var(--ui-vw)))] max-h-[calc(95*var(--ui-vh))] overflow-y-auto p-6" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-start justify-between mb-4">
           <div className="text-section font-semibold text-ink">{t('tmap.title')}{step === 'share' ? ` · ${t('tmap.shareStep')}` : ''}</div>
           <button onClick={close} className="w-7 h-7 rounded-control text-ink-faint hover:bg-wash hover:text-ink flex items-center justify-center transition-colors">
@@ -430,12 +432,12 @@ export default function ThoughtMapDialog() {
               <div>
                 <div className="text-control text-ink-faint mb-1">{t('tmap.sig')}</div>
                 <input value={sig} placeholder={t('tmap.subtitlePh')} data-tmap-sig
-                  onChange={(e) => { const v = clampWeight(e.target.value, 48); setSig(v); localStorage.setItem('thoughtdag.tmapSignature', v); }}
+                  onChange={(e) => { const v = clampWeight(e.target.value, 48); setSig(v); appSettings.setItem('thoughtdag.tmapSignature', v); }}
                   className="w-full border border-line rounded-control px-3 py-1.5 text-control bg-card text-ink placeholder-ink-faint focus:outline-none focus:ring-1 focus:ring-accent/40" />
               </div>
               <div className="flex items-center gap-2">
                 <span className="text-control text-ink-faint w-[56px] shrink-0">{t('tmap.sigPos')}</span>
-                <div className="flex-1">{seg([['byline', t('tmap.sigByline')], ['corner', t('tmap.sigCorner')]], sigPos, (v) => { setSigPos(v as 'byline' | 'corner'); localStorage.setItem('thoughtdag.tmapSigPos', v); })}</div>
+                <div className="flex-1">{seg([['byline', t('tmap.sigByline')], ['corner', t('tmap.sigCorner')]], sigPos, (v) => { setSigPos(v as 'byline' | 'corner'); appSettings.setItem('thoughtdag.tmapSigPos', v); })}</div>
               </div>
               <div className="text-control font-mono tracking-[0.18em] uppercase text-ink-faint mt-auto">{t('tmap.size')}</div>
               {([[t('tmap.slTitle'), tst, setTst], [t('tmap.slSub'), tss, setTss], [t('tmap.statsLbl'), tsx, setTsx]] as [string, number, (v: number) => void][]).map(([label, val, set]) => (

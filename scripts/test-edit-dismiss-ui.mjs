@@ -22,7 +22,6 @@ await page.route('**/api/**', async route => {
 await page.addInitScript(() => {
   localStorage.setItem('thoughtdag.seeded', 'yes');
   localStorage.setItem('thoughtdag.tutorialDone', '1');
-  localStorage.setItem('thoughtdag.autoRefreshPaused', 'yes');
 });
 const node = () => page.locator('.react-flow__node[data-id="dismiss-node"]');
 const rename = () => node().locator('[data-node-title-input]');
@@ -41,13 +40,12 @@ try {
   await page.evaluate(() => {
     window.__ui.getState().setTutorialOpen(false);
     window.__ui.getState().setReleaseNotesOpen(false);
-    window.__ui.getState().setAutoRefreshPaused(true);
     window.__ui.getState().setPanelOpen(false);
     window.__store.getState().setNodes([{ id: 'dismiss-node', type: 'thought', position: { x: 100, y: 100 }, selected: true,
       data: { displayName: '原名称', question: '原问题', response: '原回答', responses: ['原回答'], responseIndex: 0,
         isCollapsed: false, isEditing: false, isEditingResponse: false, isLoading: false,
         tokenCount: 12, highlights: [], highlightMode: 'tag', attachments: [], excludedAttachmentIds: [],
-        includedAttachmentIds: [], roleMode: 'inherit', isRoot: true, isBranch: false } }]);
+        includedAttachmentIds: [], roleMode: 'inherit'} }]);
     window.__store.getState().setEdges([]);
     window.__store.getState().setSelectedNodeId('dismiss-node');
   });
@@ -145,18 +143,20 @@ try {
   await page.evaluate(() => window.__ui.getState().setPanelOpen(true, window.__store.getState().selectedNodeId));
   const panel = page.locator('[data-focus-panel]');
   await panel.waitFor();
-  await panel.locator('[data-role-line-set], [data-role-line-edit]').first().click();
-  const role = panel.locator('[data-role-editor-text]');
-  await role.fill('临时角色草稿');
-  await panel.locator('.question-md').click();
-  await role.waitFor({ state: 'detached' });
-  assert.equal(await draft('role-edit'), '临时角色草稿');
-  await panel.locator('[data-role-line-set], [data-role-line-edit]').first().click();
-  assert.equal(await role.inputValue(), '临时角色草稿');
-  await role.press('Escape');
-  assert.equal(await draft('role-edit'), undefined);
-  assert.equal((await current()).rolePrompt, undefined);
-  check('role editor suspends draft and Escape cancels without changing node role');
+  assert.equal(await panel.locator('[data-role-line-set], [data-role-line-edit], [data-role-editor]').count(), 0);
+  assert.ok((await panel.locator('[data-node-info]').textContent()).includes('tokens'));
+  await panel.locator('[data-edit-question]').click();
+  const panelQuestion = panel.locator('[data-conversation-question] textarea');
+  await panelQuestion.fill('详情中的临时问题草稿');
+  await panel.locator('[data-node-info]').click();
+  await panelQuestion.waitFor({ state: 'detached' });
+  assert.equal(await draft('question-edit'), '详情中的临时问题草稿');
+  await panel.locator('[data-edit-question]').click();
+  assert.equal(await panelQuestion.inputValue(), '详情中的临时问题草稿');
+  await panelQuestion.press('Escape');
+  assert.equal(await draft('question-edit'), undefined);
+  assert.equal((await current()).question, '原问题');
+  check('the role-free inspection line preserves tokens; panel question drafts suspend and cancel safely');
 
   const requestConfirm = () => page.evaluate(() => {
     window.__confirmResult = null;

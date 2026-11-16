@@ -27,7 +27,6 @@ await context.route('**/api/**', (route) => {
 await page.addInitScript(() => {
   localStorage.setItem('thoughtdag.seeded', 'yes');
   localStorage.setItem('thoughtdag.tutorialDone', '1');
-  localStorage.setItem('thoughtdag.autoRefreshPaused', 'yes');
   // Delay delivery, not computation: every test still uses the real layout
   // worker, while races remain deterministic on both fast and slow machines.
   window.__holdLayoutReplies = false;
@@ -101,14 +100,13 @@ const fixture = async (framed = false) => {
       edges = [['file', 'a'], ['a', 'b'], ['a', 'branch', true], ['branch', 'branch-next'], ['b', 'merge'], ['branch-next', 'merge']];
     }
     edges = edges.map(([source, target, branch]) => ({ id: `${source}-${target}`, source, target, type: 'smoothstep',
-      sourceHandle: 'continue', targetHandle: 'top', data: branch ? { isBranchFromSelection: true } : {},
+      sourceHandle: 'continue', targetHandle: 'top', data: branch ? { } : {},
       style: { stroke: '#6B5CE7', strokeWidth: 2 }, markerEnd: { type: 'arrowclosed', color: '#6B5CE7', width: 18, height: 18 } }));
     window.__store.setState({ nodes, edges, history: [{ nodes, edges }], historyIndex: 0, selectedNodeIds: [], selectedNodeId: null,
       staleIds: [], staleFps: {}, staleVerdicts: {} });
     window.__ui.setState({ drafts: {} });
     const ui = window.__ui.getState();
-    ui.setPanelOpen(false); ui.setTutorialOpen(false); ui.setReleaseNotesOpen(false); ui.setAutoRefreshPaused(true);
-  }, framed);
+    ui.setPanelOpen(false); ui.setTutorialOpen(false); ui.setReleaseNotesOpen(false); }, framed);
   await page.waitForTimeout(500);
   await page.evaluate(() => window.__rf.fitView({ duration: 0, padding: 0.18 }));
   await page.waitForTimeout(350);

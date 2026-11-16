@@ -4,7 +4,7 @@ title: Use ThoughtDAG inside DeepSeek Harness
 
 # Use ThoughtDAG inside DeepSeek Harness
 
-The plugin embeds the ThoughtDAG canvas in the Harness web UI. Compose the next turn's context on the graph and let the harness execute it. Session Atlas also lets you explore Claude Code, Codex, Pi, and Harness conversations.
+The plugin embeds the ThoughtDAG canvas in the Harness web UI. Compose the next turn's context on the graph and let the harness execute it.
 
 ## Install
 
@@ -35,7 +35,7 @@ Choose how to run a question in the canvas model picker:
 |---|---|---|
 | A regular model provided by Harness | Calls the model directly; does not run the full agent tool loop | ThoughtDAG canvas |
 | **DeepSeek Harness · Agent** | Runs a real harness turn, with tools as configured in Harness | Canvas and Harness session log |
-| An Agent follow-up at the tail of a mirrored Harness session | Continues the corresponding Harness session | A new turn in that session, with the result reflected on the canvas |
+| An Agent follow-up at the tail of a canvas-launched Harness session | Continues the corresponding Harness session | A new turn in that session, with the result reflected on the canvas |
 
 Selecting a regular model is not the same as running the Harness Agent. Choose **DeepSeek Harness · Agent** when you want tool execution and a recorded harness turn.
 
@@ -59,9 +59,8 @@ PDF import, text extraction, and material wiring work as in the standalone app. 
 
 ### Append a turn; do not rewrite history
 
-Editing or deleting a mirror node changes the canvas, not an existing Harness session log. Sending through Agent mode executes and records a **new turn** in Harness.
+Editing or deleting a canvas node changes the canvas, not an existing Harness session log. Sending through Agent mode executes and records a **new turn** in Harness.
 
-Open [Session Atlas](./session-atlas) from the canvas menu to browse other conversations. The plugin accesses supported sessions on the machine running Harness, not arbitrary files on a browser client.
 
 ## Query history
 
@@ -87,7 +86,6 @@ The plugin enables native tools and a check-history-before-editing prompt by def
 | The plugin list shows a new version, but an older one gets installed | pnpm's 24-hour hold; see Install above and name the version |
 | A model is missing | Check its model configuration and credentials in Harness |
 | An answer appears on the canvas but not in the Harness log | Check whether you selected a regular model; use Agent mode for tool execution and a recorded turn |
-| Atlas cannot find another tool's sessions | Check that the logs are on the Harness host and use a supported format |
 | `/why` is missing after installation | Version `0.4.4` does not include native query tools; see the release note above |
 
 A local index does not mean retrieved content can never leave the device. When an agent uses results in a remote model request, the matching history may be sent with that request. See [Privacy and storage](../reference/privacy-storage).

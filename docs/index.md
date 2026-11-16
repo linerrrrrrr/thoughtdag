@@ -7,7 +7,7 @@ description: Install the open-source ThoughtDAG desktop app, connect a model, an
 ThoughtDAG turns LLM conversations into an editable graph. Each node contains a question and answer; incoming wires determine what the model sees next.
 
 ::: tip Desktop app recommended
-The desktop app provides the complete experience: local session discovery, Session Atlas, automatic folder backup, bundled search and tools, and desktop updates.
+The desktop app provides the complete experience: automatic folder backup, bundled search and tools, and desktop updates.
 
 **[Download ThoughtDAG](https://chenxiachan.github.io/thoughtdag/#download)** · [All releases](https://github.com/chenxiachan/thoughtdag/releases/latest)
 :::
@@ -36,20 +36,17 @@ Choose the correct installer on the [download page](https://chenxiachan.github.i
 
 The recording below shows the actual app: asking from a document, removing an unwanted context path, zooming from full answers to the map, and opening backup/export controls.
 
-<img src="./hero-demo-en.gif" alt="ThoughtDAG desktop overview: document questions, editable context edges, semantic zoom, backups, and Session Atlas for persistent project context" width="100%" loading="lazy"/>
+<img src="./hero-demo-en.gif" alt="ThoughtDAG desktop overview: document questions, editable context edges, semantic zoom, and backups" width="100%" loading="lazy"/>
 
 ## First launch: choose where to start
 
-The first screen offers four entry points. You can inspect examples and existing work before deciding whether to connect a model.
+The first screen offers three entry points. You can inspect examples and existing work before deciding whether to connect a model.
 
-![ThoughtDAG first screen with question, material, Session Atlas, and model connection entries](/screenshots/onboarding/en/landing-en-annotated.png)
 
-> The red labels and dashed leaders are documentation overlays, not part of the app. [Open the unannotated screenshot](/screenshots/onboarding/en/landing-en.png).
 
 1. **Ask a question**: after connecting a model, start the graph from a real question.
 2. **Add material**: drop in a PDF, image, or another file. Opening and reading need no model; asking and recognition do.
-3. **Open local agent sessions**: enter [Session Atlas](/guides/session-atlas). Viewing a mirror graph needs no model.
-4. **Connect a model**: enable answer generation, image recognition, and condensing.
+3. **Connect a model**: enable answer generation, image recognition, and condensing.
 
 If you only want to learn the interface, **Load example canvas** at the bottom of the page needs no setup.
 
@@ -71,7 +68,6 @@ The flow is: **choose a connection → authorize or enter a key → fetch models
 
 1. Load the example canvas or ask your first real question.
 2. Open the [interface overview](/guides/interface-overview) to learn the toolbar, nodes, wires, and floating panel.
-3. To continue local agent work, see [source and handoff setup](/guides/session-atlas#configure-sources-and-handoff).
 
 **[Browse all guides by interface area →](/guides/)**
 

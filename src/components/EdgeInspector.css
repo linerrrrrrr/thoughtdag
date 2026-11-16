@@ -57,7 +57,7 @@
 .edge-inspector-actions { display: flex; align-items: center; gap: 8px; }
 .edge-inspector-actions > button { display: flex; align-items: center; justify-content: center; gap: 5px; min-height: 34px; padding: 6px 13px; border-radius: var(--radius-control); font-size: var(--text-control); }
 .edge-inspector-actions > button:disabled { opacity: .4; }
-.edge-inspector-actions .edge-inspector-delete { margin-right: auto; padding-inline: 0 8px; color: var(--color-watch); }
+.edge-inspector-actions .edge-inspector-delete { margin-right: auto; padding-inline: 0 8px; color: var(--color-danger); }
 .edge-inspector-error { margin: 0 0 10px; color: var(--color-red-600); font-size: var(--text-control); line-height: var(--text-control--line-height); }
 @media (max-width: 767px) {
   .edge-inspector-note input { font-size: var(--text-body); }

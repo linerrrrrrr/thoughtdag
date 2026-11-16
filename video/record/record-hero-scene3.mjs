@@ -140,8 +140,7 @@ await page.evaluate((T) => {
       summaries: [T[id].s], summaryTypes: [type],
       isCollapsed: false, isEditing: false, isEditingResponse: false, isLoading: false,
       tokenCount: 40, highlights: [], highlightMode: 'tag', attachments: [],
-      excludedAttachmentIds: [], includedAttachmentIds: [], roleMode: 'inherit',
-      isRoot: false, isBranch: false, ...extra,
+      excludedAttachmentIds: [], includedAttachmentIds: [], roleMode: 'inherit', ...extra,
     },
   });
   const E = (s2, t, branch) => ({
@@ -154,13 +153,13 @@ await page.evaluate((T) => {
   });
   window.__store.setState({
     nodes: [
-      mk('root', 0, 0, undefined, { isRoot: true }),
+      mk('root', 0, 0, undefined, { }),
       mk('name', 0, 620, 'insight'),
       mk('dec', 0, 1240, 'decision'),
-      mk('ruleout', 680, 80, 'ruleout', { isBranch: true, branchContext: T.ruleout.ctx }),
+      mk('ruleout', 680, 80, 'ruleout', { }),
       mk('ins', 680, 700, 'insight'),
       mk('pivot', 680, 1320, 'pivot'),
-      mk('rule3', 1360, 700, 'decision', { isBranch: true, branchContext: T.rule3.ctx }),
+      mk('rule3', 1360, 700, 'decision', { }),
     ],
     edges: [
       E('root', 'name'), E('name', 'dec'),

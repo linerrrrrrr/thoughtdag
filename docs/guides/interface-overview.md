@@ -8,12 +8,13 @@ Use this page to locate the main areas of the app. The labels and gestures below
 
 ## 1. Toolbar
 
-The canvas entry at the upper left switches projects and opens [**Session Atlas**](/guides/session-atlas). The upper-right toolbar shows controls relevant to the current canvas:
+The canvas entry at the upper left switches and manages canvases. The upper-right toolbar shows controls relevant to the current canvas:
 
 - [**Model picker**](/guides/models-tools#connect-and-select-a-model), including model and capability configuration;
 - [**Replay stale**](/guides/versions-replay#replay-dependent-work), shown only when stale nodes exist;
 - [**Frame navigator**](/guides/canvas-projects#use-frames), shown only when frames exist;
 - [**Search nodes**](/guides/canvas-projects#find-a-node), language, and [**Local auto-backup**](/guides/data-sharing#automatic-folder-backup);
+- [**Layout**](/guides/canvas-projects#arrange-the-graph) and **Connections** open separate settings for node layout and connections across canvases on this device; Connections moves into More when space is limited;
 - [**More actions**](#more-actions-menu), [undo and redo](/guides/data-sharing#recover-changes).
 
 ### **More actions** menu
@@ -23,7 +24,6 @@ The upper-right **⋯** contains lower-frequency canvas-wide actions:
 | Menu item | What it does |
 |---|---|
 | [**Show / Hide annotations**](/guides/canvas-projects#use-frames) | Temporarily shows or hides frames and unlinked material. This changes only the view; it neither deletes content nor changes model context. |
-| [**Layout design**](/guides/canvas-projects#arrange-the-graph) | Includes Auto layout using saved settings for the selection or entire canvas, plus direction, spacing, preview, and an explicit apply action. |
 | [**All highlights**](/guides/organize#highlight-and-weave) | Collects every highlight on the canvas for locating, weaving, or Markdown export. Appears only when highlights exist. |
 | [**All materials**](/guides/materials#other-material-flows) | Lists files, images, links, and other material nodes and locates them on the canvas. Appears only when material exists. |
 | [**Condense**](/guides/organize#condense-a-path) | Finds conversation runs whose granularity can drop and creates a condensed copy beside the original graph. The original stays unchanged. |
@@ -77,26 +77,16 @@ Reviewer and condensed nodes use their own dedicated marks. See [Versions, stale
 ## 4. Wires
 
 - **Purple solid wire**: primary conversation path carrying full upstream context.
-- **Orange solid wire**: a passage or role branch, still part of the context structure. Existing passage branches remain available.
 - **Purple dashed wire**: summary reference carrying the referenced question and answer plus the upstream question trail.
-- **Red dashed wire**: sliding reviewer relationship.
 
 Selecting a convertible wire shows its token estimate and conversion action. You can also delete the wire. See [Control context](/guides/context-control).
 
 ## 5. Floating panel
 
-The [floating panel](/guides/conversations#floating-panel-areas) shows the full question and answer, active version, grouped context tree, highlights, references, and a follow-up box. It floats above the canvas without changing node positions.
+The [floating panel](/guides/conversations#floating-panel-areas) shows the full question and answer, active version, highlights, token estimates, attachments, and recall. It floats above the canvas without changing node positions. Conversation details have no context-node list or source-ordering section.
 
-![English conversation node and floating panel](/screenshots/interface-overview/en/node-panel-en-annotated.png)
+## 6. Continue on the canvas
 
-The red callouts locate the active node, question, response, context area, and follow-up entry. They are not part of the app UI.
-
-## 6. Follow-up box and context preview
-
-The box at the bottom of the floating panel continues from the active question-and-answer node. A summary line above it reads something like **“will send ~900 tok · 8 messages.”** This is not a separate toolbar button. Click the summary line to expand the [context preview for the next follow-up](/guides/context-control#inspect-the-next-request).
-
-![English follow-up box and Will send summary](/screenshots/interface-overview/en/followup-context-preview-en.png)
-
-The expanded preview groups materials, explicit references, and conversation turns, and shows message and token estimates. This entry belongs only to follow-ups in the node panel. The main ask box used to start the first question on an empty canvas does not show this line.
+Drag a connection from the current node to empty canvas to create a child, then enter and send the next question in that node. For a node with multiple inputs, its **Context · N sources** entry opens a separate source card for inspection and ordering; see [Control context](/guides/context-control#inspect-the-next-request).
 
 Continue with [Canvas, navigation, and frames](/guides/canvas-projects), or go directly to [Conversation nodes and panel](/guides/conversations).

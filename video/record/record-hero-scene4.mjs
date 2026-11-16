@@ -82,7 +82,7 @@ await page.evaluate(({ T }) => {
       summaries: [s], summaryTypes: [type],
       isCollapsed: false, isEditing: false, isEditingResponse: false, isLoading: false,
       tokenCount: 40, highlights: [], highlightMode: 'tag', attachments: [],
-      excludedAttachmentIds: [], includedAttachmentIds: [], roleMode: 'inherit', isRoot: false, isBranch: false, ...extra },
+      excludedAttachmentIds: [], includedAttachmentIds: [], roleMode: 'inherit', ...extra },
   });
   const E = (s2, t, branch) => ({ id: `e-${s2}-${t}`, source: s2, target: t,
     sourceHandle: branch ? 'branch' : 'continue', targetHandle: branch ? 'left' : 'top', type: 'smoothstep',
@@ -91,8 +91,8 @@ await page.evaluate(({ T }) => {
     markerEnd: { type: 'arrowclosed', color: branch ? '#E08A3C' : '#6B5CE7', width: 18, height: 18 }, data: {} });
   window.__store.setState({
     nodes: [
-      mk('root', 0, 0, T.rootQ, T.rootA, T.rootS, undefined, { isRoot: true }),
-      mk('rule', 680, 80, T.ruleQ, T.ruleA, T.ruleS, 'ruleout', { isBranch: true }),
+      mk('root', 0, 0, T.rootQ, T.rootA, T.rootS, undefined, { }),
+      mk('rule', 680, 80, T.ruleQ, T.ruleA, T.ruleS, 'ruleout', { }),
       mk('ins', 0, 430, T.insQ, T.insA, T.insS, undefined),
       mk('dec', 0, 860, T.decQ, T.decA, T.decS, 'decision'),
     ],

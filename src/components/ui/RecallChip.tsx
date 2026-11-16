@@ -7,6 +7,7 @@ import { RECALL_SCALES, reachEstimate, type RecallReach, type RecallScale } from
 import { judgeConfigured } from '../../lib/judge';
 import { whyBridge } from '../../lib/why-bridge';
 import { useT, fmt } from '../../i18n';
+import { uiRect, uiViewport } from '../../lib/ui-scale';
 
 // Recall, as a quiet chip beside the two search icons: its name, and when on,
 // its reach. The chip opens a small menu: the switch, the reach, the amount.
@@ -74,7 +75,11 @@ export default function RecallChip({ nodeId }: { nodeId?: string } = {}) {
       <button
         type="button"
         // inside a card the click must not select the node (that opens the panel and swaps the composer away)
-        onClick={(e) => { e.stopPropagation(); const r = e.currentTarget.getBoundingClientRect(); setOpen((v) => (v ? null : { left: Math.max(8, Math.min(r.right - 296, window.innerWidth - 304)), bottom: window.innerHeight - r.top + 8 })); }}
+        onClick={(e) => {
+          e.stopPropagation();
+          const r = uiRect(e.currentTarget), viewport = uiViewport();
+          setOpen((v) => (v ? null : { left: Math.max(8, Math.min(r.right - 296, viewport.width - 304)), bottom: viewport.height - r.top + 8 }));
+        }}
         aria-expanded={!!open}
 
         className={`h-8 px-2.5 rounded-control flex items-center gap-1.5 text-control font-medium transition-colors ${on ? 'text-accent bg-accent/15 ring-1 ring-accent/40 hover:bg-accent/25' : 'text-ink-muted opacity-60 hover:opacity-100 hover:bg-line'}`}

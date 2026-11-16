@@ -346,7 +346,7 @@ export function buildGraphFromTurns(turns: DshTurn[], sessionId: string, cwd?: s
   let prev: ThoughtNode | null = null;
 
   for (const turn of turns) {
-    const node = makeNode(turn.question || '(tool-only turn)', turn.response, prev === null);
+    const node = makeNode(turn.question || '(tool-only turn)', turn.response);
     node.data.importSource = { runner: 'dsh', sessionId, itemIds: turn.itemIds, ...origin };
     node.data.source = { question: node.data.question, response: node.data.response };
     seatTurnWork(node, turn);

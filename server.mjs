@@ -21,16 +21,18 @@ if (process.versions.electron) {
 import { execSync, execFileSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
-import os from 'os';
+import { createRequire } from 'node:module';
 
 // ─── Environment ────────────────────────────────────────────────
 // Minimal .env loader (avoids dotenv dependency and Node --env-file version quirks)
-try {
-  for (const line of fs.readFileSync(new URL('.env', import.meta.url), 'utf8').split('\n')) {
-    const m = line.match(/^\s*([\w.]+)\s*=\s*(.*?)\s*$/);
-    if (m && !(m[1] in process.env)) process.env[m[1]] = m[2];
-  }
-} catch { /* .env is optional — env vars may come from the shell */ }
+for (const envFile of ['.env.local', '.env']) {
+  try {
+    for (const line of fs.readFileSync(new URL(envFile, import.meta.url), 'utf8').split('\n')) {
+      const m = line.match(/^\s*([\w.]+)\s*=\s*(.*?)\s*$/);
+      if (m && !(m[1] in process.env)) process.env[m[1]] = m[2];
+    }
+  } catch { /* env files are optional — env vars may come from the shell */ }
+}
 
 const ZHIPU_KEY = process.env.ZHIPU_API_KEY;
 const QWEN_KEY = process.env.DASHSCOPE_API_KEY;
@@ -575,6 +577,7 @@ function makeTools(sources, onSearch, prefs = {}) {
 const MAX_OUTPUT_TOKENS = process.env.MAX_OUTPUT_TOKENS ? Number(process.env.MAX_OUTPUT_TOKENS) : undefined;
 
 const app = express();
+const localRequire = createRequire(import.meta.url);
 // This proxy runs on the user's own machine (desktop shell / `npm run server`)
 // and can spawn processes — so it must NOT be reachable from the network or
 // from arbitrary websites. CORS is restricted to same-origin (desktop shell)
@@ -588,13 +591,16 @@ app.use(cors({
     cb(null, false);
   },
 }));
+if (process.env.THOUGHTDAG_DISK_STORAGE === '1') {
+  const dataRoot = process.env.THOUGHTDAG_HOME;
+  if (!dataRoot || !path.isAbsolute(dataRoot)) throw new Error('An absolute THOUGHTDAG_HOME is required for local disk storage');
+  app.use(localRequire('./runtime/browser-storage.cjs').createBrowserStorage({ dataRoot }));
+}
 app.use(express.json({ limit: '50mb' })); // Support image uploads
 
 // ── agent runtimes and the other agents' session files, when this server
 // runs on the person's machine (the desktop shell has its own road; the
 // hosted deployment has neither, and answers 404) ──
-import { createRequire } from 'node:module';
-const localRequire = createRequire(import.meta.url);
 let agentsHttp = null;
 const localFiles = localRequire('./runtime/local-files.cjs').createLocalFiles();
 app.all(/^\/api\/local\/.*/, async (req, res) => {
@@ -624,7 +630,8 @@ app.post('/api/pdf-extract', async (req, res) => {
     console.log(`PDF extract: ${buffer.length} bytes, header: ${buffer.slice(0, 5).toString()}`);
 
     // Save to temp file for pdftoppm
-    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pdf-'));
+    const tempRoot = localRequire('./runtime/local-temp.cjs').thoughtdagTempRoot();
+    const tmpDir = fs.mkdtempSync(path.join(tempRoot, 'pdf-'));
     const pdfPath = path.join(tmpDir, 'input.pdf');
     fs.writeFileSync(pdfPath, buffer);
 
@@ -840,17 +847,9 @@ function modelsPayload() {
 
 app.get('/api/models', (req, res) => res.json(modelsPayload()));
 
-// Browser-supplied OpenRouter key: an alternative to .env for people who
-// try the app before touching a config file. The key lives in the BROWSER
-// (localStorage) and in this process's memory only — never written to disk.
-// The frontend re-pushes it on boot, so proxy restarts self-heal. Models
-// registered here are tagged runtime:true so a new push replaces them
-// without touching .env-registered ones.
-// ── Browser-configured providers ─────────────────────────────────
-// Any OpenAI-compatible endpoint registers at runtime: OpenRouter, OpenAI,
-// DeepSeek, Zhipu, Kimi, a local Ollama, or any custom gateway. Keys live
-// in the BROWSER (localStorage) and this process's memory only — never on
-// disk. The frontend re-pushes on boot, so proxy restarts self-heal.
+// Browser-configured providers are supplied with each request. Their keys
+// live in application settings (browser storage or the configured local
+// data directory), not in a persistent provider registry in this process.
 
 const isOpenRouter = (baseURL) => /openrouter\.ai/i.test(String(baseURL));
 

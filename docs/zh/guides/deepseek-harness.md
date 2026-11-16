@@ -4,7 +4,7 @@ title: 在 DeepSeek Harness 中使用 ThoughtDAG
 
 # 在 DeepSeek Harness 中使用 ThoughtDAG
 
-插件把 ThoughtDAG 画布嵌入 Harness 网页界面。你在图上整理下一轮的上下文，Harness 负责执行；也可以通过 Agent 对话地图浏览 Claude Code、Codex、Pi 和 Harness 的会话。
+插件把 ThoughtDAG 画布嵌入 Harness 网页界面。你在图上整理下一轮的上下文，Harness 负责执行。
 
 ## 安装
 
@@ -35,7 +35,7 @@ dsh web
 |---|---|---|
 | Harness 提供的普通模型 | 直接调用该模型生成回答，不运行完整 Agent 工具循环 | ThoughtDAG 画布 |
 | **DeepSeek Harness · Agent** | 由 Harness 执行真实 Agent 轮次，可按 Harness 配置使用工具 | 画布与 Harness 会话日志 |
-| 在已镜像的 Harness 会话链尾，以 Agent 方式继续追问 | 续接对应的 Harness 会话 | 原 Harness 会话新增轮次，画布同步结果 |
+| 在画布发起的 Harness 会话链尾，以 Agent 方式继续追问 | 续接对应的 Harness 会话 | 原 Harness 会话新增轮次，画布同步结果 |
 
 选择普通模型不等于执行 Harness Agent。若希望使用工具并保留真实会话轮次，请选择 **DeepSeek Harness · Agent**。
 
@@ -59,9 +59,8 @@ dsh web
 
 ### 新增轮次，不改写旧历史
 
-编辑或删除镜像节点，只改变画布，不会改写已经存在的 Harness 会话日志。通过 Agent 方式发送追问，则是在 Harness 中执行并记录一个**新轮次**。
+编辑或删除画布节点，只改变画布，不会改写已经存在的 Harness 会话日志。通过 Agent 方式发送追问，则是在 Harness 中执行并记录一个**新轮次**。
 
-需要浏览其他会话时，从画布菜单进入 [Agent 对话地图](./session-atlas)。插件能访问的是运行 Harness 的机器上的受支持会话，不是任意浏览器客户端的文件。
 
 ## 查询历史
 
@@ -87,7 +86,6 @@ dsh web
 | 插件列表显示新版本，装上却是旧版本 | pnpm 的 24 小时保护，见「安装」一节，点名版本号安装 |
 | 看不到预期模型 | Harness 中是否已配置相应模型和凭证 |
 | 节点有回答，但 Harness 日志没有新轮次 | 是否选择了普通模型；需要日志与工具执行时选择 Agent 方式 |
-| Atlas 没找到其他工具的会话 | 对应日志是否位于 Harness 所在机器上，且属于受支持格式 |
 | 安装后没有 `/why` | `0.4.4` 不包含原生查询工具，见上面的发布状态说明 |
 
 本地索引不代表检索结果永远不离开设备：当 Agent 把结果用于远程模型请求时，命中的历史内容可能随请求发送。存储与删除方式见[隐私与存储](../reference/privacy-storage)。

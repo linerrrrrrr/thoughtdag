@@ -9,6 +9,7 @@ interface DesktopUpdateEvent {
 }
 
 interface DesktopBridge {
+  getPathForFile?: (file: File) => string;
   checkForUpdates: () => Promise<void>;
   downloadUpdate?: () => Promise<void>;
   installUpdate?: () => Promise<void>;
@@ -17,8 +18,7 @@ interface DesktopBridge {
   tray?: (req?: { on?: boolean; labels?: { open: string; quit: string } }) => Promise<{ closeToTray: boolean }>;
 }
 
-// Fenced read-only primitives over the runner session stores (main.js
-// SESSION_ROOTS). All runner knowledge lives in src/lib/atlas/.
+// Fenced read-only access to runtime records used by agent nodes.
 interface SessionRoot {
   key: string;
   path: string;
@@ -28,44 +28,15 @@ interface SessionRoot {
 
 interface DesktopSessionsBridge {
   roots: () => Promise<SessionRoot[]>;
-  /** Native directory picker — the ONLY door into the whitelist. */
-  addRoot: () => Promise<SessionRoot | null>;
-  removeRoot: (key: string) => Promise<void>;
   list: (rootKey: string) => Promise<{ rel: string; size: number; mtime: number }[]>;
-  head: (rootKey: string, rel: string, bytes: number) => Promise<string>;
   read: (rootKey: string, rel: string) => Promise<string>;
-  /** Line-aligned chunked read — the road for sessions too big for one string. */
-  readRange: (rootKey: string, rel: string, start: number, length: number) => Promise<{ text: string; nextStart: number; eof: boolean }>;
-  openInCli: (runner: string, cwd: string | null, sessionId: string, mode: 'app' | 'terminal') => Promise<{ opened: boolean; via: 'app' | 'terminal' | ''; command: string }>;
-  openTargets: () => Promise<{
-    terminals: { id: string; name: string; custom: boolean }[];
-    apps: { runner: string; name: string }[];
-    prefs: { terminal: string };
-    canAddCustom: boolean;
-  }>;
-  setOpenPrefs: (prefs: { terminal: string }) => Promise<{ terminal: string }>;
-  /** Native app picker (macOS) — a user-chosen terminal app joins the registry. */
-  addTerminal: () => Promise<{ id: string; name: string } | null>;
-  /** One-command handoff installer: ships /thoughtdag ($thoughtdag)
-      into the agent's own commands directory, with content-compare
-      status and clean removal. */
-  commandsStatus?: () => Promise<Record<string, { state: 'installed' | 'outdated' | 'absent' | 'unavailable'; dest: string; invoke: string }>>;
-  commandsInstall?: (runner: string) => Promise<{ ok: boolean; dest?: string; error?: string }>;
-  commandsRemove?: (runner: string) => Promise<{ ok: boolean; error?: string }>;
-  /** Codex app-server read path (Tier 2): real thread names, fork
-      lineage, full turns. null whenever the codex CLI is absent. */
-  codexThreads?: () => Promise<{
-    id: string; sessionId: string; name: string | null; preview: string;
-    forkedFromId: string | null; parentThreadId: string | null;
-    updatedAt: string | null; cwd: string | null; path: string | null;
-  }[] | null>;
+  openInCli: (runner: string, cwd: string | null, sessionId: string, mode: 'terminal') => Promise<{ opened: boolean; via: 'app' | 'terminal' | ''; command: string }>;
   codexThreadRead?: (threadId: string) => Promise<unknown | null>;
-  /** thoughtdag:// deep links: push while running, pull once at startup. */
-  onDeepLink?: (cb: (url: string) => void) => void;
-  pendingDeepLink?: () => Promise<string | null>;
-  /** Start watching all live roots; events arrive via onSessionsChanged. */
-  watchStart: () => Promise<boolean>;
-  onSessionsChanged: (cb: (e: { rootKey: string; rel: string }) => void) => void;
+}
+
+interface DesktopNavigationBridge {
+  onOpen(cb: (url: string) => void): void;
+  pending(): Promise<string | null>;
 }
 
 /** Local paths a response mentions, opened on this machine. */
@@ -104,6 +75,9 @@ interface DesktopAgentRunRequest {
   /** absolute working directory the agent runs in */
   cwd: string;
   prompt: string;
+  /** Structured model-visible history, never concatenated into prompt. */
+  codexHistory?: import('./lib/agents/codex-history').CodexHistoryRequest;
+  instructions?: string;
   images?: { type: 'image'; data: string; mimeType: string }[];
   /** continue this session file (absolute path) instead of opening a fresh one */
   sessionPath?: string;
@@ -239,6 +213,7 @@ interface Window {
   desktop?: DesktopBridge;
   desktopWhy?: DesktopWhyBridge;
   desktopSessions?: DesktopSessionsBridge;
+  desktopNavigation?: DesktopNavigationBridge;
   desktopLocal?: DesktopLocalBridge;
   desktopCanvas?: DesktopCanvasBridge;
   desktopAgents?: DesktopAgentsBridge;

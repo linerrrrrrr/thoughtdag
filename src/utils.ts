@@ -23,13 +23,14 @@ export function generateId(): string {
 }
 
 /** The display summary for a node's ACTIVE version (map layer only). */
-/** A node still waiting for ITS OWN question: an empty ask node, or a
-    paradigm human turn. Everywhere this is non-null, question inputs fill
+/** A node accepting ITS OWN question: an empty ask node, a failed attempt,
+    or a paradigm human turn. Everywhere this is non-null, question inputs fill
     THIS node (editQuestion / submitHumanTurn) instead of spawning a child —
     the canvas card and the focus panel share this single source. */
-export function awaitingInput(data: { stepKind?: string; question: string; response: string; isLoading: boolean; generationFailed?: boolean }): 'ask' | 'human' | null {
+export function awaitingInput(data: { stepKind?: string; question: string; response: string; isLoading: boolean; generationFailed?: boolean }): 'ask' | 'failed' | 'human' | null {
   if (data.stepKind === 'human' && !data.question) return 'human';
-  if (!data.stepKind && !data.question && !data.response && !data.isLoading && !data.generationFailed) return 'ask';
+  if (data.stepKind !== 'human' && !data.isLoading && data.generationFailed) return 'failed';
+  if (!data.stepKind && !data.question && !data.response && !data.isLoading) return 'ask';
   return null;
 }
 

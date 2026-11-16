@@ -3,7 +3,7 @@
 // reads the card; the person can always unfold the verbatim text in the
 // panel. Cards are made in the background after a recall, so an ask never
 // waits for them — the first time, the clipped text goes in instead.
-import { get as idbGet, set as idbSet } from 'idb-keyval';
+import { get as idbGet, set as idbSet } from './disk-storage';
 import { backgroundCall } from './background-model';
 import { getModelsOnce } from './use-models';
 import { useStore } from '../store';

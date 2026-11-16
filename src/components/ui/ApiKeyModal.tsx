@@ -3,7 +3,7 @@ import { useCanvasPanelPosition } from '../../lib/use-canvas-panel-position';
 import { useCanvasToolCard } from '../../lib/use-canvas-tool-card';
 import { useRef, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Camera, ExternalLink, KeyRound, Loader2, Plus, Trash2, X, Pencil, Scale } from 'lucide-react';
+import { Camera, ExternalLink, KeyRound, Loader2, Plus, Trash2, X, Pencil, Scale, SquareTerminal } from 'lucide-react';
 import { startOpenRouterOAuth } from '../../lib/openrouter-oauth';
 import { useUiStore, toast } from '../../lib/ui-store';
 import { useModels, setModelsCache } from '../../lib/use-models';
@@ -12,16 +12,16 @@ import {
   guessVision, probeModels, pushProviders, saveProviders, storedProviders,
 } from '../../lib/runtime-providers';
 import { useT, fmt, useI18n } from '../../i18n';
-import { API_BASE } from '../../lib/constants';
 import JudgeSettings from './JudgeSettings';
 import { judgeConfigured } from '../../lib/judge';
 import { apiVisionModels } from '../../lib/background-model';
+import { modelExecutionKind } from '../../lib/node-execution';
+import AgentConnectionSection from './AgentConnectionSection';
+import { restoreCanvasToolbarFocus } from '../../lib/use-responsive-canvas-header';
 
-// The model-interface manager: one door for every way in. Presets carry a
-// baseURL and a key page; the model list is always fetched live from the
-// endpoint's /models route (protocol standard), so nothing here goes stale.
-// Local runtimes need no key; a custom endpoint field catches everything
-// else that speaks the OpenAI-compatible protocol.
+// Separate Agent and API pages share the left tool-card shell. API presets
+// carry an endpoint and credential flow; local execution settings stay on
+// the Agent page. Switching pages suspends an unfinished API form.
 
 export default function ApiKeyModal() {
   const t = useT();
@@ -36,6 +36,7 @@ export default function ApiKeyModal() {
   // (a card that appears once, right then), or its own view when the picker's judge row or the
   // memory page asked for it. Either way it never competes with "add an interface".
   const section = useUiStore((s) => s.apiKeyModalSection);
+  const agentView = section === 'agents';
   const judgeCfg = useUiStore((s) => s.judge);
   const [judgeView, setJudgeView] = useState(false);
   const [justAdded, setJustAdded] = useState(false);
@@ -72,12 +73,6 @@ export default function ApiKeyModal() {
   // UI language — the same provider never appears twice in the row.
   const visiblePresets = PROVIDER_PRESETS.filter((p) => !p.region || p.region === lang);
   const [preset, setPreset] = useState<ProviderPreset>(visiblePresets[0]);
-  // The hosted deployment cannot reach a user's 127.0.0.1 (and the bridge
-  // sends no CORS): surface the limit BEFORE the 403, not after. Same-origin
-  // alone is NOT "hosted" — the desktop shell serves same-origin from a
-  // loopback address, and its bundled server reaches the bridge just fine.
-  const isLoopback = ['localhost', '127.0.0.1', '[::1]'].includes(location.hostname);
-  const hostedBridgeBlocked = API_BASE === '' && !isLoopback && preset.baseURL.includes('127.0.0.1');
   const [key, setKey] = useState('');
   const [customURL, setCustomURL] = useState('');
   const [customName, setCustomName] = useState('');
@@ -87,19 +82,21 @@ export default function ApiKeyModal() {
   const [sortMode, setSortMode] = useState<'time' | 'name'>('time');
   const [initialPicked, setInitialPicked] = useState<Set<string>>(new Set());
 
+  const apiModels = useMemo(() => (data?.models ?? []).filter(model => model.provider !== '__agent__' && modelExecutionKind(model.id) === 'api'), [data]);
   const serverModels = useMemo(
-    () => (data?.models ?? []).filter((m) => !providers.some((p) => p.models.some((x) => x.id === m.id))),
-    [data, providers],
+    () => apiModels.filter((m) => !providers.some((p) => p.models.some((x) => x.id === m.id))),
+    [apiModels, providers],
   );
-  const visionCount = apiVisionModels(data?.models ?? []).length;
+  const visionCount = apiVisionModels(apiModels).length;
 
   const resetAdd = () => {
     setAdding(false); setProbed(null); setPicked(new Map()); setKey(''); setCustomURL(''); setCustomName(''); setFilter(''); setError('');
   };
   const layerRef = useRef<HTMLDivElement>(null);
-  useDismissableLayer({ open, refs: [layerRef], onDismiss: (reason) => {
-    if (reason === 'escape') resetAdd();
+  useDismissableLayer({ open, refs: [layerRef], restoreFocus: false, ignoreOutside: event => event.target instanceof Element && !!event.target.closest('[data-connection-entry]'), onDismiss: (reason) => {
+    if (reason === 'escape' && !agentView) resetAdd();
     setOpen(false);
+    if (reason === 'escape') restoreCanvasToolbarFocus(document.querySelector(`[data-connection-entry="${agentView ? 'agents' : 'providers'}"]`));
   } });
   useEffect(() => { if (open) layerRef.current?.focus({ preventScroll: true }); }, [open]);
 
@@ -127,7 +124,7 @@ export default function ApiKeyModal() {
   // newly listed models automatically. Huge catalogs (gateways) stay on the
   // picked+recommended whitelist; use Add to browse their new arrivals.
   const refresh = async (p: RuntimeProvider) => {
-    // Same-URL region twins exist (ChatGPT bridge, Kimi Code): prefer the
+    // Same-URL region twins exist (Kimi Code): prefer the
     // twin matching the UI language so the visible chip row highlights.
     const match = PROVIDER_PRESETS.find((x) => x.baseURL === p.baseURL && (!x.region || x.region === lang))
       ?? PROVIDER_PRESETS.find((x) => x.baseURL === p.baseURL);
@@ -235,33 +232,29 @@ export default function ApiKeyModal() {
 
   return createPortal((
     <div className="relative z-[60]">
-      <div ref={layerRef} role="dialog" aria-label={t('provider.title')} tabIndex={-1} style={panelPosition} data-model-connection-panel className="canvas-tool-panel flex flex-col" onClick={(e) => e.stopPropagation()}
+      <div ref={layerRef} role="dialog" aria-label={t(agentView ? 'connection.agent' : 'connection.api')} tabIndex={-1} style={panelPosition} data-model-connection-panel data-connection-page={agentView ? 'agents' : 'api'} className="canvas-tool-panel flex flex-col" onClick={(e) => e.stopPropagation()}
         onKeyDown={(event) => { if (event.key !== 'Escape' || event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) event.stopPropagation(); }}>
         <div className="flex flex-wrap items-center gap-2 px-4 py-3 border-b border-line shrink-0">
-          <KeyRound size={15} strokeWidth={1.75} className="text-accent shrink-0" />
-          <span className="text-title font-semibold text-ink flex-1">{t('provider.title')}</span>
+          {agentView ? <SquareTerminal size={15} strokeWidth={1.75} className="text-accent shrink-0" /> : <KeyRound size={15} strokeWidth={1.75} className="text-accent shrink-0" />}
+          <span className="text-title font-semibold text-ink flex-1">{t(agentView ? 'connection.agent' : 'connection.api')}</span>
           {/* two doors, one per kind of model: the slow thinking that answers, the fast thinking that judges */}
-          <div className="order-last w-full flex">
+          {!agentView && <div className="order-last w-full flex">
             <div className="inline-flex rounded-control border border-line bg-wash/60 p-0.5 text-control" data-apikey-tabs>
               <button onClick={() => { setJudgeView(false); resetAdd(); }} className={`px-3 py-1 rounded-control transition-colors ${!judgeView ? 'bg-card text-ink ' : 'text-ink-muted hover:text-ink'}`} data-apikey-tab="slow">{t('provider.tabSlow')}</button>
               <button onClick={() => { setJudgeView(true); resetAdd(); }} className={`px-3 py-1 rounded-control transition-colors ${judgeView ? 'bg-card text-ink ' : 'text-ink-muted hover:text-ink'}`} data-apikey-tab="fast">{t('provider.tabFast')}</button>
             </div>
-          </div>
+          </div>}
           <button onClick={() => setOpen(false)} aria-label={t('common.close')} className="text-ink-faint hover:text-ink w-7 h-7 rounded-control hover:bg-wash flex items-center justify-center transition-colors shrink-0">
             <X size={15} strokeWidth={1.75} />
           </button>
         </div>
 
-        <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-4 py-4 space-y-3">
-          {judgeView && !adding && (<>
-            <p className="text-control text-ink-muted">{t('provider.fastIntro')}</p>
+        <div className={`flex-1 min-h-0 overflow-y-auto overscroll-contain ${agentView ? '' : 'px-4 py-4 space-y-3'}`}>
+          {agentView && <AgentConnectionSection />}
+          {!agentView && judgeView && !adding && (<>
             <JudgeSettings />
           </>)}
-          {!judgeView && !adding && (<>
-            {(data?.models.length ?? 0) === 0 && (
-              <p className="text-control text-ink-muted">{t('provider.introEmpty')}</p>
-            )}
-
+          {!agentView && !judgeView && !adding && (<>
             {serverModels.length > 0 && (
               <div className="border border-line rounded-content px-3 py-2.5 bg-wash/50 text-control text-ink-muted">
                 {fmt(t('provider.serverRow'), { n: serverModels.length })}
@@ -287,9 +280,9 @@ export default function ApiKeyModal() {
               </div>
             ))}
 
-            {(data?.models.length ?? 0) > 0 && (
+            {apiModels.length > 0 && (
               <p className="text-control text-ink-faint">
-                {fmt(t('provider.capabilityLine'), { n: data!.models.length, v: visionCount })}
+                {fmt(t('provider.capabilityLine'), { n: apiModels.length, v: visionCount })}
                 {!data?.capabilities?.webSearch && ` ${t('provider.noSearchNote')}`}
               </p>
             )}
@@ -307,7 +300,7 @@ export default function ApiKeyModal() {
             )}
           </>)}
 
-          {adding && (<>
+          {!agentView && adding && (<>
             <div>
               <label className="text-control font-medium text-ink-muted block mb-1.5">{t('provider.pickSource')}</label>
               <div className="flex flex-wrap gap-1.5">
@@ -367,15 +360,10 @@ export default function ApiKeyModal() {
                 )}
               </div>
             )}
-            {preset.noKey && <p className="text-control text-ink-faint">{t((preset.hintKey ?? 'provider.localHint') as Parameters<typeof t>[0])}</p>}
-            {hostedBridgeBlocked && (
-              <p className="text-control text-amber-700 bg-amber-500/10 rounded-content px-2.5 py-2" data-bridge-hosted-notice>
-                {t('provider.bridgeHostedNotice')}
-              </p>
-            )}
+            {preset.noKey && <p className="text-control text-ink-faint">{t('provider.localHint')}</p>}
 
             {!probed && (
-              <button onClick={() => void doProbe()} disabled={busy || hostedBridgeBlocked || (preset.id === 'custom' ? !customURL.trim() : !preset.noKey && !key.trim())}
+              <button onClick={() => void doProbe()} disabled={busy || (preset.id === 'custom' ? !customURL.trim() : !preset.noKey && !key.trim())}
                 className="text-control bg-action text-white px-4 py-1.5 rounded-control disabled:opacity-40 flex items-center gap-1.5" data-provider-probe>
                 {busy && <Loader2 size={12} className="animate-spin" />}
                 {busy ? t('provider.probing') : t('provider.probe')}
@@ -436,22 +424,18 @@ export default function ApiKeyModal() {
             <p className="text-control text-ink-faint bg-wash rounded-content px-3 py-2">{t('provider.privacy')}</p>
             {error && <p className="text-control text-red-600">{error}</p>}
           </>)}
-          {!adding && error && <p className="text-control text-red-600">{error}</p>}
+          {!agentView && !adding && error && <p className="text-control text-red-600">{error}</p>}
         </div>
 
-        <div className="flex items-center gap-2 px-4 py-3 border-t border-line shrink-0">
+        {!agentView && adding && <div className="flex items-center gap-2 border-t border-line shrink-0 px-4 py-3">
           <div className="flex-1" />
-          {adding ? (<>
             <button onClick={resetAdd} className="text-control text-ink-muted hover:text-ink px-3 py-1.5 rounded-control hover:bg-wash transition-colors">{t('common.cancel')}</button>
             <button onClick={() => void doAdd()} disabled={busy || picked.size === 0}
               className="text-control bg-action text-white px-4 py-1.5 rounded-control disabled:opacity-40 flex items-center gap-1.5" data-provider-save>
               {busy && <Loader2 size={12} className="animate-spin" />}
               {t('provider.save')}
             </button>
-          </>) : (
-            <button onClick={() => { setOpen(false); resetAdd(); }} className="text-control text-ink-muted hover:text-ink px-3 py-1.5 rounded-control hover:bg-wash transition-colors">{t('common.close')}</button>
-          )}
-        </div>
+        </div>}
       </div>
     </div>
   ), document.body);

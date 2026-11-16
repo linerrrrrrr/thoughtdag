@@ -10,6 +10,7 @@ import { type LadderLevel } from '../../lib/ladder';
 import { LadderMorph } from '../ZoomText';
 import { useLadderCacheVersion } from '../../lib/local-ladder-cache';
 import { generateGedankengang, getCached, graphFingerprint, type Gedankengang } from '../../lib/gedankengang';
+import { uiRect } from '../../lib/ui-scale';
 
 // The third overview, after highlights and materials: the canvas as a
 // chronicle. Every node in creation order, grouped by day, each row carrying
@@ -21,6 +22,7 @@ export default function TimelineOverviewModal({ onLocate }: { onLocate: (nodeId:
   const open = useUiStore((s) => s.timelineOverviewOpen);
   const setOpen = useUiStore((s) => s.setTimelineOverviewOpen);
   const nodes = useStore((s) => s.nodes);
+  const edges = useStore((s) => s.edges);
   const t = useT();
   const dateLocale = useDateLocale();
   const lang = useI18n((s) => s.lang);
@@ -46,25 +48,25 @@ export default function TimelineOverviewModal({ onLocate }: { onLocate: (nodeId:
   const changeDetail = (v: number) => {
     const list = listRef.current;
     if (list) {
-      const listTop = list.getBoundingClientRect().top;
+      const listTop = uiRect(list).top;
       const rows = [...list.querySelectorAll<HTMLElement>('[data-entry]')];
       let row = hoverId.current ? rows.find((r) => r.dataset.entry === hoverId.current) ?? null : null;
-      if (!row) { const mid = listTop + list.clientHeight / 2; row = rows.reduce<HTMLElement | null>((best, r) => { const b = r.getBoundingClientRect(); const d = Math.abs((b.top + b.bottom) / 2 - mid); return !best || d < Math.abs((best.getBoundingClientRect().top + best.getBoundingClientRect().bottom) / 2 - mid) ? r : best; }, null); }
-      anchor.current = row ? { id: row.dataset.entry!, y: row.getBoundingClientRect().top - listTop } : null;
+      if (!row) { const mid = listTop + list.clientHeight / 2; row = rows.reduce<HTMLElement | null>((best, r) => { const b = uiRect(r); const d = Math.abs((b.top + b.bottom) / 2 - mid); return !best || d < Math.abs((uiRect(best).top + uiRect(best).bottom) / 2 - mid) ? r : best; }, null); }
+      anchor.current = row ? { id: row.dataset.entry!, y: uiRect(row).top - listTop } : null;
     }
     setDetail(v);
   };
   useLayoutEffect(() => {
     const list = listRef.current; const a = anchor.current; if (!list || !a) return;
     const row = list.querySelector<HTMLElement>(`[data-entry="${a.id}"]`); if (!row) return;
-    const y = row.getBoundingClientRect().top - list.getBoundingClientRect().top;
+    const y = uiRect(row).top - uiRect(list).top;
     list.scrollTop += y - a.y;
   }, [detail]);
   const fontPx = 13 + detail * 0.9;
   // The journey paragraph: session-cached per (graph fingerprint, interface
   // language) — reopening is free until the map changes, and switching the
   // language toggle narrates in the other language.
-  const fp = useMemo(() => (open ? graphFingerprint(nodes) : ''), [open, nodes]);
+  const fp = useMemo(() => (open ? graphFingerprint(nodes, edges) : ''), [open, nodes, edges]);
   const [ged, setGed] = useState<Gedankengang | null>(null);
   const [gedLoading, setGedLoading] = useState(false);
   const [gedFailed, setGedFailed] = useState(false);
@@ -94,7 +96,7 @@ export default function TimelineOverviewModal({ onLocate }: { onLocate: (nodeId:
 
   return createPortal((
     <div className="fixed inset-0 z-[60] bg-ink/30 flex items-center justify-center p-6">
-      <div ref={layerRef} role="dialog" aria-modal="true" aria-label={t('tlov.title')} tabIndex={-1} className="bg-card rounded-panel shadow-lg border border-line w-[640px] h-[80vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+      <div ref={layerRef} role="dialog" aria-modal="true" aria-label={t('tlov.title')} tabIndex={-1} className="bg-card rounded-panel shadow-lg border border-line w-[640px] h-[calc(80*var(--ui-vh))] flex flex-col" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center gap-2 px-5 py-3 border-b border-line shrink-0">
           <History size={15} strokeWidth={1.75} className="text-accent" />
           <span className="text-section font-semibold text-ink">{t('tlov.title')}</span>

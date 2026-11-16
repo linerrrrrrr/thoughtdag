@@ -1,3 +1,4 @@
+import { appSettings } from './disk-storage';
 // Base URL of the LLM proxy. Dev defaults to the local server.mjs; a
 // production build defaults to SAME-ORIGIN /api/* (the deployment's worker
 // serves it) — zero-config correct on any host. Override with VITE_API_BASE
@@ -44,9 +45,9 @@ export const COLORS = {
   line: '#CDD3DD',
   inkMuted: '#515E70',
   accent: '#6B5CE7',   // continue edges, primary actions
-  warm: '#E08A3C',     // explore branch edges
-  trace: '#F59E0B',    // ancestor-path highlight
-  watch: '#DC2626',    // evaluator watch edges
+  warm: '#E08A3C',     // warm accents
+  trace: '#F59E0B',    // legacy edge and illustration color
+  danger: '#DC2626',   // destructive actions and errors
 } as const;
 
 // Frame palette — FIXED set (no picker): frames are navigation objects, so
@@ -71,7 +72,7 @@ export const PANEL_INSET = 16; // Matches --spacing-canvas-inset in index.css.
 export const PANEL_MIN_WINDOW_WIDTH = 960; // Keep in sync with the narrow-panel CSS guard.
 
 export function loadPanelWidth(): number {
-  const raw = localStorage.getItem(PANEL_WIDTH_KEY);
+  const raw = appSettings.getItem(PANEL_WIDTH_KEY);
   const n = raw ? parseInt(raw, 10) : NaN;
   return Number.isFinite(n) ? n : PANEL_DEFAULT_WIDTH;
 }

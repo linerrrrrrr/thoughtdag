@@ -1,6 +1,6 @@
 // The event contract — the one thing every reader of session history
 // depends on. Adapters emit these; the fact index is reduced from them;
-// why / recall / Session Atlas / the canvas mirror are projections over
+// why and recall are projections over
 // them. Nothing here names a runner's log field: that vocabulary stays
 // inside the adapters. Facts only — interpretation lives in its own
 // cache with its own labels.
@@ -8,7 +8,7 @@
 // Versioned by shape: change a field, bump EVENT_SCHEMA and the fixtures
 // under cli/test decide whether the change was allowed.
 
-export const EVENT_SCHEMA = 'thoughtdag.events/1';
+export const EVENT_SCHEMA = 'thoughtdag.events/2';
 
 /** Was this seen, rebuilt, or guessed — and is it the whole thing? Two
  *  axes on purpose: a diff's first differing line is observed AND partial. */
@@ -88,9 +88,6 @@ export interface SessionStarted extends EventBase {
   workspace?: string;
   parentSessionId?: string;
   subagent?: boolean;
-  /** the session opened from a canvas hand-off: the anchor line the
-      bundle's Markdown carried names the project, node and bundle */
-  anchor?: { project: string; node: string; bundle: string; mode: 'branch' | 'continue' };
 }
 
 export interface TurnStarted extends EventBase {

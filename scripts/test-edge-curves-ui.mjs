@@ -22,7 +22,6 @@ await context.route('**/api/**', (route) => {
 await page.addInitScript(() => {
   localStorage.setItem('thoughtdag.seeded', 'yes');
   localStorage.setItem('thoughtdag.tutorialDone', '1');
-  localStorage.setItem('thoughtdag.autoRefreshPaused', 'yes');
 });
 const check = (name) => { checks.push(name); console.log(`PASS ${name}`); };
 const seed = async (kind) => {
@@ -35,7 +34,7 @@ const seed = async (kind) => {
         displayName: name, question: name, response: '用于检查连接的走向与节点避让。', responses: ['用于检查连接的走向与节点避让。'],
         responseIndex: 0, summaries: [], isCollapsed: kind === 'compact', isEditing: false, isEditingResponse: false,
         isLoading: false, tokenCount: 100, highlights: [], attachments: [], excludedAttachmentIds: [], includedAttachmentIds: [],
-        roleMode: 'inherit', isRoot: id === 'source', isBranch: false, layoutDirection: 'horizontal', edgeRouteDefault: 'auto',
+        roleMode: 'inherit', layoutDirection: 'horizontal', edgeRouteDefault: 'auto',
       } });
     let nodes;
     if (kind === 'compact') nodes = [make('source', -800, -80, '上游对话', 420),
@@ -54,8 +53,7 @@ const seed = async (kind) => {
     window.__store.setState({ nodes, edges, selectedNodeId: null, selectedNodeIds: [], staleIds: [], staleFps: {}, staleVerdicts: {},
       history: [{ nodes, edges }], historyIndex: 0 });
     const ui = window.__ui.getState();
-    ui.setPanelOpen(false); ui.setTutorialOpen(false); ui.setReleaseNotesOpen(false); ui.setAutoRefreshPaused(true);
-    window.__rf.setViewport({ x: 40, y: 80, zoom: kind === 'compact' ? 0.6 : 0.75 }, { duration: 0 });
+    ui.setPanelOpen(false); ui.setTutorialOpen(false); ui.setReleaseNotesOpen(false); window.__rf.setViewport({ x: 40, y: 80, zoom: kind === 'compact' ? 0.6 : 0.75 }, { duration: 0 });
   }, kind);
   await page.waitForTimeout(800);
   await page.evaluate((kind) => window.__rf.setViewport({ x: 40, y: 80, zoom: kind === 'compact' ? 0.6 : 0.75 }, { duration: 0 }), kind);

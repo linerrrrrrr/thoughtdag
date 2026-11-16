@@ -25,7 +25,6 @@ await context.route('**/api/**', (route) => ['GET', 'HEAD', 'OPTIONS'].includes(
 await page.addInitScript(() => {
   localStorage.setItem('thoughtdag.seeded', 'yes');
   localStorage.setItem('thoughtdag.tutorialDone', '1');
-  localStorage.setItem('thoughtdag.autoRefreshPaused', 'yes');
 });
 const check = (name) => { checks.push(name); console.log(`PASS ${name}`); };
 const fixture = async (blocked = false) => {
@@ -34,7 +33,7 @@ const fixture = async (blocked = false) => {
       data: { question: name, displayName: name, response: '这里是节点的分析内容。'.repeat(60), responses: ['答复'], responseIndex: 0,
         isCollapsed: true, isEditing: false, isEditingResponse: false, isLoading: false, tokenCount: 600,
         highlights: [], highlightMode: 'tag', attachments: [], excludedAttachmentIds: [], includedAttachmentIds: [],
-        roleMode: 'inherit', isRoot: id === 'a', isBranch: false } });
+        roleMode: 'inherit'} });
     const nodes = blocked ? [make('a', 100, 50, '上游问题'), make('b', 100, 1050, '下游结论'), make('blocker', -20, 500, '中间的其他节点', { width: 760 })]
       : [make('a', 80, 40, '设计手册主要描述了什么'), make('b', 80, 350, '设计原则与组件规范'),
         make('c', 80, 660, '当前有哪些可用组件'), make('d', 250, 1050, '清单是怎样的，罗列给我看'), make('e', 1250, 1430, '下载完整清单')];
@@ -43,8 +42,7 @@ const fixture = async (blocked = false) => {
       style: { stroke: '#6B5CE7', strokeWidth: 2 }, markerEnd: { type: 'arrowclosed', color: '#6B5CE7', width: 20, height: 20 } }));
     window.__store.setState({ nodes, edges, history: [{ nodes, edges }], historyIndex: 0, selectedNodeIds: [], selectedNodeId: null });
     const ui = window.__ui.getState();
-    ui.setPanelOpen(false); ui.setTutorialOpen(false); ui.setReleaseNotesOpen(false); ui.setAutoRefreshPaused(true);
-  }, blocked);
+    ui.setPanelOpen(false); ui.setTutorialOpen(false); ui.setReleaseNotesOpen(false); }, blocked);
   await page.waitForFunction(() => window.__store.getState().nodes.every((n) => n.measured?.width && n.measured?.height));
   await page.evaluate(() => window.__rf.setViewport({ x: 70, y: 100, zoom: 0.55 }, { duration: 0 }));
   await page.waitForTimeout(500);

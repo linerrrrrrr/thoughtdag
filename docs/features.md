@@ -16,17 +16,17 @@ Guide: [Canvas, navigation, and frames](/guides/canvas-projects)
 
 ## Conversation nodes and floating panel
 
-- One node stores a question, answer versions, model provenance, role, highlights, and attachments.
+- One node stores a question, answer versions, model provenance, highlights, and attachments.
 - Continue a path, edit questions and answers, or regenerate in place or as a sibling node.
-- Floating panel for reading, version switching, attachments, highlights, merge order, grouped context tree, and follow-up input.
+- Floating panel for reading, version switching, token estimates, attachments, highlights, and recall; context-source inspection stays on the canvas.
 - Right-click node menu for panel/reading access, regeneration, summarizing to a note, copying, CLI continuation, duplication, archiving, and deletion.
 
 Guide: [Conversation nodes and panel](/guides/conversations)
 
 ## Wires and model-visible context
 
-- Purple solid conversation paths, orange structural passage and role branches, purple dashed summary references, and red dashed reviewer relationships.
-- **Will send** preview grouped into materials, references, and conversation turns.
+- Purple solid conversation paths and purple dashed single-node references. All conversation nodes share the same behavior; context follows their incoming connections.
+- The canvas node’s **Context · N sources** entry inspects multiple inputs and orders incoming conversation blocks.
 - Delete or convert a wire without deleting its nodes; archive content to exclude it while retaining it.
 - Context fingerprints, stale markers, answer versions, and dependency-ordered replay.
 - Controlled comparison by regenerating the same question and model after a context change.
@@ -47,16 +47,15 @@ Guide: [Material nodes and reader](/guides/materials)
 
 - **Merge summary**, **Merge & delete**, **Weave highlights**, structured highlights, and multiple downstream highlight modes.
 - Condensed copy of consecutive unbranched runs while preserving the original path and protected decisions/pivots.
-- Sliding reviewer nodes, graph diagnostics, and manual or automatic refresh of dependent work.
+- Graph diagnostics and explicit replay of dependent work.
 
 Guide: [Merge, highlight, and condense](/guides/organize)
 
-## Models, tools, roles, and memory
+## Models, tools, and memory
 
 - Runtime provider presets, OpenRouter sign-in, Ollama, custom OpenAI-compatible endpoints, `.env` providers, and supported plan connections.
 - Global model selection and node-level model pinning; model provenance stored per answer version.
 - Web search, scholarly search, vision routing, and local/remote MCP tools.
-- Inherited/set/reset node roles and editable role library.
 - Memory as documents: a preferences and an identity document rewritten as facts arrive (with changelog and undo), one dossier per topic written from the labelled conversations (what it is, decisions, where it stands, still open; every line sourced), an inbox for project facts no topic claimed, and the other agents' memory files as read-only sources.
 - Recall on an ask: the question's topics bring their dossiers in whole; a detail question adds verbatim excerpts ranked by relevance; every item listed with its cost, removable; three amounts (lean, standard, generous).
 - Related conversations per node: the node's terms and topics as chips, model-proposed expansion, cards with open and cite.
@@ -64,15 +63,6 @@ Guide: [Merge, highlight, and condense](/guides/organize)
 - Topics: a table the person names or the model proposes; labelling by the decision model in the host, in the background; `thoughtdag topics` on the command line.
 
 Guide: [Memory](/guides/memory) · [Models, tools, and memory](/guides/models-tools) · [Connect a model](/setup) · [Decision model](/setup#decision-model)
-
-## Session Atlas
-
-- Discover supported local Codex, Claude Code, DeepSeek Harness, and Pi sessions by project folder.
-- Read-only graph mirrors with conversation nodes and inspectable tool-result attachments.
-- Incremental append, changed-session filters, multi-session canvas mounting, re-mirroring, and source-status indicators.
-- **Sources** management and optional one-command handoff from supported agents.
-
-Guide: [Session Atlas](/guides/session-atlas)
 
 ## Toolbar, menus, and data
 

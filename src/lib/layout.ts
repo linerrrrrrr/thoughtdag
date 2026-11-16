@@ -1,5 +1,5 @@
 import type { ThoughtNode, ThoughtEdge } from '../types';
-import { getDescendantIds } from './graph';
+import { getDescendantIds, orderConversationEdges } from './graph';
 import { COLLAPSED_LAYOUT_HEIGHT, LAYOUT_COL_WIDTH, LAYOUT_H_GAP, LAYOUT_V_GAP } from './constants';
 
 // Estimated rendered height of a node — fallback when React Flow hasn't
@@ -42,18 +42,20 @@ function nodeWidth(node: ThoughtNode): number {
   return node.width ?? node.measured?.width ?? LAYOUT_COL_WIDTH;
 }
 
+const compareLayoutNodes = (a: ThoughtNode, b: ThoughtNode) =>
+  (a.data.createdAt ?? '').localeCompare(b.data.createdAt ?? '') || a.id.localeCompare(b.id);
+
 /**
  * Column-Tree layout with collision resolution.
  *
  * Pass 1 — Column assignment:
- *   - Each continuation chain (first non-branch child) inherits the parent's column.
- *   - Additional children (explore / duplicate / distill / regenerate siblings)
- *     are assigned to the next available column to the right.
+ *   - Each continuation chain (first child by creation time and id) inherits the parent's column.
+ *   - Additional children are assigned adjacent columns to the right.
  *   - Multiple roots each get their own column group.
  *
  * Pass 2 — Vertical positioning:
  *   - Within a column, nodes are placed top-to-bottom in chain order.
- *   - A branch child's y aligns with (or slightly below) its parent's y.
+ *   - Every child clears the bottom of every conversation parent.
  *
  * Pass 3 — Collision detection & nudge:
  *   - Sort all nodes by y, then by column.
@@ -93,8 +95,8 @@ export function autoLayout(allNodes: ThoughtNode[], allEdges: ThoughtEdge[]): Th
   const contentIds = new Set(
     allNodes.filter((n) => ['note', 'file', 'link', 'frame'].includes(n.data.stepKind ?? '')).map((n) => n.id)
   );
-  const nodes = allNodes.filter((n) => !contentIds.has(n.id));
-  const edges = allEdges.filter((e) => !contentIds.has(e.source) && !contentIds.has(e.target));
+  const nodes = allNodes.filter((n) => !contentIds.has(n.id)).sort(compareLayoutNodes);
+  const edges = orderConversationEdges(nodes, allEdges.filter((e) => !contentIds.has(e.source) && !contentIds.has(e.target)));
 
   // All nodes in a continuation keep one x coordinate. Widen the column
   // pitch to fit resized cards instead of offsetting individual turns.
@@ -103,20 +105,8 @@ export function autoLayout(allNodes: ThoughtNode[], allEdges: ThoughtEdge[]): Th
   const V_GAP = LAYOUT_V_GAP;
   const V_PAD = 24; // extra vertical padding for collision
 
-  // --- Structural edges (no cross-links) ---
-  // Structural edges drive the column tree. Cross-links normally don't —
-  // BUT if a node's ONLY incoming edge is a cross-link (user deleted the
-  // original edge and re-wired by dragging), that link IS its parent chain:
-  // adopt it so the node still stacks below its arrow-parent instead of
-  // being treated as a detached root. Watch edges are never adopted.
+  // Conversation edges alone define parent-child layout constraints.
   const structuralEdges = edges.filter((e) => !e.data?.isCrossLink);
-  const hasStructuralParent = new Set(structuralEdges.map((e) => e.target));
-  for (const e of edges) {
-    if (e.data?.isCrossLink && !e.data?.isWatch && !hasStructuralParent.has(e.target)) {
-      structuralEdges.push(e);
-      hasStructuralParent.add(e.target);
-    }
-  }
   const targetIds = new Set(structuralEdges.map((e) => e.target));
   const roots = nodes.filter((n) => !targetIds.has(n.id));
 
@@ -144,7 +134,7 @@ export function autoLayout(allNodes: ThoughtNode[], allEdges: ThoughtEdge[]): Th
     // that hangs furthest down; it takes that same card's x, so the chain
     // hangs from one document and reads as a line rather than floating at the
     // centroid of a row of papers (tried once, #20).
-    const lowest = mats.reduce((a, b) =>
+      const lowest = mats.sort(compareLayoutNodes).reduce((a, b) =>
       a.position.y + nodeHeight(a) > b.position.y + nodeHeight(b) ? a : b);
     const k = perMaterialCount.get(lowest.id) ?? 0;
     perMaterialCount.set(lowest.id, k + 1);
@@ -161,37 +151,15 @@ export function autoLayout(allNodes: ThoughtNode[], allEdges: ThoughtEdge[]): Th
     childrenMap.set(edge.source, list);
   }
 
-  // Being explored out is a property of the EDGE, not of the node: a node can
-  // be explored out of one parent and continue plainly from another, and to
-  // that second parent it is an ordinary continuation.
-  const edgeKey = (parent: string, child: string) => `${parent}\u0000${child}`;
-  const exploreEdges = new Set(
-    edges
-      .filter((e) => e.data?.isBranchFromSelection)
-      .map((e) => edgeKey(e.source, e.target))
-  );
-
-  // Classify children into 3 types:
-  // 1. Continuation — first non-explore child, inherits parent column
-  // 2. Regenerate siblings — other non-explore children, columns adjacent to parent
-  // 3. Explore branches — explored out of THIS parent, columns further out
+  // The first child continues the column; sibling paths take adjacent columns.
   function classifyChildren(parentId: string, claimant: Map<string, string>): {
     continuation: string | null;
-    regenerates: string[];
-    explores: string[];
+    siblings: string[];
   } {
-    // A merge is laid out by one parent only; the others still draw their
-    // arrow to it, they just no longer decide where it sits.
     const children = (childrenMap.get(parentId) || []).filter(
-      (c) => (claimant.get(c) ?? parentId) === parentId
+      (child) => (claimant.get(child) ?? parentId) === parentId
     );
-    const nonExplore = children.filter((c) => !exploreEdges.has(edgeKey(parentId, c)));
-    const explores = children.filter((c) => exploreEdges.has(edgeKey(parentId, c)));
-    return {
-      continuation: nonExplore[0] ?? null,
-      regenerates: nonExplore.slice(1),
-      explores,
-    };
+    return { continuation: children[0] ?? null, siblings: children.slice(1) };
   }
 
   // --- Pass 1: Assign columns ---
@@ -210,41 +178,25 @@ export function autoLayout(allNodes: ThoughtNode[], allEdges: ThoughtEdge[]): Th
       if (nodeColumn.has(nodeId)) return;
       nodeColumn.set(nodeId, col);
 
-      const { continuation, regenerates, explores } = classifyChildren(nodeId, claimant);
+      const { continuation, siblings } = classifyChildren(nodeId, claimant);
 
       if (continuation) assignColumns(continuation, col);
 
-      // Regenerate siblings: columns immediately adjacent (col+1, col+2, ...).
+      // Sibling paths use adjacent columns (col+1, col+2, ...).
       // On an ANCHORED chain (virtual column) the sibling must take a fresh
       // virtual column pinned beside the chain — arithmetic on a virtual
       // column id would land in the grid formula at x ≈ 62 million, and
       // feeding it into nextColumn would catapult every later root after it.
-      for (let i = 0; i < regenerates.length; i++) {
-        let regenCol: number;
+      for (let i = 0; i < siblings.length; i++) {
+        let siblingCol: number;
         if (col >= VIRT_BASE) {
-          regenCol = nextVirt++;
-          colXOverride.set(regenCol, colX(col) + (i + 1) * (NODE_WIDTH + H_GAP));
+          siblingCol = nextVirt++;
+          colXOverride.set(siblingCol, colX(col) + (i + 1) * (NODE_WIDTH + H_GAP));
         } else {
-          regenCol = col + 1 + i;
-          nextColumn = Math.max(nextColumn, regenCol + 1);
+          siblingCol = col + 1 + i;
+          nextColumn = Math.max(nextColumn, siblingCol + 1);
         }
-        assignColumns(regenerates[i], regenCol);
-      }
-
-      // Explore branches: after all regenerate columns (anchored chains keep
-      // them beside the chain too, past the sibling columns)
-      let exploreOffset = 0;
-      for (const ec of explores) {
-        let exploreCol: number;
-        if (col >= VIRT_BASE) {
-          exploreCol = nextVirt++;
-          colXOverride.set(exploreCol, colX(col) + (regenerates.length + 1 + exploreOffset) * (NODE_WIDTH + H_GAP));
-          exploreOffset++;
-        } else {
-          exploreCol = nextColumn;
-          nextColumn++;
-        }
-        assignColumns(ec, exploreCol);
+        assignColumns(siblings[i], siblingCol);
       }
     }
 
@@ -284,20 +236,12 @@ export function autoLayout(allNodes: ThoughtNode[], allEdges: ThoughtEdge[]): Th
 
   // ── Which parent owns a merge ──
   // A conversation has a main line. A node with several parents sits under
-  // the parent it was CONTINUED from — the source of the first structural
-  // edge that reached it, which is the order a person wires things: the
-  // follow-up is asked from one node, the other sources are connected after.
-  // Centring the node among its parents (tried once, #20) reads well as a
-  // picture and badly as a conversation: the main line vanishes into the
-  // middle. Edge order is stable under any permutation of the node array, so
-  // the same graph lays out the same way however it arrives. Only a parent the
-  // node continues from may own it; one that explored it out stands beside it.
+  // first conversation parent by creation time and stable id. This keeps
+  // the same graph aligned after node or edge arrays are reordered.
   const claimant = new Map<string, string>();
   for (const [child, ps] of structuralParents) {
     if (ps.length < 2) continue;
-    const continued = ps.filter((p) => !exploreEdges.has(edgeKey(p, child)));
-    const pool = continued.length ? continued : ps;
-    claimant.set(child, pool[0]);
+    claimant.set(child, ps[0]);
   }
   const { nodeColumn, colX } = assignAllColumns(claimant);
 
@@ -326,7 +270,7 @@ export function autoLayout(allNodes: ThoughtNode[], allEdges: ThoughtEdge[]): Th
     const parentPos = positioned.get(current)!;
     const parentHeight = nodeHeightMap.get(current) || 220;
 
-    const { continuation, regenerates, explores } = classifyChildren(current, claimant);
+    const { continuation, siblings } = classifyChildren(current, claimant);
 
     if (continuation && !visited.has(continuation)) {
       visited.add(continuation);
@@ -338,9 +282,9 @@ export function autoLayout(allNodes: ThoughtNode[], allEdges: ThoughtEdge[]): Th
       queue.push(continuation);
     }
 
-    // Regenerate siblings: same y as continuation (they're alternative answers)
+    // Sibling paths start below their shared parent.
     const continuationY = parentPos.y + parentHeight + V_GAP;
-    for (const rc of regenerates) {
+    for (const rc of siblings) {
       if (visited.has(rc)) continue;
       visited.add(rc);
       const col = nodeColumn.get(rc) ?? 0;
@@ -349,18 +293,6 @@ export function autoLayout(allNodes: ThoughtNode[], allEdges: ThoughtEdge[]): Th
         y: continuationY,
       });
       queue.push(rc);
-    }
-
-    // Explore branches: start at parent's y (slight offset for visible edge)
-    for (const ec of explores) {
-      if (visited.has(ec)) continue;
-      visited.add(ec);
-      const col = nodeColumn.get(ec) ?? 0;
-      positioned.set(ec, {
-        x: colX(col),
-        y: parentPos.y + parentHeight * 0.25,
-      });
-      queue.push(ec);
     }
   }
 
@@ -394,8 +326,7 @@ export function autoLayout(allNodes: ThoughtNode[], allEdges: ThoughtEdge[]): Th
   // synthesis could sit level with — or above — the other sources feeding it
   // and the arrow pointed back up the canvas. Whichever parent is chosen, the
   // node belongs below the LOWEST one. Only merges need this (a single-parent
-  // chain is already correct by construction), and explore branches are
-  // exempt: they are meant to sit alongside their parent, not beneath it.
+  // chain is already correct by construction).
   for (let pass = 0; pass < 5; pass++) {
     let moved = false;
     for (const node of nodes) {
@@ -403,24 +334,13 @@ export function autoLayout(allNodes: ThoughtNode[], allEdges: ThoughtEdge[]): Th
       if (!pos) continue;
       const all = (structuralParents.get(node.id) || []).filter((p) => positioned.has(p));
       if (all.length < 2) continue;
-      // Two rules, one for each kind of arrow into this node. A parent it
-      // CONTINUES from must be cleared entirely. A parent that EXPLORED it out
-      // is meant to stand beside it — no clearance owed, but the child must
-      // still never float above that parent's top edge.
-      const continued = all.filter((p) => !exploreEdges.has(`${p}\u0000${node.id}`));
-      const explored = all.filter((p) => exploreEdges.has(`${p}\u0000${node.id}`));
-      let floor = -Infinity;
-      for (const p of continued) {
-        floor = Math.max(floor, positioned.get(p)!.y + (nodeHeightMap.get(p) || 220) + V_GAP);
-      }
-      for (const p of explored) {
-        floor = Math.max(floor, positioned.get(p)!.y);
-      }
+      const floor = Math.max(...all.map((parent) =>
+        positioned.get(parent)!.y + (nodeHeightMap.get(parent) || 220) + V_GAP));
       if (floor > -Infinity && pos.y < floor) {
         const delta = floor - pos.y;
         pos.y = floor;
         // The whole subtree travels with it, not only the part sharing this
-        // column. An explore branch is given a column of its own, so a
+        // column. A sibling path is given a column of its own, so a
         // column-restricted shift left it where it was and the child came to
         // rest above the parent that spawned it. Dedupe first: a descendant
         // reachable by two paths must not be moved twice.
@@ -465,7 +385,7 @@ export function autoLayout(allNodes: ThoughtNode[], allEdges: ThoughtEdge[]): Th
           moved = true;
 
           // Push all descendants down too. Not only the ones sharing this
-          // column: an explore branch is given a column of its own, and
+          // column: a sibling path is given a column of its own, and
           // leaving it behind stranded a child above the parent it came from.
           // Dedupe — a descendant reachable by two paths moves once.
           for (const dId of new Set(getDescendantIds(currId, structuralEdges))) {
@@ -583,7 +503,7 @@ export function autoLayout(allNodes: ThoughtNode[], allEdges: ThoughtEdge[]): Th
 
 /**
  * Seat freshly added nodes and leave every other node where it is. Asking a
- * follow-up, exploring, merging or regenerating used to re-run autoLayout
+ * follow-up, merging or regenerating used to re-run autoLayout
  * over the whole canvas, which put back every card the user had dragged
  * (the questions hanging from a document jumped under the lowest document).
  * Only the one-click relayout rearranges the canvas now.
@@ -591,10 +511,10 @@ export function autoLayout(allNodes: ThoughtNode[], allEdges: ThoughtEdge[]): Th
  * A new node takes the offset the column tree would give it, measured from
  * where its parent sits NOW: below it for a continuation (below the lowest
  * parent it continues from, for a merge), one column right for a second
- * child, beside it for a branch explored out, under its lowest material for
+ * child, under its lowest material for
  * a chain grown from documents, right of the canvas for a new root. If that
  * spot is taken it moves right a column at a time. `newIds` are seated in
- * order, so a batch (fan-out) fills the columns one after another.
+ * order, so a batch fills the columns one after another.
  */
 export function placeNewNodes(allNodes: ThoughtNode[], allEdges: ThoughtEdge[], newIds: string[]): ThoughtNode[] {
   const pending = new Set(newIds);
@@ -610,18 +530,11 @@ export function placeNewNodes(allNodes: ThoughtNode[], allEdges: ThoughtEdge[], 
   const ROW_STEP = allNodes.reduce((height, node) => node.data.stepKind === 'frame'
     ? height : Math.max(height, footprint(node) + (!node.data.response && node.height == null ? 400 : 0)), 0) + LAYOUT_H_GAP;
   const PAD = 24;
-  const isExplore = (e: ThoughtEdge) => !!e.data?.isBranchFromSelection;
-
-  // Same parent rule as autoLayout: structural edges, or the one reference
-  // a re-wired node hangs from; watch edges never place anything.
-  const parentEdges = (id: string) => {
-    const solid = allEdges.filter((e) => e.target === id && !e.data?.isCrossLink);
-    return solid.length ? solid : allEdges.filter((e) => e.target === id && e.data?.isCrossLink && !e.data?.isWatch).slice(0, 1);
-  };
-  const claimantOf = (id: string) => {
-    const ps = parentEdges(id).filter((e) => byId.has(e.source) && !isContent(byId.get(e.source)!));
-    return (ps.find((e) => !isExplore(e)) ?? ps[0])?.source;
-  };
+  // Only conversation inputs choose the new node's chain position.
+  const orderedEdges = orderConversationEdges(allNodes, allEdges);
+  const parentEdges = (id: string) => orderedEdges.filter((edge) => edge.target === id && !edge.data?.isCrossLink);
+  const claimantOf = (id: string) => parentEdges(id)
+    .find((edge) => byId.has(edge.source) && !isContent(byId.get(edge.source)!))?.source;
 
   for (const id of newIds) {
     const node = byId.get(id);
@@ -641,39 +554,26 @@ export function placeNewNodes(allNodes: ThoughtNode[], allEdges: ThoughtEdge[], 
     if (thoughtIns.length && direction === 'horizontal') {
       const owner = byId.get(ownerId!)!;
       const op = pos(owner);
-      const ownerEdge = thoughtIns.find((e) => e.source === owner.id)!;
-      const hasContinuation = allEdges.some((e) => e.source === owner.id && e.target !== id && !isExplore(e)
+      const hasContinuation = allEdges.some((e) => e.source === owner.id && e.target !== id
         && !e.data?.isCrossLink && !pending.has(e.target) && claimantOf(e.target) === owner.id);
       const right = Math.max(...thoughtIns.map((e) => {
         const parent = byId.get(e.source)!;
         return pos(parent).x + nodeWidth(parent) + LAYOUT_V_GAP;
       }));
-      preserveChainAxis = !isExplore(ownerEdge) && !hasContinuation;
+      preserveChainAxis = !hasContinuation;
       at = { x: right, y: preserveChainAxis ? op.y : op.y + ROW_STEP };
     } else if (thoughtIns.length) {
       const owner = byId.get(claimantOf(id)!)!;
       const op = pos(owner);
       const below = op.y + footprint(owner) + LAYOUT_V_GAP;
-      const ownerEdge = thoughtIns.find((e) => e.source === owner.id)!;
-      if (isExplore(ownerEdge)) {
-        at = { x: op.x + STEP, y: op.y + footprint(owner) * 0.25 };
-      } else {
-        const hasContinuation = allEdges.some((e) => e.source === owner.id && e.target !== id && !isExplore(e)
-          && !e.data?.isCrossLink && !pending.has(e.target) && claimantOf(e.target) === owner.id);
-        if (hasContinuation) {
-          at = { x: op.x + STEP, y: below };
-        } else {
-          preserveChainAxis = true;
-          // a merge clears every parent it continues from and never rises
-          // above one that explored it out
-          let y = below;
-          for (const e of thoughtIns) {
-            const p = byId.get(e.source)!;
-            y = Math.max(y, isExplore(e) ? pos(p).y : pos(p).y + footprint(p) + LAYOUT_V_GAP);
-          }
-          at = { x: op.x, y };
-        }
-      }
+      const hasContinuation = allEdges.some((edge) => edge.source === owner.id && edge.target !== id
+        && !edge.data?.isCrossLink && !pending.has(edge.target) && claimantOf(edge.target) === owner.id);
+      const y = Math.max(below, ...thoughtIns.map((edge) => {
+        const parent = byId.get(edge.source)!;
+        return pos(parent).y + footprint(parent) + LAYOUT_V_GAP;
+      }));
+      preserveChainAxis = !hasContinuation;
+      at = { x: hasContinuation ? op.x + STEP : op.x, y };
     } else if (materials.length && direction === 'horizontal') {
       const rightmost = materials.reduce((a, b) => pos(a).x + nodeWidth(a) > pos(b).x + nodeWidth(b) ? a : b);
       at = { x: pos(rightmost).x + nodeWidth(rightmost) + LAYOUT_V_GAP, y: pos(rightmost).y - 60 };

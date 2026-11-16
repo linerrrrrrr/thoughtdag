@@ -27,7 +27,6 @@ await context.route('**/api/**', route => {
 await page.addInitScript(() => {
   localStorage.setItem('thoughtdag.seeded', 'yes');
   localStorage.setItem('thoughtdag.tutorialDone', '1');
-  localStorage.setItem('thoughtdag.autoRefreshPaused', 'yes');
   localStorage.setItem('thoughtdag.lang', 'zh');
 });
 const check = name => { checks.push(name); console.log(`PASS ${name}`); };
@@ -66,8 +65,7 @@ const fixture = async ({ marquee = false, connection = false } = {}) => {
       id, type: 'thought', position: { x: 100 + index * 550, y: 160 + index * 340 }, width: 480, height: 250,
       selected: !marquee && !connection,
       data: { question: `研究节点 ${index + 1}`, displayName: `研究节点 ${index + 1}`, response: 'A complete answer.', responses: ['A complete answer.'], responseIndex: 0,
-        isCollapsed: false, isEditing: false, isEditingResponse: false, isLoading: false, isRoot: false, isBranch: false,
-        highlights: [], highlightMode: 'tag', attachments: [], excludedAttachmentIds: [], includedAttachmentIds: [], tokenCount: 10, roleMode: 'inherit' },
+        isCollapsed: false, isEditing: false, isEditingResponse: false, isLoading: false, highlights: [], highlightMode: 'tag', attachments: [], excludedAttachmentIds: [], includedAttachmentIds: [], tokenCount: 10, roleMode: 'inherit' },
     }));
     const edges = connection ? [{ id: 'history-edge', source: ids[0], target: ids[1], type: 'smoothstep', selected: true, data: { route: 'curve' } }] : [];
     window.__store.setState({ nodes, edges, history: [{ nodes, edges }], historyIndex: 0,
@@ -76,7 +74,6 @@ const fixture = async ({ marquee = false, connection = false } = {}) => {
     window.__ui.getState().setPanelOpen(false);
     window.__ui.getState().setTutorialOpen(false);
     window.__ui.getState().setReleaseNotesOpen(false);
-    window.__ui.getState().setAutoRefreshPaused(true);
     window.__rf.setViewport({ x: 40, y: 80, zoom: 0.5 }, { duration: 0 });
   }, { ids, marquee, connection });
   await page.waitForFunction(() => window.__store.getState().nodes.every(node => node.measured?.width && node.measured?.height));

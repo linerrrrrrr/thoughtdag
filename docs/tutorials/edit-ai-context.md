@@ -24,15 +24,15 @@ Illustrated reading-plan example: remove the side discussion’s route into the 
 
 ## 1. Check what carries forward
 
-Double-click the summary node to open its panel. Click **“Will send ~… tok · … messages”** above the follow-up input. Review the materials, explicit references, and conversation turns to find the dinner route.
+On the canvas, open **Context · N sources** on the summary node. Find the dinner reference in the source card and trace its wire. Open source nodes to read their content; use **More → Copy context / Export** in the summary’s detail header if you need a text copy of its context chain.
 
-The preview shows the current canvas path and estimated tokens. If Recall is enabled, it can add retrieved history when you send; review those recall items separately.
+The source card explains incoming routes and their order. If Recall is enabled, it can add retrieved history when you send; review those recall items separately in the details.
 
 ## 2. Remove the unwanted route
 
 Select the wire connecting the dinner node to the summary node, and delete it. The dinner node remains on the canvas, allowing you to review it or reconnect it later. Deleting a wire only removes that specific route.
 
-Check your connections and the preview again. If the same content is still entering the context via another path, citation, or attachment, you must handle those separately. Additionally, if the existing summary text already repeated the dinner details, those details might still carry forward into subsequent turns. You will need to regenerate or edit the summary node itself to clear it out.
+Check your remaining connections and source content again. If the same content is still entering the context via another path, citation, or attachment, you must handle those separately. Additionally, if the existing summary text already repeated the dinner details, those details might still carry forward into subsequent turns. You will need to regenerate or edit the summary node itself to clear it out.
 
 ## 3. Regenerate and continue
 
@@ -44,4 +44,4 @@ The original exploration is still available. You can choose which parts to carry
 
 ---
 
-Related guides: [Getting started](/) · [Context controls](/guides/context-control) · [Conversations and branches](/guides/conversations) · [Session Atlas](/guides/session-atlas)
+Related guides: [Getting started](/) · [Context controls](/guides/context-control) · [Conversations and branches](/guides/conversations)

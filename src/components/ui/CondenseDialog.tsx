@@ -8,6 +8,7 @@ import { useModels } from '../../lib/use-models';
 import { backgroundModels, isApiModel } from '../../lib/background-model';
 import { findCandidateSegments, startCondenseRun, cancelCondenseRun, type CondenseSegment } from '../../lib/condense';
 import { useI18n, useT, fmt } from '../../i18n';
+import { screenToUi, uiRect, uiViewport } from '../../lib/ui-scale';
 
 // Condense v4b: a FLOATING window on the canvas's left side (the focus
 // panel owns the right — the two never fight), and the build itself is a
@@ -46,7 +47,7 @@ export default function CondenseDialog({ onFocusSegment }: { onFocusSegment?: (n
   const winRef = useRef<HTMLDivElement>(null);
   const startDrag = (e: React.PointerEvent<HTMLDivElement>) => {
     if (e.button !== 0 || (e.target instanceof Element && e.target.closest('button'))) return;
-    const r = winRef.current?.getBoundingClientRect();
+    const r = winRef.current ? uiRect(winRef.current) : null;
     if (!r) return;
     e.preventDefault();
     e.currentTarget.setPointerCapture(e.pointerId);
@@ -57,9 +58,10 @@ export default function CondenseDialog({ onFocusSegment }: { onFocusSegment?: (n
     const start = drag.current;
     if (!start || start.pointerId !== event.pointerId || Math.hypot(event.clientX - start.x, event.clientY - start.y) < 3) return;
     setDragging(true);
+    const viewport = uiViewport();
     setPos({
-      x: Math.min(window.innerWidth - 120, Math.max(0, start.left + event.clientX - start.x)),
-      y: Math.min(window.innerHeight - 80, Math.max(0, start.top + event.clientY - start.y)),
+      x: Math.min(viewport.width - 120, Math.max(0, start.left + screenToUi(event.clientX - start.x))),
+      y: Math.min(viewport.height - 80, Math.max(0, start.top + screenToUi(event.clientY - start.y))),
     });
   };
   const finishDrag = (event: React.PointerEvent<HTMLDivElement>) => {
@@ -105,7 +107,7 @@ export default function CondenseDialog({ onFocusSegment }: { onFocusSegment?: (n
   return createPortal((
     <div
       ref={winRef}
-      className="fixed z-[70] bg-surface border border-line rounded-panel shadow-lg w-[400px] max-h-[72vh] flex flex-col p-4 animate-fade-in"
+      className="fixed z-[70] bg-surface border border-line rounded-panel shadow-lg w-[400px] max-h-[calc(72*var(--ui-vh))] flex flex-col p-4 animate-fade-in"
       style={pos ? { left: pos.x, top: pos.y } : { left: 80, bottom: 16 }}
       data-condense-dialog
       onClick={(e) => e.stopPropagation()}

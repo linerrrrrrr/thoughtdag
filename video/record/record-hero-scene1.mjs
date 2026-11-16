@@ -121,8 +121,7 @@ if (!fileNodeId) {
           tokenCount: 0, highlights: [], highlightMode: 'tag',
           attachments: [{ id: `${id}-att`, name: 'attention-loop.pdf', type: 'application/pdf', size: 4096, content: '', extractedText: text, numPages: 1 }],
           excludedAttachmentIds: [], includedAttachmentIds: [],
-          roleMode: 'inherit', isRoot: false, isBranch: false,
-        },
+          roleMode: 'inherit'},
       }],
     }));
     return id;

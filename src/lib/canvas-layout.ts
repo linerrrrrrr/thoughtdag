@@ -4,6 +4,7 @@ import { NODE_CSS_WIDTH } from './constants';
 import { frameMembers, isFrameNode, nodeRect } from './frames';
 import { FRAME_CONTENT_PADDING, FRAME_MIN_WIDTH, FRAME_MIN_HEIGHT } from './frame-sizing';
 import type { LayoutProblem, LayoutShape, LayoutSolution } from './layout-model';
+import { orderConversationEdges } from './graph';
 
 export interface CanvasLayoutOptions {
   direction: 'vertical' | 'horizontal';
@@ -26,8 +27,8 @@ export function canvasLayoutInputKey(nodes: ThoughtNode[], edges: ThoughtEdge[])
     nodes.map((node) => [node.id, node.position.x, node.position.y, widthOf(node), heightOf(node),
       nodeRect(node).width, nodeRect(node).height, node.data.stepKind,
       node.data.createdAt, node.data.lockAspectRatio, node.data.layoutDirection, node.data.edgeRouteDefault]).sort((a, b) => String(a[0]).localeCompare(String(b[0]))),
-    edges.map((edge) => [edge.id, edge.source, edge.target, edge.data?.isBranchFromSelection,
-      edge.data?.isCrossLink, edge.data?.isWatch, edge.data?.createdAt]).sort((a, b) => String(a[0]).localeCompare(String(b[0]))),
+    edges.map((edge) => [edge.id, edge.source, edge.target,
+      edge.data?.isCrossLink, edge.data?.createdAt]).sort((a, b) => String(a[0]).localeCompare(String(b[0]))),
   ]);
 }
 
@@ -84,15 +85,9 @@ export async function planCanvasLayout(
     if (containing.slice(1).some((frame) => !contents.get(frame.id)!.some((member) => member.id === first.id))) return fail('frame-conflict');
     parent.set(node.id, first.id);
   }
-  const live = edges.filter((edge) => byId.has(edge.source) && byId.has(edge.target)
-    && !isFrameNode(byId.get(edge.source)!) && !isFrameNode(byId.get(edge.target)!))
-    .sort((a, b) => (a.data?.createdAt ?? byId.get(a.target)!.data.createdAt ?? '').localeCompare(b.data?.createdAt ?? byId.get(b.target)!.data.createdAt ?? '')
-      || compare(byId.get(a.source)!, byId.get(b.source)!) || compare(byId.get(a.target)!, byId.get(b.target)!) || a.id.localeCompare(b.id));
-  const structural = live.filter((edge) => !edge.data?.isCrossLink && !edge.data?.isWatch);
-  const parented = new Set(structural.map((edge) => edge.target));
-  for (const edge of live) if (edge.data?.isCrossLink && !edge.data.isWatch && !parented.has(edge.target)) {
-    structural.push(edge); parented.add(edge.target);
-  }
+  const live = orderConversationEdges(nodes, edges.filter((edge) => byId.has(edge.source) && byId.has(edge.target)
+    && !isFrameNode(byId.get(edge.source)!) && !isFrameNode(byId.get(edge.target)!)));
+  const structural = live.filter((edge) => !edge.data?.isCrossLink);
   const degree = new Map(cards.map((node) => [node.id, 0]));
   const children = new Map<string, string[]>();
   for (const edge of structural) if (degree.has(edge.source) && degree.has(edge.target)) {
@@ -107,10 +102,10 @@ export async function planCanvasLayout(
   }
   if (visited !== cards.length) return fail('cycle');
   const owner = new Map<string, ThoughtEdge>();
-  for (const edge of structural) if (!owner.has(edge.target) || owner.get(edge.target)?.data?.isBranchFromSelection && !edge.data?.isBranchFromSelection) owner.set(edge.target, edge);
+  for (const edge of structural) if (!owner.has(edge.target)) owner.set(edge.target, edge);
   const firstChildren = new Set<string>();
   const continuation = new Set(structural.filter((edge) => {
-    if (edge.data?.isBranchFromSelection || owner.get(edge.target) !== edge || firstChildren.has(edge.source)) return false;
+    if (owner.get(edge.target) !== edge || firstChildren.has(edge.source)) return false;
     firstChildren.add(edge.source); return true;
   }).map((edge) => edge.id));
   const structuralIds = new Set(structural.map((edge) => edge.id));
@@ -122,7 +117,7 @@ export async function planCanvasLayout(
   }));
   const problem: LayoutProblem = { shapes, links: live.filter((edge) => ids.has(edge.source) || ids.has(edge.target)).map((edge) => ({
     id: edge.id, source: edge.source, target: edge.target, structural: structuralIds.has(edge.id), continuation: continuation.has(edge.id),
-    auxiliary: edge.data?.isWatch ? 'watch' : edge.data?.isCrossLink && !structuralIds.has(edge.id) ? 'reference' : undefined,
+    auxiliary: edge.data?.isCrossLink ? 'reference' : undefined,
   })), options: { direction: options.direction, method: options.method, ...SPACING[options.density],
     framePadding: FRAME_CONTENT_PADDING } };
   let solution: LayoutSolution;

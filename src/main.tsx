@@ -1,63 +1,75 @@
-import { StrictMode } from 'react'
-import { createRoot } from 'react-dom/client'
-import '@fontsource-variable/inter/index.css'
-import '@fontsource-variable/jetbrains-mono/index.css'
-import App from './App'
-import { bootProjects } from './store/projects'
-import { isViewerMode, bootViewer } from './lib/viewer'
-import { initAppearance } from './lib/appearance'
-import { installDshSessionsBridge } from './lib/atlas/dsh-bridge'
-import { API_BASE } from './lib/constants'
+import './index.css'
+import { initializeDiskStorage, StorageRecoveryRequired } from './lib/disk-storage'
 
-// Theme attributes land on <html> before first paint — no wrong-theme flash
-initAppearance()
+// Settings are read at module initialization, so restore/migrate the selected
+// storage before importing the application and its stores.
+const root = document.getElementById('root')!
+let language = navigator.language
+try { language = localStorage.getItem('thoughtdag.lang') ?? language } catch { /* Storage may be unavailable. */ }
+const zh = language.toLowerCase().startsWith('zh')
+const screen = document.createElement('main')
+screen.className = 'min-h-screen bg-surface text-ink flex items-center justify-center px-6'
+const card = document.createElement('section')
+card.className = 'w-full max-w-md rounded-panel border border-line bg-card p-6 shadow-sm'
+const heading = document.createElement('h1')
+heading.className = 'text-title font-semibold'
+heading.textContent = zh ? '正在打开本地数据' : 'Opening local data'
+const message = document.createElement('p')
+message.className = 'mt-3 text-control text-ink-muted'
+message.setAttribute('role', 'status')
+message.setAttribute('aria-live', 'polite')
+message.textContent = zh ? '正在检查画布和附件。' : 'Checking canvases and attachments.'
+card.append(heading, message)
+screen.append(card)
+root.replaceChildren(screen)
 
-// Embedded in DeepSeek Harness (the dsh-thoughtdag plugin builds with this
-// set): the harness's own web server is the session bridge, so the atlas
-// and the live mirror light up exactly as they do in the desktop shell.
-const dshApi = import.meta.env.VITE_DSH_BRIDGE as string | undefined
-if (dshApi && !window.desktopSessions) installDshSessionsBridge(dshApi)
-if (dshApi) void import('./lib/plugin-update').then((mod) => mod.bootPluginUpdateCheck(dshApi))
-// Agent runtimes over HTTP: the harness host serves them; a local server on
-// this machine does too. The probe answers 404 everywhere else and nothing
-// is installed — the picker simply has no agent group.
-if (!window.desktopAgents) {
-  const agentsApi = dshApi ?? `${API_BASE}/api`
-  void import('./lib/agents/http-bridge').then(async (m) => {
-    const ok = await m.installAgentsHttpBridge(agentsApi)
-    // a local server can also read the other agents' session files: the
-    // same atlas bridge the harness gets, over its /roots endpoints
-    if (ok && !dshApi && !window.desktopSessions) installDshSessionsBridge(agentsApi)
-    if (ok) window.dispatchEvent(new CustomEvent('td:agents-ready'))
+function start(choice?: string) {
+  card.replaceChildren(heading, message)
+  heading.textContent = zh ? '正在打开本地数据' : 'Opening local data'
+  message.textContent = zh ? '正在检查画布和附件。' : 'Checking canvases and attachments.'
+  message.setAttribute('role', 'status')
+  void initializeDiskStorage((progress) => {
+    message.textContent = zh ? `正在核对本地数据 ${progress}` : `Verifying local data ${progress}`
+  }, choice).then(() => import('./app-entry')).catch((error: unknown) => {
+    if (error instanceof StorageRecoveryRequired) {
+      heading.textContent = zh ? '发现已有本地数据' : 'Existing local data found'
+      message.textContent = zh
+        ? '当前浏览器尚未连接。请选择已有数据，或把当前浏览器数据迁入新副本。'
+        : 'This browser is not connected. Choose existing data or migrate this browser into a new copy.'
+      const choices = document.createElement('div')
+      choices.className = 'mt-4 flex max-h-60 flex-col gap-2 overflow-y-auto'
+      choices.dataset.storageRecovery = 'true'
+      for (const candidate of [...error.candidates].sort((a, b) => b.createdAt.localeCompare(a.createdAt))) {
+        const button = document.createElement('button')
+        button.type = 'button'
+        button.dataset.storageRecoveryNamespace = candidate.namespace
+        button.className = 'rounded-control border border-line px-3 py-2 text-left text-control hover:bg-wash'
+        const date = new Date(candidate.createdAt).toLocaleString(zh ? 'zh-CN' : 'en-US')
+        button.textContent = `${date} · ${candidate.namespace.slice(0, 8)}`
+        button.addEventListener('click', () => start(candidate.namespace))
+        choices.append(button)
+      }
+      const fresh = document.createElement('button')
+      fresh.type = 'button'
+      fresh.className = 'rounded-control border border-line px-3 py-2 text-left text-control hover:bg-wash'
+      fresh.textContent = zh ? '将本浏览器数据迁入新副本' : 'Migrate this browser into a new copy'
+      fresh.addEventListener('click', () => start('new'))
+      choices.append(fresh)
+      card.append(choices)
+      return
+    }
+    console.error('[thoughtdag] local storage could not be opened:', error)
+    heading.textContent = zh ? '无法打开本地数据' : 'Unable to open local data'
+    message.textContent = zh
+      ? '请检查数据目录和本地服务后重试。本次操作没有删除原有浏览器数据。'
+      : 'Check the data directory and local service, then try again. Existing browser data was not deleted.'
+    message.setAttribute('role', 'alert')
+    const retry = document.createElement('button')
+    retry.type = 'button'
+    retry.className = 'mt-4 rounded-control bg-action px-4 py-2 text-control text-white hover:bg-action-strong'
+    retry.textContent = zh ? '重试' : 'Retry'
+    retry.addEventListener('click', () => start())
+    card.append(retry)
   })
 }
-
-// Resolve the active project and rehydrate the store before/while React
-// mounts — App's hydration gate opens when this finishes. A #view= link
-// boots read-only instead: graph from the URL, persistence silenced.
-if (isViewerMode) void bootViewer()
-else {
-  void bootProjects()
-  // Ask the browser to mark this origin's storage persistent — exempts the
-  // IndexedDB canvases from best-effort eviction under disk pressure.
-  // Browsers grant it silently based on engagement; a refusal is harmless.
-  if (navigator.storage?.persist) void navigator.storage.persist()
-  void import('./lib/local-backup').then((m) => m.bootAutoBackup())
-}
-
-// A long-lived tab keeps running the bundle it loaded; nudge when a newer
-// deploy lands (viewer tabs included — a shared link can sit open for days).
-void import('./lib/update-check').then((m) => m.bootUpdateCheck())
-
-// Pasting a #view= link into an ALREADY-OPEN tab only changes the hash —
-// the browser won't reload, so the viewer/author decision above never
-// re-runs. Cross the boundary with an explicit reload (both directions).
-window.addEventListener('hashchange', () => {
-  if (window.location.hash.startsWith('#view=') !== isViewerMode) window.location.reload()
-})
-
-createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    <App />
-  </StrictMode>,
-)
+start()

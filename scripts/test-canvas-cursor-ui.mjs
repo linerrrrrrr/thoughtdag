@@ -27,7 +27,6 @@ await context.route('**/api/**', route => {
 await context.addInitScript(() => {
   localStorage.setItem('thoughtdag.seeded', 'yes');
   localStorage.setItem('thoughtdag.tutorialDone', '1');
-  localStorage.setItem('thoughtdag.autoRefreshPaused', 'yes');
   localStorage.setItem('thoughtdag.lang', 'zh');
 });
 const page = await context.newPage();
@@ -61,8 +60,7 @@ async function fixture({ zoom = 1, theme = 'light', detail = 'full', disabled = 
     const data = (question, extra = {}) => ({ question,
       response: 'Readable answer text remains selectable while the header moves the card. [Reference](https://example.com/reference)',
       responses: ['Readable answer text remains selectable while the header moves the card. [Reference](https://example.com/reference)'], responseIndex: 0,
-      isCollapsed: false, isEditing: false, isEditingResponse: false, isLoading: false, isRoot: false, isBranch: false,
-      highlights: [], attachments: [], excludedAttachmentIds: [], includedAttachmentIds: [], tokenCount: 24, roleMode: 'inherit',
+      isCollapsed: false, isEditing: false, isEditingResponse: false, isLoading: false, highlights: [], attachments: [], excludedAttachmentIds: [], includedAttachmentIds: [], tokenCount: 24, roleMode: 'inherit',
       detailLevel: detail, ...extra });
     const nodes = [
       { id: 'frame', position: { x: 80, y: 100 }, width: 1200, height: 780,
@@ -76,7 +74,7 @@ async function fixture({ zoom = 1, theme = 'light', detail = 'full', disabled = 
       sourceHandle: 'source-right', targetHandle: 'target-left', data: { route: 'curve' } }];
     window.__canvasEditing.getState().reset();
     window.__ui.setState({ panelOpen: false, panelNodeId: null, readerNodeId: null, tutorialOpen: false,
-      releaseNotesOpen: false, autoRefreshPaused: true, drafts: {}, canvasDetail: detail,
+      releaseNotesOpen: false, drafts: {}, canvasDetail: detail,
       condenseRun: { status: 'idle', current: 0, total: 0, streaming: '', originalIds: [], distillIds: [] } });
     window.__store.setState({ nodes, edges, selectedNodeId: null, selectedNodeIds: [], history: [{ nodes, edges }], historyIndex: 0 });
     (await import('/src/lib/appearance.ts')).useAppearance.getState().setLighting(theme);
@@ -147,7 +145,7 @@ async function dragNode(id, selector, ids, zoom, fx = .6, fy = .5) {
   await cursorAt(released, resizeLine ? 'ns-resize' : 'grab', `${id} released drag`);
 }
 
-async function selectText(id, selector) {
+async function selectText(id, selector, clear = true) {
   const target = node(id).locator(selector).first();
   const range = await target.evaluate(element => {
     const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
@@ -170,7 +168,7 @@ async function selectText(id, selector) {
   assert.ok((await page.evaluate(() => window.getSelection()?.toString() ?? '')).length >= 8, `${id} text is actually selected`);
   assert.deepEqual(await positions(), before, `${id} text selection does not move nodes`);
   assert.deepEqual(await viewport(), camera, `${id} text selection does not pan the canvas`);
-  await page.evaluate(() => window.getSelection()?.removeAllRanges());
+  if (clear) await page.evaluate(() => window.getSelection()?.removeAllRanges());
 }
 
 try {
@@ -205,6 +203,29 @@ try {
       await page.screenshot({ path: `${output}/${theme}-${zoom}.png` });
     });
 
+    await probe(`${label}: Shift adds and removes nodes without extending a native text selection`, async () => {
+      await fixture({ theme, zoom });
+      const material = node('note').locator('[data-content-body] .markdown-body p').first();
+      await material.click({ position: { x: 20, y: 8 } });
+      await selectText('note', '[data-content-body] .markdown-body p', false);
+      const before = await positions(), camera = await viewport();
+      const at = await point(node('thought').locator('.conversation-answer p').first(), .15, .1);
+      await page.keyboard.down('Shift');
+      try {
+        await page.mouse.click(at.x, at.y);
+        await page.waitForFunction(() => window.__store.getState().selectedNodeIds.length === 2);
+        assert.deepEqual(await page.evaluate(() => [...window.__store.getState().selectedNodeIds].sort()), ['note', 'thought']);
+        assert.equal(await page.evaluate(() => window.getSelection()?.toString() ?? ''), '', 'Adding a node clears the old text selection and creates no new one');
+        await page.mouse.click(at.x, at.y);
+        await page.waitForFunction(() => window.__store.getState().selectedNodeIds.length === 1);
+        assert.deepEqual(await page.evaluate(() => window.__store.getState().selectedNodeIds), ['note']);
+        assert.equal(await page.evaluate(() => window.getSelection()?.toString() ?? ''), '');
+      } finally { await page.keyboard.up('Shift'); }
+      assert.deepEqual(await positions(), before);
+      assert.deepEqual(await viewport(), camera);
+      await page.screenshot({ path: `${output}/shift-selection-${theme}-${zoom}.png` });
+    });
+
     await probe(`${label}: header button gestures never move their node`, async () => {
       for (const [id, selector] of [['thought', '[data-node-details]'], ['note', '[data-note-edit]'], ['frame', '[data-frame-carry-toggle]']]) {
         await fixture({ theme, zoom });
@@ -216,6 +237,27 @@ try {
       }
     });
   }
+
+  await probe('Shift-click preserves action buttons and native selection in text inputs and editors', async () => {
+    await fixture();
+    await node('thought').locator('[data-edit-response]').click({ modifiers: ['Shift'] });
+    const responseEditor = node('thought').locator('[data-canvas-response-editor]');
+    const value = 'Editable text keeps its native selection behavior.';
+    const selectInEditor = async editor => {
+      await editor.fill(value);
+      await editor.evaluate(element => { element.focus(); element.setSelectionRange(0, 0); });
+      await editor.click({ position: { x: 130, y: 20 }, modifiers: ['Shift'] });
+      assert.ok(await editor.evaluate(element => element.selectionEnd - element.selectionStart > 5), 'Shift-click extends native editor selection');
+      await page.keyboard.press('Shift+ArrowRight');
+      assert.ok(await editor.evaluate(element => element.selectionEnd - element.selectionStart > 5), 'Shift keyboard selection remains native');
+      assert.equal(await editor.inputValue(), value);
+    };
+    await selectInEditor(responseEditor);
+    await fixture();
+    await node('thought').locator('[data-node-metadata-toggle]').click({ modifiers: ['Shift'] });
+    await selectInEditor(node('thought').locator('[data-node-title-input]'));
+    await selectInEditor(node('thought').locator('[data-node-summary-input]'));
+  });
 
   for (const detail of ['summary', 'compact']) await probe(`${detail}: overview drag targets retain the same promise`, async () => {
     await fixture({ detail, zoom: .65 });

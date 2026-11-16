@@ -44,8 +44,7 @@ await page.evaluate(() => {
       responseIndex: 0, isCollapsed: false, isEditing: false, isEditingResponse: false,
       isLoading: false, tokenCount: 9, highlights: [], highlightMode: 'tag',
       attachments: [], excludedAttachmentIds: [], includedAttachmentIds: [],
-      roleMode: 'inherit', isRoot: true, isBranch: false,
-    },
+      roleMode: 'inherit'},
   }]);
 });
 await page.waitForTimeout(2000); // > 1s debounce so the write flushes

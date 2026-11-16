@@ -27,7 +27,6 @@ await context.route('**/api/**', route => {
 await page.addInitScript(() => {
   localStorage.setItem('thoughtdag.seeded', 'yes');
   localStorage.setItem('thoughtdag.tutorialDone', '1');
-  localStorage.setItem('thoughtdag.autoRefreshPaused', 'yes');
 });
 const check = name => { checks.push(name); console.log(`PASS ${name}`); };
 const near = (actual, expected, message) => assert.ok(Math.abs(actual - expected) < 1, `${message}: ${actual} != ${expected}`);
@@ -61,7 +60,7 @@ const fixture = async (ids = [], extraFrame = false) => {
     const data = label => ({ question: label, response: '', responses: [''], responseIndex: 0,
       isCollapsed: false, isEditing: false, isEditingResponse: false, isLoading: false,
       tokenCount: 25, highlights: [], highlightMode: 'tag', attachments: [],
-      excludedAttachmentIds: [], includedAttachmentIds: [], roleMode: 'inherit', isRoot: false, isBranch: false });
+      excludedAttachmentIds: [], includedAttachmentIds: [], roleMode: 'inherit'});
     const card = (id, x, y, group) => ({ id: `frame-test-${id}`, type: 'thought', position: { x, y }, width: 360, height: 180,
       dragHandle: '.drag-handle', data: { ...data(`研究材料 ${id.toUpperCase()}`), stepKind: 'note', canvasGroupId: group } });
     const frame = (id, x, y, width, height, carry) => ({ id: `frame-test-${id}`, type: 'thought', position: { x, y }, width, height,
@@ -79,7 +78,6 @@ const fixture = async (ids = [], extraFrame = false) => {
     window.__ui.getState().setPanelOpen(false);
     window.__ui.getState().setTutorialOpen(false);
     window.__ui.getState().setReleaseNotesOpen(false);
-    window.__ui.getState().setAutoRefreshPaused(true);
     window.__canvasEditing?.getState().reset();
     window.__rf.setViewport({ x: 20, y: 30, zoom: 0.75 }, { duration: 0 });
   }, { ids: ids.map(id => `frame-test-${id}`), extraFrame });

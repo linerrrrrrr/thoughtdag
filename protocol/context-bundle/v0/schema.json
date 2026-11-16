@@ -121,8 +121,8 @@
           "required": ["layer"],
           "additionalProperties": false,
           "properties": {
-            "layer": { "enum": ["system", "material", "reference", "chain", "branch"] },
-            "part": { "enum": ["role", "attachment", "question", "response", "reference", "passage"] },
+            "layer": { "enum": ["system", "material", "reference", "chain"] },
+            "part": { "enum": ["role", "attachment", "question", "response", "reference"] },
             "node_id": { "type": "string" },
             "attachment_id": { "type": "string" }
           }

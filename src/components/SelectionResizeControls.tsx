@@ -52,7 +52,7 @@ export default function SelectionResizeControls({ onNodeContextMenu }: { onNodeC
         if (!original) return node;
         return drag.direction === 'move' ? { ...node, position: original.position }
           : { ...node, width: original.width, height: original.height,
-            data: { ...node.data, keepOverviewHeight: original.data.keepOverviewHeight } };
+            data: { ...node.data, keepOverviewHeight: original.data.keepOverviewHeight, contentHeightIntent: original.data.contentHeightIntent } };
       }) }));
     } else useStore.getState().pushHistory();
   };

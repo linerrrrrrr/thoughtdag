@@ -54,7 +54,6 @@ export function searchCanvas(nodes: ThoughtNode[], rawQuery: string): SearchHit[
   const hits: SearchHit[] = [];
   for (const n of nodes) {
     const d = n.data;
-    if (d.stepKind === 'fanout') continue;
     // fields in the order a user most likely remembers them
     const fields: string[] = [
       d.question ?? '',

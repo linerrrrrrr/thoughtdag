@@ -1,6 +1,6 @@
 /* Only the reference page scrolls; product canvas behavior stays untouched. */
 html.design-system-document { height: auto; min-height: 100%; overflow: auto; }
-body.design-system-page { height: auto; min-height: 100vh; overflow: visible; }
+body.design-system-page { height: auto; min-height: calc(100*var(--ui-vh)); overflow: visible; }
 .design-system-page #root { height: auto; min-height: 100%; overflow: visible; }
 .ds-page {
   max-width: 1440px;
@@ -51,7 +51,7 @@ body.design-system-page { height: auto; min-height: 100vh; overflow: visible; }
 .ds-editor textarea::placeholder { color: var(--color-ink-faint); }
 .ds-editor > .ds-caption { margin-top: var(--spacing-related); }
 .ds-editor > .ds-action-row { margin-top: var(--spacing-section-gap); }
-.ds-error { margin-top: var(--spacing-related); font-size: var(--text-control); color: var(--color-watch); }
+.ds-error { margin-top: var(--spacing-related); font-size: var(--text-control); color: var(--color-danger); }
 .ds-input-preview { margin-top: var(--spacing-surface-inset); padding-block: var(--spacing-section-gap); border-top: 1px solid var(--color-line); border-bottom: 1px solid var(--color-line); overflow-wrap: anywhere; font-size: var(--text-body); }
 .ds-state-field { margin-top: var(--spacing-surface-inset); }
 .ds-table-scroll { overflow-x: auto; }

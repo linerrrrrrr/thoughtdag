@@ -5,7 +5,7 @@
 // Usage: `node scripts/test-backup-write.mjs`
 //
 // What it covers:
-//   1. the files the canvas asks for reach disk, cli/ drawer included
+//   1. the files the canvas asks for reach disk, nested paths included
 //   2. every way a `name` or `dir` could escape the picked folder is refused
 //   3. the endpoint shells the module the way the plugin does, over real HTTP
 import { createServer } from 'node:http';
@@ -43,12 +43,12 @@ try {
       file === resolve(dir, 'My canvas.thoughtdag.json') && existsSync(file), file);
     ok('its bytes are the payload', await readFile(file, 'utf8') === '{"a":1}');
 
-    // a session mirror goes in the cli/ drawer, which the host creates
-    const mirror = await writeBackup({ dir, name: 'cli/April recall-1a2b3c4d.thoughtdag.json', json: '{"b":2}' });
-    ok('a session mirror lands under cli/', mirror === resolve(dir, 'cli', 'April recall-1a2b3c4d.thoughtdag.json') && existsSync(mirror), mirror);
+    // a nested path is contained within the selected folder
+    const mirror = await writeBackup({ dir, name: 'nested/April recall-1a2b3c4d.thoughtdag.json', json: '{"b":2}' });
+    ok('a nested path stays within the folder', mirror === resolve(dir, 'nested', 'April recall-1a2b3c4d.thoughtdag.json') && existsSync(mirror), mirror);
 
     // a backslash is a separator too (the canvas normalizes, but be exact)
-    const win = await writeBackup({ dir, name: 'cli\\Win.thoughtdag.json', json: '{"c":3}' });
+    const win = await writeBackup({ dir, name: 'nested\\Win.thoughtdag.json', json: '{"c":3}' });
     ok('a backslash name still resolves inside the folder', win.startsWith(resolve(dir) + sep) && existsSync(win), win);
 
     // re-writing the same canvas replaces the file rather than failing
@@ -90,7 +90,7 @@ try {
       }
     };
     await contained('a traversal name stays inside', { dir, name: '../../escaped.thoughtdag.json', json: '{}' });
-    await contained('a deep traversal stays inside', { dir, name: 'cli/../../escaped.thoughtdag.json', json: '{}' });
+    await contained('a deep traversal stays inside', { dir, name: 'nested/../../escaped.thoughtdag.json', json: '{}' });
     await contained('an absolute name stays inside', { dir, name: 'C:\\Windows\\Temp\\escaped.thoughtdag.json', json: '{}' });
     await contained('a name of only dots stays inside', { dir, name: '...', json: '{}' });
     await contained('a UNC-looking name stays inside', { dir, name: '\\\\server\\share\\escaped.thoughtdag.json', json: '{}' });

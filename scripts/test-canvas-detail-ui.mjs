@@ -25,7 +25,6 @@ await context.route('**/api/**', (route) => {
 await page.addInitScript(() => {
   localStorage.setItem('thoughtdag.seeded', 'yes');
   localStorage.setItem('thoughtdag.tutorialDone', '1');
-  localStorage.setItem('thoughtdag.autoRefreshPaused', 'yes');
 });
 const check = (name) => { checks.push(name); console.log(`PASS ${name}`); };
 const near = (a, b, message) => assert.ok(Math.abs(a - b) < 0.001, `${message}: ${a} != ${b}`);
@@ -74,9 +73,9 @@ try {
       summaries: ['保留内容与位置，分别控制缩放和信息详细程度。'],
       isCollapsed: false, isEditing: false, isEditingResponse: false, isLoading: false, tokenCount: 400,
       highlights: [], highlightMode: 'tag', attachments: [], excludedAttachmentIds: [], includedAttachmentIds: [],
-      roleMode: 'inherit', isRoot: false, isBranch: false, ...extra });
+      roleMode: 'inherit', ...extra });
     const nodes = [
-      { id: 'detail-thought', type: 'thought', position: { x: 0, y: 0 }, data: data('如何独立调整缩放和信息详细程度？', { isRoot: true, displayName: '研究问题' }) },
+      { id: 'detail-thought', type: 'thought', position: { x: 0, y: 0 }, data: data('如何独立调整缩放和信息详细程度？', { displayName: '研究问题' }) },
       { id: 'detail-note', type: 'thought', position: { x: 650, y: 0 }, width: 440, data: data('# 材料笔记\n\n' + response, { stepKind: 'note', displayName: '分析材料' }) },
       { id: 'detail-file', type: 'thought', position: { x: 1250, y: 0 }, width: 440, data: data('', { stepKind: 'file', displayName: '数据文件', attachments: [{ id: 'text', name: 'sample.csv', size: 30, type: 'text/csv', content: 'month,value\n1,2', extractedText: 'month,value\n1,2' }] }) },
       { id: 'detail-link', type: 'thought', position: { x: 1800, y: 0 }, width: 440, data: data(response, { stepKind: 'link', displayName: '来源网页', linkUrl: 'https://example.com/source', linkTitle: '来源网页' }) },
@@ -99,7 +98,7 @@ try {
   await globalDetail('full');
   await page.keyboard.press('Escape');
   await setViewport();
-  const body = node().locator('.markdown-body.nowheel').last();
+  const body = node().locator('[data-conversation-split-answer]');
   await wheel(body, { modifier: null });
   assert.ok(await body.evaluate((el) => el.scrollTop > 0), 'Plain wheel reads node text');
   near((await viewport()).zoom, 1, 'Plain text scroll preserves zoom');

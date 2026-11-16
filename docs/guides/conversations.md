@@ -8,9 +8,11 @@ Drag a connection from a node to empty canvas to create an empty child. Enter th
 
 ## Understand a conversation node
 
+All ordinary conversation nodes use the same model. The start label follows the current incoming conversation connections; several children are simply different paths through the graph. Connections select context, and generating another answer or replaying dependent work requires an explicit action. A question about selected material includes the quotation in its visible question text.
+
 The node card supports quick scanning rather than every control:
 
-- the top shows the question, role, and state;
+- the top shows the node state and actions;
 - the body shows the active answer version;
 - footer actions cover frequent operations such as highlighting, regenerating, copying, and editing;
 - each answer version records its model and generation time;
@@ -25,13 +27,15 @@ The panel floats above the right side of the canvas without moving nodes. Drag i
 
 | Area | Purpose |
 |---|---|
-| Header status and actions | Inspect role, token, and material state, then use node-level shortcuts |
+| Header status and actions | Inspect the node state and use node-level shortcuts |
 | Question | Read or edit the question; waiting nodes also receive their question here |
 | Answer and versions | Read the full answer, switch versions, inspect the generating model, and turn on the highlighter to mark key passages |
+| Turn information | Inspect the token estimate and attachment count below the answer |
 | Attachments | Add [materials](/guides/materials) and control whether inherited attachments enter this context |
-| Highlights | Pass full text, tag important passages, or pass highlights only; see [Highlight and weave](/guides/organize#highlight-and-weave) |
-| Merge order | Reorder upstream blocks when several routes enter the node; see [Control context](/guides/context-control) |
-| Context tree | Inspect the actual materials, references, conversation turns, and estimated tokens; see [Inspect the next request](/guides/context-control#inspect-the-next-request) |
+| Highlights | Choose Reading only to keep downstream context unchanged, Tag important, or Highlights only; see [Highlight and weave](/guides/organize#highlight-and-weave) |
+| Recall | Review retrieved history and its retrieval state |
+
+Conversation details have no context-node list, context-chain navigation, or source-ordering section. For multiple incoming routes, use the canvas node’s **Context · N sources** entry; see [Control context](/guides/context-control). The header’s **More** menu still offers copying or exporting the context chain.
 
 ## Continue from an existing node
 
@@ -53,4 +57,4 @@ Editing upstream content can make dependent answers stale. ThoughtDAG marks them
 
 ## Node right-click menu
 
-The right-click menu holds lower-frequency actions. [Interface overview: Nodes](/guides/interface-overview#_3-nodes) explains each item once, so this page only adds two state rules: available actions vary by node type and state, and right-click preserves the browser's native menu when text is selected. CLI actions hand work to [Session Atlas](/guides/session-atlas); they do not automatically add an external session to the current context.
+The right-click menu holds lower-frequency actions. [Interface overview: Nodes](/guides/interface-overview#_3-nodes) explains each item once, so this page only adds two state rules: available actions vary by node type and state, and right-click preserves the browser's native menu when text is selected.

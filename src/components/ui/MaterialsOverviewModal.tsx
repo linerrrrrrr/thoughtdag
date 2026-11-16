@@ -93,7 +93,7 @@ export default function MaterialsOverviewModal({ onLocate }: { onLocate: (nodeId
 
   return createPortal((
     <div className="fixed inset-0 z-[60] bg-ink/30 flex items-center justify-center p-6">
-      <div ref={layerRef} role="dialog" aria-modal="true" aria-label={t('matov.title')} tabIndex={-1} className="bg-card rounded-panel shadow-lg border border-line w-[640px] max-h-[80vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+      <div ref={layerRef} role="dialog" aria-modal="true" aria-label={t('matov.title')} tabIndex={-1} className="bg-card rounded-panel shadow-lg border border-line w-[640px] max-h-[calc(80*var(--ui-vh))] flex flex-col" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center gap-2 px-5 py-3 border-b border-line shrink-0">
           <Paperclip size={15} strokeWidth={1.75} className="text-warm" />
           <span className="text-section font-semibold text-ink">{t('matov.title')}</span>

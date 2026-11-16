@@ -4,7 +4,9 @@ For a worked example, follow [How to edit AI context while keeping past conversa
 
 ## Inspect the next request
 
-Before a follow-up, click the **“will send ~… tok · … messages”** summary line above the input in the [node panel](/guides/conversations#floating-panel-areas). The expanded preview groups the next request into materials, explicit references, and conversation turns, and shows message, file, and token estimates. It previews the next panel follow-up; it is not a separate canvas menu.
+Inspect the incoming wires on the canvas. When several routes enter a node, its **Context · N sources** entry opens a nearby source card: trace the incoming sources, reorder conversation blocks, and inspect references separately. Closing it leaves the reading panel unchanged.
+
+Conversation details contain no dedicated context-node list or source-ordering section. They retain token estimates, attachments, and recall. Use the detail header’s **More → Copy context / Export** actions when you need the context chain as text; these actions do not generate a new answer.
 
 ## Create a context path or reference
 

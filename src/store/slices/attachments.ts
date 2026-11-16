@@ -2,18 +2,27 @@ import type { StateCreator } from 'zustand';
 import type { Attachment } from '../../types';
 import { partitionContext } from '../../lib/graph';
 import { attachmentFingerprint } from '../../lib/attachments';
+import { attachmentContextKey } from '../../lib/attachment-fingerprint';
 import { toolStepIds } from '../../lib/turn-insight';
+import { toast } from '../../lib/ui-store';
+import { t } from '../../i18n';
 import type { StoreState, AttachmentSlice } from '../types';
 
 export const createAttachmentSlice: StateCreator<StoreState, [], [], AttachmentSlice> = (set, get) => ({
   addAttachment: (nodeId: string, attachment: Attachment) => {
-    get().logEvent('material-add', nodeId, { type: attachment.type });
+    const node = get().nodes.find((n) => n.id === nodeId);
+    if (!node) return;
     // Dedup: skip if same file already on this node (name + size + content prefix)
-    const existing = get().nodes.find((n) => n.id === nodeId)?.data.attachments || [];
+    const existing = node.data.attachments || [];
     const fingerprint = attachmentFingerprint(attachment);
     if (existing.some((a) => attachmentFingerprint(a) === fingerprint)) {
       return;
     }
+    if (node.data.stepKind === 'file' && existing.length > 0) {
+      toast('info', t('content.oneFilePerNode'));
+      return;
+    }
+    get().logEvent('material-add', nodeId, { type: attachment.type });
     get().pushHistory();
     set((state) => ({
       nodes: state.nodes.map((n) =>
@@ -125,7 +134,7 @@ export const createAttachmentSlice: StateCreator<StoreState, [], [], AttachmentS
     for (const node of ordered) {
       if (node.id === nodeId || node.data.archived) continue;
       for (const att of (node.data.attachments || [])) {
-        const fp = attachmentFingerprint(att);
+        const fp = attachmentContextKey(att);
         if (seenFingerprints.has(fp)) continue;
         seenFingerprints.add(fp);
         result.push({

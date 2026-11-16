@@ -17,7 +17,7 @@ await page.route('**/api/**', route => {
   return route.fulfill({ json: { text: '{"title":"检查工作区","summary":"已核对构建与执行过程。"}', sessions: [], providers: [], items: [], topics: [], hits: [] } });
 });
 await page.addInitScript(() => {
-  for (const [key, value] of Object.entries({ seeded: 'yes', tutorialDone: '1', autoRefreshPaused: 'yes', lighting: 'dark', lang: 'zh' })) localStorage.setItem(`thoughtdag.${key}`, value);
+  for (const [key, value] of Object.entries({ seeded: 'yes', tutorialDone: '1', lighting: 'dark', lang: 'zh' })) localStorage.setItem(`thoughtdag.${key}`, value);
   window.__calls = [];
   window.__runs = 0;
   window.__event = () => {};
@@ -72,7 +72,7 @@ try {
     const { useProjects, bootProjects } = await import(projectsUrl);
     await bootProjects();
     window.__projects = useProjects;
-    useProjects.setState({ activeId: 'workbench', projects: [{ id: 'workbench', name: 'Workbench', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), sourceSession: { runner: 'codex', sessionId: '00000000-1111-2222-3333-444444444444', importedCount: 1, tailNodeId: 'source' } }] });
+    useProjects.setState({ activeId: 'workbench', projects: [{ id: 'workbench', name: 'Workbench', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }] });
     const { useUiStore } = await import('/src/lib/ui-store.ts');
     useUiStore.setState({ selectedModel: 'api/fixture', panelOpen: true, panelNodeId: 'source', panelWidth: 560, recallEnabled: false });
     const question = '检查项目的类型错误，并说明修复结果。';
@@ -84,8 +84,7 @@ try {
     ];
     window.__store.getState().setNodes([{ id: 'source', type: 'thought', dragHandle: '.drag-handle', position: { x: 0, y: 0 }, width: 670, data: {
       question, response, responses: [response], questions: [question], responseIndex: 0, isCollapsed: false, isEditing: false, isEditingResponse: false, isLoading: false,
-      tokenCount: 300, highlights: [], highlightMode: 'tag', attachments: [], excludedAttachmentIds: [], includedAttachmentIds: [], roleMode: 'inherit', isRoot: true,
-      importSource: { runner: 'codex', sessionId: '00000000-1111-2222-3333-444444444444', itemIds: ['user-1', 'final-1'], cwd: 'D:/fixture' }, source: { question, response }, agentActivities: [activity], detailLevel: 'full',
+      tokenCount: 300, highlights: [], highlightMode: 'tag', attachments: [], excludedAttachmentIds: [], includedAttachmentIds: [], roleMode: 'inherit', importSource: { runner: 'codex', sessionId: '00000000-1111-2222-3333-444444444444', itemIds: ['user-1', 'final-1'], cwd: 'D:/fixture' }, source: { question, response }, agentActivities: [activity], detailLevel: 'full',
     } }]);
     window.__store.getState().setEdges([]);
     window.__store.setState({ selectedNodeId: 'source' });

@@ -1,4 +1,4 @@
-import { createContext, memo, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
+import { createContext, memo, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import ReactMarkdown, { type ExtraProps } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
@@ -10,7 +10,7 @@ import type { Schema } from 'hast-util-sanitize';
 import type { Element, ElementContent, Root, RootContent } from 'hast';
 import type { PluggableList } from 'unified';
 import { Check, Code2, ClipboardCopy, Workflow } from 'lucide-react';
-import { fuzzyHighlightRegex, proseClipper } from '../lib/highlight-match';
+import { rehypeUserHighlights } from '../lib/rehype-user-highlights';
 import { useT, fmt } from '../i18n';
 import { localPathOf, basenameOf } from '../lib/local-path';
 import { foldToolCalls } from '../lib/tool-markup';
@@ -49,8 +49,8 @@ const SANITIZE_SCHEMA: Schema = {
     ...defaultSchema.attributes,
     // remark-math marks its code as language-math plus math-inline / math-display; KaTeX reads all three
     code: [['className', /^language-./, 'math-inline', 'math-display']],
-    // the marks this file injects itself: a user highlight, and an explore trace whose target the hosts read on click
-    mark: [['className', 'highlight-mark', 'explore-mark'], 'dataExploreTarget'],
+    // User highlights injected by this renderer.
+    mark: [['className', 'highlight-mark', 'cite-chip'], 'dataNodeCite'],
   },
 };
 // Rewrite recognized local references before sanitization. This preserves drive
@@ -236,14 +236,17 @@ const COMPONENTS = { pre: Pre, table: Table, a: Anchor, img: Img };
 // memo: the unified parse + KaTeX layout is the most expensive render on a
 // card, and cards re-render far more often than their text changes (every
 // streamed chunk anywhere re-renders every card). Same string → skip.
-export const Markdown = memo(function Markdown({ children, base, diagrams = 'render' }: { children: string; base?: string; diagrams?: DiagramMode }) {
+export const Markdown = memo(function Markdown({ children, base, diagrams = 'render', highlights }: { children: string; base?: string; diagrams?: DiagramMode; highlights?: Set<string> }) {
   const t = useT();
+  const plugins = useMemo<PluggableList>(() => highlights?.size
+    ? [...REHYPE_PLUGINS, [rehypeUserHighlights, [...highlights]]]
+    : REHYPE_PLUGINS, [highlights]);
   // a tool call the model wrote as text did not run: say so in one line instead of showing the markup
   const text = foldToolCalls(normalizeMath(children), (names) => `\n\n> ⚙ ${fmt(t('md.toolCallFolded'), { names: names.map((n) => `\`${n}\``).join(', ') || '?' })}\n\n`);
   return (
     <BaseContext.Provider value={base}>
       <DiagramContext.Provider value={diagrams}>
-        <ReactMarkdown remarkPlugins={REMARK_PLUGINS} rehypePlugins={REHYPE_PLUGINS} components={COMPONENTS} urlTransform={safeMarkdownUrl}>
+        <ReactMarkdown remarkPlugins={REMARK_PLUGINS} rehypePlugins={plugins} components={COMPONENTS} urlTransform={safeMarkdownUrl}>
           {text}
         </ReactMarkdown>
       </DiagramContext.Provider>
@@ -251,93 +254,15 @@ export const Markdown = memo(function Markdown({ children, base, diagrams = 'ren
   );
 });
 
-// one stable class, styled in index.css: the sanitizer's allow-list names it, and a style change never has to
-const MARK_OPEN = '<mark class="highlight-mark">';
-
-// A match spanning list items / paragraphs / table cells cannot live in
-// ONE <mark>: an inline tag wrapped around "\n- item" breaks the block
-// parse, and a tag swallowing a table's "|" breaks the row into mismatched
-// cells. Wrap each line's CONTENT separately — list/quote/heading prefixes
-// and cell pipes stay OUTSIDE the tag; table delimiter rows pass untouched.
-function wrapLine(line: string, open: string): string {
-  const parsed = line.match(/^(\s*(?:(?:\d{1,3}[.)]|[-*+>]|#{1,6})\s+)*)(.*)$/);
-  const prefix = parsed?.[1] ?? '';
-  const rest = parsed?.[2] ?? line;
-  if (!rest.trim()) return line;
-  if (rest.includes('|')) {
-    if (/^[\s|:-]+$/.test(rest)) return line; // |---|---| delimiter row
-    return prefix + rest
-      .split('|')
-      .map((cell) => cell.trim()
-        ? cell.replace(/^(\s*)([\s\S]*?)(\s*)$/, (_, a, c, b) => `${a}${open}${c}</mark>${b}`)
-        : cell)
-      .join('|');
-  }
-  return `${prefix}${open}${rest}</mark>`;
-}
-
-function wrapMatch(m: string, open: string): string {
-  if (!m.includes('\n') && !m.includes('|')) return `${open}${m}</mark>`;
-  return m.split('\n').map((l) => wrapLine(l, open)).join('\n');
-}
-
-const escapeAttr = (s: string) =>
-  s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-
-/** A passage a child branch explores from: rendered as a warm dotted
-    underline (structural trace), never a fill (fills belong to the user's
-    own highlights). data-explore-target lets hosts delegate clicks. */
-export interface ExploreMarkSpec { text: string; nodeId: string; title: string }
-
-// Markdown with user highlights (and explore traces) wrapped in <mark>
-// before rendering. Callers rebuild the Set/array props every render, so
-// memo compares by CONTENT (see areMarkPropsEqual below).
-export const HighlightedMarkdown = memo(function HighlightedMarkdown({ content, highlights, exploreMarks, diagrams, base }: HMProps) {
-  // Fuzzy-locate every span in the CLEAN markdown source first, then splice
-  // tags in back-to-front. A second replace pass over already-tagged text
-  // would let the fuzzy noise classes swallow pieces of the inserted tags
-  // (`>` is legal markdown noise, so a match can start ON a tag's closing
-  // bracket) and emit broken HTML — locating on the pristine source makes
-  // that impossible. Selections come from the RENDERED text and cross
-  // bold/list/line-break syntax; wrapping the matched source verbatim keeps
-  // its markdown rendering inside <mark>.
-  // Marks only wrap prose: the code inside a match keeps its source as is.
-  const spans: { start: number; end: number; open: string; prio: number }[] = [];
-  const clip = proseClipper(content);
-  const collect = (text: string, open: string, prio: number) => {
-    const re = fuzzyHighlightRegex(text);
-    if (!re) return;
-    for (const m of content.matchAll(re)) {
-      if (!m[0]) continue;
-      for (const [start, end] of clip(m.index!, m.index! + m[0].length)) spans.push({ start, end, open, prio });
-    }
-  };
-  for (const h of highlights) collect(h, MARK_OPEN, 0);
-  for (const em of exploreMarks ?? []) {
-    collect(em.text, `<mark class="explore-mark" data-explore-target="${escapeAttr(em.nodeId)}">`, 1);
-  }
-  // Overlaps: the user's own highlight outranks the structural trace.
-  spans.sort((a, b) => a.prio - b.prio || a.start - b.start);
-  const kept: typeof spans = [];
-  for (const s of spans) {
-    if (kept.some((k) => s.start < k.end && k.start < s.end)) continue;
-    kept.push(s);
-  }
-  kept.sort((a, b) => b.start - a.start); // splice back-to-front so offsets hold
-  let processed = content;
-  for (const s of kept) {
-    processed = processed.slice(0, s.start) + wrapMatch(processed.slice(s.start, s.end), s.open) + processed.slice(s.end);
-  }
-  return <Markdown diagrams={diagrams} base={base}>{processed}</Markdown>;
+// Callers rebuild the Set props every render, so memo compares by content.
+export const HighlightedMarkdown = memo(function HighlightedMarkdown({ content, highlights, diagrams, base }: HMProps) {
+  return <Markdown diagrams={diagrams} base={base} highlights={highlights}>{content}</Markdown>;
 }, areMarkPropsEqual);
 
-type HMProps = { content: string; highlights: Set<string>; exploreMarks?: ExploreMarkSpec[]; diagrams?: DiagramMode; base?: string };
+type HMProps = { content: string; highlights: Set<string>; diagrams?: DiagramMode; base?: string };
 function areMarkPropsEqual(prev: HMProps, next: HMProps): boolean {
   if (prev.content !== next.content || prev.diagrams !== next.diagrams || prev.base !== next.base) return false;
   if (prev.highlights.size !== next.highlights.size) return false;
   for (const h of prev.highlights) if (!next.highlights.has(h)) return false;
-  const a = prev.exploreMarks ?? [];
-  const b = next.exploreMarks ?? [];
-  if (a.length !== b.length) return false;
-  return a.every((m, i) => m.text === b[i].text && m.nodeId === b[i].nodeId && m.title === b[i].title);
+  return true;
 }

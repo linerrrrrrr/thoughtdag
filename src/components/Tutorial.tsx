@@ -186,7 +186,7 @@ export default function Tutorial() {
           if (e.key === 'ArrowRight') { e.preventDefault(); setPage((p) => Math.min(p + 1, SLIDES.length - 1)); }
           if (e.key === 'ArrowLeft') { e.preventDefault(); setPage((p) => Math.max(p - 1, 0)); }
         }}
-        className="bg-card border border-line rounded-overlay w-[min(980px,94vw)] flex flex-col"
+        className="bg-card border border-line rounded-overlay w-[min(980px,calc(94*var(--ui-vw)))] flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start justify-between px-7 pt-5 pb-1 shrink-0">

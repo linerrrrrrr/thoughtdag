@@ -8,18 +8,20 @@ import { buildContext } from './context-builder';
 import { createHistorySlice } from './slices/history';
 import { createNodeSlice } from './slices/nodes';
 import { createLlmSlice } from './slices/llm';
-import { createRoleSlice } from './slices/roles';
 import { createHighlightSlice } from './slices/highlights';
 import { createAttachmentSlice } from './slices/attachments';
-import { createEvaluatorSlice } from './slices/evaluator';
+import { createReplaySlice } from './slices/replay';
 import { createEventSlice } from './slices/events';
 import { recoverInterruptedAgentRun, settleAgentActivity } from '../lib/agent-activity';
 import { t } from '../i18n';
+import { normalizeConversationNode, normalizeConversationEdge } from '../lib/normalize-graph';
+import { splitLegacyFileNodes } from '../lib/single-file-nodes';
 
 // Reset transient UI flags — applied both when persisting and when rehydrating,
 // so a refresh mid-stream/mid-edit never restores a node stuck in loading state.
 export function stripTransient(nodes: ThoughtNode[]): ThoughtNode[] {
-  return nodes.map((n) => {
+  return nodes.map((node) => {
+    const n = normalizeConversationNode(node);
     const data = recoverInterruptedAgentRun(n.data, t('node.stoppedPlaceholder'));
     return {
       ...n,
@@ -47,10 +49,9 @@ export const useStore = create<StoreState>()(persist((...a) => ({
   ...createHistorySlice(...a),
   ...createNodeSlice(...a),
   ...createLlmSlice(...a),
-  ...createRoleSlice(...a),
   ...createHighlightSlice(...a),
   ...createAttachmentSlice(...a),
-  ...createEvaluatorSlice(...a),
+  ...createReplaySlice(...a),
   ...createEventSlice(...a),
 }), {
   // Placeholder name — bootProjects() (src/store/projects.ts) points this at
@@ -67,13 +68,15 @@ export const useStore = create<StoreState>()(persist((...a) => ({
   // selection are session-scoped and would bloat the stored payload.
   partialize: (state): PersistedState => ({
     nodes: stripTransient(state.nodes),
-    edges: state.edges.map((e) => (e.selected ? { ...e, selected: false } : e)),
+    edges: state.edges.map(normalizeConversationEdge).map((e) => (e.selected ? { ...e, selected: false } : e)),
     events: state.events,
   }),
   merge: (persisted, current) => {
     const p = (persisted ?? { nodes: [], edges: [] }) as PersistedState;
-    const nodes = stripTransient(p.nodes ?? []);
-    const edges = (p.edges ?? []).map((e) => (e.selected ? { ...e, selected: false } : e));
+    const { nodes, edges } = splitLegacyFileNodes({
+      nodes: stripTransient(p.nodes ?? []),
+      edges: (p.edges ?? []).map(normalizeConversationEdge).map((e) => (e.selected ? { ...e, selected: false } : e)),
+    });
     return {
       ...current,
       nodes,

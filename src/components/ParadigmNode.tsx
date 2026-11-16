@@ -3,23 +3,20 @@ import { useRef, useState } from 'react';
 import { Globe, GraduationCap, MessageCircleQuestion, SquareTerminal, Trash2 } from 'lucide-react';
 import type { ThoughtNode as ThoughtNodeType, ThoughtData } from '../types';
 import { useStore } from '../store';
-import { effectiveRoles } from '../lib/role-templates';
-import { useUiStore } from '../lib/ui-store';
-import { useI18n, useT } from '../i18n';
+import { useT } from '../i18n';
 import NodeConnectionHandles from './NodeConnectionHandles';
 import NodeOverview from './NodeOverview';
 import { useNodeDetail } from '../lib/node-detail';
 import { getNodeDisplayName } from '../lib/node-display-name';
+import { pixelDimension } from '../lib/node-content-height';
 
 // Orchestration-view card. A paradigm has exactly two node kinds:
 //   human  — a dialogue turn: the human asks here. The card holds optional
 //            guidance for the operator; it instantiates as an EMPTY question
 //            node awaiting the human.
-//   prompt — a machine processing step: a fixed prompt (plus optional role)
+//   prompt — a machine processing step: a fixed prompt
 //            applied to whatever flows in from upstream nodes.
-// Flow patterns (fan-out, review, synthesis) are drawn as graph shape, not
-// node kinds. No LLM ever runs in this view. Legacy v1 kinds render as
-// 'prompt' but keep their stored data for instantiation.
+// Connections define the flow between these steps. No model runs in this view.
 
 const KINDS: { kind: 'human' | 'prompt'; icon: typeof SquareTerminal; labelKey: string }[] = [
   { kind: 'human', icon: MessageCircleQuestion, labelKey: 'paradigm.kind.human' },
@@ -31,16 +28,19 @@ const KIND_STYLES: Record<'human' | 'prompt', string> = {
   prompt: 'border-accent/50',
 };
 
-export default function ParadigmNode({ id, data }: NodeProps<ThoughtNodeType>) {
+export default function ParadigmNode({ id, data, selected }: NodeProps<ThoughtNodeType>) {
   const t = useT();
   const root = useRef<HTMLDivElement>(null);
   const [editing, setEditing] = useState(false);
   const { tier, fixed } = useNodeDetail(data.detailLevel);
   const overview = tier !== 'work' && !editing;
-  const lang = useI18n((s) => s.lang);
   const deleteNode = useStore((s) => s.deleteNode);
   const customWidth = useStore((s) => s.nodes.find((n) => n.id === id)?.width);
   const customHeight = useStore((s) => s.nodes.find((n) => n.id === id)?.height);
+  const customStyleWidth = useStore((s) => s.nodes.find((n) => n.id === id)?.style?.width);
+  const customStyleHeight = useStore((s) => s.nodes.find((n) => n.id === id)?.style?.height);
+  const configuredWidth = customWidth ?? pixelDimension(customStyleWidth);
+  const configuredHeight = customHeight ?? pixelDimension(customStyleHeight);
   const patch = (p: Partial<ThoughtData>) => {
     useStore.setState((state) => ({
       nodes: state.nodes.map((n) => (n.id === id ? { ...n, data: { ...n.data, ...p } } : n)),
@@ -49,8 +49,10 @@ export default function ParadigmNode({ id, data }: NodeProps<ThoughtNodeType>) {
   const kind: 'human' | 'prompt' = data.stepKind === 'human' ? 'human' : 'prompt';
 
   return (
-    <div ref={root} className={`bg-card border border-dashed rounded-node flex flex-col ${KIND_STYLES[kind]}`} style={{ width: customWidth ?? 440, height: customHeight }}
+    <div ref={root} className={`bg-card border border-dashed rounded-node flex flex-col ${KIND_STYLES[kind]} ${overview && selected ? 'node-selected' : ''}`} style={{ width: configuredWidth ?? 440, height: overview ? undefined : configuredHeight }}
       data-node-detail-level={overview ? (tier === 'glyph' ? 'compact' : 'summary') : 'full'} data-node-detail-locked={data.detailLevel || undefined}
+      data-node-overview-surface={overview ? (tier === 'glyph' ? 'compact' : 'summary') : undefined}
+      data-node-overview-kind={overview ? (kind === 'human' ? 'human' : 'start') : undefined} data-node-paradigm
       onFocusCapture={() => setEditing(true)}
       onBlurCapture={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) setEditing(false); }}>
       <NodeConnectionHandles id={id} muted large={overview} />
@@ -91,7 +93,7 @@ export default function ParadigmNode({ id, data }: NodeProps<ThoughtNodeType>) {
         </button>
       </div>
 
-      <div className={`px-5 py-3 space-y-2.5 nodrag ${customHeight != null ? 'min-h-0 flex-1 overflow-y-auto nowheel' : ''}`}>
+      <div className={`px-5 py-3 space-y-2.5 nodrag ${configuredHeight != null ? 'min-h-0 flex-1 overflow-y-auto nowheel' : ''}`}>
         {/* step title */}
         <input
           type="text"
@@ -101,8 +103,7 @@ export default function ParadigmNode({ id, data }: NodeProps<ThoughtNodeType>) {
           className="w-full text-title font-semibold text-ink bg-transparent focus:outline-none placeholder-ink-faint"
         />
 
-        {/* body: THE prompt (machine) or operator guidance (human) — one
-            field; a persona is just the opening lines of the prompt */}
+        {/* body: the prompt (machine) or operator guidance (human) */}
         <textarea
           value={data.instruction ?? ''}
           onChange={(e) => patch({ instruction: e.target.value })}
@@ -112,22 +113,6 @@ export default function ParadigmNode({ id, data }: NodeProps<ThoughtNodeType>) {
             kind === 'human' ? 'focus:ring-warm/40' : 'focus:ring-accent/40'
           }`}
         />
-
-        {/* persona chips: prepend a template persona into the prompt */}
-        {kind === 'prompt' && (
-          <div className="flex flex-wrap gap-1">
-            <span className="basis-full text-control text-ink-faint">{t('paradigm.insertPersona')}</span>
-            {effectiveRoles(lang, useUiStore.getState().roleLib).map((tpl) => (
-              <button
-                key={tpl.id}
-                onClick={() => patch({ instruction: `${tpl.prompt}\n${data.instruction ?? ''}` })}
-                className="text-control bg-wash hover:bg-accent/10 hover:text-accent text-ink-muted px-1.5 py-0.5 rounded-tag transition-colors"
-              >
-                + {tpl.name}
-              </button>
-            ))}
-          </div>
-        )}
 
         {/* per-step search permissions — carried into the instantiated run */}
         {kind === 'prompt' && (

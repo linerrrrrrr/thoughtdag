@@ -26,7 +26,6 @@ await context.route('**/api/**', route => {
 await page.addInitScript(() => {
   localStorage.setItem('thoughtdag.seeded', 'yes');
   localStorage.setItem('thoughtdag.tutorialDone', '1');
-  localStorage.setItem('thoughtdag.autoRefreshPaused', 'yes');
   localStorage.setItem('thoughtdag.lang', 'zh');
 });
 const panel = () => page.locator('[data-selection-properties]');
@@ -70,8 +69,7 @@ async function fixture() {
   await page.evaluate(() => {
     const data = id => ({ question: `研究对象 ${id}`, displayName: `研究对象 ${id}`,
       response: 'Stable content for selection property tests.', responses: ['Stable content for selection property tests.'], responseIndex: 0,
-      isCollapsed: false, isEditing: false, isEditingResponse: false, isLoading: false,
-      isRoot: id === 'a', isBranch: false, highlights: [], attachments: [],
+      isCollapsed: false, isEditing: false, isEditingResponse: false, isLoading: false, highlights: [], attachments: [],
       excludedAttachmentIds: [], includedAttachmentIds: [], tokenCount: 10, roleMode: 'inherit' });
     const nodes = [
       { id: 'f', type: 'thought', position: { x: 200, y: 180 }, width: 1400, height: 1000, zIndex: -1,
@@ -85,7 +83,7 @@ async function fixture() {
     ].map(edge => ({ ...edge, type: 'smoothstep', sourceHandle: 'continue', targetHandle: 'top' }));
     window.__canvasEditing.getState().reset();
     window.__store.setState({ nodes, edges, selectedNodeIds: [], selectedNodeId: null, history: [{ nodes, edges }], historyIndex: 0 });
-    window.__ui.setState({ panelOpen: false, panelNodeId: null, tutorialOpen: false, releaseNotesOpen: false, autoRefreshPaused: true, drafts: {} });
+    window.__ui.setState({ panelOpen: false, panelNodeId: null, tutorialOpen: false, releaseNotesOpen: false, drafts: {} });
   });
   await page.waitForTimeout(600);
   await page.evaluate(() => window.__rf.setViewport({ x: 80, y: 30, zoom: 0.55 }, { duration: 0 }));
@@ -144,6 +142,11 @@ try {
       assert.match(await panel().innerText(), /选区属性/);
       assert.deepEqual(await page.evaluate(() => window.__canvasEditing.getState().selectionRegion), scope);
     }
+    await page.locator('[data-layout-entry]').click();
+    await page.locator('[data-canvas-layout-panel]').waitFor();
+    await choose('frames'); await selected(['f'], []); await panel().waitFor();
+    assert.equal(await page.locator('[data-canvas-layout-panel]').count(), 0);
+    assert.deepEqual(await page.evaluate(() => window.__canvasEditing.getState().selectionRegion), scope);
     await page.screenshot({ path: `${output}/three-types.png` });
   });
   await probe('one connection keeps live values after closure and click or marquee selection', async () => {
@@ -252,6 +255,75 @@ try {
       assert.equal((await readGeometry()).find(item => item.id === ids[0]).width, requested);
       assert.equal(await page.locator('[data-node-format-apply], [data-node-format-cancel]').count(), 0);
     }
+  });
+  await probe('geometry errors appear with their field group and material width is limited to 860 px', async () => {
+    await fixture();
+    await page.evaluate(() => window.__store.setState(state => ({ nodes: state.nodes.map(node => node.id === 'a'
+      ? { ...node, data: { ...node.data, stepKind: 'file' } } : node) })));
+    await select(['a']);
+    const size = section('nodes').getByRole('region', { name: '尺寸' });
+    const position = section('nodes').getByRole('region', { name: '位置' });
+    const width = section('nodes').locator('[data-node-format-field="width"]');
+    const height = section('nodes').locator('[data-node-format-field="height"]');
+    const x = section('nodes').locator('[data-node-format-field="x"]');
+    const before = await readGeometry();
+    await width.fill('900'); await height.fill('230'); await x.fill('310');
+    assert.doesNotMatch(await panel().innerText(), /Enter 或点击外部保存|Esc 取消/);
+    await x.press('Enter');
+    assert.deepEqual(await readGeometry(), before, 'An invalid size prevents the whole geometry draft from saving');
+    const widthError = size.getByRole('alert');
+    assert.equal(await widthError.innerText(), '宽度不能大于 860 px。');
+    assert.equal(await position.getByRole('alert').count(), 0);
+    assert.equal(await width.getAttribute('aria-invalid'), 'true');
+    assert.equal(await width.getAttribute('aria-describedby'), await widthError.getAttribute('id'));
+    assert.equal(await height.getAttribute('aria-invalid'), null);
+    assert.equal(await x.getAttribute('aria-invalid'), null);
+
+    await width.fill('860'); await width.press('Enter');
+    assert.equal((await readGeometry()).find(node => node.id === 'a').width, 860, 'The maximum width itself is valid');
+    assert.equal((await readGeometry()).find(node => node.id === 'a').position.x, 310);
+    assert.equal(await size.getByRole('alert').count(), 0);
+
+    await height.fill('119'); await height.press('Enter');
+    assert.equal(await size.getByRole('alert').innerText(), '高度不能小于 120 px。');
+    assert.equal(await height.getAttribute('aria-invalid'), 'true');
+    assert.equal(await width.getAttribute('aria-invalid'), null);
+    assert.equal(await position.getByRole('alert').count(), 0);
+    await height.fill('230'); await height.press('Enter');
+
+    await x.fill('invalid'); await x.press('Enter');
+    assert.equal(await size.getByRole('alert').count(), 0);
+    assert.match(await position.getByRole('alert').innerText(), /请输入有效数值/);
+    assert.equal(await x.getAttribute('aria-invalid'), 'true');
+    await x.fill('310'); await x.press('Enter');
+
+    await select(['a', 'b']);
+    await width.fill('900'); await width.press('Enter');
+    assert.equal(await size.getByRole('alert').innerText(), '宽度不能大于 860 px。');
+    assert.equal(await position.count(), 0, 'Multi-selection does not create an empty position section');
+    assert.doesNotMatch(await panel().innerText(), /Enter 或点击外部保存|Esc 取消/);
+
+    await select(['a']);
+    for (const [lang, theme, viewportWidth] of [['zh', 'dark', 1600], ['zh', 'light', 320], ['en', 'light', 1600], ['en', 'dark', 320]]) {
+      await page.setViewportSize({ width: viewportWidth, height: 844 });
+      await page.evaluate(async ({ lang, theme }) => {
+        const live = path => import([...performance.getEntriesByType('resource')].reverse()
+          .find(entry => new URL(entry.name).pathname === path)?.name ?? path);
+        (await live('/src/i18n/index.ts')).useI18n.getState().setLang(lang);
+        (await live('/src/lib/appearance.ts')).useAppearance.getState().setLighting(theme);
+      }, { lang, theme });
+      await width.fill('901'); await width.fill('900'); await width.press('Enter');
+      const currentSize = section('nodes').locator('[data-node-format-geometry] > section').first();
+      assert.match(await currentSize.getByRole('alert').innerText(), lang === 'zh' ? /宽度不能大于 860 px/ : /Width must be at most 860 px/);
+      const card = await panel().boundingBox(); assert.ok(card && card.x >= 0 && card.x + card.width <= viewportWidth);
+      await panel().screenshot({ path: `${output}/geometry-error-${lang}-${theme}-${viewportWidth}.png` });
+    }
+    await page.evaluate(async () => {
+      const live = path => import([...performance.getEntriesByType('resource')].reverse()
+        .find(entry => new URL(entry.name).pathname === path)?.name ?? path);
+      (await live('/src/i18n/index.ts')).useI18n.getState().setLang('zh');
+      (await live('/src/lib/appearance.ts')).useAppearance.getState().setLighting('light');
+    });
   });
   await probe('single-object coordinates and frame names save outside, including an empty frame name', async () => {
     for (const [type, id] of [['nodes', 'a'], ['frames', 'f']]) {
@@ -404,6 +476,7 @@ try {
   });
   await probe('three type choices and the shared card stay reachable at narrow widths in both languages and themes', async () => {
     await fixture(); await frameMarquee(); await choose('edges');
+    const inset = await page.evaluate(() => 16 * (parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--ui-scale')) || 1));
     for (const lang of ['zh', 'en']) for (const theme of ['light', 'dark']) {
       await page.evaluate(async ({ lang, theme }) => {
         const live = path => import([...performance.getEntriesByType('resource')].reverse()
@@ -415,9 +488,9 @@ try {
         await page.setViewportSize({ width, height: 844 }); await page.waitForTimeout(220);
         const control = await page.locator('[data-selection-target-control]').boundingBox();
         const card = await panel().boundingBox(); assert.ok(control && card);
-        assert.ok(control.x >= 15 && control.x + control.width <= width - 15);
-        assert.ok(card.x >= 15 && card.x + card.width <= width - 15);
-        assert.ok(Math.abs(card.y - control.y - control.height - 16) < 1.5);
+        assert.ok(control.x >= inset - 1 && control.x + control.width <= width - inset + 1);
+        assert.ok(card.x >= inset - 1 && card.x + card.width <= width - inset + 1);
+        assert.ok(Math.abs(card.y - control.y - control.height - inset) < 1.5);
         for (const type of ['nodes', 'edges', 'frames']) {
           assert.equal(await page.locator(`[data-selection-target="${type}"]`).evaluate(el => {
             const rect = el.getBoundingClientRect();

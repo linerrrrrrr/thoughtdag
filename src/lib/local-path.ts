@@ -26,3 +26,10 @@ export async function openLocalPath(path: string): Promise<void> {
   const r = await bridge.open(path).catch(() => ({ ok: false, reason: 'error' }));
   if (!r.ok) toast('error', fmt(t(r.reason === 'missing' ? 'local.missing' : 'local.failed'), { path }), 7000);
 }
+
+export async function revealLocalPath(path: string): Promise<void> {
+  const bridge = window.desktopLocal;
+  if (!bridge?.reveal) return openLocalPath(path);
+  const result = await bridge.reveal(path).catch(() => ({ ok: false, reason: 'error' }));
+  if (!result.ok) toast('error', fmt(t(result.reason === 'missing' ? 'local.missing' : 'local.failed'), { path }), 7000);
+}

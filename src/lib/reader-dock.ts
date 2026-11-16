@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useStore } from '../store';
 import { useUiStore } from './ui-store';
+import { uiViewport } from './ui-scale';
 
 // The docked reader's geometry, decided in ONE place for the two things that
 // depend on it: the canvas (which steps aside by the dock's width) and the
@@ -32,16 +33,16 @@ export interface ReaderDock {
   docked: boolean;
   /** docked but folded to a strip: not even the minimum column fits */
   collapsed: boolean;
-  /** the width the canvas must step aside by: column, strip, or 0 */
+  /** UI-layout width reserved beside the canvas: column, strip, or 0 */
   width: number;
   /** the widest the column may be right now (resize upper bound) */
   maxWidth: number;
 }
 
 function useWindowWidth(): number {
-  const [w, setW] = useState(() => (typeof window === 'undefined' ? 1440 : window.innerWidth));
+  const [w, setW] = useState(() => (typeof window === 'undefined' ? 1440 : uiViewport().width));
   useEffect(() => {
-    const on = () => setW(window.innerWidth);
+    const on = () => setW(uiViewport().width);
     window.addEventListener('resize', on);
     return () => window.removeEventListener('resize', on);
   }, []);

@@ -1,3 +1,4 @@
+import { appSettings } from './disk-storage';
 import { API_BASE } from './constants';
 import { errorText } from './error-text';
 import type { ModelData } from './use-models';
@@ -7,7 +8,8 @@ import type { ModelData } from './use-models';
 // model list. Presets carry only the baseURL (stable for years) and where
 // to get a key; the MODEL LIST is always fetched live from the endpoint's
 // /models route, so new releases never require a code change here.
-// Keys live in localStorage and the proxy's memory only, never on disk.
+// Keys live in local application settings; the configured backend may store
+// those settings on disk. Requests supply the selected provider at runtime.
 
 export interface RuntimeModel { id: string; vision?: boolean; created?: number; contextLength?: number }
 export interface RuntimeProvider {
@@ -27,8 +29,6 @@ export interface ProviderPreset {
   keyUrl?: string;
   /** No key input (local runtimes). */
   noKey?: boolean;
-  /** i18n key for a preset-specific setup hint (defaults to provider.localHint). */
-  hintKey?: string;
   /** Preselect these when the probed list contains them. */
   recommend?: string[];
   /** Endpoint publishes no /models route: the preset carries its catalog
@@ -74,11 +74,6 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
   { id: 'moonshot-intl', name: 'Kimi', region: 'en', baseURL: 'https://api.moonshot.ai/v1', keyUrl: 'https://platform.moonshot.ai/console/api-keys' },
   { id: 'moonshot', name: 'Kimi', region: 'zh', baseURL: 'https://api.moonshot.cn/v1', keyUrl: 'https://platform.moonshot.cn/console/api-keys' },
   { id: 'ollama', name: 'Ollama', baseURL: 'http://localhost:11434/v1', noKey: true },
-  // ChatGPT plan via the openai-oauth local bridge (no CORS on the bridge,
-  // so requests must ride the local Node proxy — hosted deployments cannot
-  // reach a user's 127.0.0.1 anyway; the hint spells this out).
-  { id: 'chatgpt-bridge', name: 'ChatGPT 订阅', region: 'zh', baseURL: 'http://127.0.0.1:10531/v1', noKey: true, hintKey: 'provider.chatgptBridgeHint' },
-  { id: 'chatgpt-bridge-intl', name: 'ChatGPT plan', region: 'en', baseURL: 'http://127.0.0.1:10531/v1', noKey: true, hintKey: 'provider.chatgptBridgeHint' },
   { id: 'custom', name: '', baseURL: '' },
 ];
 
@@ -89,12 +84,12 @@ const LEGACY_MODELS = 'thoughtdag.openrouterModels';
 /** Stored providers, migrating the legacy single-OpenRouter-key format. */
 export function storedProviders(): RuntimeProvider[] {
   try {
-    const raw = localStorage.getItem(LS_KEY);
+    const raw = appSettings.getItem(LS_KEY);
     if (raw) return JSON.parse(raw) as RuntimeProvider[];
   } catch { /* fall through to legacy/empty */ }
-  const legacyKey = localStorage.getItem(LEGACY_KEY);
+  const legacyKey = appSettings.getItem(LEGACY_KEY);
   if (legacyKey) {
-    const models = (localStorage.getItem(LEGACY_MODELS) ?? '')
+    const models = (appSettings.getItem(LEGACY_MODELS) ?? '')
       .split(',').map((s) => s.trim()).filter(Boolean);
     const migrated: RuntimeProvider[] = [{
       preset: 'openrouter', name: 'OpenRouter',
@@ -102,15 +97,15 @@ export function storedProviders(): RuntimeProvider[] {
       models: (models.length > 0 ? models : PROVIDER_PRESETS.find((p) => p.id === 'openrouter')!.recommend!).map((id) => ({ id })),
     }];
     saveProviders(migrated);
-    localStorage.removeItem(LEGACY_KEY);
-    localStorage.removeItem(LEGACY_MODELS);
+    appSettings.removeItem(LEGACY_KEY);
+    appSettings.removeItem(LEGACY_MODELS);
     return migrated;
   }
   return [];
 }
 
 export function saveProviders(providers: RuntimeProvider[]): void {
-  localStorage.setItem(LS_KEY, JSON.stringify(providers));
+  appSettings.setItem(LS_KEY, JSON.stringify(providers));
 }
 
 /** The stored (user-side) vision state of a model: true/false when declared
@@ -146,7 +141,7 @@ export async function pushProviders(providers: RuntimeProvider[]): Promise<Model
   // read the AnySearch key straight from storage (no ui-store import — this
   // module sits below the store): the hosted worker lights the engine up
   // in its capability report when a key rides along.
-  const anysearchKey = localStorage.getItem('thoughtdag.anysearchKey') || undefined;
+  const anysearchKey = appSettings.getItem('thoughtdag.anysearchKey') || undefined;
   const res = await fetch(`${API_BASE}/api/runtime-providers`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

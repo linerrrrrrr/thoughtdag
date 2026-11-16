@@ -142,7 +142,7 @@ const STUBS = {
             export async function llmCall(messages, images, model, opts) { return (await globalThis.__llm(model, messages, opts)).text; }`,
   'use-models': 'export async function getModelsOnce() { return globalThis.__models; }',
   'agent-runtime': "export const isAgentModel = (id) => /^(pi|codex|claude)\\//.test(id ?? '');",
-  'dsh-bridge': "export const isHarnessAgentModel = (id) => !!id && (id === 'harness/agent' || id.startsWith('harness/agent/'));",
+  'harness-bridge': "export const isHarnessAgentModel = (id) => !!id && (id === 'harness/agent' || id.startsWith('harness/agent/'));",
   'ui-store': `let state = { selectedModel: null, ladderModel: 'answering' }; const subs = new Set();
                  export const useUiStore = { getState: () => state, setState: (p) => { const prev = state; state = { ...state, ...p }; for (const f of subs) f(state, prev); }, subscribe: (f) => { subs.add(f); return () => subs.delete(f); } };`,
   utils: 'export const countTokens = (s) => Math.ceil(String(s).length / 4);',
@@ -155,7 +155,7 @@ await build({
   bundle: true, format: 'esm', platform: 'node', outfile: bundle, logLevel: 'silent',
   define: { 'import.meta.env.DEV': 'false' },
   plugins: [{ name: 'stubs', setup(b) {
-    b.onResolve({ filter: /^\.\.?\/(lib\/)?(api|use-models|agents\/agent-runtime|atlas\/dsh-bridge|ui-store|utils)$/ }, (a) => ({ path: a.path.split('/').pop(), namespace: 'stub' }));
+    b.onResolve({ filter: /^\.\.?\/(lib\/)?(api|use-models|agents\/agent-runtime|agents\/harness-bridge|ui-store|utils)$/ }, (a) => ({ path: a.path.split('/').pop(), namespace: 'stub' }));
     b.onLoad({ filter: /.*/, namespace: 'stub' }, (a) => ({ contents: STUBS[a.path], loader: 'js' }));
   } }],
 });

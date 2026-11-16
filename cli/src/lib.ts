@@ -62,8 +62,6 @@ interface FactSession {
   cwd: string; workspace: string; title: string; subagent?: boolean; turns: FactTurn[];
   /** a memory file (Claude Code's memory directory, Codex's memories), not a conversation */
   kind?: 'memory';
-  /** opened from a canvas hand-off */
-  anchor?: { project: string; node: string; bundle: string };
 }
 interface FactIndex {
   version: number; builtAt: string;
@@ -71,8 +69,6 @@ interface FactIndex {
   sessions: Record<string, FactSession>;
   /** display names for artifacts that are not files (a canvas attachment's file name) */
   names: Record<string, string>;
-  /** bundles a canvas handed off (a `bundle` commit), by bundle id: what an anchor is checked against */
-  bundles: Record<string, { canvas: string; node: string }>;
   /** .jsonl files seen that are not sessions, with the stat they had —
       remembered so a stray file does not make every query refresh */
   skipped: Record<string, { mtime: number; size: number }>;
@@ -88,7 +84,7 @@ interface TextTurn { q: string; a: string; m?: string }
 interface TextIndex { version: number; sessions: Record<string, number> }
 interface TextLine extends TextTurn { k: string; i: number }
 
-const INDEX_VERSION = 15; // 15: exclude internal approval transcripts, including unchanged cached sources
+const INDEX_VERSION = 16; // Canvas turns now retain their own searchable text.
 const EXCERPT = 200;
 
 const HOME = process.env.THOUGHTDAG_HOME ?? path.join(os.homedir(), '.thoughtdag');
@@ -281,7 +277,6 @@ interface Projected {
   runner: FactSession['runner'];
   nativeId: string;
   title: string;
-  anchor?: FactSession['anchor'];
   cwd?: string;
   subagent?: boolean;
   events: CanonicalEvent[];
@@ -336,12 +331,10 @@ async function eventsOf(file: string, sourceId?: string): Promise<Projected | nu
   const events = sessionToEvents(session);
   const texts = new Map<string, { question: string; response: string; material?: string }>();
   for (const e of events) if (e.kind === 'turn.started') { const t = s.turns[e.turnIndex]; if (t) texts.set(e.turnId, { question: t.question, response: t.response }); }
-  const started = events.find((e): e is Extract<CanonicalEvent, { kind: 'session.started' }> => e.kind === 'session.started');
-  const anchor = started?.anchor ? { project: started.anchor.project, node: started.anchor.node, bundle: started.anchor.bundle } : undefined;
-  return { runner, nativeId: s.sessionId, title: s.title, ...(anchor ? { anchor } : {}), ...(cwd ? { cwd } : {}), ...(subagent ? { subagent } : {}), events, texts, manifest: MANIFESTS[runner], turns: s.turns };
+  return { runner, nativeId: s.sessionId, title: s.title, ...(cwd ? { cwd } : {}), ...(subagent ? { subagent } : {}), events, texts, manifest: MANIFESTS[runner], turns: s.turns };
 }
 
-type ParsedSource = { fact: FactSession; cache: Record<string, CacheTurn>; text: Record<string, TextTurn>; names: Record<string, string>; bundles: FactIndex['bundles'] };
+type ParsedSource = { fact: FactSession; cache: Record<string, CacheTurn>; text: Record<string, TextTurn>; names: Record<string, string> };
 
 async function parseSession(f: FileStat): Promise<ParsedSource | null> {
   if (f.memory) return parseMemory(f, f.memory);
@@ -364,8 +357,6 @@ async function parseSession(f: FileStat): Promise<ParsedSource | null> {
     ops[id] = { op: strongest(prev?.op, t.op as Op), ...(d ? { d } : {}), ...(l.length ? { l } : {}) };
   }
   for (const e of p.events) if (e.kind === 'artifact.attached' && e.artifact.observedPath && !e.artifact.id.startsWith('file://')) names[e.artifact.id] = e.artifact.observedPath;
-  const bundles: FactIndex['bundles'] = {};
-  for (const e of p.events) if (e.kind === 'context.committed' && e.hashOf === 'bundle' && e.turnId) bundles[e.requestId] = { canvas: p.nativeId, node: e.turnId.split('#').pop() ?? '' };
   const questions = new Map<string, string>();
   for (const e of p.events) if (e.kind === 'message.recorded' && e.role === 'user' && !questions.has(e.turnId)) questions.set(e.turnId, e.excerpt);
   const turns: FactTurn[] = [];
@@ -400,8 +391,8 @@ async function parseSession(f: FileStat): Promise<ParsedSource | null> {
     if (Object.keys(entry).length) cache[String(ts.turnIndex)] = entry;
   }
   return {
-    fact: { id: p.nativeId, runner: p.runner, file: f.file, mtime: f.mtime, size: f.size, cwd, workspace, title: p.title, ...(p.subagent ? { subagent: true } : {}), ...(p.anchor ? { anchor: p.anchor } : {}), turns },
-    cache, text: text_, names, bundles,
+    fact: { id: p.nativeId, runner: p.runner, file: f.file, mtime: f.mtime, size: f.size, cwd, workspace, title: p.title, ...(p.subagent ? { subagent: true } : {}), turns },
+    cache, text: text_, names,
   };
 }
 
@@ -524,13 +515,13 @@ async function parseMemory(f: FileStat, runner: MemoryRunner): Promise<ParsedSou
   const id = `mem-${runner === 'codex' ? 'cx' : 'cc'}-${shortHash(await canonicalPath(f.file, memo))}`;
   return {
     fact: { id, runner, kind: 'memory', file: f.file, mtime: f.mtime, size: f.size, cwd, workspace, title: mf.title, turns },
-    cache: {}, text, names: {}, bundles: {},
+    cache: {}, text, names: {},
   };
 }
 
 // ─── stores ──────────────────────────────────────────────────────────
 
-const emptyFacts = (): FactIndex => ({ version: INDEX_VERSION, builtAt: '', sessions: {}, skipped: {}, names: {}, bundles: {} });
+const emptyFacts = (): FactIndex => ({ version: INDEX_VERSION, builtAt: '', sessions: {}, skipped: {}, names: {} });
 const emptyCache = (): CacheIndex => ({ version: INDEX_VERSION, sessions: {} });
 const emptyText = (): TextIndex => ({ version: INDEX_VERSION, sessions: {} });
 
@@ -597,7 +588,7 @@ async function writePrivate(file: string, data: unknown): Promise<void> {
 
 const loadFacts = async (): Promise<FactIndex> => {
   const f = await readJson(FACT_FILE, emptyFacts);
-  f.skipped ??= {}; f.sessions ??= {}; f.names ??= {}; f.bundles ??= {};
+  f.skipped ??= {}; f.sessions ??= {}; f.names ??= {};
   return f;
 };
 const loadCache = (): Promise<CacheIndex> => readJson(CACHE_FILE, emptyCache);
@@ -702,7 +693,6 @@ async function buildIndexLocked(full: boolean, t0: number): Promise<BuildReport>
     replacedText.set(key, r.text);
     text.sessions[key] = Object.keys(r.text).length;
     Object.assign(facts.names, r.names);
-    Object.assign(facts.bundles, r.bundles);
     parsed++;
   }
   for (const key of Object.keys(facts.sessions)) {
@@ -838,26 +828,13 @@ function hitsFor(facts: FactIndex, artifact: string, includeRead: boolean): { hi
   return { hits, readsHidden: all.length - hits.length };
 }
 
-/** An anchor is a CLAIM in a session's first message. It is matched when
- *  an indexed canvas logged that bundle's hand-off from that node,
- *  mismatched when the bundle exists but names another node, unverified
- *  when no indexed canvas knows the bundle (older hand-offs, or a canvas
- *  folder not yet indexed). */
-type AnchorStatus = 'matched' | 'mismatch' | 'unverified';
-function anchorStatus(facts: FactIndex, a: NonNullable<FactSession['anchor']>): AnchorStatus {
-  const b = facts.bundles[a.bundle];
-  if (!b) return 'unverified';
-  return b.node === a.node ? 'matched' : 'mismatch';
-}
-
-/** Where a hit opens: the mirrored session at that very turn, or the
- *  canvas project at that node. */
+/** Link a hit to its canvas node or its original runtime session. */
 function openLink(h: { session: FactSession; turn: FactTurn }): string {
   // a memory entry: the file and the entry's number
   if (h.session.kind === 'memory') return `thoughtdag://open?memory=${encodeURIComponent(h.session.file)}&entry=${h.turn.i}`;
   // canvas: the project's own id when the backup carried one, its name otherwise
   if (h.session.runner === 'thoughtdag') return `thoughtdag://open?canvas=${encodeURIComponent(h.session.id)}&node=${encodeURIComponent(h.turn.t.split('#').pop() ?? '')}`;
-  return `thoughtdag://open?session=${h.session.id}${h.turn.item ? `&turn=${encodeURIComponent(h.turn.item)}` : ''}`;
+  return `thoughtdag://open?session=${encodeURIComponent(h.session.id)}&runner=${encodeURIComponent(h.session.runner)}${h.session.cwd ? `&cwd=${encodeURIComponent(h.session.cwd)}` : ''}${h.turn.item ? `&turn=${encodeURIComponent(h.turn.item)}` : ''}`;
 }
 
 const OP_MARK: Record<Op, string> = { edit: '✏️ edit ', write: '✏️ write', read: '📖 read ', fetch: '🌐 fetch', attach: '📎 attach' };
@@ -905,7 +882,6 @@ async function renderWhy(facts: FactIndex, file: string, hits: Hit[], readsHidde
         const c = interp(h);
         return {
           session: h.session.id, runner: h.session.runner, title: h.session.title, subagent: !!h.session.subagent,
-          anchor: h.session.anchor ? { ...h.session.anchor, status: anchorStatus(facts, h.session.anchor) } : null,
           turn: turnNumber(facts, h), at: h.turn.at ?? null, op: h.touch.op, locators: h.touch.l ?? null, question: h.turn.q,
           askedBefore: c.p ?? null, change: h.touch.d ?? null, about: c.m?.[file] ?? null, conclusion: c.c ?? null,
           open: openLink(h),
@@ -928,7 +904,7 @@ async function renderWhy(facts: FactIndex, file: string, hits: Hit[], readsHidde
     const mine = g.filter((h) => shown.has(h));
     if (!mine.length) continue;
     const s = g[0].session;
-    out.push(`${s.runner}  「${s.title.slice(0, 70)}」${s.subagent ? '  (subagent)' : ''}${s.anchor ? `  ↩ from canvas node ${s.anchor.node} (${s.anchor.bundle}, ${anchorStatus(facts, s.anchor)})` : ''}`);
+    out.push(`${s.runner}  「${s.title.slice(0, 70)}」${s.subagent ? '  (subagent)' : ''}`);
     for (const h of mine) {
       const c = interp(h);
       const where = h.touch.l?.map((l) => l.pages ? `p.${l.pages}` : l.lines ? `L${l.lines[0]}-${l.lines[1]}` : '').filter(Boolean).join(' ');

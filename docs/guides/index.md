@@ -18,9 +18,8 @@ New to ThoughtDAG? Start with the [interface overview](/guides/interface-overvie
 | Page | What it covers |
 |---|---|
 | [Memory](/guides/memory) | Your profile, one dossier per topic, recall on an ask, and the decision model behind it |
-| [Models, tools, and memory](/guides/models-tools) | Connect models, enable search or MCP, and manage roles and ambient memory |
+| [Models, tools, and memory](/guides/models-tools) | Connect models, enable search or MCP, and manage ambient memory |
 | [Why layer: CLI and MCP](/guides/why-layer) | Install the local query layer, use its commands, and connect its read-only MCP tools |
-| [Session Atlas](/guides/session-atlas) | Open local agent sessions as read-only, incrementally updating graph mirrors |
 | [Data, backup, and sharing](/guides/data-sharing) | Back up, import, export, and share canvases |
 
 To understand how wires affect model input, read [How the context graph works](/concepts/).

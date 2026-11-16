@@ -1,4 +1,5 @@
 import type { ThoughtNode, ThoughtEdge } from '../types';
+import { isConversationStart } from './graph';
 
 // Thought map: the structure-only share image. Everything here works on
 // SHAPE — positions, kinds, takeaway marks, edge classes — never on text.
@@ -40,7 +41,7 @@ export function extractStructure(nodes: ThoughtNode[], edges: ThoughtEdge[]): Ma
         x: n.position.x,
         y: n.position.y,
         material: MATERIAL_KINDS.has(n.data.stepKind ?? ''),
-        root: !!n.data.isRoot,
+        root: !MATERIAL_KINDS.has(n.data.stepKind ?? '') && n.data.stepKind !== 'frame' && isConversationStart(n.id, edges),
         marked: tk === 'decision' || tk === 'pivot' || tk === 'ruleout',
         ts: tsMatch ? Number(tsMatch[1]) : undefined,
       };
@@ -48,7 +49,7 @@ export function extractStructure(nodes: ThoughtNode[], edges: ThoughtEdge[]): Ma
     edges: edges.map((e) => ({
       s: e.source,
       t: e.target,
-      dashed: !!(e.style?.strokeDasharray) || !!e.data?.isWatch,
+      dashed: !!e.data?.isCrossLink,
     })),
   };
 }

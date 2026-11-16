@@ -5,6 +5,7 @@ import type { Attachment, ThoughtData, ThoughtEdge, ThoughtNode } from '../../ty
 import { condenseGuard } from '../../lib/condense-guard';
 import { toast } from '../../lib/ui-store';
 import { t } from '../../i18n';
+import { intendedContentHeight, pixelDimension } from '../../lib/node-content-height';
 
 // Undo snapshots are SHALLOW references, not deep copies. Every store
 // update is immutable (map + spread; React Flow's applyNodeChanges too),
@@ -171,17 +172,10 @@ function touchesStream(target: Snapshot, live: Snapshot): boolean {
   });
 }
 
-function pixelHeight(value: unknown): number | undefined {
-  if (typeof value === 'number') return Number.isFinite(value) && value > 0 ? value : undefined;
-  if (typeof value !== 'string') return;
-  const match = value.trim().match(/^(\+?(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?)(?:px)?$/i);
-  const height = match ? Number(match[1]) : NaN;
-  return Number.isFinite(height) && height > 0 ? height : undefined;
-}
-
 function clampContentHeight(node: ThoughtNode, limit: number): ThoughtNode {
-  const height = pixelHeight(node.height);
-  const styleHeight = pixelHeight(node.style?.height);
+  limit = Math.max(limit, intendedContentHeight(node.data) ?? 0);
+  const height = pixelDimension(node.height);
+  const styleHeight = pixelDimension(node.style?.height);
   const clampHeight = height !== undefined && height > limit;
   const clampStyle = styleHeight !== undefined && styleHeight > limit;
   if (!clampHeight && !clampStyle) return node;

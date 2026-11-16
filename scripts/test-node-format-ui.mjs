@@ -28,7 +28,6 @@ await context.route('**/api/**', route => {
 await page.addInitScript(() => {
   localStorage.setItem('thoughtdag.seeded', 'yes');
   localStorage.setItem('thoughtdag.tutorialDone', '1');
-  localStorage.setItem('thoughtdag.autoRefreshPaused', 'yes');
 });
 const check = name => { checks.push(name); console.log(`PASS ${name}`); };
 const closeTo = (a, b, message) => assert.ok(Math.abs(a - b) < 1, `${message}: ${a} != ${b}`);
@@ -71,8 +70,7 @@ const fixture = async (ids = []) => {
       responses: ['尺寸与位置可以独立设置；选择只影响画布对象，不改变上下文连接。'.repeat(80)], responseIndex: 0,
       isCollapsed: false, isEditing: false, isEditingResponse: false, isLoading: false,
       tokenCount: 20, highlights: [], highlightMode: 'tag', attachments: [],
-      excludedAttachmentIds: [], includedAttachmentIds: [], roleMode: 'inherit', isRoot: false, isBranch: false,
-    });
+      excludedAttachmentIds: [], includedAttachmentIds: [], roleMode: 'inherit'});
     const nodes = [
       { id: 'format-a', type: 'thought', position: { x: 100, y: 180 }, width: 400, height: 260, data: data('研究问题') },
       { id: 'format-b', type: 'thought', position: { x: 620, y: 180 }, width: 480, height: 300, data: data('分析材料') },
@@ -82,7 +80,6 @@ const fixture = async (ids = []) => {
     window.__ui.getState().setPanelOpen(false);
     window.__ui.getState().setTutorialOpen(false);
     window.__ui.getState().setReleaseNotesOpen(false);
-    window.__ui.getState().setAutoRefreshPaused(true);
     window.__rf.setViewport({ x: 30, y: 30, zoom: 1 }, { duration: 0 });
   }, ids.map(id => `format-${id}`));
   await page.waitForFunction(() => window.__store.getState().nodes.every(n => n.measured?.width && n.measured?.height));

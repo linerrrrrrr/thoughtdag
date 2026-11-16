@@ -38,7 +38,7 @@ try {
     bundle: true, platform: 'node', format: 'esm', outfile: bundle, logLevel: 'silent',
     define: { 'import.meta.env.VITE_API_BASE': '""', 'import.meta.env.DEV': 'false' },
     plugins: [{ name: 'unrelated-runtime-stubs', setup(builder) {
-      builder.onResolve({ filter: /(condense-guard|ui-store|i18n|context-builder|streaming|atlas\/canonical|stale-judge|projects)$/ }, (args) => ({ path: args.path.split('/').pop(), namespace: 'stub' }));
+      builder.onResolve({ filter: /(condense-guard|ui-store|i18n|context-builder|streaming|stale-judge|projects)$/ }, (args) => ({ path: args.path.split('/').pop(), namespace: 'stub' }));
       builder.onLoad({ filter: /.*/, namespace: 'stub' }, (args) => ({ contents: stubs[args.path], loader: 'js' }));
     } }],
   });

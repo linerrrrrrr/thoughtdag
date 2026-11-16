@@ -1,3 +1,4 @@
+import { appSettings } from './disk-storage';
 import { useEffect, useState } from 'react';
 import { API_BASE } from './constants';
 import { storedProviders, pushProviders } from './runtime-providers';
@@ -101,7 +102,7 @@ const isRuntimeAgent = (m: ModelInfo) => m.provider === AGENT_PROVIDER && isAgen
 /** Picker id → the model name the runtime actually ran under it (an alias
  *  like `opus` resolves inside the CLI; the first turn tells us to what). */
 function resolvedNames(): Record<string, string> {
-  try { const v = JSON.parse(localStorage.getItem(AGENT_NAMES_KEY) ?? '{}'); return v && typeof v === 'object' ? v : {}; } catch { return {}; }
+  try { const v = JSON.parse(appSettings.getItem(AGENT_NAMES_KEY) ?? '{}'); return v && typeof v === 'object' ? v : {}; } catch { return {}; }
 }
 
 /** An alias entry shows the model it resolved to, once a turn has told us —
@@ -124,7 +125,7 @@ export function describeModel(id: string | null | undefined, effort?: string | n
   const target = agentTarget(id);
   if (!target) return id.split('/').pop() ?? id;
   let remembered: ModelInfo[] = [];
-  try { remembered = JSON.parse(localStorage.getItem(AGENT_CACHE_KEY) ?? '[]'); } catch { remembered = []; }
+  try { remembered = JSON.parse(appSettings.getItem(AGENT_CACHE_KEY) ?? '[]'); } catch { remembered = []; }
   const entry = remembered.find((m) => m && m.id === id);
   const base = entry?.name ?? `${AGENT_RUNTIMES[target.runtime].label} · ${target.id}`;
   const resolved = opts?.compact ? undefined : resolvedNames()[id];
@@ -136,7 +137,7 @@ export function describeModel(id: string | null | undefined, effort?: string | n
 function withRemembered(d: ModelData): ModelData {
   if (!hasAgentsBridge()) return d;
   let remembered: ModelInfo[] = [];
-  try { remembered = JSON.parse(localStorage.getItem(AGENT_CACHE_KEY) ?? '[]'); } catch { remembered = []; }
+  try { remembered = JSON.parse(appSettings.getItem(AGENT_CACHE_KEY) ?? '[]'); } catch { remembered = []; }
   const own = d.models.filter((m) => !isRuntimeAgent(m));
   return { ...d, models: [...own, ...withResolvedNames(remembered.filter((m) => m && isRuntimeAgent(m)))], agentsPending: false };
 }
@@ -153,7 +154,7 @@ async function refreshAgents(): Promise<void> {
     setModelsCache({ ...before, agentsPending: true });
     const asked = await agentCatalog().catch(() => ({ models: [] as ModelInfo[], runtimes: {} as Partial<Record<AgentRuntime, RuntimeStatus>> }));
     const extra = asked.models;
-    try { localStorage.setItem(AGENT_CACHE_KEY, JSON.stringify(extra)); } catch { /* ignore */ }
+    try { appSettings.setItem(AGENT_CACHE_KEY, JSON.stringify(extra)); } catch { /* ignore */ }
     const own = (cache ?? before).models.filter((m) => !isRuntimeAgent(m));
     setModelsCache({ ...(cache ?? before), models: [...own, ...withResolvedNames(extra)], agentsPending: false, runtimes: asked.runtimes });
   })().finally(() => { agentsRefreshing = null; });
@@ -182,7 +183,7 @@ export function noteAgentModelName(id: string, resolved: string): void {
   const names = resolvedNames();
   if (names[id] === resolved) return;
   names[id] = resolved;
-  try { localStorage.setItem(AGENT_NAMES_KEY, JSON.stringify(names)); } catch { /* ignore */ }
+  try { appSettings.setItem(AGENT_NAMES_KEY, JSON.stringify(names)); } catch { /* ignore */ }
   if (!cache) return;
   const own = cache.models.filter((m) => !isRuntimeAgent(m));
   const agents = cache.models.filter(isRuntimeAgent).map((m) => ({ ...m, name: m.name.split(' · ').slice(0, 2).join(' · ') }));

@@ -1,8 +1,9 @@
-import { get as idbGet } from 'idb-keyval';
+import { get as idbGet } from './disk-storage';
 import { useStore } from '../store';
 import { useProjects, projectStorageKey } from '../store/projects';
 import { internNodes, gcVault } from './attachment-vault';
 import type { ThoughtNode } from '../types';
+import { DOCX_MIME_TYPE } from './document-copy';
 
 // Store-aware vault plumbing lives in its own module: attachment-vault.ts
 // is imported from inside the store's module graph (lib/attachments), so
@@ -13,7 +14,7 @@ import type { ThoughtNode } from '../types';
     normal middleware. */
 export async function migrateActiveCanvasToVault(): Promise<void> {
   const { nodes } = useStore.getState();
-  if (!nodes.some((n) => n.data.attachments?.some((a) => a.type === 'application/pdf' && a.content && !a.contentInVault))) return;
+  if (!nodes.some((n) => n.data.attachments?.some((a) => (a.type === 'application/pdf' || a.type === DOCX_MIME_TYPE) && a.content && !a.contentInVault))) return;
   const interned = await internNodes(nodes);
   // Guard against a project switch racing the async intern
   if (useStore.getState().nodes !== nodes) return;

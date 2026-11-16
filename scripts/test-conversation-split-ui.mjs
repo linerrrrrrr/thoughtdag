@@ -95,8 +95,7 @@ try {
         question, response, responses: [response], responseIndex: 0, questionHeightRatio: .35,
         isCollapsed: false, isEditing: false, isEditingResponse: false, isLoading: false,
         detailLevel: 'full', tokenCount: 0, highlights: [], highlightMode: 'tag', attachments: [],
-        excludedAttachmentIds: [], includedAttachmentIds: [], roleMode: 'inherit', isRoot: true, isBranch: false,
-      } }]);
+        excludedAttachmentIds: [], includedAttachmentIds: [], roleMode: 'inherit'} }]);
     window.__store.getState().setEdges([]);
     window.__rf.setViewport({ x: 90, y: 130, zoom: 1 }, { duration: 0 });
   }, nodeId);

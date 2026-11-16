@@ -7,6 +7,14 @@ not the desktop application's private frontend code.
 
 ## What the node presents
 
+Codex-specific node content follows the native Codex content hierarchy and
+interaction patterns while using ThoughtDAG's color, typography and canvas
+design tokens. Where the public protocol does not supply a detail, the node
+must not invent it. The approval surface uses a request identity and prompt,
+separate reason and expandable details, followed by an explicit reject action
+and a split allow action. Its conversation-scoped option states its scope before
+the person chooses it; opening or dismissing that option never grants access.
+
 The canvas node, focus panel, and expanded response reader share one ordered
 activity timeline. While running, it contains progress commentary, readable
 reasoning summaries, commands and their incremental output, tool activity,
@@ -162,6 +170,7 @@ node scripts/test-codex-workflow.mjs
 node scripts/test-local-files.mjs
 node scripts/test-file-links-ui.mjs
 node scripts/test-codex-workbench-ui.mjs
+node scripts/test-codex-approval-transport.mjs
 ```
 
 ```bash
@@ -178,6 +187,7 @@ server, without calling an LLM:
 ```bash
 npm run dev -- --host 127.0.0.1 --port 5175 --strictPort
 npm run test:agent-activity-ui
+node scripts/test-codex-approval-ui.mjs
 ```
 
 Set `APP_URL` and `CHROME_PATH` if the local server or Chromium executable is

@@ -1,12 +1,13 @@
 import type { StateCreator } from 'zustand';
 import type { ThoughtNode, ThoughtEdge } from '../../types';
+import { documentCopyText, isEditableDocument } from '../../lib/document-copy';
 import { generateId } from '../../utils';
 import { placeNewNodes } from '../../lib/layout';
 import { getDescendantIds, selectionSinks, walkUpAncestors } from '../../lib/graph';
 import { COLORS } from '../../lib/constants';
 import type { ContextMessage, ImageAttachment } from '../../lib/api';
-import { buildContext, buildIncomingContext, resolveExplicitRole, applyRoleOverride, type MessageSource } from '../context-builder';
-import { activeAbortControllers, autoRunCounts, runNodeGeneration, triggerParadigmCascade } from '../streaming';
+import { buildContext, buildIncomingContext, type MessageSource } from '../context-builder';
+import { activeAbortControllers, runNodeGeneration, triggerParadigmCascade } from '../streaming';
 import { useUiStore, toast, recallSnapshot } from '../../lib/ui-store';
 // the stale set a request carries is the one the preview shows: the fingerprint's minus the judge's dismissals (#51)
 import { shownStaleIds } from '../../lib/stale-judge';
@@ -14,22 +15,20 @@ import { t, fmt } from '../../i18n';
 import type { StoreState, LlmSlice, AddQuestionOptions } from '../types';
 import { condenseGuard } from '../../lib/condense-guard';
 import { isNotebook, notebookContext } from '../../lib/notebook';
-import { deriveFollowupModel, requestAgentStop } from '../../lib/agents/agent-runtime';
+import { requestAgentStop } from '../../lib/agents/agent-runtime';
+import { inheritedNodeExecution } from '../../lib/node-execution';
 
 export const createLlmSlice: StateCreator<StoreState, [], [], LlmSlice> = (set, get) => ({
   addQuestion: async (question: string, opts: AddQuestionOptions = {}) => {
     if (condenseGuard()) return;
     // the ask is one step, recorded when its answer lands (settleNode); settle what came before it
     get().pushHistory();
-    const { parentId, branchContext, branchYRatio, inheritRole, rolePrompt, initialAttachments, excludeAllInheritedAttachments, mentions } = opts;
+    const { parentId, initialAttachments, excludeAllInheritedAttachments, mentions } = opts;
     const id = generateId();
-    get().logEvent('ask', id, { chars: question.length, ...(parentId ? {} : { root: true }), ...(branchContext ? { branch: true } : {}) });
-    const isRoot = !parentId;
-    // Model follows the LINE, not the toolbar: a child inherits its parent's
-    // pinned model, so a deepseek thread stays deepseek even while the
-    // global picker sits on something else. No pin on the parent = keep
-    // following the global pick (undefined), as before.
-    const inheritedModel = parentId ? deriveFollowupModel(get().nodes.find((n) => n.id === parentId)?.data, useUiStore.getState().selectedModel) : undefined;
+    get().logEvent('ask', id, { chars: question.length, ...(parentId ? {} : { root: true }) });
+    // Children preserve their parent's execution type and compatible model.
+    // Roots snapshot the global choice; later toolbar changes cannot cross lanes.
+    const inheritedExecution = inheritedNodeExecution(parentId ? get().nodes.find((n) => n.id === parentId)?.data : undefined, useUiStore.getState().selectedModel);
     const newNode: ThoughtNode = {
       id,
       type: 'thought',
@@ -39,7 +38,7 @@ export const createLlmSlice: StateCreator<StoreState, [], [], LlmSlice> = (set, 
         question,
         createdAt: new Date().toISOString(),
         askedAt: new Date().toISOString(),
-        model: inheritedModel,
+        ...inheritedExecution,
         response: '',
         responses: [],
         responseIndex: -1,
@@ -48,7 +47,6 @@ export const createLlmSlice: StateCreator<StoreState, [], [], LlmSlice> = (set, 
         isEditingResponse: false,
         isLoading: true,
         tokenCount: 0,
-        branchContext,
         highlights: [], highlightMode: 'tag', attachments: initialAttachments || [],
         excludedAttachmentIds: excludeAllInheritedAttachments && parentId
           ? get().getInheritedAttachments(parentId).map(({ attachment }) => attachment.id).concat(
@@ -56,10 +54,6 @@ export const createLlmSlice: StateCreator<StoreState, [], [], LlmSlice> = (set, 
             )
           : [],
         includedAttachmentIds: [],
-        roleMode: inheritRole === false ? 'reset' : 'inherit',
-        rolePrompt: rolePrompt || undefined,
-        isRoot,
-        isBranch: !!branchContext,
         // Search permissions are per-ask: snapshot the toggles shown next to
         // the input, so reruns of this node keep behaving the same way
         webSearch: useUiStore.getState().webSearchEnabled,
@@ -68,25 +62,17 @@ export const createLlmSlice: StateCreator<StoreState, [], [], LlmSlice> = (set, 
       },
     };
 
-    const isBranch = !!branchContext;
     const newEdge = parentId ? {
       id: `edge-${parentId}-${id}`,
       source: parentId,
       target: id,
-      sourceHandle: isBranch ? 'branch' : 'continue',
-      targetHandle: isBranch ? 'left' : 'top',
+      sourceHandle: 'continue',
+      targetHandle: 'top',
       type: 'smoothstep',
-      ...(isBranch ? {
-        style: { stroke: COLORS.warm, strokeWidth: 2 },
-        animated: false,
-        markerEnd: { type: 'arrowclosed' as const, color: COLORS.warm, width: 18, height: 18 },
-        data: { isBranchFromSelection: true, branchYRatio: branchYRatio ?? 0.5 },
-      } : {
-        style: { stroke: COLORS.accent, strokeWidth: 2 },
-        animated: false,
-        markerEnd: { type: 'arrowclosed' as const, color: COLORS.accent, width: 18, height: 18 },
-        data: {},
-      }),
+      style: { stroke: COLORS.accent, strokeWidth: 2 },
+      animated: false,
+      markerEnd: { type: 'arrowclosed' as const, color: COLORS.accent, width: 18, height: 18 },
+      data: {},
     } : null;
 
     let newEdges: ThoughtEdge[] = newEdge ? [...get().edges, newEdge] : get().edges;
@@ -129,12 +115,10 @@ export const createLlmSlice: StateCreator<StoreState, [], [], LlmSlice> = (set, 
     // Compile the new node's incoming edges, including references attached
     // by @-mentions. Compiling only the parent would omit those new wires.
     const selfNode = get().nodes.find((n) => n.id === id);
-    const ctx = buildIncomingContext(id, get().nodes, get().edges, branchContext,
+    const ctx = buildIncomingContext(id, get().nodes, get().edges,
       selfNode?.data.excludedAttachmentIds, selfNode?.data.includedAttachmentIds, shownStaleIds(get()));
     const contextMessages = ctx.messages;
     const contextImages = ctx.images;
-    const parentNode = parentId ? get().nodes.find((n) => n.id === parentId) : null;
-    applyRoleOverride(contextMessages, resolveExplicitRole(selfNode?.data, parentNode?.data, !!parentId));
 
     // Collect this node's own attachments (skip if same file already from ancestors)
     const selfAttachments = selfNode?.data.attachments || [];
@@ -143,10 +127,11 @@ export const createLlmSlice: StateCreator<StoreState, [], [], LlmSlice> = (set, 
       if (alreadyInContext) continue;
       if (att.type.startsWith('image/')) {
         contextImages.push({ data: att.content, mimeType: att.type });
-      } else if (att.type === 'application/pdf') {
+      } else if (isEditableDocument(att)) {
         // text channel only — page images trip provider image-count limits
-        if (att.extractedText) {
-          contextMessages.push({ role: 'user', content: `[PDF: ${att.name}]\n${att.extractedText}` });
+        const body = documentCopyText(att);
+        if (body || att.editedText !== undefined) {
+          contextMessages.push({ role: 'user', content: `[${att.type === 'application/pdf' ? 'PDF' : 'File'}: ${att.name}]\n${body}` });
         }
       } else if (att.type === 'text/html') {
         // extracted Markdown only — raw HTML source never reaches a model
@@ -164,124 +149,9 @@ export const createLlmSlice: StateCreator<StoreState, [], [], LlmSlice> = (set, 
       }
     }
 
-    // Record the applied role before streaming
-    const appliedRole = contextMessages.find((m) => m.role === 'system')?.content || undefined;
     contextMessages.push({ role: 'user', content: question });
-    set((state) => ({
-      nodes: state.nodes.map((n) =>
-        n.id === id ? { ...n, data: { ...n.data, appliedRole } } : n
-      ),
-    }));
 
     await runNodeGeneration(set, get, id, { question, messages: contextMessages, images: contextImages, sources: ctx.sources });
-  },
-
-  /**
-   * Fan out: one question, N context-isolated role branches. Each branch is
-   * an ordinary child node (orange branch edge, reset role) so siblings
-   * can't see each other — structural blindness for candidate pools.
-   * Generations run concurrently (bounded); one history entry for the batch.
-   */
-  fanOut: async (parentId: string, question: string, roles: { name: string; prompt: string }[], opts: { follow?: boolean; rounds?: number } = {}) => {
-    get().logEvent('fanout', parentId, { roles: roles.length, chars: question.length });
-    const parent = get().nodes.find((n) => n.id === parentId);
-    if (!parent || roles.length === 0) return;
-    const follow = !!opts.follow;
-    // Bounded loops, declared not emergent: how many auto re-critiques a
-    // reviewer fires per wave (writer↔critic iteration budget).
-    const rounds = follow && opts.rounds && opts.rounds > 1 ? Math.min(opts.rounds, 5) : undefined;
-    get().pushHistory();
-
-    // Create all nodes and edges up front. Persona lives in the question's
-    // opening lines — one home for personas — so each card shows exactly
-    // what its perspective was asked. Two run policies, one mechanism:
-    //   once   → orange candidate branches, answered once (blind pool)
-    //   follow → red reviewers on watch edges that slide with the thread
-    //            and auto-rerun whenever upstream extends
-    const created: { id: string; question: string }[] = [];
-    const newNodes: ThoughtNode[] = [];
-    const newEdges: ThoughtEdge[] = [];
-    roles.forEach((role, i) => {
-      const id = generateId();
-      const branchQuestion = `${role.prompt}\n${question}`;
-      created.push({ id, question: branchQuestion });
-      newNodes.push({
-        id,
-        type: 'thought',
-        // follow mode skips placeNewNodes (watch edges are cross-links, not
-        // ancestry) — stack reviewers to the right of the watched node
-        position: follow ? { x: parent.position.x + 640, y: parent.position.y + i * 380 } : { x: 0, y: 0 },
-        dragHandle: '.drag-handle',
-        data: {
-          question: branchQuestion,
-          response: '',
-          responses: [],
-          responseIndex: -1,
-          isCollapsed: false,
-          isEditing: false,
-          isEditingResponse: false,
-          isLoading: !follow,
-          tokenCount: 0,
-          branchContext: undefined,
-          highlights: [], highlightMode: 'tag', attachments: [], excludedAttachmentIds: [], includedAttachmentIds: [],
-          roleMode: 'inherit',
-          isRoot: false,
-          isBranch: !follow, // orange styling: exploratory candidates
-          isEvaluator: follow || undefined, // red styling + rerun affordance
-          autoRerun: follow || undefined,
-          autoRerunRounds: rounds,
-          webSearch: useUiStore.getState().webSearchEnabled,
-          scholarSearch: useUiStore.getState().scholarSearchEnabled,
-          ...recallSnapshot(),
-        },
-      });
-      newEdges.push(follow ? {
-        id: `watch-${parentId}-${id}`,
-        source: parentId,
-        target: id,
-        sourceHandle: 'branch',
-        targetHandle: 'left',
-        type: 'smoothstep',
-        style: { stroke: COLORS.watch, strokeWidth: 2, strokeDasharray: '4 4' },
-        animated: true,
-        markerEnd: { type: 'arrowclosed' as const, color: COLORS.watch, width: 18, height: 18 },
-        data: { isCrossLink: true, isWatch: true, followsTip: true },
-      } : {
-        id: `edge-${parentId}-${id}`,
-        source: parentId,
-        target: id,
-        sourceHandle: 'branch',
-        targetHandle: 'left',
-        type: 'smoothstep',
-        style: { stroke: COLORS.warm, strokeWidth: 2 },
-        animated: false,
-        markerEnd: { type: 'arrowclosed' as const, color: COLORS.warm, width: 18, height: 18 },
-        data: { isBranchFromSelection: true, branchYRatio: 0.5 },
-      });
-    });
-
-    const allEdges = [...get().edges, ...newEdges];
-    const merged = [...get().nodes.map((n) => (n.id === parentId && !follow ? { ...n, data: { ...n.data, isCollapsed: true } } : n)), ...newNodes];
-    const allNodes = follow ? merged : placeNewNodes(merged, allEdges, created.map((c) => c.id));
-    set({ nodes: allNodes, edges: allEdges, selectedNodeId: null, selectedNodeIds: [] });
-
-    // Bounded concurrency: free-tier providers dislike large bursts
-    const LIMIT = 6;
-    let cursor = 0;
-    // Shared ancestor context for one-shot branches (identical per sibling)
-    const ctx = follow ? null : buildContext(parentId, get().nodes, get().edges, undefined, undefined, undefined, shownStaleIds(get()));
-    const worker = async () => {
-      while (cursor < created.length) {
-        const { id, question: branchQuestion } = created[cursor++];
-        if (follow) {
-          await get().rerunNode(id); // standard context walk through the watch edge
-        } else {
-          const messages: ContextMessage[] = [...ctx!.messages, { role: 'user', content: branchQuestion }];
-          await runNodeGeneration(set, get, id, { question: branchQuestion, messages, images: ctx!.images, sources: ctx!.sources });
-        }
-      }
-    };
-    await Promise.all(Array.from({ length: Math.min(LIMIT, created.length) }, worker));
   },
 
   submitHumanTurn: (nodeId: string, question: string) => {
@@ -290,7 +160,6 @@ export const createLlmSlice: StateCreator<StoreState, [], [], LlmSlice> = (set, 
     if (!q) return;
     get().pushHistory();
     get().logEvent('ask', nodeId, { chars: q.length, human: true });
-    autoRunCounts.clear(); // a human turn is a manual action: new auto wave
     // Second run of a paradigm: changing the input makes every answered
     // step downstream stale — the replay chip is the "re-run experiment"
     // button. Surface the blast radius, same as editQuestion.
@@ -347,11 +216,9 @@ export const createLlmSlice: StateCreator<StoreState, [], [], LlmSlice> = (set, 
     const editNode = get().nodes.find((n) => n.id === nodeId);
     const editCtx = buildContext(nodeId, get().nodes.map(n =>
       n.id === nodeId ? { ...n, data: { ...n.data, question: '', response: '' } } : n
-    ), get().edges, editNode?.data.branchContext, editNode?.data.excludedAttachmentIds, editNode?.data.includedAttachmentIds, shownStaleIds(get()));
+    ), get().edges, editNode?.data.excludedAttachmentIds, editNode?.data.includedAttachmentIds, shownStaleIds(get()));
     const contextMessages = editCtx.messages;
-    const appliedRole = contextMessages.find((m) => m.role === 'system')?.content || undefined;
     contextMessages.push({ role: 'user', content: question });
-    set((state) => ({ nodes: state.nodes.map((n) => n.id === nodeId ? { ...n, data: { ...n.data, appliedRole } } : n) }));
 
     // Append, never replace: the old (question, answer) pairs stay switchable
     // — an edited question must not orphan or erase the versions written
@@ -386,13 +253,9 @@ export const createLlmSlice: StateCreator<StoreState, [], [], LlmSlice> = (set, 
         isEditingResponse: false,
         isLoading: true,
         tokenCount: 0,
-        branchContext: node.data.branchContext,
         highlights: [], highlightMode: 'tag', attachments: [], excludedAttachmentIds: [], includedAttachmentIds: [],
-        roleMode: node.data.roleMode || 'inherit',
-        rolePrompt: node.data.rolePrompt,
-        isRoot: !parentId,
-        isBranch: node.data.isBranch,
         model: node.data.model, // sibling keeps the original's model override
+        executionKind: node.data.executionKind,
       },
     };
 
@@ -405,15 +268,10 @@ export const createLlmSlice: StateCreator<StoreState, [], [], LlmSlice> = (set, 
 
     const regenSelf = get().nodes.find((n) => n.id === id);
     const regenCtx = parentId
-      ? buildContext(parentId, get().nodes, get().edges, node.data.branchContext, regenSelf?.data.excludedAttachmentIds, regenSelf?.data.includedAttachmentIds, shownStaleIds(get()))
+      ? buildContext(parentId, get().nodes, get().edges, regenSelf?.data.excludedAttachmentIds, regenSelf?.data.includedAttachmentIds, shownStaleIds(get()))
       : { messages: [] as ContextMessage[], images: [] as ImageAttachment[], sources: [] as MessageSource[] };
     const contextMessages = regenCtx.messages;
-    const regenParent = parentId ? get().nodes.find((n) => n.id === parentId) : null;
-    applyRoleOverride(contextMessages, resolveExplicitRole(regenSelf?.data, regenParent?.data, !!parentId));
-
-    const appliedRole = contextMessages.find((m) => m.role === 'system')?.content || undefined;
     contextMessages.push({ role: 'user', content: node.data.question });
-    set((state) => ({ nodes: state.nodes.map((n) => n.id === id ? { ...n, data: { ...n.data, appliedRole } } : n) }));
 
     await runNodeGeneration(set, get, id, { question: node.data.question, messages: contextMessages, images: regenCtx.images, sources: regenCtx.sources });
   },
@@ -453,9 +311,6 @@ export const createLlmSlice: StateCreator<StoreState, [], [], LlmSlice> = (set, 
         highlightMode: 'tag',
         attachments: [],
         excludedAttachmentIds: [], includedAttachmentIds: [],
-        roleMode: 'inherit' as const,
-        isRoot: false,
-        isBranch: false,
         webSearch: useUiStore.getState().webSearchEnabled,
         scholarSearch: useUiStore.getState().scholarSearchEnabled,
         ...recallSnapshot(),
@@ -485,7 +340,7 @@ export const createLlmSlice: StateCreator<StoreState, [], [], LlmSlice> = (set, 
       id,
       get().nodes.map((n) => (n.id === id ? { ...n, data: { ...n.data, question: '', response: '' } } : n)),
       get().edges,
-      undefined, undefined, undefined, shownStaleIds(get()),
+      undefined, undefined, shownStaleIds(get()),
     );
     const messages: ContextMessage[] = [
       { role: 'system', content: `You merge conversation nodes. CRITICAL: Your output language MUST match the primary language of the user content. If the content is in Chinese, respond in Chinese. If English, respond in English. Never use German or any other language unless the content is in that language. Do not translate — use the same language as the source.` },
@@ -592,7 +447,6 @@ ${intent.trim()}` : ''}` },
         isCollapsed: false, isEditing: false, isEditingResponse: false, isLoading: true,
         tokenCount: 0, highlights: [], highlightMode: 'tag',
         attachments: [], excludedAttachmentIds: [], includedAttachmentIds: [],
-        roleMode: 'inherit' as const, isRoot: false, isBranch: false,
         webSearch: false, scholarSearch: false, // editorial task: no search
       },
     };

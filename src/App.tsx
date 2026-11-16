@@ -1,3 +1,4 @@
+import { appSettings } from './lib/disk-storage';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ReactFlow,
@@ -16,7 +17,7 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import 'highlight.js/styles/github.css';
-import { ArrowRight, BookOpen, Bot, Brain, CircleHelp, Download, FileDown, Drama, Eye, FileText, FolderSync, Frame, GitBranch, Hand, Highlighter, History as HistoryIcon, ImageDown, KeyRound, ListRestart, Loader2, MessageCircleQuestion, Minimize2, MoreHorizontal, Paperclip, Redo2, Rewind, Scissors, Search, Share2, SlidersHorizontal, SquareTerminal, Star, Stethoscope, StickyNote, Trash2, Undo2, Workflow, X } from 'lucide-react';
+import { ArrowRight, BookOpen, Brain, CircleHelp, Download, FileDown, Eye, FileText, FolderSync, Frame, GitBranch, Hand, Highlighter, History as HistoryIcon, ImageDown, KeyRound, ListRestart, Loader2, MessageCircleQuestion, Minimize2, MoreHorizontal, Paperclip, Redo2, Rewind, Scissors, Search, Share2, SlidersHorizontal, Spline, SquareTerminal, Star, Stethoscope, StickyNote, Trash2, Undo2, Workflow, X } from 'lucide-react';
 import './index.css';
 import { ListFilter } from 'lucide-react';
 import ThoughtNode from './components/ThoughtNode';
@@ -30,6 +31,7 @@ import FrameNode from './components/FrameNode';
 import ThoughtEdgeView from './components/ThoughtEdgeView';
 import SelectionInspector from './components/SelectionInspector';
 import CanvasLayoutPanel, { type CanvasLayoutPanelHandle } from './components/CanvasLayoutPanel';
+import CanvasRoutingPanel from './components/CanvasRoutingPanel';
 import { canvasToolViewport, useCanvasPanelPosition, useFocusPanelSpace } from './lib/use-canvas-panel-position';
 import { CanvasToolbarOverflowContext, restoreCanvasToolbarFocus, useResponsiveCanvasHeader } from './lib/use-responsive-canvas-header';
 import CanvasToolbarOverflowAction from './components/CanvasToolbarOverflowAction';
@@ -53,7 +55,6 @@ import { REPO_URL, useGithubStars, formatStars } from './lib/github-stars';
 import DiagnosticsPanel from './components/DiagnosticsPanel';
 import MaterialReader from './components/MaterialReader';
 import ProjectSwitcher from './components/ProjectSwitcher';
-import SessionAtlas from './components/SessionAtlas';
 import { useStore } from './store';
 import { undoState } from './store/slices/history';
 import { canvasHistoryCommand, isTextEditingTarget } from './lib/canvas-shortcuts';
@@ -64,15 +65,18 @@ import type { ArrangeRect } from './lib/arrange-selection';
 import { nodeLayerIndices } from './lib/node-layer';
 import { useProjects, adoptImportedProject, markInstantiatedFrom } from './store/projects';
 import { projectStorageKey } from './store/projects';
-import { set as idbSet } from 'idb-keyval';
+import { set as idbSet } from './lib/disk-storage';
 import { instantiateParadigm } from './lib/paradigm';
 import { isContentKind, spawnContentNode, ingestFiles, fetchLinkIntoNode, clipboardTextToMarkdown } from './lib/content';
+import { chooseMaterialFiles, droppedFiles } from './lib/original-document';
 import { createQuestionDraft } from './lib/question-draft';
 import { generateId, isImeComposing } from './utils';
 import { recapToNote, recapCamera } from './lib/recap';
 import type { Attachment, ThoughtNode as ThoughtNodeType, ThoughtEdge } from './types';
 import { processFile, FILE_INPUT_ACCEPT } from './lib/attachments';
-import { walkUpAncestors, partitionContext } from './lib/graph';
+import { hasNativeDocxSource, isDocxDocument } from './lib/document-copy';
+import { isConversationStart } from './lib/graph';
+import { contextFocusForSelection } from './lib/context-focus';
 import { buildContext } from './store/context-builder';
 import { exportActiveParadigm, exportActiveProjectJson, exportEventLogCsv } from './lib/export';
 import { countTokens } from './utils';
@@ -80,6 +84,7 @@ import { buildExampleGraph } from './lib/example-graph';
 import { COLORS, FRAME_COLORS, PANEL_INSET, EDGE_ARROW_GEOMETRY } from './lib/constants';
 import { panelShift } from './lib/panel-shift';
 import { useReaderDock } from './lib/reader-dock';
+import { screenToUi, uiToScreen } from './lib/ui-scale';
 import { handleDismissableLayerKeyDown, useDismissableLayer } from './lib/use-dismissable-layer';
 import { migrateActiveCanvasToVault, gcVaultAtBoot } from './lib/attachment-vault-boot';
 import { consumeOpenRouterCallback, handMintedKeyToModal, startOpenRouterOAuth } from './lib/openrouter-oauth';
@@ -88,7 +93,6 @@ import { confirmDialog, toast, useUiStore } from './lib/ui-store';
 import ConfirmDialog from './components/ui/ConfirmDialog';
 import Toaster from './components/ui/Toaster';
 import GlobalTooltip from './components/ui/GlobalTooltip';
-import RoleManagerModal from './components/ui/RoleManagerModal';
 import MemoryManagerModal from './components/ui/MemoryManagerModal';
 import ApiKeyModal from './components/ui/ApiKeyModal';
 import ShareDialog from './components/ui/ShareDialog';
@@ -98,15 +102,13 @@ import CondenseDialog from './components/ui/CondenseDialog';
 import { backupCapable } from './lib/local-backup';
 import LangSwitch from './components/ui/LangSwitch';
 import ModelPicker from './components/ui/ModelPicker';
-import RoleTemplateChips from './components/ui/RoleTemplateChips';
 import SearchToggles from './components/ui/SearchToggles';
 import Tutorial from './components/Tutorial';
 import WhatsNewDialog from './components/ui/WhatsNewDialog';
 import LadderJobCard from './components/ui/LadderJobCard';
 if (import.meta.env.DEV) void import('./lib/ladder-lab');
 import ReleaseNotesDialog from './components/ui/ReleaseNotesDialog';
-import AgentCwdChip from './components/ui/AgentCwdChip';
-import AgentPermissionChip from './components/ui/AgentPermissionChip';
+import ConnectionEntries from './components/ui/ConnectionEntries';
 import WaitingPill from './components/ui/WaitingPill';
 import { pluginUpdateCommand } from './lib/plugin-update';
 import { useT, t as ti, fmt, useI18n } from './i18n';
@@ -171,7 +173,7 @@ export default function App() {
   // button keeps its own trigger for people who skip straight there.
   useEffect(() => {
     if (!hydrated || isViewerMode) return;
-    if (localStorage.getItem('thoughtdag.tutorialDone')) return;
+    if (appSettings.getItem('thoughtdag.tutorialDone')) return;
     if (useStore.getState().nodes.length > 0) return;
     const timer = setTimeout(() => useUiStore.getState().setTutorialOpen(true), 900);
     return () => clearTimeout(timer);
@@ -183,20 +185,12 @@ export default function App() {
   // A pending Sign-in-with-OpenRouter callback (?code=) resolves here: the
   // exchange runs entirely in the browser, then the ApiKeyModal opens on
   // the model-picking view for the user to confirm what to enable.
-  // /thoughtdag handoff: #import-url=<loopback> imports a runner session
-  // straight onto a fresh canvas (validation + one-shot in the consumer)
   useEffect(() => {
     if (isViewerMode) return;
-    void import('./lib/session-handoff').then((m) => m.consumeSessionHandoff());
-    // desktop only: the live mirror — the active canvas follows its
-    // session file on its own (idempotent append via the ledger)
-    void import('./lib/atlas/live-mirror').then((m) => m.startLiveMirror());
     // desktop only: the canvas writes its own source record for the why
     // layer, whether or not a backup folder was ever chosen
     void import('./lib/canvas-record').then((m) => m.startCanvasRecord());
-    // ledger self-heal: canvases weeded before deletion-as-unsubscription
-    // existed may still carry dead subscriptions — clear them on arrival
-    void import('./lib/atlas/canonical').then((m) => m.unsubscribeOrphanedSessions());
+    void import('./lib/source-navigation').then((m) => m.startSourceNavigation());
   }, []);
 
   useEffect(() => {
@@ -217,7 +211,6 @@ export default function App() {
       <Toaster />
       <LadderJobCard />
       <GlobalTooltip />
-      <RoleManagerModal />
       <MemoryManagerModal />
       <ApiKeyModal />
       <ShareDialog />
@@ -240,11 +233,13 @@ function Canvas() {
   const pendingConnectionDrops = useRef(new Map<string, {
     parentId: string; end: { x: number; y: number }; node: ThoughtNodeType;
   }>());
+  const [routingOpen, setRoutingOpen] = useState(false);
   const activeProjectId = useProjects((s) => s.activeId);
   useEffect(() => {
     anchorResolver.current.clear();
     pendingConnectionDrops.current.clear();
     useCanvasEditing.getState().reset();
+    setRoutingOpen(false);
     useUiStore.getState().setPanelOpen(false);
   }, [activeProjectId]);
   const openEdgeEditor = useCallback((id: string) => {
@@ -266,9 +261,6 @@ function Canvas() {
   const [chatOpen, setChatOpen] = useState(false);
   // the ⋯ menu's GitHub entry carries the star count: the cached number at once, a fresh one within the hour
   const githubStars = useGithubStars();
-  const [rootRole, setRootRole] = useState('');
-  const [showRootRole, setShowRootRole] = useState(false);
-  const [landingAtlas, setLandingAtlas] = useState(false);
   const [pendingAttachments, setPendingAttachments] = useState<Attachment[]>([]);
   const [isDraggingLanding, setIsDraggingLanding] = useState(false);
   const landingFileRef = useRef<HTMLInputElement>(null);
@@ -373,7 +365,7 @@ function Canvas() {
       }, 680);
     }, 100);
     // the example canvas is the classroom: first visit opens the lesson
-    if (!localStorage.getItem('thoughtdag.tutorialDone')) setTutorialOpen(true);
+    if (!appSettings.getItem('thoughtdag.tutorialDone')) setTutorialOpen(true);
   }, [lang, setTutorialOpen]);
 
   // ── Orchestration (paradigm) mode helpers ──
@@ -391,7 +383,6 @@ function Canvas() {
         isCollapsed: false, isEditing: false, isEditingResponse: false, isLoading: false,
         tokenCount: 0, highlights: [], highlightMode: 'tag',
         attachments: [], excludedAttachmentIds: [], includedAttachmentIds: [],
-        roleMode: 'inherit', isRoot: st.nodes.length === 0, isBranch: false,
       },
     }]);
     st.pushHistory();
@@ -431,15 +422,12 @@ function Canvas() {
         isCollapsed: false, isEditing: false, isEditingResponse: false, isLoading: false,
         tokenCount: 0, highlights: [], highlightMode: 'tag',
         attachments: [], excludedAttachmentIds: [], includedAttachmentIds: [],
-        roleMode: 'inherit', isRoot: false, isBranch: false,
       },
     }]);
     st.pushHistory();
   }, []);
 
-  // Dropped-file gate: accept what we can actually parse (images, PDF, notebooks,
-  // text/code). Word and friends would ingest as binary soup — reject with
-  // an actionable hint instead.
+  // Dropped-file gate: accept supported documents, images, notebooks and text.
   const filterDroppedFiles = useCallback((list: FileList | File[]): File[] => {
     const ok: File[] = [];
     for (const f of Array.from(list)) {
@@ -456,21 +444,24 @@ function Canvas() {
 
   // Empty turns become requests only when their question is explicitly sent.
   const spawnAskNode = useCallback((pos: { x: number; y: number }) => createQuestionDraft({ position: pos }), []);
-  // Material-first entry: every dropped document becomes a material node;
-  // the reader opens on the first readable one (PDF/text render instantly,
-  // extraction fills the model channel in the background). Attachments to
+  // Material-first entry: every dropped document becomes a material node.
+  // DOCX opens directly in its canvas editor; other readable files can open
+  // the reader while extraction fills the model channel. Attachments to
   // the root question remain an EXPLICIT action (the paperclip).
   const startFromDocuments = useCallback((list: FileList | File[]) => {
     const files = filterDroppedFiles(list);
     if (files.length === 0) return;
     let readerTarget: string | null = null;
-    files.forEach((f, i) => {
+    const imports = files.map((f, i) => {
       const id = spawnContentNode('file', { x: 120 + (i % 3) * 480, y: 120 + Math.floor(i / 3) * 620 });
-      void ingestFiles(id, [f]);
-      if (!readerTarget && !f.type.startsWith('image/')) readerTarget = id;
+      if (!readerTarget && !f.type.startsWith('image/') && !isDocxDocument(f)) readerTarget = id;
+      return ingestFiles(id, [f]);
     });
     if (readerTarget) useUiStore.getState().setReaderNodeId(readerTarget);
-    setTimeout(() => rfInstance.current?.fitView({ duration: 400, padding: 0.2 }), 120);
+    // Fit the populated cards, whose document bodies are taller than empty slots.
+    void Promise.allSettled(imports).then(() => {
+      setTimeout(() => rfInstance.current?.fitView({ duration: 400, padding: 0.2 }), 120);
+    });
   }, [filterDroppedFiles]);
 
   // Palette click-or-drag via pointer events (native DnD's click race lost
@@ -487,7 +478,7 @@ function Canvas() {
         ghost.style.cssText = 'position:fixed;z-index:300;pointer-events:none;width:36px;height:36px;display:flex;align-items:center;justify-content:center;background:var(--color-card);border:1px solid var(--color-accent);border-radius:var(--radius-control);box-shadow:var(--shadow-lg);opacity:.92;';
         document.body.appendChild(ghost);
       }
-      if (ghost) { ghost.style.left = `${ev.clientX - 18}px`; ghost.style.top = `${ev.clientY - 18}px`; }
+      if (ghost) { ghost.style.left = `${screenToUi(ev.clientX) - 18}px`; ghost.style.top = `${screenToUi(ev.clientY) - 18}px`; }
     };
     const up = (ev: PointerEvent) => {
       window.removeEventListener('pointermove', move);
@@ -520,7 +511,7 @@ function Canvas() {
       if (!dt) return;
       const pos = flowPosAt(lastMouse.current);
       const text = dt.getData('text/plain').trim();
-      const files = Array.from(dt.files);
+      const files = droppedFiles(dt);
       // FILES WIN when a real document rides along: a Finder/Explorer copy
       // puts the file's PATH in text/plain and the file itself in files —
       // the user copied a file, not its path (regression fixed: the plain
@@ -568,8 +559,8 @@ function Canvas() {
   useEffect(() => {
     // The seeded flag is write-only in app code; it stays as the hook
     // scripts/smoke.mjs uses to suppress the landing flow in tests.
-    if (nodes.length === 0 && !isParadigm && !localStorage.getItem('thoughtdag.seeded')) {
-      localStorage.setItem('thoughtdag.seeded', 'yes');
+    if (nodes.length === 0 && !isParadigm && !appSettings.getItem('thoughtdag.seeded')) {
+      appSettings.setItem('thoughtdag.seeded', 'yes');
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -815,9 +806,14 @@ function Canvas() {
   const selectionKey = selectedNodeIds.length || selectedEdges.length
     ? JSON.stringify([activeProjectId, [...selectedNodeIds].sort(), selectedEdges.map(edge => edge.id).sort()]) : '';
   const showProperties = useCanvasSelectionCard('selection-properties', isViewerMode ? '' : selectionKey,
-    !layoutOpen, propertiesRequest);
+    !isViewerMode, propertiesRequest);
   const showLayoutPanel = useCanvasToolCard('layout', layoutOpen && !isViewerMode,
-    () => useCanvasEditing.getState().setLayoutOpen(false));
+    () => {
+      if (layoutPanelRef.current) layoutPanelRef.current.close();
+      else useCanvasEditing.getState().setLayoutOpen(false);
+    });
+  const showRoutingPanel = useCanvasToolCard('routing', routingOpen && !isViewerMode,
+    () => setRoutingOpen(false));
   const showChatPanel = useCanvasToolCard('chat', chatOpen, () => setChatOpen(false));
   const [formatPanelReady, setFormatPanelReady] = useState(false);
   useEffect(() => {
@@ -843,6 +839,9 @@ function Canvas() {
       if (e.defaultPrevented || e.isComposing || e.keyCode === 229) return;
       // While the confirm dialog is open it owns the keyboard
       if (useUiStore.getState().confirmRequest) return;
+      // Native document editors own their keyboard and history, including
+      // runtimes using a canvas/textbox instead of a contenteditable element.
+      if (e.target instanceof Element && e.target.closest('[data-superdoc-editor]')) return;
       // Viewer: only Cmd+F search survives; every mutating shortcut is inert
       if (isViewerMode && !((e.metaKey || e.ctrlKey) && e.key === 'f')) return;
       // Undo belongs to a text field while it has focus: the field takes back
@@ -921,7 +920,7 @@ function Canvas() {
           // R: regenerate in place (same semantic as the UI button)
           if (e.key === 'r' || e.key === 'R') {
             e.preventDefault();
-            void useStore.getState().rerunNode(selectedNodeId, {});
+            void useStore.getState().rerunNode(selectedNodeId);
             return;
           }
           // Arrow keys: walk the DAG (structural edges only)
@@ -1006,12 +1005,9 @@ function Canvas() {
   const handleSubmit = () => {
     if (!inputValue.trim()) return;
     addQuestion(inputValue.trim(), {
-      rolePrompt: rootRole.trim() || undefined,
       initialAttachments: pendingAttachments.length > 0 ? pendingAttachments : undefined,
     });
     setInputValue('');
-    setRootRole('');
-    setShowRootRole(false);
     setPendingAttachments([]);
   };
 
@@ -1079,28 +1075,12 @@ function Canvas() {
   const inspectedTarget = useContextInspection(state => state.targetId);
   const inspectedEdgeId = useContextInspection(state => state.activeEdgeId);
   const inspectedSource = edges.find(edge => edge.id === inspectedEdgeId && edge.target === inspectedTarget)?.source;
-  // Context Focus: single-selection lights up what the node actually
-  // receives (mainline + materials + reference sources, via the same
-  // partitionContext the prompt builder uses) and dims the rest. Read-only.
+  // Context Focus uses the same intake rules for one or several targets.
   const focusSets = useMemo(() => {
-    if (inspectedTarget || !selectedNodeId || selectedNodeIds.length > 1 || layoutOpen || edges.some((edge) => edge.selected)) return null;
-    // Frames organize space; selecting one does not focus a conversation.
-    if (!nodes.some((n) => n.id === selectedNodeId && n.data.stepKind !== 'frame')) return null;
-    const part = partitionContext(selectedNodeId, nodes, edges);
-    const ctx = new Set<string>();
-    for (const n of part.mainline) if (n.id !== selectedNodeId) ctx.add(n.id);
-    for (const n of part.materials) ctx.add(n.id);
-    for (const r of part.references) ctx.add(r.source.id);
-    const structural = edges.filter((e) => !e.data?.isCrossLink);
-    const pathEdgeIds = walkUpAncestors(selectedNodeId, nodes, structural).visitedEdgeIds;
-    const refEdgeIds = new Set(part.references.map((r) => r.edge.id));
-    const downOut = structural.filter((e) => e.source === selectedNodeId);
-    return {
-      ctx,
-      down: new Set(downOut.map((e) => e.target)),
-      pathEdgeIds, refEdgeIds,
-      downEdgeIds: new Set(downOut.map((e) => e.id)),
-    };
+    if (inspectedTarget || layoutOpen || edges.some(edge => edge.selected)) return null;
+    const ids = selectedNodeIds.length ? selectedNodeIds : selectedNodeId ? [selectedNodeId] : [];
+    const focus = contextFocusForSelection(ids, nodes, edges);
+    return focus.targets.size ? focus : null;
   }, [selectedNodeId, selectedNodeIds, nodes, edges, layoutOpen, inspectedTarget]);
 
   // Preview overlays only geometry and visual defaults: streamed content stays live.
@@ -1138,7 +1118,7 @@ function Canvas() {
     }
     if (focusSets) {
       out = out.map((n) => {
-        const role = n.id === selectedNodeId ? 'target'
+        const role = focusSets.targets.has(n.id) ? 'target'
           : focusSets.ctx.has(n.id) ? 'ctx'
           : focusSets.down.has(n.id) ? 'down'
           : n.data.stepKind === 'frame' ? undefined : 'dim';
@@ -1158,20 +1138,13 @@ function Canvas() {
     // Per-node flags override React Flow's global setting. The rendered graph
     // must honor temporary locks even for an imported explicit draggable=true.
     return canvasNodesDraggable ? out : out.map(node => ({ ...node, draggable: false }));
-  }, [renderNodes, edges, annotationsHidden, searchHitIds, focusSets, selectedNodeId, editingEdge, canvasNodesDraggable, inspectedTarget, inspectedSource]);
+  }, [renderNodes, edges, annotationsHidden, searchHitIds, focusSets, editingEdge, canvasNodesDraggable, inspectedTarget, inspectedSource]);
 
   const highlightedEdges = useMemo((): ThoughtEdge[] => {
-    // Visual law: SOLID = structural (conversation, layout, cascade),
-    // DASHED = bypass (references, watch). Explore branches are structural,
-    // so legacy dashed-orange branch edges are normalized to solid here
-    // (styles persist per edge; this fixes old canvases centrally).
-    // Theme mapping happens here too: storage keeps the canonical light hex
+    // Theme mapping: storage keeps the canonical light hex
     // as the edge's semantic identity, the render layer resolves it against
     // the active theme — old backups need no migration.
-    const base = edges.map((raw) => {
-      const e = raw.data?.isBranchFromSelection
-        ? { ...raw, animated: false, style: { ...raw.style, strokeDasharray: undefined } }
-        : raw;
+    const base = edges.map((e) => {
       const strokeSlot = typeof e.style?.stroke === 'string' ? LEGACY_EDGE_HEX[e.style.stroke.toUpperCase()] : undefined;
       const marker = e.markerEnd && typeof e.markerEnd === 'object' ? { ...e.markerEnd, ...EDGE_ARROW_GEOMETRY } : undefined;
       const markerSlot = typeof marker?.color === 'string' ? LEGACY_EDGE_HEX[marker.color.toUpperCase()] : undefined;
@@ -1195,9 +1168,11 @@ function Canvas() {
           };
         }
         if (focusSets.refEdgeIds.has(e.id)) {
-          // reference INTO the context: it feeds the model (as a fenced
-          // block), so it stays visible — dashed identity untouched
-          return { ...e, style: { ...e.style, opacity: 0.9 }, zIndex: 5, data: { ...e.data, focusRole: 'ref' as const } };
+          // Reference sources stop here; preserve their dashed identity.
+          return { ...e, className: 'focus-e-ref',
+            style: { ...e.style, stroke: themePalette.accent, strokeWidth: 2.5, opacity: 1 },
+            markerEnd: { type: 'arrowclosed' as const, ...((e.markerEnd && typeof e.markerEnd === 'object') ? e.markerEnd : {}), ...EDGE_ARROW_GEOMETRY, color: themePalette.accent },
+            zIndex: 10, data: { ...e.data, focusRole: 'ref' as const } };
         }
         if (focusSets.downEdgeIds.has(e.id)) {
           return {
@@ -1212,31 +1187,8 @@ function Canvas() {
         return { ...e, style: { ...e.style, strokeWidth: 1.5, opacity: 0.2 }, zIndex: 0 };
       });
     }
-    if (inspectedTarget) return base;
-    const activeIds = selectedNodeIds.length > 1
-      ? selectedNodeIds.filter((id) => nodes.some((node) => node.id === id && node.data.stepKind !== 'frame')) : [];
-    if (activeIds.length === 0) return base;
-
-    // Walk up from each selected node, collect all ancestor edge ids
-    const { visitedEdgeIds: ancestorEdgeIds } = walkUpAncestors(activeIds, nodes, edges);
-
-    return base.map((e) => {
-      if (ancestorEdgeIds.has(e.id)) {
-        return {
-          ...e,
-          style: { ...e.style, stroke: themePalette.trace, strokeWidth: 2.5, opacity: 1 },
-          markerEnd: { type: 'arrowclosed' as const, ...((e.markerEnd && typeof e.markerEnd === 'object') ? e.markerEnd : {}), ...EDGE_ARROW_GEOMETRY, color: themePalette.trace },
-          zIndex: 10,
-        };
-      }
-      // Dim non-ancestor edges
-      return {
-        ...e,
-        style: { ...e.style, strokeWidth: 1.5, opacity: 0.2 },
-        zIndex: 0,
-      };
-    });
-  }, [nodes, edges, selectedNodeIds, themePalette, focusSets, inspectedTarget]);
+    return base;
+  }, [edges, themePalette, focusSets]);
 
   const displayEdges = useMemo(() => {
     anchorResolver.current.prune(highlightedEdges);
@@ -1263,7 +1215,7 @@ function Canvas() {
       const vp = rf.getViewport();
       const w = node.measured?.width ?? node.width ?? 480;
       const nodeRight = (node.position.x + w) * vp.zoom + vp.x;
-      const visibleRight = window.innerWidth - useUiStore.getState().panelWidth - PANEL_INSET - 24;
+      const visibleRight = window.innerWidth - uiToScreen(useUiStore.getState().panelWidth + PANEL_INSET + 24);
       if (nodeRight > visibleRight) {
         const nodeCenter = (node.position.x + w / 2) * vp.zoom + vp.x;
         rf.setViewport({ ...vp, x: vp.x - (nodeCenter - visibleRight / 2) }, { duration: 300 });
@@ -1286,6 +1238,8 @@ function Canvas() {
     const ui = useUiStore.getState();
     const kind = n.data.stepKind;
     if (kind === 'file' || kind === 'link') {
+      // Native document editors move to the reader only through its explicit entry.
+      if (kind === 'file' && n.data.attachments?.some(hasNativeDocxSource)) return;
       if (ui.readerNodeId !== n.id) ui.setReaderNodeId(n.id);
       return;
     }
@@ -1295,8 +1249,8 @@ function Canvas() {
       e.target === n.id && !e.data?.isCrossLink
       && st.nodes.some((m) => m.id === e.source && (m.data.stepKind === 'file' || m.data.stepKind === 'link' || m.data.stepKind === 'note')))?.source;
     const clippedFrom = anchor.attId ? st.nodes.find((m) => m.data.attachments?.some((a) => a.id === anchor.attId))?.id : undefined;
-    const material = grownFrom ?? clippedFrom;
-    if (material) ui.setReaderNodeId(material, { page: anchor.page });
+    const material = clippedFrom ?? grownFrom;
+    if (material) ui.setReaderNodeId(material, { page: anchor.page, attachmentId: anchor.attId });
   }, [readerDock.docked, selectedNodeId]);
 
   return (
@@ -1327,7 +1281,7 @@ function Canvas() {
           if (!hasNodes && !isParadigm && e.dataTransfer.files.length > 0) {
             e.preventDefault();
             setIsDraggingLanding(false);
-            startFromDocuments(e.dataTransfer.files);
+            startFromDocuments(droppedFiles(e.dataTransfer));
             return;
           }
           // Drops land on the empty pane OR inside a frame region (frames
@@ -1354,7 +1308,7 @@ function Canvas() {
           }
           if (e.dataTransfer.files.length > 0) {
             e.preventDefault();
-            const files = filterDroppedFiles(e.dataTransfer.files);
+            const files = filterDroppedFiles(droppedFiles(e.dataTransfer));
             if (files.length === 0) return;
             const id = spawnContentNode('file', pos);
             void ingestFiles(id, files);
@@ -1373,6 +1327,17 @@ function Canvas() {
           // Let React Flow consume the release click and reset its gesture flag.
           if (marqueeClickPending.current) { marqueeClickPending.current = false; return; }
           if (isRetainedSelectionPane(event)) event.stopPropagation();
+        }}
+        onMouseDownCapture={event => {
+          const target = event.target;
+          if (isViewerMode || event.button !== 0 || !event.shiftKey || !(target instanceof Element)
+            || !target.closest('.react-flow__node, .react-flow__edge, .react-flow__pane')
+            || isTextEditingTarget(target)
+            || target.closest('input, textarea, select, button, a, label, summary, [role="button"], [data-superdoc-editor]')) return;
+          // Shift selects canvas objects. Cancel native range extension without
+          // stopping the mouse/click events that React Flow needs for selection.
+          event.preventDefault();
+          window.getSelection()?.removeAllRanges();
         }}
         onPointerDownCapture={(event) => {
           marqueeClickPending.current = false;
@@ -1432,6 +1397,7 @@ function Canvas() {
             if (gesture?.active) {
               syncMarqueeSelection(gesture.ids);
               useCanvasEditing.getState().setSelectionRegion(gesture.region);
+              if (gesture.ids.length) useCanvasEditing.getState().requestProperties();
             }
             marquee.current = null;
           });
@@ -1569,12 +1535,15 @@ function Canvas() {
             if (sk === 'note') return '#D97706';
             if (sk === 'file' || sk === 'link') return '#64748B';
             if (Array.isArray(data.condensedFrom) && data.condensedFrom.length) return '#8B7CF0';
-            return data.isRoot ? themePalette.accent : data.isBranch ? themePalette.warm : minimapColors.ordinary;
+            return isConversationStart(node.id, edges) ? themePalette.accent : minimapColors.ordinary;
           }}
           maskColor={minimapColors.mask}
           maskStrokeColor={minimapColors.viewportBorder}
-          maskStrokeWidth={1}
-          style={{ width: 200, height: 140 }}
+          maskStrokeWidth={uiToScreen(1)}
+          offsetScale={uiToScreen(5)}
+          // Its pan handler consumes screen deltas, so size the minimap in
+          // screen pixels instead of applying an ancestor CSS zoom.
+          style={{ width: uiToScreen(200), height: uiToScreen(140) }}
           pannable
           zoomable
           position="bottom-right"
@@ -1697,36 +1666,8 @@ function Canvas() {
                   ))}
                 </div>
               )}
-              {/* Role area: opened from the tray icon — an ask-time option,
-                  not a decision the landing asks you to make up front */}
-              {showRootRole && (
-                <div className="space-y-1 mt-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-control text-ink-muted font-medium">{t('landing.roleLabel')}</span>
-                    <button onClick={() => { setShowRootRole(false); setRootRole(''); }} className="text-control text-ink-faint hover:text-ink-muted"><X size={14} strokeWidth={1.75} /></button>
-                  </div>
-                  <textarea
-                    value={rootRole}
-                    onChange={(e) => setRootRole(e.target.value)}
-                    placeholder={t('landing.rolePlaceholder')}
-                    className="w-full text-body border border-line rounded-control px-3 py-2 focus:outline-none focus:ring-1 focus:ring-accent bg-surface resize-none"
-                    rows={2}
-                    autoFocus
-                  />
-                  <RoleTemplateChips onPick={setRootRole} />
-                </div>
-              )}
               <div className="flex items-center justify-end mt-2 gap-2">
                 <SearchToggles />
-                <button
-                  onClick={() => setShowRootRole(!showRootRole)}
-                  data-tooltip={t('landing.roleTrayTitle')} aria-label={t('landing.roleTrayTitle')}
-                  className={`rounded-control w-8 h-8 flex items-center justify-center transition-colors shrink-0 ${
-                    showRootRole || rootRole ? 'text-accent bg-accent/10 hover:bg-accent/20' : 'text-ink-faint hover:text-ink-muted hover:bg-line'
-                  }`}
-                >
-                  <Drama size={16} strokeWidth={1.75} />
-                </button>
                 <button
                   onClick={() => landingFileRef.current?.click()}
                   className="text-ink-faint hover:text-accent hover:bg-wash rounded-control px-3 py-2 transition-colors text-control"
@@ -1755,7 +1696,7 @@ function Canvas() {
             {/* Second entrance: start from a document (material-first). The
                 whole landing is the drop target; this card names the gesture. */}
             <div
-              onClick={() => docFileRef.current?.click()}
+              onClick={() => { void chooseMaterialFiles(docFileRef.current, startFromDocuments).catch(() => toast('error', t('document.openFailed'))); }}
               className={`mt-3 border-2 border-dashed rounded-content px-5 py-3.5 cursor-pointer transition-all text-center bg-card ${
                 isDraggingLanding ? 'border-accent bg-accent/5 ring-2 ring-accent/20' : 'border-line hover:border-accent/40 hover:bg-accent/5'
               }`}
@@ -1766,26 +1707,6 @@ function Canvas() {
               <p className="text-control text-ink-faint mt-1.5">{t('landing.docFormats')}</p>
               <p className="text-control text-ink-faint mt-0.5">{t('landing.docPrivacy')}</p>
             </div>
-            {/* Agent conversations, desktop only — one click turns them
-                into graphs, and LOOKING needs no model key: the one
-                zero-config start. Dressed in the SAME uniform as the
-                document card (shared ground, centered two-line layout);
-                the one distinction left is the border — dashed means
-                "drop here", solid means "click me". */}
-            {!!window.desktopSessions && (
-              <button
-                onClick={() => setLandingAtlas(true)}
-                className="w-full mt-3 bg-card border border-line rounded-control px-5 py-3.5 hover:border-accent/40 hover:bg-accent/5 transition-all text-center"
-                data-landing-atlas
-              >
-                <div className="flex items-center justify-center gap-2 text-control text-ink-muted font-medium">
-                  <Bot size={15} strokeWidth={1.75} className="text-accent shrink-0" />
-                  <span>{t('landing.atlasStart')}</span>
-                  <ArrowRight size={13} strokeWidth={1.75} className="text-accent shrink-0" />
-                </div>
-                <p className="text-control text-ink-faint mt-1.5">{t('landing.atlasDesc')}</p>
-              </button>
-            )}
             <input
               ref={docFileRef}
               type="file"
@@ -1794,9 +1715,6 @@ function Canvas() {
               className="hidden"
               onChange={(e) => { startFromDocuments(e.target.files || []); e.target.value = ''; }}
             />
-            {landingAtlas && (
-              <SessionAtlas onClose={() => setLandingAtlas(false)} onSwitched={() => { setLandingAtlas(false); afterProjectSwitch(); }} />
-            )}
 
             {/* Quick connect: the no-model landing offers the two free doors
                 side by side — GLM's free tier (zh only) and the one-click
@@ -1917,7 +1835,7 @@ function Canvas() {
       )}
 
       <div ref={canvasHeaderRef} className="canvas-header" data-canvas-header
-        style={{ right: occupiedPanelWidth ? `calc(min(${occupiedPanelWidth}px, 70vw) + ${PANEL_INSET * 2}px)` : undefined }}>
+        style={{ right: occupiedPanelWidth ? `calc(min(${occupiedPanelWidth}px, 70 * var(--ui-vw)) + ${PANEL_INSET * 2}px)` : undefined }}>
       <CanvasToolbarOverflowContext.Provider value={overflowContext}>
       {/* Session controls and transient status stay with the project on the left. */}
       {!isViewerMode && <ProjectSwitcher onSwitched={afterProjectSwitch}>
@@ -1953,8 +1871,7 @@ function Canvas() {
           </>
         )}
         {!isParadigm && <WaitingPill />}
-        {!isParadigm && <AgentCwdChip />}
-        {!isParadigm && <AgentPermissionChip />}
+        {!isParadigm && <ConnectionEntries />}
         {/* Batch replay: visible only when something is stale. Price at the
             decision point — N generations is the one many-calls-per-click
             action in the app, so it confirms with a token estimate. */}
@@ -2122,6 +2039,18 @@ function Canvas() {
           <SlidersHorizontal size={16} strokeWidth={1.75} />
           <span className="canvas-toolbar-label">{t('canvasLayout.title')}</span>
         </button>
+        <button
+          onClick={() => setRoutingOpen(value => !value)}
+          className="canvas-toolbar-button canvas-toolbar-icon canvas-toolbar-secondary"
+          data-tooltip={t('edgeRouting.title')}
+          data-tooltip-icon-only
+          aria-label={t('edgeRouting.title')}
+          aria-expanded={showRoutingPanel}
+          data-routing-entry
+        >
+          <Spline size={16} strokeWidth={1.75} />
+          <span className="canvas-toolbar-label">{t('edgeRouting.title')}</span>
+        </button>
         </div>}
         <div className="canvas-toolbar-group">
         {/* ⋯ overflow: share, memory, annotations, tutorial —
@@ -2139,6 +2068,11 @@ function Canvas() {
           {moreOpen && (
             <div className="canvas-tool-panel canvas-tool-menu py-1" style={toolbarPanelPosition} data-toolbar-more-panel>
               <div className="canvas-toolbar-overflow">
+                {hasNodes && <button type="button" data-menu-routing aria-expanded={showRoutingPanel}
+                  onClick={() => { setMoreOpen(false); setRoutingOpen(true); }}
+                  className="w-full text-left px-3 py-2 text-control text-ink hover:bg-wash flex items-center gap-2.5">
+                  <Spline size={14} className="text-ink-faint shrink-0" />{t('edgeRouting.title')}
+                </button>}
                 {hasNodes && <button type="button" data-menu-detail
                   onClick={() => { setMoreOpen(false); setDetailPing(value => value + 1); }}
                   className="w-full text-left px-3 py-2 text-control text-ink hover:bg-wash flex items-center gap-2.5">
@@ -2233,7 +2167,7 @@ function Canvas() {
                     setMoreOpen(false);
                     void (async () => {
                       const { nodes: ns, edges: es } = useStore.getState();
-                      // exit gate: a mirrored canvas can carry CLI tool
+                      // exit gate: a canvas can carry Agent tool
                       // output — keys, tokens — and a share link IS a copy
                       const { confirmIfSensitive } = await import('./lib/sensitive-scan');
                       if (!await confirmIfSensitive(ns)) return;
@@ -2427,7 +2361,7 @@ function Canvas() {
       {edgeMenu && (
         <div
           className="fixed z-50 bg-card border border-line rounded-overlay shadow-lg py-1 min-w-[120px]"
-          style={{ left: edgeMenu.x, top: edgeMenu.y }}
+          style={{ left: screenToUi(edgeMenu.x), top: screenToUi(edgeMenu.y) }}
         >
           <button onClick={() => { openEdgeEditor(edgeMenu.edgeId); setEdgeMenu(null); }}
             className="w-full text-left px-4 py-2 text-control text-ink hover:bg-wash transition-colors flex items-center gap-1.5">
@@ -2466,6 +2400,7 @@ function Canvas() {
         }
       }} />}
       {showLayoutPanel && rfInstance.current && <CanvasLayoutPanel ref={layoutPanelRef} flow={rfInstance.current} />}
+      {showRoutingPanel && <CanvasRoutingPanel onClose={() => setRoutingOpen(false)} />}
       {showProperties && formatPanelReady && !isViewerMode && <CanvasQuickLayoutContext.Provider value={quickLayout}>
         <SelectionInspector getViewportRect={getViewportRect} withDetails={panelOpen}
         onClose={() => { if (useCanvasToolCards.getState().active?.name === 'selection-properties') useCanvasToolCards.getState().active?.suspend(); }}

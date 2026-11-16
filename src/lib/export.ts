@@ -1,10 +1,12 @@
-import { set as idbSet } from 'idb-keyval';
+import { appSettings } from './disk-storage';
+import { set as idbSet } from './disk-storage';
 import { useStore, stripTransient } from '../store';
 import { getModelsOnce, reconcileModelId } from './use-models';
 import { useProjects, projectStorageKey, adoptImportedProject } from '../store/projects';
 import { detectFormat, listConversations, type ImportableConversation } from './import-chat';
 import { isParadigmFile } from './paradigm';
 import { getContextPath } from './graph';
+import { normalizeConversationEdge } from './normalize-graph';
 import { countTokens } from '../utils';
 import { confirmDialog, toast } from './ui-store';
 import { inlineVaultedContent, internNodes } from './attachment-vault';
@@ -45,7 +47,7 @@ export async function exportActiveProjectJson(opts?: { sharedReadonly?: boolean 
   // (they never leave the machine and must never be interrupted)
   const { confirmIfSensitive } = await import('./sensitive-scan');
   if (!await confirmIfSensitive(gateNodes)) return;
-  localStorage.setItem('thoughtdag.lastBackupAt', String(Date.now()));
+  appSettings.setItem('thoughtdag.lastBackupAt', String(Date.now()));
   const { nodes: rawNodes, edges, events } = useStore.getState();
   // A backup file must be self-contained: pull vaulted payloads back inline
   const nodes = await inlineVaultedContent(rawNodes);
@@ -63,7 +65,7 @@ export async function exportActiveProjectJson(opts?: { sharedReadonly?: boolean 
     // this into an editable copy (a file in someone's hands is theirs)
     ...(opts?.sharedReadonly ? { sharedReadonly: true } : {}),
     nodes: stripTransient(nodes),
-    edges,
+    edges: edges.map(normalizeConversationEdge),
     events,
   });
   downloadFile(`${sanitizeFilename(name)}.thoughtdag.json`, payload, 'application/json');
@@ -75,10 +77,11 @@ export async function exportActiveProjectJson(opts?: { sharedReadonly?: boolean 
  * backup directly, or the conversation list of a ChatGPT/Claude export so
  * the caller can show a picker.
  */
-export function exportActiveParadigm(): void {
-  const { nodes, edges } = useStore.getState();
+export async function exportActiveParadigm(): Promise<void> {
+  const { nodes: rawNodes, edges } = useStore.getState();
+  const nodes = await inlineVaultedContent(rawNodes);
   const name = activeProjectName();
-  const payload = JSON.stringify({ kind: 'thoughtdag-paradigm', version: 1, name, nodes: stripTransient(nodes), edges });
+  const payload = JSON.stringify({ kind: 'thoughtdag-paradigm', version: 1, name, nodes: stripTransient(nodes), edges: edges.map(normalizeConversationEdge) });
   downloadFile(`${sanitizeFilename(name)}.paradigm.json`, payload, 'application/json');
   toast('success', fmt(t('toast.exported'), { name }));
 }
@@ -102,7 +105,7 @@ export async function parseImportFile(file: File): Promise<
   if (isParadigmFile(parsed)) {
     const id = crypto.randomUUID();
     const reconciled = await internNodes(await reconcileImportedModels(parsed.nodes));
-    await idbSet(projectStorageKey(id), JSON.stringify({ state: { nodes: reconciled, edges: parsed.edges }, version: PERSIST_VERSION }));
+    await idbSet(projectStorageKey(id), JSON.stringify({ state: { nodes: stripTransient(reconciled), edges: parsed.edges.map(normalizeConversationEdge) }, version: PERSIST_VERSION }));
     await adoptImportedProject(id, parsed.name || 'Paradigm', 'paradigm');
     toast('success', fmt(t('toast.imported'), { name: parsed.name, n: parsed.nodes.length }));
     return { kind: 'own', ok: true };
@@ -152,7 +155,7 @@ export async function importChatConversations(convs: ImportableConversation[]): 
     }
     const id = crypto.randomUUID();
     await idbSet(projectStorageKey(id), JSON.stringify({
-      state: { nodes: stripTransient(nodes), edges },
+      state: { nodes: stripTransient(nodes), edges: edges.map(normalizeConversationEdge) },
       version: PERSIST_VERSION,
     }));
     await adoptImportedProject(id, conv.title.slice(0, 60));
@@ -189,7 +192,7 @@ async function reconcileImportedModels(nodes: ThoughtNode[]): Promise<ThoughtNod
 }
 
 export async function importProjectFromFile(file: File, pre?: unknown): Promise<boolean> {
-  let parsed: { name?: string; nodes?: ThoughtNode[]; edges?: ThoughtEdge[]; events?: unknown[]; instantiatedFrom?: ProjectMeta['instantiatedFrom']; sourceSession?: ProjectMeta['sourceSession']; sharedReadonly?: boolean };
+  let parsed: { name?: string; nodes?: ThoughtNode[]; edges?: ThoughtEdge[]; events?: unknown[]; instantiatedFrom?: ProjectMeta['instantiatedFrom']; sharedReadonly?: boolean };
   try {
     parsed = (pre ?? JSON.parse(await file.text())) as typeof parsed;
   } catch {
@@ -212,28 +215,15 @@ export async function importProjectFromFile(file: File, pre?: unknown): Promise<
     });
     if (!ok) return false;
   }
-  // An archive carrying a ledger restores a SUBSCRIBED canvas — but one
-  // session, one canvas: if a canvas already subscribes to this session,
-  // open it instead of minting a duplicate the listener would fight over.
-  if (parsed.sourceSession?.sessionId) {
-    const { useProjects, switchProject } = await import('../store/projects');
-    const existing = useProjects.getState().projects.find(
-      (p) => p.sourceSession?.sessionId === parsed.sourceSession!.sessionId);
-    if (existing) {
-      await switchProject(existing.id);
-      toast('info', fmt(t('toast.importAlreadySubscribed'), { name: existing.name }), 9000);
-      return true;
-    }
-  }
   const id = crypto.randomUUID();
   const reconciled = await internNodes(await reconcileImportedModels(parsed.nodes));
   // Write in the zustand-persist envelope format so rehydration accepts it.
   await idbSet(projectStorageKey(id), JSON.stringify({
-    state: { nodes: stripTransient(reconciled), edges: parsed.edges, ...(Array.isArray(parsed.events) ? { events: parsed.events } : {}) },
+    state: { nodes: stripTransient(reconciled), edges: parsed.edges.map(normalizeConversationEdge), ...(Array.isArray(parsed.events) ? { events: parsed.events } : {}) },
     version: PERSIST_VERSION,
   }));
   const name = parsed.name?.trim() || file.name.replace(/\.thoughtdag\.json$|\.json$/i, '') || 'Imported canvas';
-  await adoptImportedProject(id, name, 'chat', { instantiatedFrom: parsed.instantiatedFrom, sourceSession: parsed.sourceSession });
+  await adoptImportedProject(id, name, 'chat', { instantiatedFrom: parsed.instantiatedFrom });
   toast('success', fmt(t('toast.imported'), { name, n: parsed.nodes.length }));
   return true;
 }
@@ -254,7 +244,6 @@ function nodeToMd(n: ThoughtNode): string {
   const parts = [`## Q: ${n.data.question}`, ''];
   const atts = n.data.attachments || [];
   if (atts.length > 0) parts.push(`> ${t('export.attachmentsLabel')} ${atts.map((a) => a.name).join(', ')}`, '');
-  if (n.data.branchContext) parts.push(`> Exploring from: "${n.data.branchContext.slice(0, 120)}"`, '');
   parts.push(n.data.response || '_(no response)_', '');
   return parts.join('\n');
 }

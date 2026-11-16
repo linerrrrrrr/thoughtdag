@@ -77,13 +77,12 @@ await page.evaluate((c) => {
       question: q, response: a, responses: [a], responseIndex: 0,
       isCollapsed: false, isEditing: false, isEditingResponse: false, isLoading: false,
       tokenCount: 60, highlights: [], highlightMode: 'tag', attachments: [],
-      excludedAttachmentIds: [], includedAttachmentIds: [], roleMode: 'inherit',
-      isRoot: false, isBranch: false, ...extra,
+      excludedAttachmentIds: [], includedAttachmentIds: [], roleMode: 'inherit', ...extra,
     },
   });
   window.__store.setState({
     nodes: [
-      base('A', 0, 0, c.qA, c.aA, { isRoot: true }),
+      base('A', 0, 0, c.qA, c.aA, { }),
       base('B', 760, 60, c.qB, c.aB),
       base('C', 0, 520, c.qC, c.aC),
     ],

@@ -16,10 +16,6 @@ The file may be a scan. Use the extracted-text fallback or run recognition, then
 
 An upstream node, edge, or active version changed. Inspect the context difference, then replay only the nodes that still matter.
 
-## A local Agent session does not appear
-
-Session Atlas is a desktop/local feature. Confirm that the supported runner has local session files and that its source is enabled in **Session Atlas → Sources**.
-
 ## Windows shows a security warning
 
 Current Windows builds are not signed. Download only from the official site or GitHub Releases and verify that the publisher path matches the project release.

@@ -3,11 +3,11 @@
   "version": 0,
   "graph": {
     "project_id": null,
-    "snapshot_hash": "sha256:ed70b29cb35a2612a95fe2f4fe48a00fceb23cdf79069934acc65d5de0056934",
+    "snapshot_hash": "sha256:72b3c1ca6d01d98bf1debd88b0499aa8e802fc4371215cfdf301ed1f73b14562",
     "target_node_id": "node-c4"
   },
   "intent": {
-    "task": "Turn that priority into a two-week plan.",
+    "task": "> only anchor on figures\n\nTurn that priority into a two-week plan.",
     "language": null
   },
   "context": {
@@ -99,7 +99,7 @@
         "content": [
           {
             "type": "text",
-            "text": "Turn that priority into a two-week plan."
+            "text": "> only anchor on figures\n\nTurn that priority into a two-week plan."
           }
         ],
         "source": {
@@ -110,26 +110,6 @@
         "selection": {
           "mode": "full",
           "reason": "structural-chain"
-        }
-      },
-      {
-        "id": "item_006",
-        "kind": "message",
-        "role": "user",
-        "content": [
-          {
-            "type": "text",
-            "text": "[Regarding this passage: \"only anchor on figures\"]"
-          }
-        ],
-        "source": {
-          "layer": "branch",
-          "part": "passage",
-          "node_id": "node-c4"
-        },
-        "selection": {
-          "mode": "full",
-          "reason": "structural-branch"
         }
       }
     ],
@@ -142,11 +122,11 @@
     "required_mcp_servers": []
   },
   "budget": {
-    "estimated_tokens": 91,
+    "estimated_tokens": 85,
     "limit": null,
     "truncation": "none"
   },
-  "id": "cb_8cbbdbd654b2ef8d",
+  "id": "cb_2f501e813df0abb0",
   "created_at": "2026-01-01T00:00:00Z",
   "provenance": {
     "source_runs": [],
@@ -156,6 +136,6 @@
     }
   },
   "integrity": {
-    "content_hash": "sha256:8cbbdbd654b2ef8d3643ef2050fd890e354b56113c5e6e9393c3686a23c83620"
+    "content_hash": "sha256:2f501e813df0abb0ee58615b5a4017d965cb285124b92e51d98a417194e06de1"
   }
 }

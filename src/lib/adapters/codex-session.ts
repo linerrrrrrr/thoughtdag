@@ -342,14 +342,14 @@ export function buildGraphFromTurns(turns: CodexTurn[], sessionId: string, cwd?:
     // annotation, not chain link — see the Claude Code adapter's note
     let noteToWire: ThoughtNode | null = null;
     if (turn.compactionBefore) {
-      const note = makeNode(turn.compactionBefore, '', false);
+      const note = makeNode(turn.compactionBefore, '');
       note.data.stepKind = 'note';
       note.data.importSource = { runner: 'codex', sessionId, itemIds: [], ...origin };
       markImporterNote(note);
       nodes.push(note);
       noteToWire = note;
     }
-    const node = makeNode(turn.question || '(tool-only turn)', turn.response, prev === null);
+    const node = makeNode(turn.question || '(tool-only turn)', turn.response);
     node.data.importSource = { runner: 'codex', sessionId, itemIds: turn.itemIds, ...origin };
     node.data.source = { question: node.data.question, response: node.data.response };
     seatTurnWork(node, turn);

@@ -37,18 +37,17 @@ GlobalTooltip 只渲染显式 data-tooltip；不再代理、暂存或恢复任�
 | 上下文来源 NodeContextSources | 使用 panel 圆角、共享字号和边界，含来源定位和排序；保留 |
 | 选区属性、连线属性、排版、分区导航、画布问答 | 工作面板，按既定工具停靠和活动位规则打开；保留 |
 | 文件预览、材料阅读器、详情阅读面板 | 有明确读取对象的阅读表面，保留；删除内容上的泛说明提示 |
-| 确认、配置、导入、角色、总览、分享、帮助和更新窗口 | 明确功能窗口，保留确认/取消、草稿及提交语义 |
+| 确认、配置、导入、总览、分享、帮助和更新窗口 | 明确功能窗口，保留确认/取消、草稿及提交语义 |
 | Toaster 操作结果与 LadderJobCard 任务进度 | 执行结果、失败或进度反馈，具有明确状态及可能的后续动作；保留；不将其当作鼠标解释卡 |
 
 ## 逐项清单
 
-编号对应修改前的源码站点。用文件名与文案/表达式定位，避免删除后的行号漂移。下表的“保留”均指统一提示层，不保留原生 title。
+编号对应修改前的源码站点。用文件名与文案/表达式定位，避免删除后的行号漂移。下表的“保留”均指统一提示层，不保留原生 title。已移除的角色系统与详情上下文列表入口不再列入；开头的数量保留原审计口径。
 
 ### 主工具栏
 
 | # | 位置 | 原文案 / 表达式 | 判断与措施 |
 | --- | --- | --- | --- |
-| 1 | [src/App.tsx](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/App.tsx) · 原 1706 行 | 设置首问的回答角色 | 保留：简短动作名、范围、快捷键或完整路径；改为 data-tooltip，禁止原生窗口。 |
 | 2 | [src/App.tsx](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/App.tsx) · 原 1872 行 | 新建提问节点：连入材料作为上下文 | 保留：简短动作名、范围、快捷键或完整路径；改为 data-tooltip，禁止原生窗口。 |
 | 3 | [src/App.tsx](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/App.tsx) · 原 1880 行 | 新建便笺：连线后进入下游上下文 | 保留：简短动作名、范围、快捷键或完整路径；改为 data-tooltip，禁止原生窗口。 |
 | 4 | [src/App.tsx](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/App.tsx) · 原 1887 行 | 新建文件节点：连线后进入下游上下文 | 保留：简短动作名、范围、快捷键或完整路径；改为 data-tooltip，禁止原生窗口。 |
@@ -84,12 +83,10 @@ GlobalTooltip 只渲染显式 data-tooltip；不再代理、暂存或恢复任�
 | 75 | [ThoughtNode.tsx](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/components/ThoughtNode.tsx) · 原 451 行 | 这个节点由原树的一段轮次蒸馏而来。点击高亮并跳到原段。 | 删除：教学性、解释性或重复状态文案占用悬浮层；功能和必要的可访问名称保留。 |
 | 76 | [ThoughtNode.tsx](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/components/ThoughtNode.tsx) · 原 461 行 | `{staleTitle}` | 删除：教学性、解释性或重复状态文案占用悬浮层；功能和必要的可访问名称保留。 |
 | 77 | [ThoughtNode.tsx](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/components/ThoughtNode.tsx) · 原 469 行 | 已归档：可见但不进入任何上下文 | 保留：简短动作名、范围、快捷键或完整路径；改为 data-tooltip，禁止原生窗口。 |
-| 78 | [ThoughtNode.tsx](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/components/ThoughtNode.tsx) · 原 488 行 | `{data.appliedRole}` | 保留：仅裁切时补全名称；改为 data-tooltip，使用统一文字、表面和边框。 |
 | 79 | [ThoughtNode.tsx](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/components/ThoughtNode.tsx) · 原 505 行 | ``{`${label}${pinNote}`}`` | 保留：简短动作名、范围、快捷键或完整路径；改为 data-tooltip，禁止原生窗口。 |
 | 80 | [ThoughtNode.tsx](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/components/ThoughtNode.tsx) · 原 554 行 | 回到阅读器第 {n} 页，展开这条对话 | 保留：简短动作名、范围、快捷键或完整路径；改为 data-tooltip，禁止原生窗口。 |
 | 81 | [ThoughtNode.tsx](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/components/ThoughtNode.tsx) · 原 653 行 | 继续编辑草稿 | 保留：简短动作名、范围、快捷键或完整路径；改为 data-tooltip，禁止原生窗口。 |
-| 82 | [ThoughtNode.tsx](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/components/ThoughtNode.tsx) · 原 764 行 | 把这一步扇出为预配的角色分支，何时展开由你决定 | 删除：教学性、解释性或重复状态文案占用悬浮层；功能和必要的可访问名称保留。 |
-| 83 | [ThoughtNode.tsx](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/components/ThoughtNode.tsx) · 原 807 行 | 立即重新评审 / 重新生成 | 保留：简短动作名、范围、快捷键或完整路径；改为 data-tooltip，禁止原生窗口。 |
+| 83 | [ThoughtNode.tsx](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/components/ThoughtNode.tsx) · 原 807 行 | 重新生成 | 保留：简短动作名、范围、快捷键或完整路径；改为 data-tooltip，禁止原生窗口。 |
 | 84 | [ThoughtNode.tsx](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/components/ThoughtNode.tsx) · 原 817 行 | 复制回答 | 保留：简短动作名、范围、快捷键或完整路径；改为 data-tooltip，禁止原生窗口。 |
 | 85 | [ThoughtNode.tsx](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/components/ThoughtNode.tsx) · 原 825 行 | 继续编辑草稿 / 编辑回答 | 保留：简短动作名、范围、快捷键或完整路径；改为 data-tooltip，禁止原生窗口。 |
 | 86 | [ThoughtNode.tsx](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/components/ThoughtNode.tsx) · 原 833 行 | 在这个节点的上下文中 | 保留：简短动作名、范围、快捷键或完整路径；改为 data-tooltip，禁止原生窗口。 |
@@ -100,18 +97,6 @@ GlobalTooltip 只渲染显式 data-tooltip；不再代理、暂存或恢复任�
 | 91 | [ThoughtNode.tsx](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/components/ThoughtNode.tsx) · 原 862 行 | 这个版本的生成时间 | 删除：教学性、解释性或重复状态文案占用悬浮层；功能和必要的可访问名称保留。 |
 | 92 | [ThoughtNode.tsx](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/components/ThoughtNode.tsx) · 原 891 行 | 生成失败不覆盖历史：切回之前的版本 | 删除：教学性、解释性或重复状态文案占用悬浮层；功能和必要的可访问名称保留。 |
 | 93 | [ThoughtEdgeView.tsx](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/components/ThoughtEdgeView.tsx) · 原 129 行 | 编辑连线 | 保留：简短动作名、范围、快捷键或完整路径；改为 data-tooltip，禁止原生窗口。 |
-| 94 | [SessionAtlas.tsx](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/components/SessionAtlas.tsx) · 原 126 行 | 移除命令 | 保留：简短动作名、范围、快捷键或完整路径；改为 data-tooltip，禁止原生窗口。 |
-| 95 | [SessionAtlas.tsx](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/components/SessionAtlas.tsx) · 原 410 行 | 在终端打开时使用的终端 | 保留：简短动作名、范围、快捷键或完整路径；改为 data-tooltip，禁止原生窗口。 |
-| 96 | [SessionAtlas.tsx](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/components/SessionAtlas.tsx) · 原 567 行 | 归档（从列表隐藏，数据保留） | 保留：简短动作名、范围、快捷键或完整路径；改为 data-tooltip，禁止原生窗口。 |
-| 97 | [SessionAtlas.tsx](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/components/SessionAtlas.tsx) · 原 600 行 | 还原并打开 | 保留：简短动作名、范围、快捷键或完整路径；改为 data-tooltip，禁止原生窗口。 |
-| 98 | [SessionAtlas.tsx](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/components/SessionAtlas.tsx) · 原 691 行 | ``{`⑂ ${threadForks.get(card.sessionId)}`}`` | 保留：简短动作名、范围、快捷键或完整路径；改为 data-tooltip，禁止原生窗口。 |
-| 99 | [SessionAtlas.tsx](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/components/SessionAtlas.tsx) · 原 706 行 | `{home.name}` | 保留：简短动作名、范围、快捷键或完整路径；改为 data-tooltip，禁止原生窗口。 |
-| 100 | [SessionAtlas.tsx](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/components/SessionAtlas.tsx) · 原 725 行 | 选入合并 | 保留：简短动作名、范围、快捷键或完整路径；改为 data-tooltip，禁止原生窗口。 |
-| 101 | [SessionAtlas.tsx](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/components/SessionAtlas.tsx) · 原 733 行 | 导入为画布 | 保留：简短动作名、范围、快捷键或完整路径；改为 data-tooltip，禁止原生窗口。 |
-| 102 | [SessionAtlas.tsx](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/components/SessionAtlas.tsx) · 原 736 行 | 重新镜像（丢弃画布修改） | 保留：简短动作名、范围、快捷键或完整路径；改为 data-tooltip，禁止原生窗口。 |
-| 103 | [SessionAtlas.tsx](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/components/SessionAtlas.tsx) · 原 746 行 | 挂载到画布… | 保留：简短动作名、范围、快捷键或完整路径；改为 data-tooltip，禁止原生窗口。 |
-| 104 | [SessionAtlas.tsx](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/components/SessionAtlas.tsx) · 原 756 行 | 在 App 中打开（{name}） | 保留：简短动作名、范围、快捷键或完整路径；改为 data-tooltip，禁止原生窗口。 |
-| 105 | [SessionAtlas.tsx](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/components/SessionAtlas.tsx) · 原 765 行 | 在终端打开 | 保留：简短动作名、范围、快捷键或完整路径；改为 data-tooltip，禁止原生窗口。 |
 | 106 | [SelectionToolbar.tsx](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/components/SelectionToolbar.tsx) · 原 230 行 | 未命名节点 | 保留：仅裁切时补全名称；改为 data-tooltip，使用统一文字、表面和边框。 |
 | 107 | [SelectionToolbar.tsx](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/components/SelectionToolbar.tsx) · 原 243 行 | 生成合并摘要后删除原节点 | 删除：教学性、解释性或重复状态文案占用悬浮层；功能和必要的可访问名称保留。 |
 | 108 | [SelectionToolbar.tsx](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/components/SelectionToolbar.tsx) · 原 244 行 | 把圈选节点中你标过的高光串成一段带引用的文字 | 删除：教学性、解释性或重复状态文案占用悬浮层；功能和必要的可访问名称保留。 |
@@ -192,7 +177,6 @@ GlobalTooltip 只渲染显式 data-tooltip；不再代理、暂存或恢复任�
 | 32 | [ui/ShareDialog.tsx](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/components/ui/ShareDialog.tsx) · 原 75 行 | 导出完整画布 (.json) | 保留：简短动作名、范围、快捷键或完整路径；改为 data-tooltip，禁止原生窗口。 |
 | 33 | [ui/SearchToggles.tsx](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/components/ui/SearchToggles.tsx) · 原 62 行 | 当前模型经浏览器直连（保护它的思考流），此通道不支持搜索工具。OpenRouter 通道的模型或桌面版可用搜索。 / 联网搜索：模型自行判断何时搜索 / 联网搜索已关闭 | 删除：教学性、解释性或重复状态文案占用悬浮层；功能和必要的可访问名称保留。 |
 | 34 | [ui/SearchToggles.tsx](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/components/ui/SearchToggles.tsx) · 原 75 行 | 当前模型经浏览器直连（保护它的思考流），此通道不支持搜索工具。OpenRouter 通道的模型或桌面版可用搜索。 / 学术检索（arXiv + Semantic Scholar）：模型自行判断何时检索 / 学术检索已关闭 | 删除：教学性、解释性或重复状态文案占用悬浮层；功能和必要的可访问名称保留。 |
-| 35 | [ui/RoleTemplateChips.tsx](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/components/ui/RoleTemplateChips.tsx) · 原 22 行 | ``{tpl.prompt.length > 140 ? `${tpl.prompt.slice(0, 140)}…` : tpl.prompt}`` | 删除：正文、摘要或描述全文不属于简短提示，避免大块文字跟随悬停。 |
 | 36 | [ui/RecallResults.tsx](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/components/ui/RecallResults.tsx) · 原 78 行 | `{h.kind === 'memory' ? h.file : h.open}` | 保留：简短动作名、范围、快捷键或完整路径；改为 data-tooltip，禁止原生窗口。 |
 | 37 | [ui/RecallChip.tsx](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/components/ui/RecallChip.tsx) · 原 70 行 | `{title}` | 保留：简短动作名、范围、快捷键或完整路径；改为 data-tooltip，禁止原生窗口。 |
 | 38 | [ui/RecallChip.tsx](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/components/ui/RecallChip.tsx) · 原 79 行 | 回忆：发送时用问题里的词，去本机的对话与记忆里查原话带进上下文 / 回忆已关。开了以后，发送时会查过去的对话与记忆 | 删除：教学性、解释性或重复状态文案占用悬浮层；功能和必要的可访问名称保留。 |
@@ -235,8 +219,6 @@ GlobalTooltip 只渲染显式 data-tooltip；不再代理、暂存或恢复任�
 
 | # | 位置 | 原文案 / 表达式 | 判断与措施 |
 | --- | --- | --- | --- |
-| 173 | [focus-panel/RoleLine.tsx](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/components/focus-panel/RoleLine.tsx) · 原 36 行 | `{effective}` | 保留：仅裁切时补全名称；改为 data-tooltip，使用统一文字、表面和边框。 |
-| 174 | [focus-panel/RoleLine.tsx](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/components/focus-panel/RoleLine.tsx) · 原 41 行 | `{effective}` | 保留：仅裁切时补全名称；改为 data-tooltip，使用统一文字、表面和边框。 |
 | 175 | [focus-panel/ResponseSection.tsx](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/components/focus-panel/ResponseSection.tsx) · 原 217 行 | 重新生成 | 保留：简短动作名、范围、快捷键或完整路径；改为 data-tooltip，禁止原生窗口。 |
 | 176 | [focus-panel/ResponseSection.tsx](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/components/focus-panel/ResponseSection.tsx) · 原 226 行 | 复制回答 | 保留：简短动作名、范围、快捷键或完整路径；改为 data-tooltip，禁止原生窗口。 |
 | 177 | [focus-panel/ResponseSection.tsx](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/components/focus-panel/ResponseSection.tsx) · 原 235 行 | 编辑回答 | 保留：简短动作名、范围、快捷键或完整路径；改为 data-tooltip，禁止原生窗口。 |
@@ -245,15 +227,10 @@ GlobalTooltip 只渲染显式 data-tooltip；不再代理、暂存或恢复任�
 | 180 | [focus-panel/RecallSection.tsx](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/components/focus-panel/RecallSection.tsx) · 原 75 行 | `{i.file}` | 保留：简短动作名、范围、快捷键或完整路径；改为 data-tooltip，禁止原生窗口。 |
 | 181 | [focus-panel/RecallSection.tsx](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/components/focus-panel/RecallSection.tsx) · 原 83 行 | 重新带进上下文 / 不带进上下文 | 保留：简短动作名、范围、快捷键或完整路径；改为 data-tooltip，禁止原生窗口。 |
 | 182 | [focus-panel/index.tsx](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/components/focus-panel/index.tsx) · 原 142 行 | 未命名节点 | 保留：仅裁切时补全名称；改为 data-tooltip，使用统一文字、表面和边框。 |
-| 183 | [focus-panel/HeaderActions.tsx](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/components/focus-panel/HeaderActions.tsx) · 原 106 行 | N 个角色视角：并行盲答一次，或作为评审者持续跟随 | 删除：教学性、解释性或重复状态文案占用悬浮层；功能和必要的可访问名称保留。 |
 | 184 | [focus-panel/HeaderActions.tsx](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/components/focus-panel/HeaderActions.tsx) · 原 109 行 | 同一问题生成一个平行的兄弟节点（各自可发展下游；配合节点模型覆盖可做模型对比） | 删除：教学性、解释性或重复状态文案占用悬浮层；功能和必要的可访问名称保留。 |
 | 185 | [focus-panel/HeaderActions.tsx](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/components/focus-panel/HeaderActions.tsx) · 原 115 行 | 将本节点的上下文链导出为 Markdown 文档 | 保留：简短动作名、范围、快捷键或完整路径；改为 data-tooltip，禁止原生窗口。 |
 | 186 | [focus-panel/HeaderActions.tsx](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/components/focus-panel/HeaderActions.tsx) · 原 118 行 | 以 Markdown 复制本节点的上下文链 | 保留：简短动作名、范围、快捷键或完整路径；改为 data-tooltip，禁止原生窗口。 |
 | 187 | [focus-panel/HandoffLine.tsx](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/components/focus-panel/HandoffLine.tsx) · 原 33 行 | 切换后，下游已有的回答会标为上游已变 | 删除：教学性、解释性或重复状态文案占用悬浮层；功能和必要的可访问名称保留。 |
-| 188 | [focus-panel/ContextChainSection.tsx](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/components/focus-panel/ContextChainSection.tsx) · 原 33 行 | 记忆开启时,这些条目随每次普通生成进入系统层。点击管理。 | 删除：教学性、解释性或重复状态文案占用悬浮层；功能和必要的可访问名称保留。 |
-| 189 | [focus-panel/ContextChainSection.tsx](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/components/focus-panel/ContextChainSection.tsx) · 原 76 行 | 上游已变 | 保留：简短动作名、范围、快捷键或完整路径；改为 data-tooltip，禁止原生窗口。 |
-| 190 | [focus-panel/ContextChainSection.tsx](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/components/focus-panel/ContextChainSection.tsx) · 原 141 行 | 单节点引用只传递来源节点的本轮问答。续接上文会沿用对话、材料与附件。 | 删除：教学性、解释性或重复状态文案占用悬浮层；功能和必要的可访问名称保留。 |
-| 191 | [focus-panel/ContextChainSection.tsx](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/components/focus-panel/ContextChainSection.tsx) · 原 174 行 | 这一轮的工具记录传进了本问的上下文。在那一轮的侧栏里可以关掉。 | 删除：教学性、解释性或重复状态文案占用悬浮层；功能和必要的可访问名称保留。 |
 | 192 | [focus-panel/AttachmentsSection.tsx](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/components/focus-panel/AttachmentsSection.tsx) · 原 164 行 | 在阅读器中打开 | 保留：简短动作名、范围、快捷键或完整路径；改为 data-tooltip，禁止原生窗口。 |
 | 193 | [focus-panel/AttachmentsSection.tsx](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/components/focus-panel/AttachmentsSection.tsx) · 原 209 行 | 在阅读器中打开 | 保留：简短动作名、范围、快捷键或完整路径；改为 data-tooltip，禁止原生窗口。 |
 | 194 | [focus-panel/AttachmentsSection.tsx](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/components/focus-panel/AttachmentsSection.tsx) · 原 225 行 | 已被上游排除，点击重新包含 / 已重新包含（覆盖上游），点击恢复上游排除 / 包含进上下文 / 从上下文排除 | 保留：简短动作名、范围、快捷键或完整路径；改为 data-tooltip，禁止原生窗口。 |

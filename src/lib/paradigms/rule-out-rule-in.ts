@@ -2,8 +2,8 @@ import type { ThoughtNode, ThoughtEdge, ThoughtData } from '../../types';
 
 // Built-in paradigm: rule-out / rule-in (differential reasoning).
 // Two node kinds only: 'human' (the operator asks) and 'prompt' (a machine
-// step processing upstream context; its persona is simply the opening lines
-// of its prompt). The fan-out is drawn as graph shape — four sibling prompt
+// step processing upstream context with its prompt). The fan-out is drawn
+// as graph shape — four sibling prompt
 // nodes off the question — so blind isolation between candidates is
 // guaranteed by the DAG itself. Bilingual: filled from the UI language.
 
@@ -126,7 +126,6 @@ export function buildRuleOutRuleIn(lang: Lang): { name: string; nodes: ThoughtNo
       isCollapsed: false, isEditing: false, isEditingResponse: false, isLoading: false,
       tokenCount: 0, highlights: [], highlightMode: 'tag',
       attachments: [], excludedAttachmentIds: [], includedAttachmentIds: [],
-      roleMode: 'inherit', isRoot: s.id === 'q', isBranch: false,
     },
   }));
   const edgeList: ThoughtEdge[] = edges.map(([a, b]) => ({

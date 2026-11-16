@@ -62,7 +62,7 @@ try {
   assert.deepEqual(files.map(({ file }) => statSync(file).mtimeMs), originalStats, 'migration never rewrites original rollouts');
   for (const name of ['fact-index.json', 'interpretation-cache.json', 'text-index.json']) {
     const value = JSON.parse(readFileSync(path.join(home, name), 'utf8'));
-    assert.equal(value.version, 15);
+    assert.equal(value.version, 16);
     assert.equal(Object.keys(value.sessions).length, 2);
     assert.ok(!value.sessions[files[2].file], `${name} excludes the guardian`);
   }

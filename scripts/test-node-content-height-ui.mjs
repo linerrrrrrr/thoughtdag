@@ -31,7 +31,6 @@ await context.route('**/*', route => {
 await context.addInitScript(() => {
   localStorage.setItem('thoughtdag.seeded', 'yes');
   localStorage.setItem('thoughtdag.tutorialDone', '1');
-  localStorage.setItem('thoughtdag.autoRefreshPaused', 'yes');
   localStorage.setItem('thoughtdag.lang', 'zh');
 });
 
@@ -98,13 +97,11 @@ const seed = async (question, response, ratio = .35) => {
       question, response, responses: [response], responseIndex: 0, questionHeightRatio: ratio,
       detailLevel: 'full', isCollapsed: false, isEditing: false, isEditingResponse: false, isLoading: false,
       highlights: [], highlightMode: 'tag', attachments: [], excludedAttachmentIds: [], includedAttachmentIds: [],
-      tokenCount: 0, roleMode: 'inherit', isRoot: false, isBranch: false,
-    } }];
+      tokenCount: 0, roleMode: 'inherit'} }];
     window.__store.setState({ nodes, edges: [], selectedNodeIds: [id], selectedNodeId: id, history: [{ nodes, edges: [] }], historyIndex: 0 });
     window.__ui.getState().setPanelOpen(false);
     window.__ui.getState().setTutorialOpen(false);
     window.__ui.getState().setReleaseNotesOpen(false);
-    window.__ui.getState().setAutoRefreshPaused(true);
     window.__ui.getState().setCanvasDetail('full');
   }, { id, question, response, ratio });
   await node().waitFor();

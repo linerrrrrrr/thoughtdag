@@ -7,26 +7,42 @@ const path = require('path');
 const net = require('net');
 const os = require('os');
 const fsp = require('fs/promises');
-const { zstdDecompressSync } = require('node:zlib');
 
 // Development: the repo root (live dist + server.mjs + root node_modules).
 // Packaged: a self-contained payload under Resources — same three files,
 // prepared by scripts/prepare-payload.mjs with production deps only.
-// A pristine profile for demos, recordings and support: --user-data-dir
-// moves the whole data world (canvases, keys, tutorial state, backups
-// authorization) to a separate directory. The single-instance lock
-// scopes to the profile, so a demo instance runs beside the real one
-// without touching it.
-const dataDirArg = process.argv.find((a) => a.startsWith('--user-data-dir='));
-if (dataDirArg) {
-  const dir = path.resolve(dataDirArg.slice('--user-data-dir='.length));
-  app.setPath('userData', dir);
-  app.setPath('sessionData', dir);
-}
-
 const ROOT = app.isPackaged
   ? path.join(process.resourcesPath, 'payload')
   : path.join(__dirname, '..');
+// Read only the local data-location switches; credentials stay with the
+// existing server configuration rather than entering the shell's settings.
+try {
+  for (const line of require('fs').readFileSync(path.join(ROOT, '.env.local'), 'utf8').split('\n')) {
+    const match = line.match(/^\s*(THOUGHTDAG_HOME|THOUGHTDAG_DISK_STORAGE)\s*=\s*(.*?)\s*$/);
+    if (match && !(match[1] in process.env)) process.env[match[1]] = match[2];
+  }
+} catch { /* Optional local deployment configuration. */ }
+
+// An explicit test/demo profile always wins. A configured data root also owns
+// the desktop profile, but an existing profile must first be migrated rather
+// than silently opening an empty one under the new location.
+const dataDirArg = process.argv.find((a) => a.startsWith('--user-data-dir='));
+let dataDir = dataDirArg ? path.resolve(dataDirArg.slice('--user-data-dir='.length)) : null;
+if (!dataDir && process.env.THOUGHTDAG_DISK_STORAGE === '1' && process.env.THOUGHTDAG_HOME) {
+  if (!path.isAbsolute(process.env.THOUGHTDAG_HOME)) throw new Error('THOUGHTDAG_HOME must be absolute');
+  const previous = app.getPath('userData');
+  const next = path.join(process.env.THOUGHTDAG_HOME, 'desktop-profile');
+  const fs = require('fs');
+  if (!fs.existsSync(next) && fs.existsSync(previous) && fs.readdirSync(previous).length) {
+    throw new Error('The existing desktop profile must be migrated before changing its data directory');
+  }
+  fs.mkdirSync(next, { recursive: true, mode: 0o700 });
+  dataDir = next;
+}
+if (dataDir) {
+  app.setPath('userData', dataDir);
+  app.setPath('sessionData', dataDir);
+}
 // The why layer as a library (cli/src/lib.ts bundled by `npm run desktop:why`;
 // the payload carries a copy): the index under ~/.thoughtdag, find, recall,
 // and the memory files. Loaded on first use — a query refreshes the index
@@ -186,31 +202,21 @@ async function boot() {
   win.loadURL(`http://127.0.0.1:${port}/?dv=${encodeURIComponent(app.getVersion())}&su=1${langQ}${wnQ}`);
 }
 
-// ─── Session atlas: read-only access to runner session stores ───────────
+// ─── Read-only access to agent runtime records ──────────────────────────
 // The shell exposes four fenced primitives; ALL runner knowledge (formats,
 // meta parsing, grouping) lives in the web layer's adapter code. The
 // renderer never passes absolute paths — only a whitelisted root key plus
 // a relative path that must resolve inside that root. Read-only by
 // contract: no primitive here can write, move, or delete a session file.
 const BUILTIN_ROOTS = process.env.TD_SESSION_ROOTS
-  ? JSON.parse(process.env.TD_SESSION_ROOTS) // test harness only: point the atlas at fixture stores
+  ? JSON.parse(process.env.TD_SESSION_ROOTS) // test harness only: point the runtime bridge at fixture stores
   : {
     'claude-projects': path.join(os.homedir(), '.claude', 'projects'),
     'codex-sessions': path.join(os.homedir(), '.codex', 'sessions'),
-    // DeepSeek Harness: one session per dir under ~/.dsh/sessions/<encoded cwd>/
-    'dsh-sessions': path.join(process.env.DSH_HOME || path.join(os.homedir(), '.dsh'), 'sessions'),
     // Pi: one JSONL per session under ~/.pi/agent/sessions/<encoded cwd>/
     'pi-sessions': path.join(os.homedir(), '.pi', 'agent', 'sessions'),
   };
-// Custom roots join the whitelist ONLY through the native directory picker
-// (sessions:add-root) — the page can never name a path in a string. They
-// persist under userData, owned by the shell, out of the page's reach.
-let customRoots = {};
-const rootsFile = () => path.join(app.getPath('userData'), 'atlas-roots.json');
-async function loadCustomRoots() {
-  try { customRoots = JSON.parse(await fsp.readFile(rootsFile(), 'utf8')); } catch { customRoots = {}; }
-}
-const allRoots = () => ({ ...BUILTIN_ROOTS, ...customRoots });
+const allRoots = () => BUILTIN_ROOTS;
 
 function resolveInRoot(rootKey, rel) {
   const root = allRoots()[rootKey];
@@ -218,56 +224,6 @@ function resolveInRoot(rootKey, rel) {
   const abs = path.resolve(root, String(rel));
   if (abs !== root && !abs.startsWith(root + path.sep)) throw new Error('path escapes session root');
   return abs;
-}
-
-// DSH sessions are zstd-compressed JSONL (session.jsonl.zstd, or
-// session.v3.jsonl.zstd from session format V3 on; listing goes by extension). The fenced
-// primitives below answer with TEXT — a head, a read, line-aligned chunks —
-// so a .zstd rel is decompressed here, once per file+mtime, and served from
-// the same buffer every reader sees. Raw files (claude/codex) are untouched.
-//
-// A DSH session log is a CONCATENATION of independently-encoded zstd frames
-// (the backend appends one checksummed frame per durable batch), and Node's
-// one-shot zstdDecompressSync only decodes the FIRST frame. Frames must be
-// located structurally first, then decoded one by one — the same container
-// walk the DeepSeek Harness persistence backend itself performs. A final
-// torn frame (the live tail of an in-progress session) is dropped: the next
-// sweep re-reads the file and picks it up whole.
-const ZSTD_MAX = 512 * 1024 * 1024;
-// The zstd container walk and the prefix decoder are shared with the harness
-// plugin (runtime/zstd-frames.cjs, copied into the payload). A second copy
-// here would drift from the one the plugin decodes with (#80).
-const ZSTD_RUNTIME_DIR = app.isPackaged ? path.join(process.resourcesPath, 'payload', 'runtime') : path.join(__dirname, '..', 'runtime');
-const { scanZstdFrames, readZstdHead } = require(path.join(ZSTD_RUNTIME_DIR, 'zstd-frames.cjs'));
-/** Decompress a concatenated-frame zstd buffer to one contiguous Buffer. */
-function decompressZstdAll(raw) {
-  const { frames } = scanZstdFrames(raw);
-  if (frames.length === 0) return '';
-  const parts = [];
-  for (const { start, end } of frames) {
-    const dec = zstdDecompressSync(raw.subarray(start, end));
-    parts.push(dec);
-  }
-  return Buffer.concat(parts);
-}
-const zstdCache = new Map(); // "rootKey:rel" -> { mtimeMs, size, buf }
-async function sessionText(rootKey, rel) {
-  if (typeof rel !== 'string' || !rel.endsWith('.zstd')) return '';
-  const abs = resolveInRoot(rootKey, rel);
-  const key = rootKey + ':' + rel;
-  const st = await fsp.stat(abs).catch(() => null);
-  if (!st) return '';
-  const hit = zstdCache.get(key);
-  if (hit && hit.mtimeMs === st.mtimeMs && hit.size === st.size) return hit.buf;
-  if (st.size > ZSTD_MAX) return '';
-  const raw = await fsp.readFile(abs).catch(() => null);
-  if (!raw) return '';
-  let buf;
-  try { buf = decompressZstdAll(raw); } catch { return ''; }
-  if (!buf || buf.length === 0) return '';
-  if (zstdCache.size > 32) zstdCache.clear();
-  zstdCache.set(key, { mtimeMs: st.mtimeMs, size: st.size, buf });
-  return buf;
 }
 
 // ─── Terminal registry ─────────────────────────────────────────────────
@@ -302,7 +258,7 @@ async function binOnPath(name) {
 // macOS: a .command file runs in the user's default shell (right PATH,
 // zero automation permissions) inside any terminal app that accepts it.
 async function launchCommandFile(appPath, cwd, program) {
-  const file = path.join(os.tmpdir(), `thoughtdag-resume-${Date.now()}.command`);
+  const file = path.join(require(path.join(RUNTIME_DIR, 'local-temp.cjs')).thoughtdagTempRoot(), `thoughtdag-resume-${Date.now()}.command`);
   try {
     await fsp.writeFile(file, `#!/bin/zsh\nrm -- ${shq(file)}\ncd ${shq(cwd)}\n${program}\n`, { mode: 0o755 });
   } catch { return false; }
@@ -322,13 +278,6 @@ function buildTerminalRegistry() {
       appEntry('alacritty', 'Alacritty', '/Applications/Alacritty.app', (cwd, p) => launchOpenArgs('/Applications/Alacritty.app', ['-e', 'zsh', ...posix(cwd, p)])),
       appEntry('kitty', 'kitty', '/Applications/kitty.app', (cwd, p) => launchOpenArgs('/Applications/kitty.app', ['zsh', ...posix(cwd, p)])),
       appEntry('wezterm', 'WezTerm', '/Applications/WezTerm.app', (cwd, p) => launchOpenArgs('/Applications/WezTerm.app', ['start', '--', 'zsh', ...posix(cwd, p)])),
-      // user-picked terminal apps ride the .command road — the one macOS
-      // mechanism that needs nothing from the app but "opens shell scripts"
-      ...atlasPrefs.customTerminals.map((c) => ({
-        id: c.id, name: c.name, custom: true,
-        probe: () => dirExists(c.app),
-        launch: (cwd, p) => launchCommandFile(c.app, cwd, p),
-      })),
     ];
   }
   if (process.platform === 'win32') {
@@ -356,64 +305,12 @@ function buildTerminalRegistry() {
   ];
 }
 
-const APP_TARGETS = {
-  codex: { app: '/Applications/ChatGPT.app', scheme: 'codex://', name: 'ChatGPT (Codex)' },
-  'claude-code': { app: '/Applications/Claude.app', scheme: 'claude://', name: 'Claude' },
-};
-let atlasPrefs = { terminal: 'terminal', customTerminals: [] };
-const prefsFile = () => path.join(app.getPath('userData'), 'atlas-prefs.json');
-
-function setupSessionAtlas() {
-  void loadCustomRoots();
-  void fsp.readFile(prefsFile(), 'utf8').then((s) => {
-    const p = JSON.parse(s);
-    atlasPrefs = {
-      terminal: typeof p.terminal === 'string' ? p.terminal : 'terminal',
-      customTerminals: Array.isArray(p.customTerminals)
-        ? p.customTerminals.filter((c) => c && typeof c.id === 'string' && typeof c.app === 'string' && typeof c.name === 'string')
-        : [],
-    };
-  }).catch(() => {});
-  const savePrefs = () => fsp.writeFile(prefsFile(), JSON.stringify(atlasPrefs, null, 2)).catch(() => {});
+function setupAgentSessions() {
   const probedTerminals = async () => {
     const reg = buildTerminalRegistry();
-    const alive = await Promise.all(reg.map(async (t) => (await t.probe()) ? t : null));
+    const alive = await Promise.all(reg.map(async (term) => (await term.probe()) ? term : null));
     return alive.filter(Boolean);
   };
-
-  ipcMain.handle('sessions:open-targets', async () => ({
-    terminals: (await probedTerminals()).map((t) => ({ id: t.id, name: t.name, custom: !!t.custom })),
-    apps: (await Promise.all(Object.entries(APP_TARGETS).map(async ([runner, a]) => (await dirExists(a.app)) ? { runner, name: a.name } : null))).filter(Boolean),
-    prefs: { terminal: atlasPrefs.terminal },
-    canAddCustom: process.platform === 'darwin',
-  }));
-
-  ipcMain.handle('sessions:set-open-prefs', async (_e, p) => {
-    if (p && typeof p === 'object' && typeof p.terminal === 'string' && buildTerminalRegistry().some((t) => t.id === p.terminal)) {
-      atlasPrefs.terminal = p.terminal;
-      await savePrefs();
-    }
-    return { terminal: atlasPrefs.terminal };
-  });
-
-  // "pick another terminal app": the native picker again — the page never
-  // names an app path. The chosen app rides the .command road.
-  ipcMain.handle('sessions:add-terminal', async () => {
-    if (process.platform !== 'darwin') return null;
-    const r = await dialog.showOpenDialog(win, {
-      properties: ['openApplication'],
-      defaultPath: '/Applications',
-      filters: [{ name: 'Applications', extensions: ['app'] }],
-    });
-    const p = r.canceled ? null : r.filePaths[0];
-    if (!p || !p.endsWith('.app')) return null;
-    const dup = atlasPrefs.customTerminals.find((c) => c.app === p);
-    const entry = dup ?? { id: `custom-term-${Date.now().toString(36)}`, name: path.basename(p, '.app'), app: p };
-    if (!dup) atlasPrefs.customTerminals.push(entry);
-    atlasPrefs.terminal = entry.id;
-    await savePrefs();
-    return { id: entry.id, name: entry.name };
-  });
 
   ipcMain.handle('sessions:roots', async () => {
     const out = [];
@@ -422,25 +319,6 @@ function setupSessionAtlas() {
       out.push({ key, path: p, builtin: key in BUILTIN_ROOTS, exists });
     }
     return out;
-  });
-
-  ipcMain.handle('sessions:add-root', async () => {
-    const r = await dialog.showOpenDialog(win, { properties: ['openDirectory'] });
-    const p = r.canceled ? null : r.filePaths[0];
-    if (!p) return null;
-    const existing = Object.entries(allRoots()).find(([, v]) => v === p);
-    if (existing) return { key: existing[0], path: p, builtin: existing[0] in BUILTIN_ROOTS, exists: true };
-    const key = `custom-${Date.now().toString(36)}`;
-    customRoots[key] = p;
-    await fsp.writeFile(rootsFile(), JSON.stringify(customRoots, null, 2));
-    return { key, path: p, builtin: false, exists: true };
-  });
-
-  ipcMain.handle('sessions:remove-root', async (_e, key) => {
-    if (key in customRoots) {
-      delete customRoots[key];
-      await fsp.writeFile(rootsFile(), JSON.stringify(customRoots, null, 2));
-    }
   });
 
   ipcMain.handle('sessions:list', async (_e, rootKey) => {
@@ -454,7 +332,7 @@ function setupSessionAtlas() {
       for (const ent of entries) {
         const p = path.join(dir, ent.name);
         if (ent.isDirectory()) await walk(p, depth + 1);
-        else if (ent.isFile() && (ent.name.endsWith('.jsonl') || ent.name.endsWith('.zstd'))) {
+        else if (ent.isFile() && (ent.name.endsWith('.jsonl'))) {
           try {
             const st = await fsp.stat(p);
             out.push({ rel: path.relative(root, p), size: st.size, mtime: st.mtimeMs });
@@ -501,111 +379,18 @@ function setupSessionAtlas() {
     return { ok: true };
   });
 
-  ipcMain.handle('sessions:head', async (_e, rootKey, rel, bytes) => {
-    if (typeof rel === 'string' && rel.endsWith('.zstd')) {
-      // A prefix, not the whole log: the atlas reads one head per session and
-      // decoding a 21 MB (50 MB decoded) session for its first 16 KB was the
-      // slow half of the scan (#80). readZstdHead widens its window until the
-      // requested byte count is decoded, so a big first frame no longer loses
-      // the whole frame the fixed 256 KB window used to drop.
-      const n = Math.min(Math.max(1024, bytes | 0), 524288);
-      return readZstdHead(resolveInRoot(rootKey, rel), n, { open: fsp.open, inflate: zstdDecompressSync });
-    }
-    const fh = await fsp.open(resolveInRoot(rootKey, rel), 'r');
-    try {
-      // upper bound generous on purpose: a codex session_meta line carries
-      // the full instructions blob and can exceed 48KB on its own
-      const n = Math.min(Math.max(1024, bytes | 0), 524288);
-      const buf = Buffer.alloc(n);
-      const { bytesRead } = await fh.read(buf, 0, n, 0);
-      return buf.subarray(0, bytesRead).toString('utf8');
-    } finally {
-      await fh.close();
-    }
-  });
-
-  ipcMain.handle('sessions:read', (_e, rootKey, rel) => {
-    if (typeof rel === 'string' && rel.endsWith('.zstd')) return sessionText(rootKey, rel);
-    return fsp.readFile(resolveInRoot(rootKey, rel), 'utf8');
-  });
-
-  // Chunked read for sessions beyond what one V8 string can hold (a 619MB
-  // rollout is a real file on this machine). Chunks cut on line boundaries
-  // so every returned piece parses cleanly; a single line longer than the
-  // chunk (never observed — the worst line seen is 49KB) is dropped whole
-  // rather than split into two corrupt halves.
-  ipcMain.handle('sessions:read-range', async (_e, rootKey, rel, start, length) => {
-    // zstd sessions read from the decompressed buffer (see sessionText) —
-    // chunk offsets address the DECODED text, exactly as a raw .jsonl's
-    // offsets address its own file.
-    const isZstd = typeof rel === 'string' && rel.endsWith('.zstd');
-    const dec = isZstd ? await sessionText(rootKey, rel) : null;
-    const fh = isZstd ? null : await fsp.open(resolveInRoot(rootKey, rel), 'r');
-    try {
-      const from = Math.max(0, Number(start) || 0);
-      const want = Math.min(Math.max(65536, Number(length) || 0), 32 * 1024 * 1024);
-      const total = isZstd ? dec.length : (await fh.stat()).size;
-      const size = Math.min(want, Math.max(0, total - from));
-      if (size === 0) return { text: '', nextStart: from, eof: true };
-      let slice;
-      if (isZstd) {
-        slice = dec.subarray(from, from + size);
-      } else {
-        const b = Buffer.alloc(size);
-        const { bytesRead } = await fh.read(b, 0, size, from);
-        slice = b.subarray(0, bytesRead);
-      }
-      const eof = from + size >= total;
-      if (!eof) {
-        const lastNl = slice.lastIndexOf(0x0a);
-        if (lastNl >= 0) slice = slice.subarray(0, lastNl + 1);
-        else return { text: '', nextStart: from + size, eof: false };
-      }
-      return { text: slice.toString('utf8'), nextStart: from + slice.length, eof };
-    } finally {
-      if (fh) await fh.close();
-    }
-  });
-
-  // ─── The listener: the stores announce their own changes ───────────
-  // One recursive fs.watch per live root; .jsonl events debounce per file
-  // and reach the page as {rootKey, rel}. Observation only — the mirror
-  // decides what (if anything) to do with each event.
-  const watchers = [];
-  const pending = new Map(); // rootKey:rel → timer
-  ipcMain.handle('sessions:watch-start', async () => {
-    if (watchers.length) return true;
-    const fs = require('fs');
-    for (const [rootKey, root] of Object.entries(allRoots())) {
-      if (!await dirExists(root)) continue;
-      try {
-        const w = fs.watch(root, { recursive: true }, (_event, filename) => {
-          if (!filename || !(String(filename).endsWith('.jsonl') || String(filename).endsWith('.zstd'))) return;
-          const key = `${rootKey}:${filename}`;
-          clearTimeout(pending.get(key));
-          pending.set(key, setTimeout(() => {
-            pending.delete(key);
-            if (win && !win.isDestroyed()) win.webContents.send('sessions:changed', { rootKey, rel: String(filename) });
-          }, 400));
-        });
-        watchers.push(w);
-      } catch { /* a root that refuses to be watched simply stays quiet */ }
-    }
-    return watchers.length > 0;
-  });
+  ipcMain.handle('sessions:read', (_e, rootKey, rel) => fsp.readFile(resolveInRoot(rootKey, rel), 'utf8'));
 
   // "Open in CLI": navigation, not orchestration — this walks the user to
   // the session's door; the runner and every keystroke after are theirs.
   // Structured args only (never a raw command string from the renderer);
   // the command is assembled HERE against a runner whitelist.
   const PROGRAMS = {
-    'claude-code': (id) => `claude --resume ${shq(id)}`,
-    codex: (id) => `codex resume ${shq(id)}`,
-    pi: (id) => `pi --session ${shq(id)}`,
+    'claude-code': (id) => `claude --resume ${id}`,
+    codex: (id) => `codex resume ${id}`,
+    pi: (id) => `pi --session ${id}`,
   };
-  // mode is the user's explicit per-click choice ('app' | 'terminal') —
-  // no stored preference decides between the two roads.
-  ipcMain.handle('sessions:open-in-cli', async (_e, runner, cwd, sessionId, mode) => {
+  ipcMain.handle('sessions:open-in-cli', async (_e, runner, cwd, sessionId) => {
     const buildProgram = PROGRAMS[runner];
     if (!buildProgram || !/^[\w.-]{4,}$/.test(String(sessionId))) return { opened: false, via: '', command: '' };
     const cwdOk = typeof cwd === 'string' && path.isAbsolute(cwd) && await dirExists(cwd);
@@ -613,22 +398,10 @@ function setupSessionAtlas() {
     const program = buildProgram(sessionId);
     const command = `cd ${shq(dir)} && ${program}`; // the clipboard form
 
-    if (mode === 'app') {
-      const appTarget = APP_TARGETS[runner];
-      if (appTarget && await dirExists(appTarget.app)) {
-        try {
-          await shell.openExternal(appTarget.scheme);
-          return { opened: true, via: 'app', command };
-        } catch { /* fall through to the clipboard road */ }
-      }
-      return { opened: false, via: '', command };
-    }
-
     // the chosen terminal first, then any other live one — a launch that
     // fails hands the command to the clipboard road, never a broken window
     const alive = await probedTerminals();
-    const ordered = [...alive.filter((t) => t.id === atlasPrefs.terminal), ...alive.filter((t) => t.id !== atlasPrefs.terminal)];
-    for (const term of ordered.slice(0, 2)) {
+    for (const term of alive.slice(0, 2)) {
       if (await term.launch(dir, program)) return { opened: true, via: 'terminal', command };
     }
     return { opened: false, via: '', command };
@@ -715,70 +488,10 @@ function setupAutoUpdate() {
   });
 }
 
-// ─── One-command handoff installer ───────────────────────────────
-// The /thoughtdag (Claude Code) and $thoughtdag (Codex) commands are
-// shipped INSIDE the app (payload/commands in a packaged build, the
-// protocol/ tree in dev). Install copies one readable text file into
-// the agent's own commands directory — the only two paths this door
-// can ever write — after the renderer has shown the user exactly
-// where. Content comparison drives the status: never a silent
-// overwrite, removal is just deleting the file.
-const fsSync = require('fs');
-const COMMAND_ASSETS = {
-  'claude-code': {
-    srcs: [path.join(ROOT, 'commands', 'claude-code-thoughtdag.md'), path.join(ROOT, 'protocol', 'adapters', 'claude-code', 'thoughtdag.md')],
-    dest: path.join(os.homedir(), '.claude', 'commands', 'thoughtdag.md'),
-    invoke: '/thoughtdag',
-  },
-  codex: {
-    srcs: [path.join(ROOT, 'commands', 'codex-thoughtdag-SKILL.md'), path.join(ROOT, 'protocol', 'adapters', 'codex', 'skills', 'thoughtdag', 'SKILL.md')],
-    dest: path.join(os.homedir(), '.codex', 'skills', 'thoughtdag', 'SKILL.md'),
-    invoke: '$thoughtdag',
-  },
-};
-const commandSource = (asset) => {
-  for (const p2 of asset.srcs) {
-    try { return fsSync.readFileSync(p2, 'utf8'); } catch { /* next */ }
-  }
-  return null;
-};
-ipcMain.handle('commands:status', () => {
-  const out = {};
-  for (const [runner, asset] of Object.entries(COMMAND_ASSETS)) {
-    const src = commandSource(asset);
-    let state = 'unavailable';
-    if (src) {
-      try {
-        const cur = fsSync.readFileSync(asset.dest, 'utf8');
-        state = cur === src ? 'installed' : 'outdated';
-      } catch { state = 'absent'; }
-    }
-    out[runner] = { state, dest: asset.dest, invoke: asset.invoke };
-  }
-  return out;
-});
-ipcMain.handle('commands:install', (_e, runner) => {
-  const asset = COMMAND_ASSETS[runner];
-  if (!asset) return { ok: false };
-  const src = commandSource(asset);
-  if (!src) return { ok: false };
-  try {
-    fsSync.mkdirSync(path.dirname(asset.dest), { recursive: true });
-    fsSync.writeFileSync(asset.dest, src, 'utf8');
-    return { ok: true, dest: asset.dest };
-  } catch (e) { return { ok: false, error: String(e) }; }
-});
-ipcMain.handle('commands:remove', (_e, runner) => {
-  const asset = COMMAND_ASSETS[runner];
-  if (!asset) return { ok: false };
-  try { fsSync.unlinkSync(asset.dest); return { ok: true }; } catch (e) { return { ok: false, error: String(e) }; }
-});
-
 // ─── Codex app-server (Tier 2, READ path) ────────────────────────
 // Lazy singleton over `codex app-server` (JSON-RPC over stdio): the
 // thread store's front door — real names, fork lineage, paged turns.
-// File mirroring (Tier 1) stays the import truth; this layer only
-// reads. No codex CLI → every call answers null, the UI stays Tier 1.
+// This optional read-only bridge supplies native turn history when available.
 let codexRpc = null; // null=not started, 'dead'=CLI absent, else client
 // ── agent runtimes ─────────────────────────────────────────────────────
 // Pi as an agent the canvas can hand a turn to. The runtime lives in
@@ -802,7 +515,9 @@ function agentsRuntime(name = 'pi') {
 }
 const runOwners = new Map(); // runId → runtime name
 
-const workspaceFor = (canvasId) => agentOps.workspaceFor(path.join(app.getPath('userData'), 'workspaces'), canvasId);
+const workspaceFor = (canvasId) => agentOps.workspaceFor(
+  path.join(process.env.THOUGHTDAG_HOME || app.getPath('userData'), 'workspaces'), canvasId,
+);
 
 function setupAgents() {
   ipcMain.handle('agents:available', async () => {
@@ -894,20 +609,6 @@ function codexAppServer() {
     return codexRpc;
   } catch { codexRpc = 'dead'; return null; }
 }
-ipcMain.handle('codex:threads', async () => {
-  const c = codexAppServer();
-  if (!c) return null;
-  await c.ready;
-  const r = await c.send('thread/list', { limit: 200 });
-  const data = r?.result?.data;
-  if (!Array.isArray(data)) return null;
-  return data.map((t) => ({
-    id: t.id, sessionId: t.sessionId, name: t.name ?? null,
-    preview: String(t.preview ?? '').slice(0, 200),
-    forkedFromId: t.forkedFromId ?? null, parentThreadId: t.parentThreadId ?? null,
-    updatedAt: t.updatedAt ?? null, cwd: t.cwd ?? null, path: t.path ?? null,
-  }));
-});
 ipcMain.handle('codex:thread-read', async (_e, threadId) => {
   if (typeof threadId !== 'string' || !/^[A-Za-z0-9-]{8,}$/.test(threadId)) return null;
   const c = codexAppServer();
@@ -921,11 +622,7 @@ const lock = app.requestSingleInstanceLock();
 if (!lock) {
   app.quit();
 } else {
-  // Deep link: thoughtdag://open?session=<id> — the /thoughtdag
-  // command's front door. The packaged app registers via the builder
-  // protocols block; dev shells register the electron binary so the
-  // loop is testable before release. macOS delivers via open-url;
-  // win/linux via argv (cold start) or second-instance (running).
+  // Canvas links from search results can open an existing canvas and node.
   if (process.defaultApp && process.argv.length >= 2) {
     app.setAsDefaultProtocolClient('thoughtdag', process.execPath, [path.resolve(process.argv[1])]);
   } else {
@@ -935,7 +632,7 @@ if (!lock) {
   const deliverDeepLink = (url) => {
     if (typeof url !== 'string' || !url.startsWith('thoughtdag://')) return;
     if (win && !win.isDestroyed()) {
-      win.webContents.send('sessions:deeplink', url);
+      win.webContents.send('navigation:open', url);
       if (win.isMinimized()) win.restore();
       win.show();
       win.focus();
@@ -944,7 +641,7 @@ if (!lock) {
     }
   };
   app.on('open-url', (e, url) => { e.preventDefault(); deliverDeepLink(url); });
-  ipcMain.handle('sessions:pending-deeplink', () => { const l = pendingDeepLink; pendingDeepLink = null; return l; });
+  ipcMain.handle('navigation:pending', () => { const l = pendingDeepLink; pendingDeepLink = null; return l; });
   app.on('second-instance', (_e, argv) => {
     if (win && !win.isDestroyed()) showWindow();
     const link = argv.find((a) => typeof a === 'string' && a.startsWith('thoughtdag://'));
@@ -953,7 +650,7 @@ if (!lock) {
   app.whenReady().then(() => {
     void boot();
     setupShell();
-    setupSessionAtlas();
+    setupAgentSessions();
     setupAgents();
     if (app.isPackaged) {
       setupAutoUpdate();

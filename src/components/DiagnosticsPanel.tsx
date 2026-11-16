@@ -15,8 +15,6 @@ import { useT, fmt } from '../i18n';
 const KIND_KEY: Record<Finding['kind'], string> = {
   'residual-edge': 'diag.residual',
   'shadow-reference': 'diag.shadow',
-  'blind-pool-breach': 'diag.breach',
-  'pool-asymmetry': 'diag.asym',
   'long-chain': 'diag.longChain',
   'open-branches': 'diag.openBranches',
   'collider-continuation': 'diag.collider',

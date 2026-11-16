@@ -18,14 +18,6 @@ Every ask box has **web search** and **scholarly search** switches. They determi
 
 Developers who need additional tools can configure local or remote MCP servers in `mcp.config.json`. Supported transports include stdio and URL-based connections. Tool availability changes **what the model may call**; it does not change which graph paths enter the request. See [Connection mechanism for developers](/setup#connection-mechanism-for-developers).
 
-## Apply a node role
-
-A node can **inherit**, **set**, or **reset** a role for downstream generation. Applied roles are stored with answer versions. If several parents supply conflicting roles, ThoughtDAG asks you to choose explicitly. Built-in and custom roles are managed in the role library.
-
-![The node panel: choose a node-specific model and role at the top; web and scholarly search switches sit beside the follow-up box](../node-model-role-tools-en.png)
-
-These controls affect separate layers. The model picker at the top overrides only this node. A role is a system prompt inherited downstream. The **globe** and **graduation-cap** buttons in the ask box control web and scholarly retrieval. None of them silently changes the graph's context wires.
-
 ## Manage ambient memory
 
 Ambient memory admits selected long-lived facts in three categories: preferences, user-stated identity, and project information. Every write produces a visible notification with **Undo**. Project memories stop entering active context after 45 days without an update, but remain in the memory manager.
@@ -34,13 +26,12 @@ Use the global memory switch, category controls, import/export, or deletion when
 
 ![The memory manager labels preference, project, and identity memories and lets you edit, import, export, or disable them](../memory-manager-en.png)
 
-When memory is enabled and entries exist, the node panel's [context tree](/guides/context-control#inspect-the-next-request) shows **Memory (ambient layer)** so you can confirm that it participates in ordinary generation. Graph wires and ambient memory remain separate layers.
+Use the memory manager to inspect the entries admitted as ambient memory. Graph wires and ambient memory remain separate layers; conversation details do not display a context tree.
 
 ## Keep the layers distinct
 
 - The **model** determines which endpoint generates the answer.
 - **Tools** determine which external actions it may call.
-- A **role** changes the instruction applied to generation.
 - **Ambient memory** can add admitted background facts.
 - Graph wires still determine the visible conversation and material paths entering the node.
 

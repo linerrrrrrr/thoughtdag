@@ -9,8 +9,8 @@ import { useT, fmt } from '../../i18n';
 // The answer to "what did we say about X": the dossier of a topic named
 // by the phrase comes first; then the why layer's hits grouped by
 // conversation (one line per conversation says what it was about; the
-// turns unfold underneath). Two actions on a turn: Open follows it into
-// its mirror (a memory entry unfolds in place), Cite quotes it onto the
+// turns unfold underneath). Two actions on a turn: Open follows its source
+// (a memory entry unfolds in place), Cite quotes it onto the
 // canvas as a note wired into the selected node.
 
 const LIMIT = 60;

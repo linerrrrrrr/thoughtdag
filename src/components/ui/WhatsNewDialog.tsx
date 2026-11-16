@@ -1,3 +1,4 @@
+import { appSettings } from '../../lib/disk-storage';
 import { useDismissableLayer } from '../../lib/use-dismissable-layer';
 import { useEffect, useRef, useState } from 'react';
 import { useI18n, useT, fmt } from '../../i18n';
@@ -26,7 +27,7 @@ function decide(): WhatsNewEntry[] {
   if (forced === '1') return announcedSince(null, appVersion);
   if (forced) return announcedSince(forced, appVersion); // ?wn=<version>: preview the dialog as someone upgrading from that version
   let seen: string | null = null;
-  try { seen = localStorage.getItem(SEEN_KEY); } catch { /* storage unavailable: never nag */ }
+  try { seen = appSettings.getItem(SEEN_KEY); } catch { /* storage unavailable: never nag */ }
   if (seen === null) {
     // no record: either a fresh install, or an install that predates this
     // dialog (0.4.5 is its first release). Marks an earlier version leaves —
@@ -34,8 +35,8 @@ function decide(): WhatsNewEntry[] {
     // this is an upgrade and every announced release shows; without, the
     // version is recorded silently and nothing pops on a first launch.
     let prior = false;
-    try { prior = !!(localStorage.getItem('thoughtdag.tutorialDone') || localStorage.getItem('thoughtdag.lastBackupAt')); } catch { /* ignore */ }
-    if (!prior) { try { localStorage.setItem(SEEN_KEY, appVersion); } catch { /* ignore */ } return []; }
+    try { prior = !!(appSettings.getItem('thoughtdag.tutorialDone') || appSettings.getItem('thoughtdag.lastBackupAt')); } catch { /* ignore */ }
+    if (!prior) { try { appSettings.setItem(SEEN_KEY, appVersion); } catch { /* ignore */ } return []; }
     return announcedSince(null, appVersion);
   }
   if (seen === appVersion) return [];
@@ -92,7 +93,7 @@ export default function WhatsNewDialog() {
   const okRef = useRef<HTMLButtonElement>(null);
 
   const close = () => {
-    if (appVersion) { try { localStorage.setItem(SEEN_KEY, appVersion); } catch { /* ignore */ } }
+    if (appVersion) { try { appSettings.setItem(SEEN_KEY, appVersion); } catch { /* ignore */ } }
     setEntries([]);
   };
 
@@ -106,7 +107,7 @@ export default function WhatsNewDialog() {
     <div className="fixed inset-0 z-[100] bg-black/25 flex items-center justify-center animate-fade-in p-6">
       <div
         ref={layerRef} aria-modal="true" tabIndex={-1}
-        className="bg-card border border-line rounded-panel shadow-lg w-[680px] max-w-full max-h-[85vh] overflow-y-auto"
+        className="bg-card border border-line rounded-panel shadow-lg w-[680px] max-w-full max-h-[calc(85*var(--ui-vh))] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-labelledby="whats-new-title"

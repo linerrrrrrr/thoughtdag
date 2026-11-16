@@ -1,6 +1,7 @@
 import { useStore } from '../store';
 import { collectTimeline, type TimelineEntry } from './timeline';
 import { generateGedankengang, getCached, graphFingerprint, type Gedankengang } from './gedankengang';
+import { isConversationStart } from './graph';
 
 // The Gedankengang poster: the timeline overview rendered as a manuscript
 // chronicle — paper ground, serif ink, badge seals strung on a spine, the
@@ -248,7 +249,7 @@ export async function exportGedankengangPoster(
   hooks?: { onJourney?: (g: Gedankengang) => void },
 ): Promise<void> {
   const { nodes, edges } = useStore.getState();
-  const fp = graphFingerprint(nodes);
+  const fp = graphFingerprint(nodes, edges);
   let journey = getCached(fp, lang)?.text;
   if (!journey) {
     try {
@@ -257,7 +258,7 @@ export async function exportGedankengangPoster(
       journey = g.text;
     } catch { /* proceed without the paragraph */ }
   }
-  const root = nodes.find((n) => n.data.isRoot);
+  const root = nodes.find((n) => !['note', 'file', 'link', 'frame'].includes(n.data.stepKind ?? '') && isConversationStart(n.id, edges));
   const blob = await drawGedankengangPoster({
     title: (root?.data.question ?? 'ThoughtDAG').replace(/\s+/g, ' ').slice(0, 80),
     journey,

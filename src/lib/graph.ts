@@ -1,7 +1,7 @@
 import type { ThoughtNode, ThoughtEdge } from '../types';
 
 /**
- * Post-order DFS up ALL incoming edges (blue, orange, cross-link).
+ * Post-order DFS up all incoming conversation and reference edges.
  * Returns ancestors in topological order (roots first, start node last)
  * plus the set of edge ids traversed — the single source of truth for
  * "what does this node's context consist of".
@@ -15,18 +15,26 @@ export function walkUpAncestors(
   const ordered: ThoughtNode[] = [];
   const visited = new Set<string>();
   const visitedEdgeIds = new Set<string>();
+  const byId = new Map<string, ThoughtNode>();
+  for (const node of nodes) if (!byId.has(node.id)) byId.set(node.id, node);
+  const incomingByTarget = new Map<string, ThoughtEdge[]>();
+  for (const edge of edges) {
+    const incoming = incomingByTarget.get(edge.target) ?? [];
+    incoming.push(edge);
+    incomingByTarget.set(edge.target, incoming);
+  }
 
   function walkUp(id: string) {
     if (visited.has(id)) return;
     visited.add(id);
-    const node = nodes.find((n) => n.id === id);
+    const node = byId.get(id);
     if (!node) return;
     // A merge's incoming BLOCKS enter the context in a stated order:
     // contextOrder on the edge (set from the focus panel), falling back
     // to creation order. The order lives on the EDGE — semantics drive
     // rendering, never the other way round: dragging nodes cannot
     // change what a context says.
-    const incoming = edges.filter((e) => e.target === id);
+    const incoming = incomingByTarget.get(id) ?? [];
     if (incoming.length > 1) {
       incoming.sort((a, b) =>
         ((a.data as { contextOrder?: number } | undefined)?.contextOrder ?? Number.MAX_SAFE_INTEGER)
@@ -45,26 +53,52 @@ export function walkUpAncestors(
 
 const CONTENT_KINDS = new Set(['note', 'file', 'link']);
 
-/** Ordinary references carry one turn. Watch and exploration edges retain
-    their specialized legacy input behavior. Stored depth is not migrated. */
-export function isSingleNodeReference(edge: ThoughtEdge): boolean {
-  return !!edge.data?.isCrossLink && !edge.data.isWatch && !edge.data.isBranchFromSelection;
+/** A conversation starts wherever the current graph has no structural input. */
+export function isConversationStart(nodeId: string, edges: ThoughtEdge[]): boolean {
+  return !edges.some((edge) => edge.target === nodeId && !edge.data?.isCrossLink);
 }
 
-/** One dashed reference feeding a context. Ordinary references have an
-    empty chain; only specialized edges may carry a legacy ancestor scope. */
+/** Native session provenance preserves a conversation's axis without assigning node kinds. */
+function conversationSession(node: ThoughtNode | undefined): string | undefined {
+  const own = node?.data.agentSession;
+  if (own?.sessionId) return `${own.runtime}:${own.sessionId}`;
+  const imported = node?.data.importSource;
+  if (!imported) return undefined;
+  const delegated = imported.subagent ? `:${imported.subagent.of}:${imported.itemIds[0] ?? ''}` : '';
+  return `${imported.runner}:${imported.sessionId}${delegated}`;
+}
+
+/** Stable layout ownership: native conversation continuity, creation time, then ids. */
+export function orderConversationEdges(nodes: ThoughtNode[], edges: ThoughtEdge[]): ThoughtEdge[] {
+  const byId = new Map(nodes.map((node) => [node.id, node]));
+  const continuesSession = (edge: ThoughtEdge) => {
+    const source = conversationSession(byId.get(edge.source));
+    return !!source && source === conversationSession(byId.get(edge.target));
+  };
+  const createdAt = (edge: ThoughtEdge) => edge.data?.createdAt ?? byId.get(edge.target)?.data.createdAt ?? '';
+  return [...edges].sort((a, b) => Number(continuesSession(b)) - Number(continuesSession(a))
+    || createdAt(a).localeCompare(createdAt(b)) || a.source.localeCompare(b.source)
+    || a.target.localeCompare(b.target) || a.id.localeCompare(b.id));
+}
+
+/** References carry exactly one turn. */
+export function isSingleNodeReference(edge: ThoughtEdge): boolean {
+  return !!edge.data?.isCrossLink;
+}
+
+/** One dashed reference feeding a context. */
 export interface ContextReference {
   source: ThoughtNode;
   edge: ThoughtEdge;
-  depth: 'quote' | 'full';
-  /** Structural ancestors for specialized edges only, source excluded.
-      Ordinary references never walk or expose the source's ancestors. */
-  chain: ThoughtNode[];
 }
 
 export interface ContextPartition {
+  /** Structural routes used to assemble the context, including archived bridges. */
+  structural: { ordered: ThoughtNode[]; visitedEdgeIds: Set<string> };
   /** Content nodes (notes / files / links) feeding this context, any edge kind. */
   materials: ThoughtNode[];
+  /** Cross-links that supply material nodes, in the same order as intake. */
+  materialReferences: ContextReference[];
   /** Dashed cross-links into the mainline, one reference block each. */
   references: ContextReference[];
   /** Structural ancestors in chain order, the node itself last. */
@@ -91,7 +125,8 @@ export function partitionContext(
   const crossLinks = edges.filter((e) => e.data?.isCrossLink);
 
   // Mainline: structural walk only (content ancestors pulled out as materials)
-  const { ordered: structuralOrdered } = walkUpAncestors(nodeId, nodes, structural);
+  const ancestry = walkUpAncestors(nodeId, nodes, structural);
+  const structuralOrdered = ancestry.ordered;
   const materials: ThoughtNode[] = [];
   const mainline: ThoughtNode[] = [];
   for (const n of structuralOrdered) {
@@ -101,6 +136,7 @@ export function partitionContext(
 
   // References: cross-links pointing at the node or any structural ancestor
   const references: ContextReference[] = [];
+  const materialReferences: ContextReference[] = [];
   const seenRefSources = new Set<string>();
   for (const edge of crossLinks) {
     if (!mainlineIds.has(edge.target)) continue;
@@ -112,33 +148,28 @@ export function partitionContext(
     if (CONTENT_KINDS.has(source.data.stepKind ?? '')) {
       // Hand-wired material is still material — full identity block, no trail
       materials.push(source);
+      materialReferences.push({ source, edge });
       continue;
     }
-    if (isSingleNodeReference(edge)) {
-      references.push({ source, edge, depth: 'quote', chain: [] });
-      continue;
-    }
-    const { ordered: refOrdered } = walkUpAncestors(edge.source, nodes, structural);
-    const chain: ThoughtNode[] = [];
-    for (const n of refOrdered) {
-      if (n.id === edge.source) continue;
-      if (mainlineIds.has(n.id)) continue; // shared ancestry stays deduped
-      if (CONTENT_KINDS.has(n.data.stepKind ?? '')) continue; // trail is Q/A only
-      chain.push(n);
-    }
-    references.push({ source, edge, depth: edge.data?.contextDepth === 'full' ? 'full' : 'quote', chain });
+    references.push({ source, edge });
   }
 
-  return { materials, references, mainline };
+  return { structural: ancestry, materials, materialReferences, references, mainline };
 }
 
-// Context path of a node: all ancestors in topological order, node itself last.
+/** Nodes that actually enter context: materials, single-turn references, then the conversation. */
 export function getContextPath(
   nodeId: string,
   nodes: ThoughtNode[],
   edges: ThoughtEdge[]
 ): ThoughtNode[] {
-  return walkUpAncestors(nodeId, nodes, edges).ordered;
+  const { materials, references, mainline } = partitionContext(nodeId, nodes, edges);
+  const seen = new Set<string>();
+  return [...materials, ...references.map((reference) => reference.source), ...mainline].filter((node) => {
+    if (seen.has(node.id)) return false;
+    seen.add(node.id);
+    return true;
+  });
 }
 
 /**
@@ -162,9 +193,12 @@ export function getDescendantIds(
 ): string[] {
   const descendants: string[] = [];
   const queue = [nodeId];
+  const visited = new Set(queue);
   while (queue.length > 0) {
     const current = queue.shift()!;
-    const children = edges.filter((e) => e.source === current && !e.data?.isCrossLink).map((e) => e.target);
+    const children = edges.filter((e) => e.source === current && !e.data?.isCrossLink)
+      .map((e) => e.target).filter((id) => !visited.has(id));
+    for (const id of children) visited.add(id);
     descendants.push(...children);
     queue.push(...children);
   }

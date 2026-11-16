@@ -103,7 +103,9 @@ function PageFrame({ srcdoc, page, onSelect, clipMode, onClipped, clipFailedText
       if (text.length < 2) return;
       const rect = sel.getRangeAt(0).getBoundingClientRect();
       const fr = frame.getBoundingClientRect();
-      onSelect({ text, page, x: fr.left + rect.left + rect.width / 2, y: fr.top + rect.bottom });
+      // Frame-local coordinates do not include the reader's outer UI scale.
+      const scale = frame.offsetWidth ? fr.width / frame.offsetWidth : 1;
+      onSelect({ text, page, x: fr.left + (rect.left + rect.width / 2) * scale, y: fr.top + rect.bottom * scale });
     });
   };
 

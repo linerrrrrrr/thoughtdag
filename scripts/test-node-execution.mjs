@@ -1,0 +1,20 @@
+import assert from 'node:assert/strict';
+import { build } from 'esbuild';
+
+const result = await build({ entryPoints: ['src/lib/node-execution.ts'], bundle: true, write: false, platform: 'node', format: 'esm' });
+const { nodeExecutionKind, resolveNodeModel, inheritedNodeExecution } = await import(`data:text/javascript;base64,${Buffer.from(result.outputFiles[0].text).toString('base64')}`);
+const models = [{ id: 'api-test' }, { id: 'codex/codex/test-model' }, { id: 'pi/local/test-model' }];
+assert.equal(nodeExecutionKind({ executionKind: 'api', agentSession: { runtime: 'codex' } }), 'api');
+assert.equal(resolveNodeModel({ executionKind: 'api' }, models[1].id, models), 'api-test');
+assert.equal(resolveNodeModel({ executionKind: 'api' }, models[1].id, []), undefined);
+assert.equal(resolveNodeModel({ executionKind: 'codex', model: 'api-test' }, 'api-test', models), models[1].id);
+assert.equal(resolveNodeModel({ executionKind: 'codex' }, 'api-test'), 'codex/codex/default');
+assert.equal(nodeExecutionKind({ importSource: { runner: 'codex' } }), 'codex');
+assert.equal(nodeExecutionKind({ agentSession: { runtime: 'pi' } }), 'legacy-agent');
+assert.equal(resolveNodeModel({ agentSession: { runtime: 'pi' } }, models[1].id), 'pi/pi/default');
+assert.equal(resolveNodeModel({ importSource: { runner: 'claude-code' } }, 'api-test'), 'claude/claude-code/default');
+assert.equal(resolveNodeModel({ model: 'pi/local/test-model' }, 'api-test'), 'pi/local/test-model');
+assert.deepEqual(inheritedNodeExecution(undefined, models[1].id), { executionKind: 'codex', model: models[1].id });
+assert.deepEqual(inheritedNodeExecution({ executionKind: 'api' }, models[1].id), { executionKind: 'api', model: undefined });
+assert.deepEqual(inheritedNodeExecution({ model: 'pi/local/test-model' }, models[1].id), { executionKind: undefined, model: 'pi/local/test-model' });
+console.log('PASS 13 node execution checks: explicit lanes, missing API, legacy runtimes, and child inheritance.');

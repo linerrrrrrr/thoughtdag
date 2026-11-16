@@ -6,6 +6,7 @@ import RecallChip from './RecallChip';
 import { useModels } from '../../lib/use-models';
 import { directWithoutSearch } from '../../lib/direct-llm';
 import { useT } from '../../i18n';
+import { nodeExecutionKind } from '../../lib/node-execution';
 
 // Per-ask search permissions, shown next to every input that asks. The two
 // toggles edit the shared default (ui-store, persisted); each new node
@@ -13,13 +14,15 @@ import { useT } from '../../i18n';
 // With a `nodeId` the toggles are that node's own snapshot instead (shown in
 // its question editor): what its re-asks run with, the defaults where the
 // node has none; changing them changes the node, never the defaults.
-export default function SearchToggles({ size = 16, nodeId }: { size?: number; nodeId?: string }) {
+// First-ask editors pass only executionNodeId to filter tools while editing defaults.
+export default function SearchToggles({ size = 16, nodeId, executionNodeId = nodeId }: { size?: number; nodeId?: string; executionNodeId?: string }) {
   const webDefault = useUiStore((s) => s.webSearchEnabled);
   const setWebDefault = useUiStore((s) => s.setWebSearchEnabled);
   const scholarDefault = useUiStore((s) => s.scholarSearchEnabled);
   const setScholarDefault = useUiStore((s) => s.setScholarSearchEnabled);
   const nodeWeb = useStore((s) => (nodeId ? s.nodes.find((n) => n.id === nodeId)?.data.webSearch : undefined));
   const nodeScholar = useStore((s) => (nodeId ? s.nodes.find((n) => n.id === nodeId)?.data.scholarSearch : undefined));
+  const isCodexNode = useStore((s) => !!executionNodeId && nodeExecutionKind(s.nodes.find((n) => n.id === executionNodeId)?.data) === 'codex');
   const patchNode = (p: { webSearch?: boolean; scholarSearch?: boolean }) =>
     useStore.setState((s) => ({ nodes: s.nodes.map((n) => (n.id === nodeId ? { ...n, data: { ...n.data, ...p } } : n)) }));
   const web = nodeId ? (nodeWeb ?? webDefault) : webDefault;
@@ -52,7 +55,7 @@ export default function SearchToggles({ size = 16, nodeId }: { size?: number; no
 
   return (
     <>
-      {webAvailable && (
+      {!isCodexNode && webAvailable && (
         <button
           type="button"
           onClick={() => { if (!noSearchLane) setWeb(!web); }}
@@ -66,7 +69,7 @@ export default function SearchToggles({ size = 16, nodeId }: { size?: number; no
           <Globe size={size} strokeWidth={1.75} />
         </button>
       )}
-      <button
+      {!isCodexNode && <button
         type="button"
         onClick={() => { if (!noSearchLane) setScholar(!scholar); }}
         disabled={noSearchLane}
@@ -77,12 +80,12 @@ export default function SearchToggles({ size = 16, nodeId }: { size?: number; no
         data-scholar-toggle
       >
         <GraduationCap size={size} strokeWidth={1.75} />
-      </button>
+      </button>}
       {recallAvailable && (
         // recall is a quiet chip after a hairline, not a third search icon: it
         // names itself and its reach, and opens the menu (switch, reach, amount)
         <>
-          <span className="w-px h-4 bg-line mx-0.5 shrink-0" aria-hidden />
+          {!isCodexNode && <span className="w-px h-4 bg-line mx-0.5 shrink-0" aria-hidden />}
           <RecallChip nodeId={nodeId} />
         </>
       )}

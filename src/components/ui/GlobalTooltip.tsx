@@ -1,5 +1,6 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { uiRect, uiViewport } from '../../lib/ui-scale';
 
 // Only explicit application hints use this layer. Never borrow or restore
 // native titles: the browser can otherwise open an unstyled second popup.
@@ -67,11 +68,12 @@ export default function GlobalTooltip() {
         if (!shouldShow(el)) return;
         const descriptions = (el.getAttribute('aria-describedby') ?? '').split(/\s+/).filter(Boolean);
         el.setAttribute('aria-describedby', [...new Set([...descriptions, tipId])].join(' '));
-        const rect = el.getBoundingClientRect();
-        const above = rect.bottom > window.innerHeight - 96;
+        const rect = uiRect(el);
+        const viewport = uiViewport();
+        const above = rect.bottom > viewport.height - 96;
         setTip({
           text,
-          x: Math.max(12, Math.min(rect.left + rect.width / 2, window.innerWidth - 12)),
+          x: Math.max(12, Math.min(rect.left + rect.width / 2, viewport.width - 12)),
           top: rect.top,
           bottom: rect.bottom,
           above,
@@ -142,12 +144,13 @@ function TipBox({ tip, id }: { tip: Tip; id: string }) {
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
+    const viewport = uiViewport();
     const half = el.offsetWidth / 2;
-    el.style.left = `${Math.max(12 + half, Math.min(tip.x, window.innerWidth - 12 - half))}px`;
+    el.style.left = `${Math.max(12 + half, Math.min(tip.x, viewport.width - 12 - half))}px`;
     const height = el.offsetHeight;
-    const fitsBelow = tip.bottom + 8 + height <= window.innerHeight - 12;
+    const fitsBelow = tip.bottom + 8 + height <= viewport.height - 12;
     const top = fitsBelow ? tip.bottom + 8 : tip.top - height - 8;
-    el.style.top = `${Math.max(12, Math.min(top, window.innerHeight - height - 12))}px`;
+    el.style.top = `${Math.max(12, Math.min(top, viewport.height - height - 12))}px`;
     el.style.transform = 'translateX(-50%)';
   }, [tip]);
   return createPortal(

@@ -46,7 +46,7 @@ export default function ImportChatModal({
     <div className="fixed inset-0 z-50 bg-ink/30 flex items-center justify-center p-6">
       <div
         ref={layerRef} role="dialog" aria-modal="true" aria-label={t('import.title')} tabIndex={-1}
-        className="bg-card border border-line rounded-panel shadow-lg w-full max-w-lg max-h-[80vh] flex flex-col"
+        className="bg-card border border-line rounded-panel shadow-lg w-full max-w-lg max-h-[calc(80*var(--ui-vh))] flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="px-6 py-4 border-b border-line flex items-start justify-between gap-4">

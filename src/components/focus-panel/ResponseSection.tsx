@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect, useMemo, type RefObject } from 'react';
+import { useState, useRef, useCallback, useEffect, type RefObject } from 'react';
 import { describeModel } from '../../lib/use-models';
 import { AlertTriangle, ChevronLeft, ChevronRight, ClipboardCopy, RefreshCw, Trash2, Pencil } from 'lucide-react';
 import { useStore } from '../../store';
@@ -8,7 +8,6 @@ import { copyText } from '../../lib/export';
 import { Markdown, HighlightedMarkdown } from '../Markdown';
 import { useT } from '../../i18n';
 import { isViewerMode } from '../../lib/viewer';
-import { collectExploreMarksKey, type ExploreMark } from '../../lib/explore-marks';
 import type { useTextHighlighter } from '../../lib/use-text-highlighter';
 import ReasoningDisclosure from '../ui/ReasoningDisclosure';
 import { ApprovalCard, DecisionsDisclosure } from '../ui/ApprovalCard';
@@ -18,6 +17,7 @@ import { activeAgentActivity } from '../../lib/agent-activity';
 import { AgentRerunButton } from '../ui/AgentRerunButton';
 import type { ThoughtData } from '../../types';
 import { useInlineEditDismiss } from '../../lib/use-inline-edit-dismiss';
+import { screenToUi } from '../../lib/ui-scale';
 
 const isConversationResizeTarget = (target: EventTarget | null) => target instanceof Element
   && !!target.closest('[data-conversation-divider]');
@@ -40,40 +40,21 @@ export default function ResponseSection({
   onFocusNode?: (id: string) => void;
 }) {
   const editResponse = useStore((s) => s.editResponse);
-  const editQuestion = useStore((s) => s.editQuestion);
   const setEditingResponse = useStore((s) => s.setEditingResponse);
   const navigateVersion = useStore((s) => s.navigateVersion);
   const rerunNode = useStore((s) => s.rerunNode);
   const deleteVersion = useStore((s) => s.deleteVersion);
-  const setSelectedNodeId = useStore((s) => s.setSelectedNodeId);
-  // Passages child branches explore from (derived from the children).
-  // Clicking a mark walks the panel to that branch and centers it. The
-  // selector returns the serialized form: a fresh array from a selector
-  // re-renders forever (Object.is snapshot comparison).
-  const exploreMarksKey = useStore((s) => collectExploreMarksKey(nodeId, s.nodes, s.edges));
-  const exploreMarks = useMemo(() => JSON.parse(exploreMarksKey) as ExploreMark[], [exploreMarksKey]);
   const t = useT();
   const editingHere = data.isEditingResponse && data.responseEditor === 'panel';
   const activity = activeAgentActivity(data);
-  const exploreSpecs = exploreMarks.map((m) => ({
-    text: m.text,
-    nodeId: m.nodeId,
-    title: `${t('node.exploredHere')} · ${m.question.slice(0, 80)}`,
-  }));
-  const handleExploreMarkClick = (e: React.MouseEvent) => {
-    if (highlighter.active) return;
-    const m = (e.target as HTMLElement).closest?.('mark[data-explore-target]');
-    if (!m) return;
-    if (window.getSelection()?.toString()) return; // a drag-select, not a click
-    e.stopPropagation();
-    const childId = m.getAttribute('data-explore-target');
-    // the same guard the card's click has: a mark whose node is gone (deleted, or written by the model) does
-    // nothing, instead of selecting an id the panel cannot show (#56)
-    if (!childId || !useStore.getState().nodes.some((n) => n.id === childId)) return;
-    setSelectedNodeId(childId);
-    onFocusNode?.(childId);
+  const handleCitationClick = (event: React.MouseEvent) => {
+    if (highlighter.active || window.getSelection()?.toString()) return;
+    const target = (event.target as HTMLElement).closest?.('[data-node-cite]')?.getAttribute('data-node-cite');
+    if (!target || !useStore.getState().nodes.some(node => node.id === target)) return;
+    event.stopPropagation();
+    useStore.getState().setSelectedNodeId(target);
+    onFocusNode?.(target);
   };
-
   const draftKey = `response-edit:${nodeId}`;
   const [editResponseValue, setEditResponseValue] = useState(() => useUiStore.getState().drafts[draftKey] ?? data.response);
   const editorRef = useRef<HTMLDivElement>(null);
@@ -98,11 +79,11 @@ export default function ResponseSection({
     const content = streamRef.current;
     const el = content?.closest<HTMLElement>('[data-conversation-split-answer]') ?? content;
     if (!content || !el) return;
-    // Follow only the live text inside its pane; the surrounding page keeps
-    // its own scroll position for metadata and inspection.
+    // Follow only the live text inside its pane; the surrounding panel and
+    // the separate metadata and inspection regions stay stationary.
     const tailScrollTop = () => Math.max(0, el === content
       ? el.scrollHeight - el.clientHeight
-      : content.getBoundingClientRect().bottom - el.getBoundingClientRect().top + el.scrollTop - el.clientHeight);
+      : screenToUi(content.getBoundingClientRect().bottom - el.getBoundingClientRect().top) + el.scrollTop - el.clientHeight);
     const atTail = () => Math.abs(tailScrollTop() - el.scrollTop) <= 1;
     let previousScrollTop = el.scrollTop;
     let upwardWheelPending = false;
@@ -232,7 +213,6 @@ export default function ResponseSection({
             <button onClick={cancelEdit} className="text-control text-ink-muted hover:text-ink px-3 py-1.5 rounded-control hover:bg-wash transition-colors">{t('common.cancel')}</button>
             <button onClick={handleResponseEditSubmit} className="text-control bg-action hover:bg-action-strong text-white px-4 py-1.5 rounded-control transition-colors">{t('common.save')}</button>
           </div>
-          <p className="mt-1.5 text-control text-ink-faint">{t('edit.draftHint')}</p>
         </div>
       ) : (
         <div>
@@ -240,9 +220,9 @@ export default function ResponseSection({
           {data.reasonings?.[data.responseIndex] && !activity.length && (
             <ReasoningDisclosure text={data.reasonings[data.responseIndex]!} />
           )}
-          <div ref={responseRef} className="focus-assistant-message markdown-body text-body text-ink cursor-text" onClick={handleExploreMarkClick} data-highlighter-active={highlighter.active || undefined}>
-            {highlightedTexts.size > 0 || exploreSpecs.length > 0 ? (
-              <HighlightedMarkdown base={data.agentSession?.cwd ?? data.importSource?.cwd} content={data.response} highlights={highlightedTexts} exploreMarks={exploreSpecs} />
+          <div ref={responseRef} className="focus-assistant-message markdown-body text-body text-ink cursor-text" onClick={handleCitationClick} data-highlighter-active={highlighter.active || undefined}>
+            {highlightedTexts.size > 0 ? (
+              <HighlightedMarkdown base={data.agentSession?.cwd ?? data.importSource?.cwd} content={data.response} highlights={highlightedTexts} />
             ) : (
               <Markdown base={data.agentSession?.cwd ?? data.importSource?.cwd}>{data.response}</Markdown>
             )}
@@ -257,7 +237,7 @@ export default function ResponseSection({
       {data.response && !data.isLoading && !editingHere && !data.generationFailed && (
         <div className="focus-response-actions flex flex-wrap items-center gap-0.5 text-ink-faint">
           {!isViewerMode && <button
-            onClick={() => void rerunNode(nodeId, {})}
+            onClick={() => void rerunNode(nodeId)}
             className="rounded-control w-7 h-7 flex items-center justify-center hover:text-accent hover:bg-wash transition-colors"
             data-tooltip={t('common.regenerate')}
             aria-label={t('common.regenerate')}
@@ -333,17 +313,11 @@ export default function ResponseSection({
         </div>
       )}
 
-      {/* Failed generation: retry in place */}
+      {/* Failure status; the question composer owns sending again. */}
       {data.generationFailed && !data.isLoading && (
         <div className="mt-2 flex items-center gap-2 text-control text-red-600 bg-red-50 border border-red-100 rounded-content px-3 py-2">
           <AlertTriangle size={14} strokeWidth={1.75} className="shrink-0" />
           {t('common.generationFailed')}
-          {!isViewerMode && <button
-            onClick={() => editQuestion(nodeId, data.question)}
-            className="ml-auto bg-card border border-red-200 hover:bg-red-100 text-red-600 px-2.5 py-1 rounded-control transition-colors flex items-center gap-1"
-          >
-            <RefreshCw size={12} strokeWidth={1.75} /> {t('common.retry')}
-          </button>}
         </div>
       )}
     </section>
