@@ -350,7 +350,7 @@ export default function ContentNode({ id, data, selected }: NodeProps<ThoughtNod
           the canvas zooms in); when the card is resized the body becomes the
           scroll region (wheel scrolls text, not zoom) */}
       <div className="p-surface-inset nodrag flex-1 min-h-0 flex flex-col" style={!resized ? (kind === 'note' ? { maxHeight: NOTE_BODY_MAX } : singleNativeDocument ? { height: 520, maxHeight: 520, flex: '0 0 520px' } : attachments.some(isEditableDocument) ? { maxHeight: 520 } : undefined) : undefined}>
-      <div className={`flex-1 min-h-0 overscroll-contain nowheel nopan cursor-text ${singleNativeDocument ? 'flex flex-col overflow-hidden' : 'overflow-y-auto'}`} data-content-body>
+      <div className={`flex-1 min-h-0 overscroll-contain nowheel nopan ${singleNativeDocument ? 'flex flex-col overflow-hidden' : 'overflow-y-auto'}`} data-content-body>
         {data.displayName && <div className="mb-surface-inset text-title font-semibold text-ink" data-tooltip={nodeNameSource} data-tooltip-overflow={nodeNameSource === nodeName || undefined} data-node-name>{nodeName}</div>}
         {/* a quote from the why layer says where it came from, above its text */}
         {kind === 'note' && data.recallSource && (
@@ -407,7 +407,7 @@ export default function ContentNode({ id, data, selected }: NodeProps<ThoughtNod
                 </button>
               )}
               {data.question && (
-                <div className="text-body text-ink-muted max-h-[200px] overflow-y-auto nopan nowheel whitespace-pre-wrap">
+                <div className="text-body text-ink-muted max-h-[200px] overflow-y-auto nopan nowheel whitespace-pre-wrap cursor-text">
                   {data.question.slice(0, 1200)}{data.question.length > 1200 ? '…' : ''}
                 </div>
               )}
@@ -476,7 +476,7 @@ export default function ContentNode({ id, data, selected }: NodeProps<ThoughtNod
                 <div key={att.id}>
                   <FileAttachmentHeader attachment={att} onRemove={() => removeAttachment(id, att.id)} />
                   {(att.extractedText || att.content) && <pre data-file-text-preview={att.id}
-                    className="max-h-[380px] overflow-auto nowheel nopan whitespace-pre-wrap break-words text-control text-ink-muted font-mono">{(att.extractedText || att.content).slice(0, 12000)}</pre>}
+                    className="max-h-[380px] overflow-auto nowheel nopan whitespace-pre-wrap break-words text-control text-ink-muted font-mono cursor-text">{(att.extractedText || att.content).slice(0, 12000)}</pre>}
                 </div>
               )
             ))}

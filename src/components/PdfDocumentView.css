@@ -1,4 +1,5 @@
-.pdf-document-view { min-width: 0; color: var(--color-ink); }
+/* Only the positioned text spans promise selection; page and toolbar gaps do not. */
+.pdf-document-view { min-width: 0; color: var(--color-ink); cursor: default; }
 .pdf-document-controls { position: sticky; top: 0; z-index: 12; background: var(--color-card); }
 .pdf-document-toolbar { display: flex; flex-wrap: wrap; gap: 4px; padding: 8px 0; border-bottom: 1px solid var(--color-line); }
 .pdf-document-tool { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 32px; padding: 4px 10px; border-radius: var(--radius-control); }

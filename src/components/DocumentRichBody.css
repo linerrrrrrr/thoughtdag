@@ -1,5 +1,5 @@
 /* Source-document paper keeps author colors readable in both interface themes. */
-.document-rich-body { overflow-wrap: anywhere; min-width: 0; background: #fff; color: #202632; padding: 16px; }
+.document-rich-body { overflow-wrap: anywhere; min-width: 0; background: #fff; color: #202632; padding: 16px; cursor: auto; }
 .document-rich-body > :first-child { margin-top: 0; }
 .document-rich-body p { margin: 0 0 1em; }
 .document-rich-body h1 { font-size: var(--text-page); line-height: var(--text-page--line-height); font-weight: 600; margin: 1.1em 0 .6em; }

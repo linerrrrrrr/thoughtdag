@@ -11,6 +11,7 @@
 /* A grab cursor promises movement from this exact hit target. React Flow's
    node-wide grab/pointer defaults do not respect our header-only drag handles. */
 .react-flow .react-flow__node,
+.react-flow .react-flow__node.selectable,
 .react-flow .react-flow__node.draggable { cursor: default; }
 .react-flow__node.draggable .drag-handle { cursor: grab; }
 .react-flow__node .drag-handle :where(.nodrag:not(.react-flow__handle, .react-flow__resize-control)) { cursor: default; }

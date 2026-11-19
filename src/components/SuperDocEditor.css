@@ -9,8 +9,11 @@
 .docx-document-actions button:disabled { opacity: .4; cursor: default; }
 .docx-document-actions button:focus-visible, .docx-return-view:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
 .docx-view-host { position: relative; flex: 1; min-height: 0; min-width: 0; overflow: hidden; background: var(--color-wash); }
-.docx-engine { position: absolute; inset: 0; height: 100%; width: 100%; min-height: 0; min-width: 0; color: #000; color-scheme: light; cursor: text; }
+.docx-engine { position: absolute; inset: 0; height: 100%; width: 100%; min-height: 0; min-width: 0; color: #000; color-scheme: light; cursor: default; }
 .docx-engine .superdoc { height: 100%; }
+/* Only the paper can place a document caret; outer gutters and page gaps
+   belong to the viewer. Native links and resize controls keep their cursors. */
+.docx-engine .superdoc-page { cursor: text; }
 .docx-engine [role="textbox"] { outline: none; }
 /* The native editor paints its own caret and keeps it after blur. Retain the
    document selection, but only show its insertion point while it has focus. */

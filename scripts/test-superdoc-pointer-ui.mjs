@@ -153,6 +153,19 @@ try {
           start: { x: startRect.x + 0.2, y: startRect.y + startRect.height / 2 }, end: { x: endRect.x - 0.2, y: endRect.y + endRect.height / 2 },
           sourceText: allText.slice(Math.max(0, start - 30), end + 30) };
       }, phrase);
+      const cursorAt = async point => {
+        await page.mouse.move(point.x, point.y);
+        return page.evaluate(({ x, y }) => {
+          const element = document.elementFromPoint(x, y);
+          return { cursor: element && getComputedStyle(element).cursor,
+            onPaper: !!element?.closest('.superdoc-page'), inDocument: !!element?.closest('.docx-engine') };
+        }, point);
+      };
+      const textCursor = await cursorAt(target.start);
+      assert.equal(textCursor.cursor, 'text', 'Document text retains its selection cursor');
+      const gutterCursor = await cursorAt({ x: target.engine.x + 2, y: target.start.y });
+      assert.ok(gutterCursor.inDocument && !gutterCursor.onPaper, 'The gutter probe must hit outside the paper');
+      assert.equal(gutterCursor.cursor, 'default', 'Document gutters must not inherit the text cursor');
       const beforeSelection = await page.screenshot();
       await page.mouse.move(target.start.x, target.start.y);
       await page.mouse.down();

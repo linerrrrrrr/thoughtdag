@@ -94,6 +94,26 @@ async function point(locator, fx = .5, fy = .5) {
   return { x: box.x + box.width * fx, y: box.y + box.height * fy };
 }
 
+async function dragSurfacePoint(locator) {
+  const center = await point(locator);
+  // Hover reveals connection targets, which must be excluded before choosing
+  // a gesture origin on a short overview header.
+  await page.mouse.move(center.x, center.y);
+  await settle();
+  const target = await locator.evaluate(element => {
+    const box = element.getBoundingClientRect();
+    for (const fy of [.5, .25, .75, .1, .9]) for (const fx of [.5, .25, .75, .1, .9]) {
+      const x = box.x + box.width * fx, y = box.y + box.height * fy;
+      const hit = document.elementFromPoint(x, y);
+      if (hit && element.contains(hit) && hit.closest('.drag-handle')
+        && !hit.closest('.nodrag, button, input, textarea, a[href]')) return { x, y };
+    }
+    return null;
+  });
+  assert.ok(target, 'A non-interactive drag surface is available outside connection targets');
+  return target;
+}
+
 async function cursorAt(at, expected, label, selector) {
   await page.mouse.move(at.x, at.y);
   await settle();
@@ -130,6 +150,9 @@ function moved(before, after, ids, dx, dy, zoom) {
 
 async function dragNode(id, selector, ids, zoom, fx = .6, fy = .5) {
   const at = await point(node(id).locator(selector).first(), fx, fy);
+  assert.equal(await page.evaluate(({ x, y }) => !!document.elementFromPoint(x, y)
+    ?.closest('.react-flow__handle, .react-flow__resize-control, button, input, textarea, a[href]'), at), false,
+    `${id} drag gesture starts on the drag surface, outside ports and controls`);
   await cursorAt(at, 'grab', `${id} drag target`, '.drag-handle');
   const before = await positions();
   await drag(at, 72, 30, async current => {
@@ -261,7 +284,9 @@ try {
 
   for (const detail of ['summary', 'compact']) await probe(`${detail}: overview drag targets retain the same promise`, async () => {
     await fixture({ detail, zoom: .65 });
-    await dragNode('note', '.drag-handle', ['note'], .65, .55, .65);
+    // The compact shell includes large connection targets near its edges.
+    // Start on the rendered name so this exercises moving, not wiring.
+    await dragNode('note', '.node-overview-name', ['note'], .65, .3, .5);
     await fixture({ detail, zoom: .65 });
     await dragNode('thought', '[data-node-details-header]', ['thought'], .65, .6, .5);
   });
@@ -289,7 +314,7 @@ try {
     for (const detail of ['full', 'compact']) {
       await fixture({ disabled: true, detail });
       for (const id of ['thought', 'note', 'frame']) {
-        const at = await point(node(id).locator('.drag-handle').first(), .55, .5);
+        const at = await dragSurfacePoint(node(id).locator('.drag-handle').first());
         await cursorAt(at, 'default', `${id} disabled header`);
         const before = await positions();
         await drag(at, 40, 20);

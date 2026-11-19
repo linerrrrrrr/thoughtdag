@@ -180,6 +180,7 @@
 | 节点临时内容与尺寸 | `node scripts/test-node-size-stability-ui.mjs` | 摘要、划线、推理、执行过程和正文编辑前后的可见与保存尺寸；收起后的手动高度和刷新恢复 |
 | 对象叠放层级 | `node scripts/test-node-layer.mjs`、`node scripts/test-node-layer-ui.mjs` | 四项层级操作、单选与多选相对次序、实际遮挡与点击命中、分区覆盖自动叠放、撤销重做、持久化、菜单替换与中英文深浅主题窄屏 |
 | 指针与拖动能力 | `node scripts/test-canvas-cursor-ui.mjs` | 实际命中位置的指针与按住拖动、正文选字、按钮隔离、分区框选、多选、概览及禁用状态；深浅主题与缩放 |
+| 材料文档指针边界 | `node scripts/test-document-cursor-ui.mjs` | PDF 文字、纸面空白、页外留白、页间及滚动区域分别命中；按钮、截图模式与真实选字；图片和纯文本材料；使用关闭磁盘存储的隔离开发服务器 |
 | 图片与浮窗拖动 | `node scripts/test-reader-drag-cursors-ui.mjs` | 图片实际溢出与缩放、窗口变化、截图模式；浮窗标题拖动、关闭按钮隔离与光标复位 |
 | 连接、排版与几何联动 | `node scripts/test-canvas-connections-ui.mjs`、`npm run test:layout` | 端口朝向、连接、预览/应用/撤销及箭头顺序；仅涉及这些行为时追加 |
 | 全局连线设置 | `node scripts/test-edge-routing-settings-ui.mjs`、`node scripts/test-edge-path.mjs` | 避障开关、连续避让和曲率的实时生效、真实路径与障碍留白、正交边界、无效输入及刷新、数值和键盘，以及中英文深浅主题宽窄样张 |

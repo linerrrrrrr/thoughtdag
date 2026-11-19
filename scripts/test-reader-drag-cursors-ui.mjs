@@ -93,9 +93,19 @@ try {
   check('clipping owns its crosshair and disables image panning');
   await imageFixture(400);
   await expectPanCursor('default');
-  await page.setViewportSize({ width: 1600, height: 500 });
+  // At the 75% interface scale a 400px image still fits a 500px viewport.
+  // Make the viewport short enough to exercise real vertical overflow.
+  await page.setViewportSize({ width: 1600, height: 400 });
+  await page.waitForFunction(() => {
+    const body = document.querySelector('[data-reader-body]');
+    return body && body.scrollHeight > body.clientHeight + 1;
+  });
   await expectPanCursor('grab');
   await page.setViewportSize({ width: 1600, height: 1100 });
+  await page.waitForFunction(() => {
+    const body = document.querySelector('[data-reader-body]');
+    return body && body.scrollHeight <= body.clientHeight + 1;
+  });
   await expectPanCursor('default');
   check('viewport resizing updates overflow availability in both directions');
   await page.screenshot({ path: `${output}/reader-fitted.png` });
