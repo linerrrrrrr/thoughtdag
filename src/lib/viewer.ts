@@ -54,7 +54,10 @@ export async function buildViewerLink(nodes: ThoughtNode[], edges: ThoughtEdge[]
         // still reads everything.
         attachments: (n.data.attachments ?? []).map((a) => ({
           ...a,
-          sourcePath: undefined,
+          nodeFileRevision: undefined,
+          pdfFileRevision: undefined,
+          pdfFileContent: undefined,
+          pdfSavedAnnotations: undefined,
           content: a.type.startsWith('image/') || a.type === 'application/pdf' || a.type === DOCX_MIME_TYPE || isNotebook(a) ? '' : a.content,
           contentInVault: undefined,
           editedDocxContent: undefined,

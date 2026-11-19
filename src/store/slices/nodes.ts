@@ -42,6 +42,7 @@ const abortGenerations = (ids: Iterable<string>): void => {
 
 export const createNodeSlice: StateCreator<StoreState, [], [], NodeSlice> = (set, get, api) => ({
   nodes: [],
+  lastNodeNumber: 0,
   edges: [],
   selectedNodeId: null,
   selectedNodeIds: [],

@@ -36,7 +36,7 @@ await page.addInitScript(() => {
 // Fixed ASCII lengths have an unambiguous estimate: 10 + 20 + 80 + 40 = 150.
 // The unrelated attachment and stale tokenCount must not inflate this total.
 const fixture = {
-  displayName: '交付前核查', displaySummary: '核对需求、验证交互，再检查清晰度与边界情况。',
+  nodeNumber: 7, displayName: '交付前核查', displaySummary: '核对需求、验证交互，再检查清晰度与边界情况。',
   question: 'What should we inspect before shipping?'.padEnd(40),
   response: 'Check the scope, verify the interaction, and inspect every supported viewport.'.padEnd(80),
   reasonings: ['Inspect the behavior before judging its appearance.'.padEnd(160)],
@@ -110,6 +110,10 @@ const within = async (child, parent, label) => {
   const c = await child.boundingBox(), p = await parent.boundingBox();
   assert.ok(c && p && c.x >= p.x - 1 && c.x + c.width <= p.x + p.width + 1,
     `${label} extends outside its parent: ${JSON.stringify({ child: c, parent: p })}`);
+};
+const resize = async width => {
+  await page.evaluate(width => window.__store.getState().setSelectionGeometry(['status-a'], { width }), width);
+  await settle();
 };
 const assertNarrow = async label => {
   const dimensions = await node().locator('.thought-node').evaluate(element => {
@@ -199,7 +203,7 @@ try {
     const rect = header.getBoundingClientRect();
     for (let x = rect.right - 90; x > rect.left + 40; x -= 4) {
       const y = rect.top + rect.height / 2, hit = document.elementFromPoint(x, y);
-      if (hit === header || hit?.classList.contains('node-header-status')) return { x, y };
+      if (hit === header || hit?.matches('.node-header-main, .node-header-author')) return { x, y };
     }
     return null;
   });
@@ -242,31 +246,58 @@ try {
     await language(lang);
     for (const theme of ['light', 'dark']) {
       await lighting(theme);
-      // Use the same geometry action as the format panel, then wait for
-      // React Flow measurement before asserting the actual rendered size.
-      await page.evaluate(() => window.__store.getState().setSelectionGeometry(['status-a'], { width: 360, height: 480 }));
-      await settle();
-      await assertNarrow(`${lang}/${theme} before hover`);
-      await assertStatusLayout();
+      await resize(360);
+      await assertNarrow(`${lang}/${theme}`);
       const header = node().locator('.thought-node-header');
       assert.equal(await header.evaluate(element => element.scrollWidth > element.clientWidth + 1), false, `${lang}/${theme} narrow header overflow`);
-      await within(usage(), header, 'Token usage');
-      await within(node().locator('[data-tool-marks]'), header, 'Tool calls');
-      await within(node().locator('[data-node-details]'), header, 'Details button');
-      await usage().hover();
-      await page.waitForTimeout(400);
-      assert.equal(await tip().count(), 0, 'Narrow cards have no token popup');
-      assert.ok((await usage().getAttribute('aria-label')).includes(lang === 'en' ? 'Turn content estimate' : '本轮内容估算'));
-      assert.equal((await node().locator('[data-tool-marks]').innerText()).trim(), '2');
-      await assertNarrow(`${lang}/${theme} at capture`);
+      assert.equal(await usage().isVisible(), false);
+      assert.equal(await bar().isVisible(), false);
+      assert.equal(await header.locator('[data-tool-marks]').isVisible(), false);
+      const model = header.getByText('long-model-name-for-header-overflow-checks', { exact: true });
+      const fields = [header.locator('[data-node-number]'), header.locator('[data-node-execution-kind]'), model, header.locator('[data-node-details]')];
+      let previous;
+      for (const field of fields) {
+        await within(field, header, 'Node identity, source, model and details stay inside the header');
+        const box = await field.boundingBox();
+        assert.ok(box.width > 0 && (!previous || box.x >= previous.x + previous.width - 1));
+        if (previous) assert.ok(Math.abs(box.y + box.height / 2 - previous.y - previous.height / 2) < 2, 'Narrow fields share one row');
+        previous = box;
+      }
+      assert.ok((await header.boundingBox()).height <= 54, 'Hiding usage leaves no reserved row');
       await screenshot(`${theme}-${lang}-narrow`);
-      await page.mouse.move(1300, 850);
     }
   }
-  check('Chinese/English and light/dark narrow cards retain visible status and actions without overflow');
+  check('Chinese/English and light/dark narrow cards hide the whole usage group while identity, model and actions share one row');
 
   await language('zh');
   await lighting('light');
+  const header = node().locator('.thought-node-header');
+  await patch({ data: { isLoading: true, condensedFrom: ['source-a', 'source-b'] } });
+  assert.equal(await usage().isVisible(), false);
+  await header.getByRole('button', { name: '停止', exact: true }).click({ trial: true });
+  await header.getByRole('button', { name: '删除节点', exact: true }).click({ trial: true });
+  await header.locator('[data-condensed-from]').click({ trial: true });
+  await patch({ data: { isLoading: false, condensedFrom: undefined } });
+  // CSS size queries measure the content box. The start card has a thicker left border.
+  const borders = await node().locator('.thought-node').evaluate(element => {
+    const style = getComputedStyle(element);
+    return parseFloat(style.borderLeftWidth) + parseFloat(style.borderRightWidth);
+  });
+  for (const width of [430, 430 + borders, 431 + borders, 430 + borders, 520]) {
+    await resize(width);
+    assert.equal(await usage().isVisible(), width - borders > 430, `Usage at ${width - borders}px content width`);
+  }
+  await assertStatusLayout();
+  assert.match(await usage().innerText(), /150\s+tokens/);
+  assert.equal((await node().locator('[data-tool-marks]').innerText()).trim(), '2');
+  const details = header.locator('[data-node-details]');
+  const source = header.locator('[data-node-execution-kind]');
+  const model = header.getByText('long-model-name-for-header-overflow-checks', { exact: true });
+  const [sourceBox, modelBox, usageBox, detailsBox] = await Promise.all([source, model, usage(), details].map(field => field.boundingBox()));
+  assert.ok(sourceBox.x + sourceBox.width <= modelBox.x + 1 && modelBox.x + modelBox.width <= usageBox.x + 1
+    && usageBox.x + usageBox.width <= detailsBox.x + 1, 'Wide fields follow A1 order');
+  await header.screenshot({ path: `${output}/light-header-520.png` });
+  check('The 430px content-width breakpoint hides usage inclusively, restores it with its data, and keeps conditional actions accessible');
   await patch({ data: { attachments: [], excludedAttachmentIds: [], reasonings: undefined, reasoningTokens: undefined } });
   assert.match(await usage().innerText(), /30\s+tokens/);
   assert.equal(await node().locator('[data-tool-marks]').count(), 0);

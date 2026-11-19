@@ -47,8 +47,9 @@ class PiProcess {
     this.idleTimer = null;
     // extra extensions for development and tests (colon-separated paths)
     const extra = (process.env.TD_PI_EXTRA_EXTENSIONS || '').split(':').filter(Boolean).flatMap((e) => ['-e', e]);
-    const args = ['--mode', 'rpc', ...(opts.noSession ? ['--no-session'] : ['-e', GUARD, ...extra])];
-    this.proc = spawn(bin, args, { cwd, env: childEnv(), stdio: ['pipe', 'pipe', 'pipe'] });
+    const args = ['--mode', 'rpc', ...(opts.noSession ? ['--no-session'] : [...(opts.nativePermissions ? [] : ['-e', GUARD]), ...extra])];
+    const env = { ...childEnv(), TD_CANVAS_FILE_DIRS: JSON.stringify(opts.fileDirs ?? []) };
+    this.proc = spawn(bin, args, { cwd, env, stdio: ['pipe', 'pipe', 'pipe'] });
     this.proc.stdout.on('data', (d) => this.feed(d.toString()));
     this.proc.stderr.on('data', (d) => this.log('[pi stderr] ' + d.toString().trim().slice(0, 400)));
     this.proc.on('error', (e) => { this.log('[pi] spawn error: ' + e.message); this.die('spawn error: ' + e.message); });
@@ -184,14 +185,15 @@ function createPiRuntime({ log } = {}) {
     return levelsPromise;
   };
 
-  async function processFor(cwd) {
-    const live = procs.get(cwd);
+  async function processFor(cwd, nativePermissions, fileDirs) {
+    const key = JSON.stringify([cwd, nativePermissions, fileDirs]);
+    const live = procs.get(key);
     if (live && !live.dead) return live;
     const found = await findPi();
     const b = found.path;
     if (!b) throw new Error(found.error || 'The local agent executable was not found on PATH or in the usual installation directories.');
-    const p = new PiProcess(b, cwd, { log: say, onExit: (dead) => { if (procs.get(cwd) === dead) procs.delete(cwd); } });
-    procs.set(cwd, p);
+    const p = new PiProcess(b, cwd, { nativePermissions, fileDirs, log: say, onExit: (dead) => { if (procs.get(key) === dead) procs.delete(key); } });
+    procs.set(key, p);
     return p;
   }
 
@@ -233,7 +235,7 @@ function createPiRuntime({ log } = {}) {
       if (!cwd || !path.isAbsolute(cwd)) throw new Error('run needs an absolute cwd');
       await fsp.mkdir(cwd, { recursive: true });
       const runId = randomUUID();
-      const proc = await processFor(cwd);
+      const proc = await processFor(cwd, req.nativePermissions === true, req.nativePermissions ? [] : (req.managedFileDirs ?? []));
       const emit = (event) => { try { onEvent({ runId, event }); } catch { /* renderer gone */ } };
       const aborter = { aborted: false };
       runs.set(runId, { proc, abort: () => { aborter.aborted = true; proc.withdrawDialogs(); proc.send({ type: 'abort' }).catch(() => {}); } });

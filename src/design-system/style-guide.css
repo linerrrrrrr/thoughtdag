@@ -38,8 +38,8 @@ body.design-system-page { height: auto; min-height: calc(100*var(--ui-vh)); over
 .ds-dimensions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--spacing-related); }
 .ds-dimensions label { display: flex; flex-direction: column; gap: var(--spacing-control-gap); font-size: var(--text-control); color: var(--color-ink-muted); }
 .ds-dimensions input { width: 100%; min-width: 0; min-height: var(--spacing-control-size); padding: var(--spacing-control-gap) var(--spacing-related); border: 1px solid var(--color-line); border-radius: var(--radius-control); background: var(--color-card); color: var(--color-ink); font-size: var(--text-control); font-variant-numeric: tabular-nums; }
-.ds-node-header { display: flex; justify-content: space-between; align-items: center; gap: var(--spacing-related); border-bottom: 1px solid var(--color-line); }
-.ds-node-identity { display: flex; align-items: center; flex-wrap: wrap; gap: var(--spacing-related); min-width: 0; }
+.ds-node-icon { display: inline-grid; place-items: center; width: 28px; height: 28px; }
+.ds-token-composition { background-image: linear-gradient(to right, var(--node-usage-question) 0 20%, var(--node-usage-answer) 20% 75%, var(--node-usage-tool) 75% 100%); }
 .ds-node-name { padding-bottom: var(--spacing-section-gap); font-size: var(--text-title); line-height: var(--text-title--line-height); font-weight: 600; overflow-wrap: anywhere; }
 .ds-action-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--spacing-control-gap); }
 .ds-reader { border: 1px solid var(--color-line); border-radius: var(--radius-panel); overflow: hidden; }

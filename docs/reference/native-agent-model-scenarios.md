@@ -305,8 +305,8 @@ Codex 的状态根目录默认是 `~/.codex`，可由 `CODEX_HOME` 指定；这�
 | Agent 登录和配置 | 各 Agent 原有机制 | 原生登录仍由原生系统管理，不拷贝进画布或 API 设置 |
 | 业务项目文件 | 用户指定 cwd；原生工具可能写显式其他目标 | 用户/Agent 管，GUI 显示实际目录与授权范围 |
 | 默认空白工作区 | 桌面：`<Electron userData>/workspaces/<canvasId>`；HTTP/插件：`~/.thoughtdag/workspaces/<canvasId>` | 统一可配置根并显示实际路径；不在“看一眼设置”时创建 |
-| 自动落盘材料 | 当前 `<cwd>/.thoughtdag/materials/` | 纯原生不自动写；显式交接才准备输入副本，按任务隔离并提示 |
-| guard | 当前 `<cwd>/.thoughtdag/guard.json` | 纯原生沿用原设置时不写覆盖文件；显式附加策略另存、说明生效范围 |
+| 画布文件 | 画布工作区内按节点和附件隔离的普通文件 | 连接材料或在问题中引用节点编号会携带内部路径；Agent 继续使用原工作目录 |
+| guard | 原生节点默认沿用运行时设置 | 选择画布审批模式后使用 `<cwd>/.thoughtdag/guard.json` |
 | 画布主数据 | IndexedDB，按 origin/应用 profile 隔离 | 保留应用数据语义；需要明确可备份的完整持久化形式 |
 | PDF 等附件原件 | IndexedDB `att-content:<id>` 等 | 必须被完整备份覆盖；主数据之外的附件不能遗漏 |
 | 画布索引源记录 | `${THOUGHTDAG_HOME 或 ~/.thoughtdag}/canvases/*.thoughtdag.json`，目前桌面写入 | 这是精简可检索记录，不是完整画布备份 |

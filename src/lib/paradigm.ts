@@ -13,6 +13,7 @@ export interface ParadigmFile {
   version: 1;
   name: string;
   description?: string;
+  lastNodeNumber?: number;
   nodes: ThoughtNode[];
   edges: ThoughtEdge[];
 }
@@ -79,6 +80,7 @@ export function instantiateParadigm(pNodes: ThoughtNode[], pEdges: ThoughtEdge[]
 
     const data: ThoughtData = {
       ...baseData(),
+      nodeNumber: pn.data.nodeNumber,
       question,
     };
     if (kind === 'human') {

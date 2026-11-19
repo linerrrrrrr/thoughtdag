@@ -6,6 +6,7 @@ import { useStore } from '../store';
 import { useT } from '../i18n';
 import NodeConnectionHandles from './NodeConnectionHandles';
 import NodeOverview from './NodeOverview';
+import NodeNumber from './NodeNumber';
 import { useNodeDetail } from '../lib/node-detail';
 import { getNodeDisplayName } from '../lib/node-display-name';
 import { pixelDimension } from '../lib/node-content-height';
@@ -61,13 +62,14 @@ export default function ParadigmNode({ id, data, selected }: NodeProps<ThoughtNo
         setEditing(true);
         requestAnimationFrame(() => root.current?.querySelector('input')?.focus());
       }}>
-        <NodeOverview name={getNodeDisplayName(data, t('paradigm.titlePlaceholder'))} preview={data.instruction}
+        <NodeOverview number={data.nodeNumber} name={getNodeDisplayName(data, t('paradigm.titlePlaceholder'))} preview={data.instruction}
           compact={tier === 'glyph'} previewAlways={!!fixed} typeLabel={t(`paradigm.kind.${kind}`)} />
       </div> : <>
 
       {/* header: drag handle + kind switcher + delete */}
       <div className="flex shrink-0 items-center justify-between px-5 py-2 border-b border-line/60 drag-handle">
         <div className="flex gap-1">
+          <NodeNumber number={data.nodeNumber} />
           {KINDS.map(({ kind: k, icon: Icon, labelKey }) => (
             <button
               key={k}

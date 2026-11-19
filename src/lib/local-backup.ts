@@ -62,7 +62,7 @@ let dirty = false;
 
 /** What the file should contain and be called — shared by both modes. */
 async function backupPayload(): Promise<{ name: string; json: string } | null> {
-  const { nodes: rawNodes, edges, events } = useStore.getState();
+  const { nodes: rawNodes, edges, events, lastNodeNumber } = useStore.getState();
   if (rawNodes.length === 0) return null;
   const { projects, activeId } = useProjects.getState();
   const activeMeta = projects.find((p) => p.id === activeId);
@@ -80,6 +80,7 @@ async function backupPayload(): Promise<{ name: string; json: string } | null> {
     exportedAt: new Date().toISOString(),
     instantiatedFrom: activeMeta?.instantiatedFrom,
     nodes: stripTransient(nodes),
+    lastNodeNumber,
     edges,
     events,
   }));

@@ -1,10 +1,12 @@
 import { appSettings } from './disk-storage';
 import { useEffect, useState } from 'react';
 import { API_BASE } from './constants';
-import { storedProviders, pushProviders } from './runtime-providers';
-import { agentCatalog, AGENT_PROVIDER, AGENT_RUNTIMES, agentTarget, isAgentModel, type RuntimeStatus } from './agents/agent-runtime';
+import { storedProviders, pushProviders, refreshStoredProviders } from './runtime-providers';
+import { agentCatalog, AGENT_PROVIDER, AGENT_RUNTIMES, agentTarget, isAgentModel, runtimeOf, type RuntimeStatus } from './agents/agent-runtime';
+import { modelMatchesExecution, type NodeExecutionKind } from './node-execution';
 import type { AgentRuntime } from '../types';
 import { t, fmt } from '../i18n';
+import { canRetryAgentHost, ensureAgentHost } from './agents/host';
 
 export interface ModelInfo {
   id: string;
@@ -35,6 +37,13 @@ let cache: ModelData | null = null;
 let inflight: Promise<ModelData | null> | null = null;
 const listeners = new Set<(d: ModelData) => void>();
 
+async function fetchServerModels(): Promise<ModelData> {
+  const response = await fetch(`${API_BASE}/api/models`);
+  if (!response.ok) throw new Error(`Model list: ${response.status}`);
+  const data = await response.json();
+  return { models: data.models ?? [], default: data.default ?? null, capabilities: data.capabilities };
+}
+
 /** Imperative access to the same per-session model cache (e.g. picking an extraction model). */
 export function getModelsOnce(): Promise<ModelData | null> {
   if (cache) return Promise.resolve(cache);
@@ -47,12 +56,9 @@ export function getModelsOnce(): Promise<ModelData | null> {
       try { base = await pushProviders(stored); } catch { /* proxy down or bad config: fall through to the plain list */ }
     }
     if (!base) {
-      base = await fetch(`${API_BASE}/api/models`)
-        .then((r) => r.json())
-        .then((d) => ({ models: d.models ?? [], default: d.default ?? null, capabilities: d.capabilities }) as ModelData)
-        .catch(() => null);
+      base = await fetchServerModels().catch(() => null);
     }
-    if (!base) return null;
+    if (cache || !base) return cache;
     // The API models show at once. The agent runtimes are NOT asked at
     // launch: asking means starting their CLIs (a catalog process, an app
     // server — seconds and a hundred megabytes each), which a launch that
@@ -60,7 +66,7 @@ export function getModelsOnce(): Promise<ModelData | null> {
     // in; the runtimes are asked the first time a picker opens (ensureAgentsFresh).
     cache = withRemembered(base);
     return cache;
-  })();
+  })().finally(() => { inflight = null; });
   return inflight;
 }
 
@@ -93,6 +99,16 @@ export function reconcileModelId(pinned: string, models: ModelInfo[]): string | 
 const AGENT_CACHE_KEY = 'thoughtdag.agentModels';
 const AGENT_NAMES_KEY = 'thoughtdag.agentModelNames';
 const hasAgentsBridge = () => typeof window !== 'undefined' && !!window.desktopAgents;
+
+/** A remembered model name alone does not establish a connection to its runtime. */
+export function availableExecutionModels(data: ModelData | null, kind: NodeExecutionKind): ModelInfo[] {
+  return data?.models.filter(model => {
+    if (!modelMatchesExecution(model.id, kind)) return false;
+    const runtime = runtimeOf(model.id);
+    return !runtime || (hasAgentsBridge() && data.runtimes?.[runtime]?.installed === true);
+  }) ?? [];
+}
+
 /** The agent entries the runtimes bridge owns and may replace: the ones it
  *  reported itself (pi/ codex/ claude/ ids). A server can hand out agent
  *  entries of its own under the same group (the harness runs the agent loop
@@ -161,19 +177,30 @@ async function refreshAgents(): Promise<void> {
   return agentsRefreshing;
 }
 
-/** The first picker to open in this launch asks the runtimes for their
- *  catalogs (the spinner in the agent group covers the wait); later opens
- *  reuse the answer. Harmless when there is no agents bridge. */
-/** Ask the runtimes again now (the picker's recheck after the person installed a CLI or fixed their PATH). */
-export function recheckAgents(): Promise<void> {
+/** A picker can open while startup is still discovering the HTTP bridge. */
+export async function ensureAgentsFresh(force = false): Promise<void> {
+  if (!await ensureAgentHost(canRetryAgentHost())) return;
+  if (!await getModelsOnce()) return;
+  if (agentsAsked && !force) return agentsRefreshing ?? undefined;
   agentsAsked = true;
-  return getModelsOnce().then(() => refreshAgents());
+  return refreshAgents();
 }
 
-export function ensureAgentsFresh(): void {
-  if (agentsAsked || !hasAgentsBridge()) return;
-  agentsAsked = true;
-  void getModelsOnce().then(() => refreshAgents());
+export function recheckAgents(): Promise<void> {
+  return ensureAgentsFresh(true);
+}
+
+let catalogRefresh: Promise<void> | null = null;
+export function refreshModelCatalog(): Promise<void> {
+  catalogRefresh ??= (async () => {
+    try {
+      const data = await refreshStoredProviders() ?? await fetchServerModels();
+      setModelsCache(data);
+    } finally {
+      await (agentsRefreshing ?? recheckAgents());
+    }
+  })().finally(() => { catalogRefresh = null; });
+  return catalogRefresh;
 }
 
 /** A turn reported which model an agent alias resolved to: remember it
@@ -199,7 +226,6 @@ if (typeof window !== 'undefined') {
 /** Replace the shared cache (after a runtime-key change) and notify every subscribed picker. */
 export function setModelsCache(d: ModelData): void {
   cache = d;
-  inflight = Promise.resolve(d);
   for (const fn of listeners) fn(d);
   // a list rebuilt from a runtime-key change carries no agent group yet:
   // last launch's entries come back, and a fresh answer only if this

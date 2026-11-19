@@ -1,24 +1,79 @@
-/* Full-detail cards keep one bounded reading area; each pane scrolls independently. */
+/* The reading panes and the stationary response footer share the card's height budget. */
+.conversation-node-split-body {
+  --node-reading-inset: var(--spacing-surface-inset);
+}
+
 .conversation-node [data-thought-body].conversation-node-split-body {
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  padding-block: var(--node-reading-inset);
+  overflow: clip;
+}
+
+.conversation-node:not([data-thought-resized]) .conversation-node-split-body {
+  max-height: calc(420px + 2 * var(--node-reading-inset));
 }
 
 .conversation-node-split-body > .conversation-split {
+  flex: 0 1 auto;
+  height: var(--conversation-natural-height);
+}
+
+.conversation-node-split-body > [data-node-response-footer] {
   flex: none;
-  height: var(--conversation-natural-height, 420px);
+  position: relative;
 }
 
-.conversation-node[data-thought-resized] > .conversation-node-split-body {
+/* Clipboard denial opens a selectable field above the dock, including on short cards. */
+.conversation-node .conversation-node-split-body:has(.response-manual-copy) {
+  overflow: visible;
+}
+
+[data-node-response-footer] .response-manual-copy {
+  position: absolute;
+  z-index: 2;
+  inset-inline: 0;
+  bottom: calc(100% + var(--spacing-control-gap));
+  padding: var(--spacing-related);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-content);
+  background: var(--color-card);
+  box-shadow: var(--shadow-md);
+}
+
+.conversation-node[data-thought-resized] .conversation-node-split-body {
   flex: 1;
+  min-height: min-content;
 }
 
-.conversation-node[data-thought-resized] > .conversation-node-split-body > .conversation-split {
+.conversation-node[data-thought-resized] .conversation-node-split-body > .conversation-split {
   flex: 1;
   height: auto;
+  /* Leave intrinsic space for the footer before an expanded disclosure takes the remaining height. */
+  contain: size;
 }
 
 .conversation-node .conversation-split-question .conversation-question {
   margin-bottom: 0;
+}
+
+/* A wrapping footer leaves room for prose even at the minimum canvas size. */
+@container (max-width: 430px) {
+  .conversation-node:has([data-node-response-footer]) .node-metadata-toggle {
+    min-height: var(--spacing-control-size);
+    padding-block: var(--spacing-control-gap);
+  }
+  .conversation-node:has([data-node-response-footer]) .node-highlights {
+    min-height: var(--spacing-control-size);
+  }
+  .conversation-node-split-body:has(> [data-node-response-footer]) {
+    --node-reading-inset: var(--spacing-control-gap);
+  }
+  .conversation-node-split-body:has(> [data-node-response-footer]) .conversation-answer.markdown-body > :last-child {
+    margin-block-end: 0;
+  }
+  .conversation-node .conversation-actions { margin-top: var(--spacing-control-gap); }
+  [data-node-response-footer] > :is([data-generated-at], [data-gateway-searched], [data-agent-continued]) {
+    order: 1;
+  }
 }

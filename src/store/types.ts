@@ -27,6 +27,7 @@ export interface HistorySlice {
 
 export interface NodeSlice {
   nodes: ThoughtNode[];
+  lastNodeNumber: number;
   edges: ThoughtEdge[];
   selectedNodeId: string | null;
   selectedNodeIds: string[];
@@ -148,4 +149,4 @@ export interface AttachmentSlice {
 
 export type StoreState = HistorySlice & NodeSlice & LlmSlice & HighlightSlice & AttachmentSlice & ReplaySlice & EventSlice;
 
-export type PersistedState = { nodes: ThoughtNode[]; edges: ThoughtEdge[]; events?: CanvasEvent[] };
+export type PersistedState = { nodes: ThoughtNode[]; edges: ThoughtEdge[]; events?: CanvasEvent[]; lastNodeNumber?: number };

@@ -1,7 +1,7 @@
 // Exercise the local storage boundary without touching the user's browser data.
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
-import { mkdtemp, mkdir, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { Readable } from 'node:stream';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -43,6 +43,47 @@ try {
   assert.equal((await call(handler, { data: { op: 'open', namespace, origin: 'http://localhost:5173' } })).status, 404);
   assert.equal((await call(handler, { data: { op: 'finish', namespace, origin: 'http://localhost:5173' } })).status, 200);
   assert.equal((await call(handler, { data: { op: 'open', namespace, origin: 'http://localhost:5173' } })).status, 200);
+  const document = async (request, origin = 'http://localhost:5173') => call(handler, { data: { op: 'document', namespace, origin, request } });
+  const key = { canvasId: 'storage-test', nodeId: 'node-1', attachmentId: 'a1', name: '研究方案.docx' };
+  const encoded = (s) => Buffer.from(s).toString('base64');
+  const initial = { ...key, op: 'ensure', base64: encoded('first') };
+  assert.equal((await document(initial, 'http://localhost:5174')).status, 403);
+  const { data: file } = await document(initial);
+  assert.equal(path.basename(file.path), key.name);
+  assert.equal(await readFile(file.path, 'utf8'), 'first');
+  assert.equal((await document(initial)).data.revision, file.revision);
+  const known = { ...key, knownRevision: file.revision };
+  const probe = { op: 'probe', items: [known] };
+  assert.deepEqual((await document(probe)).data, []);
+  const preview = { baseRevision: file.revision, before: 'first', after: 'preview' };
+  await writeFile(file.previewPath, JSON.stringify(preview));
+  assert.deepEqual((await document(probe)).data[0].preview, preview);
+  // Exercise the same normal file an unadapted editor would save.
+  await writeFile(file.path, 'an external editor saved');
+  const [change] = (await document(probe)).data;
+  assert.equal(change.changed, true);
+  assert.equal(change.preview, undefined);
+  assert.equal((await document(initial)).data.base64, encoded('an external editor saved'));
+  assert.equal((await document({ ...known, op: 'read' })).data.revision, change.revision);
+  assert.equal((await document({ ...known, op: 'read', knownRevision: change.revision })).data.base64, undefined);
+  assert.equal((await document({ ...initial, op: 'write', expectedRevision: file.revision })).data.conflict, true);
+  const save = { ...key, op: 'write', expectedRevision: change.revision };
+  const competing = await Promise.all(['A', 'B'].map(value => call(createBrowserStorage({ dataRoot: temporary }), {
+    data: { op: 'document', namespace, origin: 'http://localhost:5173', request: { ...save, base64: encoded(value) } },
+  })));
+  assert.equal(competing.filter(({ data }) => data.conflict).length, 1);
+  assert.notEqual((await document({ ...initial, nodeId: 'node-2' })).data.path, file.path);
+  const { prepareManagedRun } = require('../runtime/managed-documents.cjs');
+  const workspace = path.join(temporary, 'workspaces');
+  const run = { cwd: temporary, managedFileDirs: [path.dirname(file.path)] };
+  assert.deepEqual(await prepareManagedRun(workspace, run), run);
+  for (const dir of [temporary, workspace, path.dirname(path.dirname(file.path))]) {
+    await assert.rejects(prepareManagedRun(workspace, { ...run, managedFileDirs: [dir] }), /Invalid canvas file directory/);
+  }
+  const siblingCanvas = (await document({ ...initial, canvasId: 'other-canvas' })).data.path;
+  assert.deepEqual((await document({ op: 'deleteCanvas', canvasId: key.canvasId })).data, { removed: true });
+  await assert.rejects(readFile(file.path), { code: 'ENOENT' });
+  assert.equal(await readFile(siblingCanvas, 'utf8'), 'first');
   assert.equal((await call(handler, { data: { op: 'list', origin: 'http://localhost:5173' } })).data.namespaces.length, 1);
   assert.equal((await call(handler, { data: { op: 'keys', namespace: other, space: 'kv' } })).status, 404);
 

@@ -1,0 +1,26 @@
+.connection-layout-options { grid-template-columns: minmax(0, 1fr); }
+.connection-layout-options .canvas-layout-choice + .canvas-layout-choice {
+  border-left: 0;
+  border-top: 1px solid var(--color-line);
+}
+.connection-layout-options .canvas-layout-choice > span {
+  justify-content: flex-start;
+  gap: var(--spacing-section-gap);
+  padding: var(--spacing-section-gap);
+  text-align: start;
+}
+.connection-layout-options .canvas-layout-choice > span > svg { flex: none; }
+.connection-layout-options .connection-layout-option-copy,
+.connection-layout-options .connection-layout-option-copy > span {
+  display: block;
+  padding: 0;
+  text-align: start;
+  color: inherit;
+}
+.connection-layout-options .connection-layout-option-copy > .connection-layout-option-hint {
+  margin-top: var(--spacing-control-gap);
+  color: var(--color-ink-muted);
+  font-size: var(--text-meta);
+  font-weight: 400;
+  line-height: var(--text-meta--line-height);
+}

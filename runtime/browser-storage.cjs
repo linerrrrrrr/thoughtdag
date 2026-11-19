@@ -87,6 +87,7 @@ async function listKeys(dir, prefixes = []) {
 function createBrowserStorage({ dataRoot }) {
   if (!dataRoot || !path.isAbsolute(dataRoot)) throw new Error('An absolute data root is required');
   const root = path.join(dataRoot, 'browser-storage');
+  const documentFile = require('./managed-documents.cjs').createManagedDocuments(path.join(dataRoot, 'workspaces'));
   return async (req, res, next) => {
     const url = new URL(req.url || '/', 'http://localhost');
     if (url.pathname !== PREFIX) return next();
@@ -96,7 +97,8 @@ function createBrowserStorage({ dataRoot }) {
       return send(res, 405, { error: 'Unsupported request' });
     }
     try {
-      const { op, namespace, space, key, value, origin } = await bodyJson(req);
+      const body = await bodyJson(req);
+      const { op, namespace, space, key, value, origin } = body;
       if (op === 'list') {
         if (![ `http://${req.headers.host}`, `https://${req.headers.host}` ].includes(origin)) return send(res, 403, { error: 'Access denied' });
         let entries;
@@ -116,6 +118,13 @@ function createBrowserStorage({ dataRoot }) {
       }
       if (!NAMESPACE.test(namespace || '')) return send(res, 400, { error: 'Invalid namespace' });
       const session = path.join(root, namespace);
+      if (op === 'document') {
+        const manifest = JSON.parse(await fs.readFile(path.join(session, 'manifest.json'), 'utf8'));
+        if (!manifest.ready || manifest.origin !== origin || ![`http://${req.headers.host}`, `https://${req.headers.host}`].includes(origin)) {
+          return send(res, 403, { error: 'Access denied' });
+        }
+        return send(res, 200, await documentFile({ ...body.request, namespace }));
+      }
       if (op === 'create') {
         if (![ `http://${req.headers.host}`, `https://${req.headers.host}` ].includes(origin)) return send(res, 403, { error: 'Access denied' });
         await fs.mkdir(root, { recursive: true, mode: 0o700 });

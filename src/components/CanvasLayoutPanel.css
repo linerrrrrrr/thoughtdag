@@ -48,6 +48,14 @@
   clip-path: inset(50%);
   white-space: nowrap;
 }
+.canvas-layout-choice input[data-connection-layout-choice] {
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  clip-path: none;
+  opacity: 0;
+  cursor: pointer;
+}
 .canvas-layout-choice span {
   display: flex;
   flex: 1;

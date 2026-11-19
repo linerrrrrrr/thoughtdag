@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { CircleCheck, CircleDashed, Loader2, RefreshCw, SquareTerminal } from 'lucide-react';
 import { useT, fmt } from '../../i18n';
-import { ensureAgentsFresh, recheckAgents, useModels } from '../../lib/use-models';
+import { availableExecutionModels, ensureAgentsFresh, recheckAgents, useModels } from '../../lib/use-models';
+import { canRetryAgentHost } from '../../lib/agents/host';
 import { useDismissableLayer } from '../../lib/use-dismissable-layer';
 import AgentCwdChip from './AgentCwdChip';
 import AgentPermissionChip from './AgentPermissionChip';
@@ -13,16 +14,25 @@ export default function AgentConnectionSection() {
   const t = useT();
   const data = useModels();
   const available = !!window.desktopAgents;
-  const models = data?.models.filter(model => model.id.startsWith('codex/')) ?? [];
+  const models = availableExecutionModels(data, 'codex');
   const status = data?.runtimes?.codex;
-  const pending = !!data?.agentsPending;
-  const connected = available && models.length > 0 && status?.installed !== false;
+  const [checking, setChecking] = useState(true);
+  const pending = checking || !!data?.agentsPending;
+  const connected = models.length > 0;
   const [setting, setSetting] = useState<'cwd' | 'approvals'>('cwd');
   const [settingOpen, setSettingOpen] = useState(false);
   const settingsRef = useRef<HTMLDivElement>(null);
   const cwdTriggerRef = useRef<HTMLButtonElement>(null);
   const approvalsTriggerRef = useRef<HTMLButtonElement>(null);
-  useEffect(() => { if (available) ensureAgentsFresh(); }, [available]);
+  useEffect(() => {
+    let open = true;
+    void ensureAgentsFresh().finally(() => { if (open) setChecking(false); });
+    return () => { open = false; };
+  }, []);
+  const reconnect = () => {
+    setChecking(true);
+    void recheckAgents().finally(() => setChecking(false));
+  };
   // Keep both triggers inside one boundary so collapsing a menu cannot move
   // the other trigger between pointerdown and click.
   useDismissableLayer({
@@ -42,7 +52,7 @@ export default function AgentConnectionSection() {
       <div className="agent-connection-runtime">
         <SquareTerminal size={20} strokeWidth={1.75} className="text-ink-muted shrink-0" aria-hidden="true" />
         <p className="text-title font-semibold text-ink">Codex</p>
-        <button type="button" disabled={!available || pending} onClick={() => void recheckAgents()} data-agent-connect
+        <button type="button" disabled={!canRetryAgentHost() || pending} onClick={reconnect} data-agent-connect
           aria-label={t(connected ? 'model.recheck' : 'connection.connect')}
           data-tooltip={t(connected ? 'model.recheck' : 'connection.connect')}
           data-tooltip-icon-only={connected || pending || undefined}
@@ -60,7 +70,9 @@ export default function AgentConnectionSection() {
         {connected && !pending && <span className="agent-connection-model-count text-meta">{fmt(t('connection.modelCount'), { n: models.length })}</span>}
       </div>
       {!connected && <p className="agent-connection-message text-control text-ink-muted">
-        {!available ? t('connection.agentHostRequired') : pending ? t('connection.agentIntro') : status?.error || t('connection.agentUnavailable')}
+        {pending ? t('connection.agentIntro') : !available
+          ? t(canRetryAgentHost() ? 'connection.agentHostUnavailable' : 'connection.agentHostRequired')
+          : status?.error || t('connection.agentUnavailable')}
       </p>}
     </div>
     {connected && <div ref={settingsRef} className="agent-connection-settings" data-agent-connection-settings>

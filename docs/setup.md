@@ -81,9 +81,9 @@ A custom service must expose compatible model-list and generation interfaces. It
 
 ## Decision model {#decision-model}
 
-The decision model is the fast-thinking half of ThoughtDAG: it never writes an answer, it decides — is this excerpt relevant, is this line a decision, does this upstream change bear on that answer — in about half a second, with calibrated probabilities. Recall, map badges, staleness and memory admission all rest on it; with it off, each falls back to a rule.
+The decision model ranks recalled excerpts, identifies decisions for map badges, checks whether upstream edits affect existing answers, and helps select what to remember. Turning it off uses built-in rules for these tasks.
 
-It speaks the System One contract (`POST /v1/systemone`: a state plus typed questions, probabilities back), which Jev-class models implement. Open the model picker (top right) → the **Decision model · fast thinking** row → the switch is on by default; click the row to configure:
+It speaks the System One contract (`POST /v1/systemone`: a state plus typed questions, probabilities back), which Jev-class models implement. In the top-left model picker, open **Settings** and select **Decision model** to configure the connection. Its switch is on by default.
 
 | Route | What to enter | Notes |
 |---|---|---|

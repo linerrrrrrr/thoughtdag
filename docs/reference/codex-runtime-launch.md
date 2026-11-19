@@ -9,7 +9,7 @@ The agent runtime starts one local `app-server` with JSON-RPC over stdio. It kee
 1. `THOUGHTDAG_CODEX_PATH`, if explicitly set. An invalid explicit path is an error, not permission to choose another installation.
 2. The official npm package installed under `node_modules/.thoughtdag-codex`.
 3. Standalone installations in the normal runtime search directories.
-4. On Windows only, an installed desktop-bundled CLI discovered on PATH or through `CODEX_APP_RUNTIME_CLI_PATH`, with MXC required for this child process.
+4. On Windows, the desktop-bundled CLI on PATH or in `CODEX_APP_RUNTIME_CLI_PATH`, then the CLI in the current user's registered desktop package. The last lookup uses Windows PowerShell's `Get-AppxPackage` to resolve the package family's current install location, including when the backend starts from an ordinary terminal after a Store update. All three desktop launch paths require MXC for the child process.
 
 For example, the official CLI can be installed without modifying global packages or this repository's dependencies:
 
@@ -51,4 +51,4 @@ Offline regressions run with:
 node scripts/test-agent-discovery.mjs
 ```
 
-They cover standalone preference, desktop/MXC fallback, inherited policy preservation, explicit-path failure, symlink detection, matching npm dependencies, safe direct spawning, and discovery retries. The tests do not start inference or execute a shell.
+The tests cover standalone preference, desktop/MXC launch from an ordinary Windows terminal, package updates, inherited policy preservation, explicit-path failure, symlink detection, matching npm dependencies, and discovery retries. The Windows package query and CLI are simulated.

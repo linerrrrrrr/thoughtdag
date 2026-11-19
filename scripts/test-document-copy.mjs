@@ -40,7 +40,7 @@ try {
     } }],
   });
   const { DOCX_MIME_TYPE, isEditableDocument, hasNativeDocxSource, documentCopyText, internAttachment, loadAttachmentContent,
-    loadDocumentContent, saveDocumentRevision, attachmentContextKey, gcVault,
+    loadDocumentContent, saveDocumentRevision, savePdfFileRevision, loadNodePdfFile, attachmentContextKey, gcVault,
     inlineVaultedContent, internNodes, buildContext, compileContextBundle, graphSnapshotHash, makeStore } = await import(pathToFileURL(outfile).href);
   const pdf = { id: 'pdf', name: 'original.pdf', type: 'application/pdf', size: 100, content: 'PDF_BINARY_BYTES', extractedText: 'source PDF text' };
   const docx = { id: 'docx', name: 'original.docx', type: DOCX_MIME_TYPE, size: 120, content: 'DOCX_BINARY_BYTES', extractedText: '# Source title\n\nsource DOCX text' };
@@ -179,6 +179,15 @@ try {
   assert.equal(await loadDocumentContent(savedOne), firstBytes);
   assert.equal(await loadDocumentContent(savedTwo), '');
   console.log('PASS native DOCX undo/redo keeps revision bytes out of graph history and conservative GC preserves them');
+
+  const updatedPdf = { ...pdf, pdfFileRevision: await savePdfFileRevision('UPDATED_PDF_BYTES') };
+  const [pdfBackup] = await inlineVaultedContent(graph([updatedPdf]));
+  assert.equal(pdfBackup.data.attachments[0].pdfFileContent, 'UPDATED_PDF_BYTES');
+  const [pdfImport] = await internNodes([pdfBackup]);
+  assert.equal(pdfImport.data.attachments[0].pdfFileContent, undefined);
+  assert.equal(await loadNodePdfFile(pdfImport.data.attachments[0]), 'UPDATED_PDF_BYTES');
+  assert.equal(await loadAttachmentContent(updatedPdf), pdf.content);
+  console.log('PASS PDF revisions survive portable backup and keep the import snapshot independent');
 } finally {
   assert.ok(resolve(temporary).startsWith(`${resolve(tmpdir())}${sep}`));
   rmSync(temporary, { recursive: true, force: true });

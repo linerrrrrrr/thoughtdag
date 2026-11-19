@@ -19,7 +19,7 @@ const node = (id, x, y, width = 520, height = 240, data = {}) => ({
 const edge = (source = 'a', target = 'b', data = {}) => ({ id: `${source}-${target}`, source, target, data });
 try {
   buildSync({ entryPoints: ['src/lib/edge-anchors.ts'], bundle: true, platform: 'node', format: 'esm', outfile: bundle, logLevel: 'silent' });
-  const { resolveEdgeAnchors, createEdgeAnchorResolver, sideAnchorOffset, handleSide } = await import(pathToFileURL(bundle).href);
+  const { resolveEdgeAnchors, createEdgeAnchorResolver, positionNodeAtConnectionEnd, sideAnchorOffset, handleSide } = await import(pathToFileURL(bundle).href);
   const sides = (result) => [result?.sourceSide, result?.targetSide];
   test('an aligned vertical chain remains bottom to top', () => {
     assert.deepEqual(sides(resolveEdgeAnchors(edge(), [node('a', 0, 0), node('b', 0, 400)])), ['bottom', 'top']);
@@ -45,6 +45,42 @@ try {
     const nodes = [node('a', 0, 0), node('b', 680, 0), node('c', 680, 500)];
     assert.deepEqual(sides(resolveEdgeAnchors(edge(), nodes)), ['right', 'left']);
     assert.deepEqual(sides(resolveEdgeAnchors(edge('b', 'c'), nodes)), ['bottom', 'top']);
+  });
+  test('fixed inputs collect conversation and file edges regardless of position or saved handle IDs', () => {
+    const nodes = [node('a', 900, 600), node('b', 100, 50), node('file', 800, -350, 400, 250, { stepKind: 'file' })];
+    const resolver = createEdgeAnchorResolver();
+    const wires = [{ ...edge(), sourceHandle: 'branch', targetHandle: 'left' }, edge('file', 'b', { isCrossLink: true })];
+    for (const layout of ['sidebar', 'top', 'dock']) {
+      const expected = layout === 'top' ? ['bottom', 'top'] : ['right', 'left'];
+      for (const wire of wires) {
+        const anchors = resolver.resolve(wire, nodes, undefined, layout);
+        assert.deepEqual(sides(anchors), expected);
+        assert.deepEqual(anchors.targetAnchor, layout === 'top' ? { x: 360, y: 50 } : { x: 100, y: 106 });
+      }
+      assert.equal(resolver.resolve(edge('b', 'file'), nodes, undefined, layout), null);
+    }
+    assert.deepEqual(resolver.resolve(wires[0], nodes), resolveEdgeAnchors(wires[0], nodes));
+  });
+  test('instantiated workflow steps keep automatic faces, even next to a fixed conversation', () => {
+    const nodes = [node('a', 0, 0, 520, 240, { stepKind: 'human' }), node('b', 0, 500),
+      node('c', 0, 1000, 520, 240, { stepKind: 'prompt' })];
+    const resolver = createEdgeAnchorResolver();
+    assert.deepEqual(sides(resolver.resolve(edge('a', 'b'), nodes, undefined, 'sidebar')), ['bottom', 'left']);
+    assert.deepEqual(sides(resolver.resolve(edge('b', 'c'), nodes, undefined, 'sidebar')), ['right', 'top']);
+    assert.deepEqual(sides(resolver.resolve(edge('a', 'c'), nodes, undefined, 'sidebar')), ['bottom', 'top']);
+  });
+  test('new fixed-input cards stay anchored at the release point after the first measurement', () => {
+    const source = node('a', 700, 500), child = node('b', 0, 0, 300, 150), end = { x: 203, y: 181 };
+    const handles = [
+      { id: 'in-top', x: 142, y: -5, width: 12, height: 12 },
+      { id: 'in-left', x: -5, y: 48, width: 12, height: 12 },
+    ];
+    for (const layout of ['sidebar', 'top', 'dock']) {
+      assert.deepEqual(positionNodeAtConnectionEnd(source, child, end, undefined, layout),
+        layout === 'top' ? { x: 53, y: 181 } : { x: 203, y: 125 });
+      assert.deepEqual(positionNodeAtConnectionEnd(source, child, end, handles, layout),
+        layout === 'top' ? { x: 55, y: 186 } : { x: 208, y: 127 });
+    }
   });
   test('direction preference breaks ambiguous diagonal ties', () => {
     const nodes = [node('a', 0, 0, 200, 200), node('b', 400, 400, 200, 200)];

@@ -22,7 +22,9 @@ A run emits exactly these event kinds (the renderer reads nothing else):
 | `fs_changes` | what the shell saw change on disk (produced here, not by the agent) |
 | `run_end` / `run_error` | the turn is over |
 
-The canvas's permission mode reaches every runtime through `<cwd>/.thoughtdag/guard.json` (`{ mode: 'ask' | 'auto' | 'allow', allow: [dirs] }`): Pi's guard reads it on every call (`auto` runs as `ask`; `allow` dirs pass); Codex takes it at thread start or resume (ask: on-request in the workspace sandbox; auto: the same with `approvalsReviewer: 'auto_review'`; allow: never, full access); Claude Code at spawn (ask: `default`; auto: `auto`; allow: `bypassPermissions`). Claude Code's prompt channel stays open in every mode, so its questions reach the person even when nothing needs approval.
+Native agent nodes inherit the installed runtime's directory access and approval settings by default. Selecting a canvas approval mode records an explicit override in `<cwd>/.thoughtdag/guard.json`. Pi reads the override when handling calls. Codex and Claude Code apply it when starting the turn. Permission questions continue to reach the canvas.
+
+Editable attachments have ordinary files inside the canvas workspace. Each prompt can name its target with the stable number shown on the canvas, for example `#12`. The renderer supplies the file's absolute path while preserving the agent's working directory. A native file save refreshes the original node. For a live paragraph preview, tools can send the addressed commentary or preview-file updates described in the turn's file list.
 
 Nothing starts at launch. A runtime's process (Pi's rpc, Codex's app-server, a Pi catalog read) is started by the first request that needs it and retires after ten minutes without one (`TD_AGENT_IDLE_MS`); Claude Code runs one process per turn. A launch that never opens the agent group never starts a CLI.
 

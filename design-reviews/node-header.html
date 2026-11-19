@@ -1,0 +1,327 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ThoughtDAG · 节点顶栏设计对照</title>
+<style>
+* { box-sizing: border-box; }
+:root {
+  color-scheme: light;
+  --paper: #faf9f7; --rule: #d5d7db; --label: #555e6c;
+  --type: Inter, "Microsoft YaHei", "PingFang SC", sans-serif;
+  --mono: "JetBrains Mono", Consolas, monospace;
+}
+body { margin: 0; background: #eeefef; color: #232935; font: 14px/1.5 var(--type); }
+button, select { font: inherit; color: inherit; }
+button { border: 0; background: none; cursor: pointer; }
+button:focus-visible, select:focus-visible, summary:focus-visible {
+  outline: 2px solid #8676eb; outline-offset: 2px;
+}
+.sheet { max-width: 1160px; margin: auto; background: var(--paper); padding: 30px clamp(16px,4.3vw,52px) 20px; }
+.mast { display: flex; align-items: center; justify-content: space-between; padding-bottom: 16px; border-bottom: 1px solid var(--rule); }
+.wordmark { display: inline-flex; align-items: center; gap: 8px; font-size: 17px; font-weight: 650; letter-spacing: -.6px; }
+.brandmark { width: 25px; height: 25px; }
+.mast small { font-size: 12px; color: var(--label); }
+.lead { margin: 22px 0 20px; }
+h1 { font-size: clamp(27px,3.2vw,40px); line-height: 1.25; letter-spacing: -.045em; margin: 0; font-weight: 650; }
+.lead p { color: var(--label); margin: 9px 0 0; font-size: 14px; }
+.controls { display: flex; align-items: center; flex-wrap: wrap; gap: 9px 20px; padding: 11px 0; border-block: 1px solid var(--rule); }
+.controls label { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; color: var(--label); }
+.controls select, #theme { border: 1px solid #cbd0d6; padding: 5px 9px; border-radius: 6px; color: #283044; background: #fff; font-size: 13px; cursor: pointer; }
+#theme { display: inline-flex; gap: 6px; align-items: center; margin-left: auto; }
+.variant { display: grid; grid-template-columns: minmax(185px, .85fr) minmax(0, 2fr); gap: 28px; padding: 20px 0; align-items: center; border-bottom: 1px solid var(--rule); }
+.letter { display: flex; align-items: center; gap: 9px; color: var(--label); font: 12px/1.4 var(--mono); }
+.letter b { display: inline-grid; place-items: center; color: #6455b1; background: #e9e5f6; border-radius: 5px; width: 25px; height: 25px; font-size: 15px; font-weight: 600; }
+h2 { font-size: 22px; line-height: 1.35; font-weight: 625; letter-spacing: -.04em; margin: 8px 0 5px; }
+.caption p { max-width: 25em; margin: 0; color: var(--label); font-size: 13px; line-height: 1.75; text-wrap: pretty; }
+.stage, dialog {
+  --canvas: #171b22; --card: #222833; --wash: #2b3240; --line: #465164; --quiet-line: #343d4b;
+  --ink: #e9edf4; --muted: #bac3d2; --faint: #a1afc1; --accent: #a79ff4; --dot: #384254;
+  --q: #b0a0d6; --a: #9aafc5; --tool: #cfaa79; --think: #7db7a9; --danger: #e0796f;
+  --bubble: #263b58; --bubble-ink: #e6eefb; color-scheme: dark;
+}
+body.light :is(.stage,dialog) {
+  --canvas: #f4f5f7; --card: #fff; --wash: #ebeef3; --line: #cdd3dd; --quiet-line: #dde1e7;
+  --ink: #202632; --muted: #515e70; --faint: #5d6b82; --accent: #6b5ce7; --dot: #c5cdd9;
+  --q: #8474b4; --a: #7a8da5; --tool: #ad8251; --think: #548e83; --danger: #b42923;
+  --bubble: #edf2fa; --bubble-ink: #263851; color-scheme: light;
+}
+.stage {
+  min-width: 0; position: relative; padding: 31px 18px 0;
+  background: radial-gradient(circle, var(--dot) .85px, transparent 1px) 4px 4px / 16px 16px, var(--canvas);
+  border-radius: 10px; overflow: hidden; box-shadow: inset 0 0 0 1px rgb(106 116 133 / .19);
+}
+.node { position: relative; width: min(100%, var(--node-width,520px)); margin: 0 auto; container-type: inline-size;
+  border: 1px solid var(--line); border-bottom: 0; border-radius: 14px 14px 0 0; background: var(--card); color: var(--ink); }
+.node::before { content: ""; position: absolute; height: 31px; width: 2px; background: var(--accent); bottom: 100%; left: calc(50% - 1px); }
+.node::after { content: ""; position: absolute; width: 7px; height: 7px; background: var(--accent); opacity: .8; top: -4px; left: calc(50% - 3px); }
+.node-head { padding: 12px 16px; border-bottom: 1px solid var(--quiet-line); }
+.mainrow { display: flex; align-items: center; gap: 12px; min-height: 28px; }
+.ident, .author, .tools, .source, .stats, .usage-line, .extra, .drawer, .measure, .shelf {
+  display: flex; align-items: center;
+}
+.ident { gap: 3px; flex: none; }
+.num { font: 600 14px/1.5 var(--mono); color: var(--ink); }
+.author { gap: 7px; min-width: 0; font-size: 12px; color: var(--muted); }
+.slash { color: var(--faint); opacity: .75; }
+.model { min-width: 0; text-overflow: ellipsis; overflow: hidden; white-space: nowrap; font: 12px/1.5 var(--mono); color: var(--ink); }
+.tools { margin-left: auto; gap: 2px; flex: none; }
+.icon { flex: none; width: 16px; height: 16px; display: inline-block; stroke: currentColor; stroke-width: 1.75; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+.iconbtn { width: 28px; height: 28px; border-radius: 6px; padding: 0; display: inline-grid; place-items: center; color: var(--muted); }
+.iconbtn:hover, .textbtn:hover { background: var(--wash); color: var(--ink); }
+[data-action=delete]:is(:hover,:focus-visible) { color: var(--danger); }
+.usage { display: inline-flex; flex-direction: column; gap: 4px; min-width: 104px; flex-shrink: 0; }
+.usage-line { gap: 9px; white-space: nowrap; color: var(--muted); font-size: 12px; line-height: 16px; font-variant-numeric: tabular-nums; }
+.tool-count { display: inline-flex; gap: 3px; align-items: center; }
+.tool-count .icon { width: 13px; height: 13px; }
+.bar { display: block; flex: none; width: 100%; height: 6px; border: 1px solid color-mix(in srgb, var(--muted) 55%, var(--card));
+  border-radius: 4px; background: linear-gradient(to right,var(--q) 0 13%,var(--a) 13% 100%); }
+.complex .bar { background: linear-gradient(to right,var(--q) 0 13%,var(--a) 13% 64%,var(--tool) 64% 92%,var(--think) 92% 100%); }
+.a .author { padding-left: 12px; border-left: 1px solid var(--line); }
+.a .usage { margin-left: auto; }
+.a .tools { margin-left: 0; }
+.b .primary-model { font-size: 14px; font-weight: 500; }
+.shelf { border-top: 1px solid var(--quiet-line); margin: 9px -16px -12px; padding: 8px 16px; gap: 14px; flex-wrap: wrap;
+  background: color-mix(in srgb,var(--wash) 38%,var(--card)); }
+.source { color: var(--muted); gap: 6px; font-size: 12px; }
+.source .icon { width: 14px; height: 14px; }
+.shelf .usage { flex-direction: row; align-items: center; gap: 10px; }
+.shelf .bar { width: 104px; }
+.c .name { font-weight: 600; font-size: 16px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.c .num { font-weight: 400; color: var(--muted); }
+.textbtn { display: inline-flex; align-items: center; justify-content: center; gap: 4px; padding: 3px 6px; min-height: 28px; flex: none;
+  border-radius: 6px; color: var(--muted); font-size: 14px; }
+.textbtn .icon { width: 14px; height: 14px; }
+.runtime { margin-right: 4px; }
+.runtime[aria-expanded=true] { background: color-mix(in srgb, var(--accent) 10%, transparent); color: var(--accent); }
+.drawer { border-top: 1px solid var(--quiet-line); padding-top: 10px; margin-top: 10px; gap: 12px; flex-wrap: wrap; }
+.drawer .usage { margin-left: auto; }
+.extra { flex-wrap: wrap; gap: 4px 12px; padding-top: 7px; }
+.status { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); }
+.status::before { content: ""; width: 6px; height: 6px; background: var(--think); border-radius: 50%; }
+.stop { color: var(--danger); background: color-mix(in srgb,var(--danger) 10%,transparent); }
+.extra .textbtn { background: var(--wash); }
+.excerpt { color: var(--muted); }
+.meta-strip { display: flex; align-items: center; gap: 8px; padding: 8px 16px; height: 38px; font-size: 14px; }
+.meta-strip .icon { width: 13px; height: 13px; }
+.highlight-strip { height: 15px; background: color-mix(in srgb,var(--wash) 40%,var(--card)); border-top: 1px solid var(--quiet-line); }
+.collapsed, .empty { min-height: 66px; display: flex; align-items: center; gap: 6px; padding: 12px 16px; }
+.collapsed strong { font-size: 14px; }
+.empty { justify-content: space-between; font-size: 13px; }
+.empty .textbtn { color: var(--accent); }
+dialog { width: min(420px,calc(100vw - 32px)); padding: 20px; border: 1px solid var(--line); border-radius: 14px;
+  color: var(--ink); background: var(--card); box-shadow: 0 8px 32px rgb(0 0 0 / .2); }
+dialog::backdrop { background: rgb(16 20 29 / .42); }
+dialog h3 { margin: 0; font-size: 17px; }
+dialog p { margin: 12px 0; }
+.dialog-head,.dialog-actions { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.dialog-actions { justify-content: flex-end; margin-top: 14px; }
+.dialog-actions button { background: var(--wash); min-height: 32px; padding: 4px 12px; border-radius: 6px; }
+.dialog-actions .destructive { color: var(--danger); }
+.detail-model { font: 12px/1.6 var(--mono); color: var(--muted); overflow-wrap: anywhere; }
+.question { background: var(--bubble); color: var(--bubble-ink); padding: 10px 13px; margin-left: 24px; border-radius: 8px 8px 4px 8px; }
+footer { padding-top: 14px; font-size: 12px; line-height: 1.7; color: var(--label); }
+footer strong { font-weight: 600; }
+@container (max-width: 430px) {
+  .a .mainrow { display: grid; grid-template-columns: max-content minmax(0,1fr) max-content; gap: 6px 8px; }
+  .a .author { grid-area: 2 / 1 / 3 / 4; border: 0; padding-left: 4px; }
+  .a .usage { grid-area: 1 / 2; justify-self: start; margin-left: 0; }
+  .a .tools { grid-area: 1 / 3; }
+  .mainrow { gap: 7px; }
+  .c .runtime { margin-right: 0; }
+}
+@container (max-width: 306px) {
+  .c .mainrow { flex-wrap: wrap; }
+  .c .tools { flex-basis: 100%; justify-content: flex-end; }
+  .a .mainrow { display: flex; flex-wrap: wrap; }
+  .a .author { order: 3; flex-basis: 100%; }
+  .a .tools { margin-left: auto; }
+  .shelf .usage { flex-direction: column; align-items: start; gap: 4px; }
+}
+@media (max-width: 800px) {
+  .sheet { padding: 18px 16px; }
+  .variant { grid-template-columns: minmax(0,1fr); gap: 12px; }
+  .caption { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 4px 10px; }
+  .letter span { display: none; }
+  h2 { margin: 0; font-size: 20px; }
+  .caption p { grid-column: 1/-1; max-width: none; }
+  .stage { padding-inline: 10px; }
+}
+@media (max-width: 490px) { .controls { gap: 8px 12px; } #theme { margin-left: 0; } }
+</style>
+</head>
+<body>
+<!-- Local, offline review. The node excerpts use the application's logical canvas scale. -->
+<svg width="0" height="0" aria-hidden="true" style="position:absolute"><defs><symbol id="i-wrench" viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.106-3.105c.32-.322.863-.22.983.218a6 6 0 0 1-8.259 7.057l-7.91 7.91a1 1 0 0 1-2.999-3l7.91-7.91a6 6 0 0 1 7.057-8.259c.438.12.54.662.219.984z"></path></symbol>
+<symbol id="i-square" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2"></rect></symbol>
+<symbol id="i-chevron-down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"></path></symbol>
+<symbol id="i-chevron-up" viewBox="0 0 24 24"><path d="m18 15-6-6-6 6"></path></symbol>
+<symbol id="i-chevron-right" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"></path></symbol>
+<symbol id="i-book-open" viewBox="0 0 24 24"><path d="M12 7v14"></path><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"></path></symbol>
+<symbol id="i-trash-2" viewBox="0 0 24 24"><path d="M10 11v6"></path><path d="M14 11v6"></path><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"></path><path d="M3 6h18"></path><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></symbol>
+<symbol id="i-terminal" viewBox="0 0 24 24"><path d="M12 19h8"></path><path d="m4 17 6-6-6-6"></path></symbol>
+<symbol id="i-git-merge" viewBox="0 0 24 24"><circle cx="18" cy="18" r="3"></circle><circle cx="6" cy="6" r="3"></circle><path d="M6 21V9a9 9 0 0 0 9 9"></path></symbol>
+<symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></symbol>
+<symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2"></path><path d="M12 20v2"></path><path d="m4.93 4.93 1.41 1.41"></path><path d="m17.66 17.66 1.41 1.41"></path><path d="M2 12h2"></path><path d="M20 12h2"></path><path d="m6.34 17.66-1.41 1.41"></path><path d="m19.07 4.93-1.41 1.41"></path></symbol>
+<symbol id="i-moon" viewBox="0 0 24 24"><path d="M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401"></path></symbol>
+<symbol id="i-rotate-ccw" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><path d="M3 3v5h5"></path></symbol></defs></svg>
+<main class="sheet">
+  <header class="mast"><span class="wordmark"><svg class="brandmark" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 44 44">
+  <rect width="44" height="44" rx="10" fill="#FAF9F7"/>
+  <line x1="19" y1="10" x2="19" y2="18" stroke="#6B5CE7" stroke-width="2.5" stroke-linecap="round"/>
+  <line x1="19" y1="25" x2="19" y2="33" stroke="#6B5CE7" stroke-width="2.5" stroke-linecap="round"/>
+  <line x1="22.5" y1="23.5" x2="30" y2="28.5" stroke="#E08A3C" stroke-width="2.5" stroke-linecap="round" stroke-dasharray="3 3"/>
+  <circle cx="19" cy="7" r="3.8" fill="#6B5CE7"/>
+  <circle cx="19" cy="21.5" r="3.8" fill="none" stroke="#6B5CE7" stroke-width="2.6"/>
+  <circle cx="19" cy="36" r="3.8" fill="#6B5CE7" opacity="0.4"/>
+  <circle cx="33" cy="30" r="3.8" fill="#E08A3C"/>
+</svg>
+ThoughtDAG</span><small>画布组件设计对照</small></header>
+  <div class="lead"><h1>节点顶部状态栏</h1><p>同一个 #7 节点，比较三种信息顺序。下方截取节点顶部，可切换宽度和运行状态。</p></div>
+  <div class="controls" aria-label="预览设置">
+    <label>节点宽度<select id="width"><option value="520">520 px</option><option value="360">360 px</option></select></label>
+    <label>状态<select id="scenario"><option value="done">已完成</option><option value="running">生成中</option><option value="complex">多路上下文 · 长模型名</option></select></label>
+    <button type="button" id="theme" aria-label="切换节点配色"></button>
+  </div>
+  <section class="variant"><div class="caption"><div class="letter"><b>A</b><span>紧凑布局</span></div><h2>单行分组</h2><p>左侧识别编号和模型，右侧查看用量和操作。窄卡把来源与模型一起移到下一行。</p></div><div class="stage"><div class="node a" data-variant="A"></div></div></section>
+  <section class="variant"><div class="caption"><div class="letter"><b>B</b><span>运行分析</span></div><h2>双行分层</h2><p>首行留给当前回答的模型与操作。执行方式和用量组成固定的第二行，方便逐个节点对照。</p></div><div class="stage"><div class="node b" data-variant="B"></div></div></section>
+  <section class="variant"><div class="caption"><div class="letter"><b>C</b><span>内容阅读</span></div><h2>名称优先</h2><p>用节点名称定位话题。点「运行信息」展开来源、模型和用量。生成中仍可直接停止。</p></div><div class="stage"><div class="node c" data-variant="C"></div></div></section>
+  <footer><strong>样例数据</strong>　「提问的动机」为示例节点名。色条表示本轮 token 构成。预览操作仅作用于页面内的示例。</footer>
+</main>
+<dialog id="panel" aria-labelledby="panel-title"><div class="dialog-head"><h3 id="panel-title"></h3><button class="iconbtn" id="dismiss" aria-label="关闭"></button></div><div id="panel-body"></div></dialog>
+<script>
+const query = selector => document.querySelector(selector);
+const icon = name => '<svg class="icon" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-' + name + '"></use></svg>';
+const cards = [...document.querySelectorAll('.node')];
+const panel = query('#panel');
+const fixture = { name: '提问的动机', question: '这是在干什么，我前文问这些问题的动机是什么', answer: '从你的追问看，你先问“是什么意思”，是想弄懂我说的英文。后来问“这是在干嘛”，更像是想弄清我为什么那样回你，以及这段对话到底在聊什么。' };
+const model = () => query('#scenario').value === 'complex' ? 'research-reasoning-instruct-extended-context' : 'gpt-6.2-sol';
+const samples = new WeakMap();
+let dialogCard;
+let returnAction;
+function button(action, glyph, label, style = 'iconbtn', text = '', extra = '') {
+  return '<button type="button" class="' + style + '" data-action="' + action + '" aria-label="' + label + '" ' + extra + '>' + icon(glyph) + text + '</button>';
+}
+function usage(complex) {
+  const total = complex ? '12,480' : '168';
+  const toolCount = complex ? '<span class="tool-count" aria-label="4 次工具调用">' + icon('wrench') + '4</span>' : '';
+  return '<span class="usage" role="group" aria-label="本轮估算用量"><span class="usage-line">≈ ' + total + ' tokens' + toolCount + '</span><span class="bar" aria-hidden="true"></span></span>';
+}
+function render(card) {
+  const variant = card.dataset.variant;
+  const state = samples.get(card);
+  const scenario = query('#scenario').value;
+  const complex = scenario === 'complex';
+  const running = scenario === 'running' && !state.stopped;
+  card.classList.toggle('complex', complex);
+  if (state.deleted) {
+    card.innerHTML = '<div class="empty">示例节点已删除' + button('restore','rotate-ccw','恢复示例','textbtn','恢复示例') + '</div>';
+    return;
+  }
+  const fold = button('collapse', state.collapsed ? 'chevron-right' : 'chevron-down', state.collapsed ? '展开节点' : '收起节点','iconbtn','','aria-expanded="' + !state.collapsed + '"');
+  const id = '<span class="ident">' + fold + '<span class="num">#7</span></span>';
+  if (state.collapsed) {
+    card.innerHTML = '<div class="collapsed">' + id + '<strong>' + fixture.name + '</strong></div>';
+    return;
+  }
+  const read = button('details','book-open','查看节点详情');
+  const stop = running ? button('stop','square','停止生成','iconbtn stop') : '';
+  const remove = button('delete','trash-2','删除节点');
+  const runtime = button('runtime',state.runtime ? 'chevron-up' : 'chevron-down','运行信息','textbtn runtime','运行信息','aria-expanded="' + state.runtime + '" aria-controls="run-info-C"');
+  const actions = '<div class="tools">' + (variant === 'C' ? runtime : '') + read + stop + remove + '</div>';
+  const author = '<span class="author"><span>Codex</span><span class="slash" aria-hidden="true">/</span><span class="model">' + model() + '</span></span>';
+  let main, secondary = '';
+  if (variant === 'A') {
+    main = id + author + usage(complex) + actions;
+  } else if (variant === 'B') {
+    main = id + '<span class="model primary-model">' + model() + '</span>' + actions;
+    secondary = '<div class="shelf"><span class="source">' + icon('terminal') + 'Codex</span>' + usage(complex) + '</div>';
+  } else {
+    main = id + '<span class="name">' + fixture.name + '</span>' + actions;
+    secondary = '<div id="run-info-C"' + (state.runtime ? ' class="drawer">' + author + usage(complex) : ' hidden>') + '</div>';
+  }
+  let flags = '';
+  if (running || state.stopped) flags += '<span class="status">' + (state.stopped ? '已停止' : '生成中') + '</span>';
+  if (complex) flags += button('sources','git-merge','查看三路上下文','textbtn','上下文 · 3 路');
+  card.innerHTML = '<div class="node-head"><div class="mainrow">' + main + '</div>' +
+    (flags ? '<div class="extra">' + flags + '</div>' : '') + secondary +
+    '</div><div class="excerpt" aria-hidden="true"><div class="meta-strip">' + icon('chevron-right') +
+    '名称与摘要</div><div class="highlight-strip"></div></div>';
+}
+function resetExamples() {
+  for (const card of cards) {
+    samples.set(card, { collapsed: false, runtime: false, stopped: false, deleted: false });
+    render(card);
+  }
+}
+function openPanel(card, action) {
+  dialogCard = card;
+  returnAction = action;
+  const titles = { details: '节点 #7 · ' + fixture.name, sources: '节点 #7 的上下文来源', delete: '删除示例节点 #7？' };
+  query('#panel-title').textContent = titles[action];
+  const contents = {
+    details: '<p class="detail-model">Codex / ' + model() + '</p><p class="question">' + fixture.question + '</p><p>' + fixture.answer + '</p>',
+    sources: '<ol><li>对话开场 · #1</li><li>英文回复的含义 · #3</li><li>前文追问 · #6</li></ol>',
+    delete: '<p>可以在原位置恢复这个示例。</p><div class="dialog-actions"><button data-result="cancel">取消</button><button class="destructive" data-result="delete">删除示例</button></div>'
+  };
+  query('#panel-body').innerHTML = contents[action];
+  panel.showModal();
+  panel.querySelector(action === 'delete' ? '[data-result=cancel]' : '#dismiss').focus();
+}
+function focusAction(card, action) {
+  card.querySelector('[data-action="' + action + '"]')?.focus({ preventScroll: true });
+}
+function closeRuntime(card) {
+  samples.get(card).runtime = false;
+  render(card);
+  focusAction(card, 'runtime');
+}
+for (const card of cards) {
+  card.addEventListener('dblclick', event => {
+    if (event.target.closest('.node-head') && !event.target.closest('button')) openPanel(card, 'details');
+  });
+  card.addEventListener('keydown', event => {
+    if (event.key === 'Escape' && samples.get(card).runtime && !event.isComposing) closeRuntime(card);
+  });
+  card.addEventListener('click', event => {
+    const action = event.target.closest('button')?.dataset.action;
+    if (!action) return;
+    if (['details','delete','sources'].includes(action)) return openPanel(card, action);
+    const state = samples.get(card);
+    if (action === 'collapse') state.collapsed = !state.collapsed;
+    if (action === 'runtime') state.runtime = !state.runtime;
+    if (action === 'stop') state.stopped = true;
+    if (action === 'restore') state.deleted = false;
+    render(card);
+    focusAction(card, action === 'stop' ? 'details' : action === 'restore' ? 'collapse' : action);
+  });
+}
+query('#dismiss').innerHTML = icon('x');
+panel.addEventListener('click', event => {
+  if (event.target.closest('[data-result=delete]')) {
+    samples.get(dialogCard).deleted = true;
+    render(dialogCard);
+    returnAction = 'restore';
+  }
+  if (event.target.closest('button')) panel.close();
+  else if (event.target === panel) {
+    const rect = panel.getBoundingClientRect();
+    if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) panel.close();
+  }
+});
+panel.addEventListener('close', () => focusAction(dialogCard, returnAction));
+query('#width').addEventListener('change', event => document.documentElement.style.setProperty('--node-width',event.target.value + 'px'));
+query('#scenario').addEventListener('change', resetExamples);
+function setTheme(light) {
+  document.body.classList.toggle('light', light);
+  const toggle = query('#theme');
+  toggle.innerHTML = icon(light ? 'sun' : 'moon') + (light ? '浅色节点' : '深色节点');
+  toggle.setAttribute('aria-label',light ? '切换为深色节点' : '切换为浅色节点');
+}
+query('#theme').addEventListener('click', () => setTheme(!document.body.classList.contains('light')));
+setTheme(false);
+resetExamples();
+</script>
+</body>
+</html>

@@ -364,8 +364,8 @@ export const WHATS_NEW: WhatsNewEntry[] = [
     date: '2026-09-29',
     announce: false,
     lead: {
-      zh: '换档不再互相盖住：缩小到地图层时，节点的牌子不会超出布局留给它的位置，写不下的摘要在底部渐隐，再放大一档就能看全；折叠卡显示和牌子同一段摘要，放大缩小之间只是字号在变。节点间距略微拉开，已有画布的位置不动，按「一键排版」才换成新间距。另外：从 Finder 启动时也能找到本机的 Pi、Codex、Claude Code 命令行，找不到会说明查过哪些地方，可重新检测；子 Agent 的运行展开在父画布上，作为那一轮旁边的分支；模型接口分成「慢思考 · 回答模型」和「快思考 · 判断模型」两页，只用 Agent 的人也能单独接判断模型；新装机没有模型时会先问一次本机的 Agent。',
-      en: 'Zoom tiers no longer cover each other: at map zoom a node\'s plaque stays inside the room the layout keeps for it, an abstract that runs past it fades out at the bottom and shows in full one step in; the folded card carries the same abstract as the plaque, so zooming only changes the type size. Node gaps open slightly; existing canvases keep their positions until you choose Tidy layout. Also: the Pi, Codex and Claude Code CLIs are found under a Finder launch, and a missing one says where it looked, with a recheck; a subagent\'s run unfolds on the parent canvas as a branch beside its turn; the model dialog has two pages, slow thinking for answering models and fast thinking for the decision model, which agent-only users can connect on its own; a fresh install with no model asks the local agents first.',
+      zh: '换档不再互相盖住：缩小到地图层时，节点的牌子不会超出布局留给它的位置，写不下的摘要在底部渐隐，再放大一档就能看全；折叠卡显示和牌子同一段摘要，放大缩小之间只是字号在变。节点间距略微拉开，已有画布的位置不动，按「一键排版」才换成新间距。另外：从 Finder 启动时也能找到本机的 Pi、Codex、Claude Code 命令行，找不到会说明查过哪些地方，可重新检测；子 Agent 的运行展开在父画布上，作为那一轮旁边的分支；模型接口分成「回答模型」和「判断模型」两页，只用 Agent 的人也能单独接判断模型；新装机没有模型时会先问一次本机的 Agent。',
+      en: 'Zoom tiers no longer cover each other: at map zoom a node\'s plaque stays inside the room the layout keeps for it, an abstract that runs past it fades out at the bottom and shows in full one step in; the folded card carries the same abstract as the plaque, so zooming only changes the type size. Node gaps open slightly; existing canvases keep their positions until you choose Tidy layout. Also: the Pi, Codex and Claude Code CLIs are found under a Finder launch, and a missing one says where it looked, with a recheck; a subagent\'s run unfolds on the parent canvas as a branch beside its turn; the model dialog has two pages, one for the answer model and one for the decision model, which agent-only users can connect on its own; a fresh install with no model asks the local agents first.',
     },
     items: [],
   },
@@ -477,8 +477,8 @@ export const WHATS_NEW: WhatsNewEntry[] = [
     date: '2026-09-26',
     announce: true,
     lead: {
-      zh: '🎉 ThoughtDAG 0.5：记忆上线。你在 Pi、Codex、Claude Code、DeepSeek Harness 里聊过的一切，现在接成一个可以回忆的整体。散在几百个会话里的碎片，按主题整理成档案；提问时相关的档案和对话自动带进上下文，跨 Agent、跨时间。背后是快思考与慢思考的分工：慢思考模型回答，快思考模型判断。所有信息都在你自己的机器上。',
-      en: '🎉 ThoughtDAG 0.5: memory. Everything you discussed in Pi, Codex, Claude Code and DeepSeek Harness now forms one whole you can recall. Fragments scattered across hundreds of sessions are organised into dossiers by topic; when you ask, the relevant dossiers and conversations ride into the context, across agents and across time. Behind it, a division of labour: a slow-thinking model answers, a fast-thinking model decides. Everything stays on your machine.',
+      zh: '🎉 ThoughtDAG 0.5：记忆上线。你在 Pi、Codex、Claude Code、DeepSeek Harness 里聊过的一切，现在接成一个可以回忆的整体。散在几百个会话里的碎片，按主题整理成档案；提问时相关的档案和对话自动带进上下文，跨 Agent、跨时间。判断模型挑选相关记忆，回答模型结合这些记忆生成回复。所有信息都在你自己的机器上。',
+      en: '🎉 ThoughtDAG 0.5: memory. Everything you discussed in Pi, Codex, Claude Code and DeepSeek Harness now forms one whole you can recall. Fragments scattered across hundreds of sessions are organised into dossiers by topic; when you ask, the relevant dossiers and conversations ride into the context, across agents and across time. The decision model selects relevant memories for the answer model to use in its reply. Everything stays on your machine.',
     },
     items: [
       {
@@ -498,14 +498,14 @@ export const WHATS_NEW: WhatsNewEntry[] = [
         },
       },
       {
-        title: { zh: '快思考，慢思考', en: 'Fast thinking, slow thinking' },
+        title: { zh: '回答模型与判断模型', en: 'Answer model and decision model' },
         body: {
-          zh: '回答你的是慢思考模型。判断「这条相关吗」「这句是决定吗」「这处改动影响吗」的是快思考模型：半秒一次，返回校准过的概率，让回忆、地图徽章和「上游已变」都有依据。模型选择器里一行开关，默认开；关掉全部退回规则，功能不变。',
-          en: 'The slow-thinking model answers you. The fast-thinking model decides — is this relevant, is this line a decision, does this change matter — in half a second, with calibrated probabilities, so recall, map badges and “upstream changed” rest on evidence. One switch in the model picker, on by default; off, every decision falls back to a rule and nothing stops working.',
+          zh: '回答模型生成回复。判断模型评估历史片段的相关性、识别对话中的决定，并检查上游改动是否影响已有回答。判断模型的开关默认开启，关闭后改用内置规则。',
+          en: 'The answer model writes replies. The decision model ranks past excerpts, identifies decisions in a conversation, and checks whether upstream changes affect an existing answer. The decision model switch is on by default. Turning it off uses built-in rules for these tasks.',
         },
       },
       {
-        title: { zh: '接入一个快思考模型', en: 'Connect a fast-thinking model' },
+        title: { zh: '接入判断模型', en: 'Connect a decision model' },
         body: {
           zh: 'Jev 类判断模型可以经你已保存的聚合商接入直接使用，也支持官方接口和自建服务；没有接入时会提示，一切照常。',
           en: 'A Jev-class decision model runs through the aggregator access you already saved, through the official endpoint, or from a self-hosted server; without one you are told, and everything still works.',

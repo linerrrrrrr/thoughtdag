@@ -1,11 +1,74 @@
 import type { PDFDocumentProxy } from 'pdfjs-dist';
-import { PDFDocument, PDFHexString, PDFName, PDFString, fill, rectangle, setFillingRgbColor, setGraphicsState } from 'pdf-lib';
+import { PDFArray, PDFDict, PDFDocument, PDFHexString, PDFName, PDFNumber, PDFString, fill, rectangle, setFillingRgbColor, setGraphicsState } from 'pdf-lib';
 import type { PdfAnnotation } from '../types';
-import { DocumentSourceError } from './original-document';
+import { DocumentSourceError } from './document-errors';
 
 function bounds(points: number[][]) {
   const xs = points.map(p => p[0]), ys = points.map(p => p[1]);
   return [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)];
+}
+
+/** Remove only marks that this canvas renders as editable overlays. Native
+ * annotations from a different tool stay in the PDF and keep their appearance. */
+export async function canvasPdfPages(bytes: Uint8Array, saved: PdfAnnotation[]): Promise<Uint8Array> {
+  if (!saved.length) return bytes;
+  const wanted = new Set(saved.map(mark => mark.id));
+  const pdf = await PDFDocument.load(bytes, { updateMetadata: false });
+  let changed = false;
+  for (const page of pdf.getPages()) {
+    const marks = page.node.Annots();
+    if (!marks) continue;
+    for (let i = marks.size() - 1; i >= 0; i--) {
+      const mark = marks.lookup(i);
+      const name = mark instanceof PDFDict && mark.get(PDFName.of('NM'));
+      if ((name instanceof PDFHexString || name instanceof PDFString) && wanted.has(name.decodeText())) {
+        marks.remove(i);
+        changed = true;
+      }
+    }
+  }
+  return changed ? pdf.save({ updateFieldAppearances: false }) : bytes;
+}
+
+/** Match editable canvas marks by their PDF annotation IDs after an ordinary
+ * editor saves the file. Positions and comments follow the saved PDF. */
+export async function readSavedCanvasMarks(bytes: Uint8Array, doc: PDFDocumentProxy, previous: PdfAnnotation[]) {
+  const result: PdfAnnotation[] = [];
+  if (!previous.length) return result;
+  const wanted = new Map(previous.map(mark => [mark.id, mark]));
+  const pdf = await PDFDocument.load(bytes, { updateMetadata: false });
+  for (const [index, page] of pdf.getPages().entries()) {
+    const items = page.node.Annots();
+    if (!items) continue;
+    const view = (await doc.getPage(index + 1)).getViewport({ scale: 1 });
+    for (let i = 0; i < items.size(); i++) {
+      const item = items.lookup(i);
+      if (!(item instanceof PDFDict)) continue;
+      const name = item.lookup(PDFName.of('NM'));
+      const saved = (name instanceof PDFString || name instanceof PDFHexString) && wanted.get(name.decodeText());
+      if (!saved) continue;
+      const quads = item.lookup(PDFName.of('QuadPoints'));
+      const coords = quads instanceof PDFArray ? quads : item.lookup(PDFName.of('Rect'));
+      if (!(coords instanceof PDFArray)) continue;
+      const step = coords === quads ? 8 : 4;
+      const rects: PdfAnnotation['rects'] = [];
+      for (let j = 0; j + step <= coords.size(); j += step) {
+        const points: number[][] = [];
+        for (let k = 0; k < step; k += 2) {
+          const x = coords.lookup(j + k), y = coords.lookup(j + k + 1);
+          if (x instanceof PDFNumber && y instanceof PDFNumber) points.push(view.convertToViewportPoint(x.asNumber(), y.asNumber()));
+        }
+        if (points.length !== step / 2) continue;
+        const [left, top, right, bottom] = bounds(points);
+        rects.push([left / view.width, top / view.height, (right - left) / view.width, (bottom - top) / view.height]);
+      }
+      if (!rects.length) continue;
+      const contents = item.lookup(PDFName.of('Contents'));
+      const text = contents instanceof PDFString || contents instanceof PDFHexString ? contents.decodeText() : '';
+      result.push({ ...saved, page: index + 1, rects, comment: text === (saved.text ?? '') && !saved.comment ? undefined : text });
+    }
+  }
+  return result;
 }
 
 /** Rebuild from the imported PDF so existing links and annotations survive,

@@ -19,6 +19,23 @@
   color: var(--color-ink);
   container-type: inline-size;
 }
+.conversation-node-content { display: contents; }
+/* Scale the interior once, including text, icons and hit areas. A fixed card
+   can become smaller than a control when full detail is locked at map zoom. */
+.conversation-node[data-node-detail-level='full'] > .conversation-node-content {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  overflow: clip;
+  zoom: var(--canvas-conversation-scale, 1);
+}
+.conversation-node[data-node-detail-level='full'] > [data-focus-down] { zoom: var(--canvas-conversation-scale, 1); }
+
+/* Store content height at the reference scale regardless of the live view. */
+.conversation-node[data-measure-content-height] { --canvas-conversation-scale: 1; }
+
 .conversation-node .thought-node-header {
   min-height: 52px;
   padding: var(--spacing-section-gap) var(--spacing-surface-inset);
@@ -26,9 +43,35 @@
   color: var(--conversation-muted);
   border-radius: calc(var(--radius-node) - 1px) calc(var(--radius-node) - 1px) 0 0;
 }
-.conversation-node .thought-node-header > div:first-child { column-gap: 10px; row-gap: 8px; }
-.conversation-node .thought-node-header .node-start-label { font-size: var(--text-meta); line-height: var(--text-meta--line-height); font-weight: 500; }
+.node-header-main, .node-header-identity, .node-header-author, .node-header-actions, .node-header-status {
+  display: flex;
+  align-items: center;
+}
+.node-header-main { gap: 10px; min-height: 28px; }
+.node-header-identity, .node-header-actions { flex: none; gap: 2px; }
+.node-header-identity [data-node-number] {
+  color: var(--color-ink);
+  font-size: var(--text-control);
+  font-weight: 600;
+}
+.node-header-author { min-width: 0; gap: 6px; white-space: nowrap; }
+.node-header-author:not(:empty) { border-inline-start: 1px solid var(--conversation-line); padding-inline-start: 10px; }
+.node-header-author [data-node-execution-kind] { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+.node-header-main > .node-token-usage { margin-inline-start: auto; }
+.node-header-status { flex-wrap: wrap; gap: var(--spacing-related) 10px; margin-block-start: var(--spacing-related); }
+.node-header-author:empty, .node-header-actions:empty, .node-header-status:empty { display: none; }
+
+@container (max-width: 430px) {
+  .node-header-main > .node-token-usage { display: none; }
+  .node-header-author:not(:empty) { border: 0; padding-inline-start: 0; }
+  .node-header-actions { margin-inline-start: auto; }
+}
 .conversation-node [data-thought-body] { padding: var(--spacing-surface-inset); }
+/* The global reduced-motion rule gives every property a brief transition.
+   Both the canonical height read and the return to the live font are synchronous. */
+@media (prefers-reduced-motion: reduce) {
+  .conversation-node, .conversation-node * { transition-duration: 0s !important; }
+}
 .conversation-node .conversation-question {
   display: flex;
   flex-direction: column;
@@ -102,7 +145,7 @@
 }
 .node-metadata-toggle:hover { color: var(--color-ink); }
 .node-metadata { background: transparent; }
-.conversation-node[data-thought-resized] > .node-metadata--canvas.node-metadata--editing {
+.conversation-node[data-thought-resized] .node-metadata--canvas.node-metadata--editing {
   flex-shrink: 1;
   min-height: 38px;
   overflow-y: auto;

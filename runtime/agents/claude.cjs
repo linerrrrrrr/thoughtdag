@@ -143,12 +143,14 @@ function createClaudeRuntime({ log } = {}) {
         let watchdog = null;
         const before = await snapshotDir(cwd).catch(() => null);
         try {
-          const mode = await permissionModeFor(cwd);
+          const mode = req.nativePermissions === true ? null : await permissionModeFor(cwd);
           const model = req.model && typeof req.model === 'object' && req.model.id && req.model.id !== 'default' ? req.model.id : null;
           const resumeId = req.sessionPath ? sessionIdOf(req.sessionPath) : null;
           // the prompt channel stays open in every mode: with nothing to
           // approve, AskUserQuestion still comes through it
-          const args = ['-p', '--output-format', 'stream-json', '--input-format', 'stream-json', '--verbose', '--include-partial-messages', '--permission-mode', mode, '--permission-prompt-tool', 'stdio'];
+          const args = ['-p', '--output-format', 'stream-json', '--input-format', 'stream-json', '--verbose', '--include-partial-messages', '--permission-prompt-tool', 'stdio'];
+          if (mode) args.push('--permission-mode', mode);
+          for (const dir of req.managedFileDirs ?? []) args.push('--add-dir', dir);
           if (model) args.push('--model', model);
           // only a level the CLI itself lists; anything else means its default
           if (req.effort && (await effortsOf(b)).includes(req.effort)) args.push('--effort', req.effort);

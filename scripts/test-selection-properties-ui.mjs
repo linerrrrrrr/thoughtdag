@@ -412,7 +412,7 @@ try {
   await probe('mixed pointer boundary preserves additive selection and deletes its typed scope atomically', async () => {
     await fixture();
     const geometry = await readGeometry(), edges = await readEdges();
-    await node('a').locator('[data-node-token-usage]').click();
+    await node('a').locator('[data-node-execution-kind]').click();
     await selected(['a'], []);
     await page.keyboard.down('Control');
     await node('f').locator('[data-frame-header]').click({ position: { x: 10, y: 10 } });

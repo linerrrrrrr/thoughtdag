@@ -16,13 +16,19 @@ export interface Attachment {
   name: string;
   type: string; // MIME type
   size: number;
-  /** Local source location, when supplied by the desktop shell or the user. */
-  sourcePath?: string;
+  /** Last synchronized content digest of the application-owned working file. */
+  nodeFileRevision?: string;
+  /** Immutable PDF bytes; embedded copies are only used in portable backups. */
+  pdfFileRevision?: string;
+  pdfFileContent?: string;
+  /** Canvas marks already present in the current PDF file. */
+  pdfSavedAnnotations?: PdfAnnotation[];
   addedAt?: string; // ISO timestamp: when this material entered the canvas (thinking-timeline raw data)
   content: string; // base64 for images, raw text for text files; '' for vaulted PDFs
   /** Bulky payload lives in the attachment vault, not here —
       read through loadAttachmentContent(). Exports inline it back. */
   contentInVault?: boolean;
+  contentVaultId?: string; // immutable payload when another revision uses this attachment ID
   thumbnailUrl?: string; // data URL for image preview
   extractedText?: string; // companion text (PDF extraction / image auto-understanding)
   editedText?: string; // saved Markdown working copy; never overwrites the original or extraction
@@ -157,7 +163,7 @@ export interface FormAnswer {
 
 /** How freely the agents a canvas starts may act: ask before risky steps,
     let the runtime's own review decide, or ask nothing. */
-export type AgentPermissionMode = 'ask' | 'auto' | 'allow';
+export type AgentPermissionMode = 'native' | 'ask' | 'auto' | 'allow';
 
 /** One tool call of a running agent turn, as the node shows it live. */
 /** One thing recall brought into a node's context: a turn of some agent's
@@ -263,6 +269,8 @@ export interface Reference {
 export type NodeDetailLevel = 'compact' | 'summary' | 'full';
 
 export interface ThoughtData extends Record<string, unknown> {
+  /** Stable, human-readable reference within this canvas. Frames are spatial regions. */
+  nodeNumber?: number;
   /** Locked presentation detail; absent follows the global canvas preference. */
   detailLevel?: NodeDetailLevel;
   /** Question's share of reading height, shared by the card and reading panel. */

@@ -8,6 +8,12 @@ A local installation can set an absolute `THOUGHTDAG_HOME` and enable `THOUGHTDA
 
 The browser still holds a locator and filesystem permissions. If browser data is cleared, reopen the same origin and choose the existing local data to reconnect. If the local storage service is unavailable, the app stops at a retry screen rather than silently opening an empty canvas. Folder backup remains a separate feature.
 
+## Editing a canvas file by number
+
+Importing a file copies its contents into the canvas. With a local file host, each attachment has an ordinary file under `.thoughtdag/documents/` in the canvas workspace. Two nodes can each hold a file with the same name. Ask a native agent to “edit the conclusion in #12” to select that node in the current canvas. Saving the file updates the node and its reader. Tools that stream paragraph replacements can also show DOCX edits before saving.
+
+You retain control of the original import source. Native agents use their own working directory and permission settings for other files unless you choose a canvas approval mode. Browser-only deployments keep documents in browser storage.
+
 ## What can leave the device
 
 Content leaves the device only through a feature that requires transfer:

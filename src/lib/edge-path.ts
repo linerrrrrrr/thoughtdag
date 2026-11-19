@@ -54,6 +54,8 @@ export interface EdgeRoutingContext {
 export interface EdgeRouteOptions {
   edgeId?: string;
   context?: EdgeRoutingContext;
+  /** Fixed input layouts route all the way to their mounted handle, even across a reversed pair. */
+  fixedPorts?: boolean;
   /** Convenience for one-off routes. Memoize createEdgeRoutingContext for a graph. */
   edges?: readonly ThoughtEdge[];
   settings?: Partial<EdgeRoutingSettings>;
@@ -475,15 +477,6 @@ function routeSingleEdge(
 ): RoutedPath {
   sourcePosition ??= 'bottom' as Position;
   targetPosition ??= 'top' as Position;
-  const src = cards.find((n) => n.id === sourceId), tgt = cards.find((n) => n.id === targetId);
-  // Keep reference links on the facing sides of hand-placed cards.
-  if (sourcePosition === 'right' && targetPosition === 'left' && src && tgt
-    && tgt.x1 + tgt.x2 < src.x1 + src.x2) {
-    sourceX = src.x1 + src.x2 - sourceX;
-    targetX = tgt.x1 + tgt.x2 - targetX;
-    sourcePosition = 'left' as Position;
-    targetPosition = 'right' as Position;
-  }
   const start = { x: sourceX, y: sourceY }, end = { x: targetX, y: targetY };
   const native = nativeBezier(start, end, sourcePosition, targetPosition, routeMode === 'orthogonal' ? 0.25 : curvature);
   const natural = native.route;
@@ -584,16 +577,16 @@ export function routeEdge(
   const targetPort = coherentPort({ x: targetX, y: targetY }, targetPosition, targetCard);
   sourceX = sourcePort.x; sourceY = sourcePort.y;
   targetX = targetPort.x; targetY = targetPort.y;
-  if (routeMode !== 'orthogonal' || !lane || (!lane.sourceOffset && !lane.targetOffset)) {
-    return routeSingleEdge(sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition, sourceId, targetId, nodes, routeMode, cards, lane?.obstacleOffset, clearance, settings.curvature);
-  }
   // Legacy side handles can still be restored before the display mapper runs.
-  if (sourcePosition === 'right' && targetPosition === 'left' && sourceCard && targetCard
+  if (!options.fixedPorts && sourcePosition === 'right' && targetPosition === 'left' && sourceCard && targetCard
     && targetCard.x1 + targetCard.x2 < sourceCard.x1 + sourceCard.x2) {
     sourceX = sourceCard.x1 + sourceCard.x2 - sourceX;
     targetX = targetCard.x1 + targetCard.x2 - targetX;
     sourcePosition = 'left' as Position;
     targetPosition = 'right' as Position;
+  }
+  if (routeMode !== 'orthogonal' || !lane || (!lane.sourceOffset && !lane.targetOffset)) {
+    return routeSingleEdge(sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition, sourceId, targetId, nodes, routeMode, cards, lane?.obstacleOffset, clearance, settings.curvature);
   }
   const start = { x: sourceX, y: sourceY }, end = { x: targetX, y: targetY };
   const sourceGap = dot(subtract(end, start), normal(sourcePosition));

@@ -59,7 +59,7 @@ Guide: [Merge, highlight, and condense](/guides/organize)
 - Memory as documents: a preferences and an identity document rewritten as facts arrive (with changelog and undo), one dossier per topic written from the labelled conversations (what it is, decisions, where it stands, still open; every line sourced), an inbox for project facts no topic claimed, and the other agents' memory files as read-only sources.
 - Recall on an ask: the question's topics bring their dossiers in whole; a detail question adds verbatim excerpts ranked by relevance; every item listed with its cost, removable; three amounts (lean, standard, generous).
 - Related conversations per node: the node's terms and topics as chips, model-proposed expansion, cards with open and cite.
-- Decision model (fast thinking): one switch, on by default; a Jev-class System One endpoint through an aggregator, the official API, Cloudflare Workers AI, a self-hosted server, or the chat model as an uncalibrated stand-in; six-second timeout and a one-minute breaker, every decision falling back to a rule.
+- Decision model: one switch, on by default; a Jev-class System One endpoint through an aggregator, the official API, Cloudflare Workers AI, a self-hosted server, or the chat model as an uncalibrated stand-in; six-second timeout and a one-minute breaker, every decision falling back to a rule.
 - Topics: a table the person names or the model proposes; labelling by the decision model in the host, in the background; `thoughtdag topics` on the command line.
 
 Guide: [Memory](/guides/memory) · [Models, tools, and memory](/guides/models-tools) · [Connect a model](/setup) · [Decision model](/setup#decision-model)

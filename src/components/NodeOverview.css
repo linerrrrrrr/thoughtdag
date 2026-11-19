@@ -39,10 +39,10 @@
 
 /* Headers and metadata stay mounted when detail changes, preserving focus,
    editor drafts and their existing explicit-submit behavior. */
-[data-node-overview-surface] > :is(.thought-node-header, .node-metadata-overview, [data-focus-down], [data-stale-dot]),
+[data-node-overview-surface] .conversation-node-content > :is(.thought-node-header, .node-metadata-overview),
+[data-node-overview-surface] > :is([data-focus-down], [data-stale-dot]),
 .node-overview { zoom: var(--overview-zoom, 1); }
-[data-node-overview-surface].conversation-node > .thought-node-header {
-  flex-wrap: wrap;
+[data-node-overview-surface].conversation-node .thought-node-header {
   min-height: calc(var(--spacing-control-size) + var(--spacing-toolbar-inset) * 2);
   padding: var(--spacing-toolbar-inset) var(--spacing-surface-inset);
 }
@@ -50,8 +50,9 @@
   min-width: var(--spacing-control-size);
   min-height: var(--spacing-control-size);
 }
-[data-node-overview-surface] .thought-node-header > :last-child { margin-left: auto; max-width: 100%; flex-wrap: wrap; }
-[data-node-overview-surface] .node-header-status { max-width: 100%; }
+[data-node-overview-surface] .node-header-main { flex-wrap: wrap; }
+[data-node-overview-surface] .node-header-author { max-width: 100%; }
+[data-node-overview-surface] .node-header-actions { margin-inline-start: auto; max-width: 100%; flex-wrap: wrap; }
 [data-node-overview-surface] .node-token-usage { min-width: min(104px, 100%); max-width: 100%; flex-shrink: 1; }
 [data-node-overview-surface] .node-token-heading { flex-wrap: wrap; gap: var(--spacing-control-gap); }
 [data-node-overview-surface] .node-token-total { white-space: normal; overflow-wrap: anywhere; }
@@ -103,3 +104,11 @@
 .node-overview--compact .node-overview-identity { margin-bottom: var(--spacing-control-gap); }
 .node-overview--compact .node-file-type { padding: 0; background: transparent; }
 .node-overview--compact .node-overview-name { font-size: var(--text-control); line-height: var(--text-control--line-height); font-weight: 500; }
+
+/* Summary type adjusts independently of its screen-sized header and controls. */
+[data-node-overview-surface='summary'] :is(.node-overview-name, .node-summary-name) {
+  font-size: calc(var(--text-title) * var(--canvas-summary-type-scale, 1));
+}
+[data-node-overview-surface='summary'] :is(.node-overview-preview, .node-summary-text) {
+  font-size: calc(var(--text-control) * var(--canvas-summary-type-scale, 1));
+}

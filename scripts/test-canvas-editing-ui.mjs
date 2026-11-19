@@ -147,7 +147,7 @@ try {
   await page.waitForTimeout(180);
   assert.ok(await canvasQuestion.evaluate(el => el === document.activeElement));
   await canvasQuestion.press('End');
-  await canvasQuestion.press('Enter');
+  await canvasQuestion.press('Shift+Enter');
   await canvasQuestion.pressSequentially('Additional line');
   assert.match(await canvasQuestion.inputValue(), /\nAdditional line$/);
   assert.equal((await currentNode()).data.question, originalQuestion);
@@ -165,7 +165,7 @@ try {
   check('unsaved question draft survives switching between canvas and panel');
   await node().locator('[data-edit-cancel]').click();
   assert.equal((await currentNode()).data.question, originalQuestion);
-  check('canvas question editing stays focused; Enter adds a line and cancel leaves the question unchanged');
+  check('Shift+Enter adds a line to the focused question and Cancel restores the saved text');
 
   await panel().locator('[data-edit-response]').click();
   const panelResponse = panel().locator('textarea[rows="10"]');
@@ -274,9 +274,9 @@ try {
   closeTo(minimalBox.height, 240, 'Minimum height is respected');
   await node().locator('[data-edit-response]').click();
   await canvasResponse.waitFor({ state: 'visible' });
-  const bodyOverflow = await node().locator('[data-thought-body]').evaluate(el => ({ height: el.clientHeight, scrollHeight: el.scrollHeight, overflowY: getComputedStyle(el).overflowY }));
-  assert.equal(bodyOverflow.overflowY, 'auto');
-  assert.ok(bodyOverflow.scrollHeight > bodyOverflow.height, 'Small node scrolls its content instead of growing');
+  const answerOverflow = await node().locator('[data-conversation-split-answer]').evaluate(el => ({ height: el.clientHeight, scrollHeight: el.scrollHeight, overflowY: getComputedStyle(el).overflowY }));
+  assert.equal(answerOverflow.overflowY, 'auto');
+  assert.ok(answerOverflow.scrollHeight > answerOverflow.height, 'A small node scrolls its answer pane');
   await canvasResponse.fill(`${panelEditedResponse}\n\n紧凑节点内保存。`);
   await node().getByRole('button', { name: '保存', exact: true }).scrollIntoViewIfNeeded();
   await screenshot('minimum-size-edit');

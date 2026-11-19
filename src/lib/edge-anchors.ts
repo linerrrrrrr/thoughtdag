@@ -1,4 +1,5 @@
 import type { ThoughtEdge, ThoughtNode } from '../types';
+import type { ConnectionLayout } from './connection-layout-preferences';
 
 export type LayoutDirection = 'horizontal' | 'vertical';
 export type AnchorSide = 'top' | 'right' | 'bottom' | 'left';
@@ -19,6 +20,11 @@ interface NodeRect { x: number; y: number; width: number; height: number }
 const MATERIAL_KINDS = new Set(['note', 'file', 'link']);
 const SIDES = new Set<AnchorSide>(['top', 'right', 'bottom', 'left']);
 const AXIS_BIAS = 48;
+
+const FIXED_HORIZONTAL = { source: 'right', target: 'left' } as const;
+const FIXED_VERTICAL = { source: 'bottom', target: 'top' } as const;
+export const fixedConnectionSides = (layout: ConnectionLayout) => layout === 'top' ? FIXED_VERTICAL : FIXED_HORIZONTAL;
+export const supportsFixedPorts = (stepKind: unknown) => stepKind !== 'human' && stepKind !== 'prompt' && stepKind !== 'frame';
 
 /** Side ports share a header-height baseline, even when card bodies differ. */
 export function sideAnchorOffset(height: number): number {
@@ -77,17 +83,22 @@ export function resolveEdgeAnchors(
   nodes: NodeCollection,
   preference?: LayoutDirection,
   previous?: EdgeAnchors,
+  fixedLayout?: ConnectionLayout,
 ): EdgeAnchors | null {
   const source = findNode(nodes, edge.source), target = findNode(nodes, edge.target);
   if (!source || !target || source.id === target.id || source.data.stepKind === 'frame'
     || target.data.stepKind === 'frame' || MATERIAL_KINDS.has(target.data.stepKind ?? '')) return null;
   const a = rect(source), b = rect(target);
+  const fixed = fixedLayout && fixedConnectionSides(fixedLayout);
+  const out = supportsFixedPorts(source.data.stepKind) ? fixed?.source : undefined;
+  const input = supportsFixedPorts(target.data.stepKind) ? fixed?.target : undefined;
+  if (out && input) return resultFor(a, b, out, input);
   const preferred = preference ?? (source.data.layoutDirection === 'horizontal' || target.data.layoutDirection === 'horizontal'
     ? 'horizontal' : 'vertical');
   const rightward = b.x + b.width / 2 >= a.x + a.width / 2;
   const downward = b.y + sideAnchorOffset(b.height) >= a.y + sideAnchorOffset(a.height);
-  const horizontal = resultFor(a, b, rightward ? 'right' : 'left', rightward ? 'left' : 'right');
-  const vertical = resultFor(a, b, downward ? 'bottom' : 'top', downward ? 'top' : 'bottom');
+  const horizontal = resultFor(a, b, out ?? (rightward ? 'right' : 'left'), input ?? (rightward ? 'left' : 'right'));
+  const vertical = resultFor(a, b, out ?? (downward ? 'bottom' : 'top'), input ?? (downward ? 'top' : 'bottom'));
   const gapX = Math.max(b.x - a.x - a.width, a.x - b.x - b.width);
   const gapY = Math.max(b.y - a.y - a.height, a.y - b.y - b.height);
 
@@ -101,10 +112,11 @@ export function resolveEdgeAnchors(
   return cost(horizontal) < cost(vertical) ? horizontal : vertical;
 }
 
-/** Place a new card with its automatically resolved input at the released wire tip. */
+/** Place a new card with its rendered input at the released wire tip. */
 export function positionNodeAtConnectionEnd(
   source: ThoughtNode, target: ThoughtNode, end: { x: number; y: number },
   targetHandles?: readonly { id?: string | null; x: number; y: number; width: number; height: number }[],
+  fixedLayout?: ConnectionLayout,
 ): { x: number; y: number } {
   const box = { ...rect(target), x: 0, y: 0 };
   const edge: ThoughtEdge = { id: '', source: source.id, target: target.id };
@@ -118,10 +130,14 @@ export function positionNodeAtConnectionEnd(
       y: handle.y + (side === 'top' ? 0 : side === 'bottom' ? handle.height : handle.height / 2),
     } : pointFor(box, side);
   };
+  if (fixedLayout && supportsFixedPorts(target.data.stepKind)) {
+    const offset = offsetFor(fixedConnectionSides(fixedLayout).target);
+    return { x: end.x - offset.x, y: end.y - offset.y };
+  }
   const candidates = (['top', 'left', 'bottom', 'right'] as const).map(side => {
     const offset = offsetFor(side);
     const position = { x: end.x - offset.x, y: end.y - offset.y };
-    const anchors = resolveEdgeAnchors(edge, [source, { ...target, position }])!;
+    const anchors = resolveEdgeAnchors(edge, [source, { ...target, position }], undefined, undefined, fixedLayout)!;
     const resolvedOffset = offsetFor(anchors.targetSide);
     return {
       position,
@@ -154,12 +170,13 @@ export function createEdgeAnchorResolver() {
       const live = new Set(edges.map((edge) => edge.id));
       for (const id of cache.keys()) if (!live.has(id)) cache.delete(id);
     },
-    resolve(edge: ThoughtEdge, nodes: NodeCollection, preference?: LayoutDirection): EdgeAnchors | null {
+    resolve(edge: ThoughtEdge, nodes: NodeCollection, preference?: LayoutDirection, fixedLayout?: ConnectionLayout): EdgeAnchors | null {
       const source = findNode(nodes, edge.source), target = findNode(nodes, edge.target);
       const prior = cache.get(edge.id);
-      const preferenceKey = `${preference ?? ''}:${source?.data.layoutDirection ?? ''}:${target?.data.layoutDirection ?? ''}`;
+      const preferenceKey = [fixedLayout, preference, source?.data.layoutDirection, target?.data.layoutDirection,
+        source?.data.stepKind, target?.data.stepKind].join(':');
       const compatible = !!prior && prior.sourceId === edge.source && prior.targetId === edge.target && prior.preference === preferenceKey;
-      const fresh = resolveEdgeAnchors(edge, nodes, preference, compatible ? prior.anchors : undefined);
+      const fresh = resolveEdgeAnchors(edge, nodes, preference, compatible ? prior.anchors : undefined, fixedLayout);
       if (!fresh || !source || !target) { cache.delete(edge.id); return fresh; }
       const dragging = !!source.dragging || !!target.dragging;
       const measured = !!source.measured?.width && !!source.measured?.height && !!target.measured?.width && !!target.measured?.height;

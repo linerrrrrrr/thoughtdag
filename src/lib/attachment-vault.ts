@@ -20,16 +20,29 @@ const KEY_PREFIX = 'att-content:';
 const vaultKey = (attId: string) => `${KEY_PREFIX}${attId}`;
 const REVISION_PREFIX = 'att-docx-revision:';
 const revisionKey = (revision: string) => `${REVISION_PREFIX}${revision}`;
+const pdfRevisionKey = (revision: string) => `att-pdf-revision:${revision}`;
 
 export type DocumentRevisionPatch = Pick<Attachment,
   'editedDocxRevision' | 'editedDocxContent' | 'editedDocxSavedAt'>;
 
-function encodeBytes(bytes: Uint8Array): string {
+export function encodeBytes(bytes: Uint8Array): string {
   let binary = '';
   for (let i = 0; i < bytes.length; i += 0x8000) {
     binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
   }
   return btoa(binary);
+}
+
+export async function savePdfFileRevision(content: string): Promise<string> {
+  const id = crypto.randomUUID();
+  await idbSet(pdfRevisionKey(id), content);
+  return id;
+}
+
+export async function loadNodePdfFile(att: Attachment): Promise<string> {
+  if (att.pdfFileContent !== undefined) return att.pdfFileContent;
+  if (att.pdfFileRevision) return (await idbGet<string>(pdfRevisionKey(att.pdfFileRevision))) ?? '';
+  return loadAttachmentContent(att);
 }
 
 /** A saved DOCX is an immutable blob. History and duplicated attachments may
@@ -57,8 +70,11 @@ const shouldVaultRevision = (att: Attachment): boolean => isDocxDocument(att) &&
 export async function internAttachment(att: Attachment): Promise<Attachment> {
   let next = att;
   if (shouldVault(att)) {
-    await idbSet(vaultKey(att.id), att.content);
-    next = { ...next, content: '', contentInVault: true };
+    let id = att.contentVaultId ?? att.id;
+    const existing = await idbGet<string>(vaultKey(id));
+    if (existing !== undefined && existing !== att.content) id = crypto.randomUUID();
+    if (existing !== att.content) await idbSet(vaultKey(id), att.content);
+    next = { ...next, content: '', contentInVault: true, ...(id !== att.id && { contentVaultId: id }) };
   }
   if (shouldVaultRevision(att)) {
     // An imported canvas must not rewrite a different revision already used
@@ -70,6 +86,10 @@ export async function internAttachment(att: Attachment): Promise<Attachment> {
     next = { ...next, editedDocxRevision: revision };
     delete next.editedDocxContent;
   }
+  if (att.pdfFileContent !== undefined) {
+    next = { ...next, pdfFileRevision: await savePdfFileRevision(att.pdfFileContent) };
+    delete next.pdfFileContent;
+  }
   return next;
 }
 
@@ -77,7 +97,7 @@ export async function internAttachment(att: Attachment): Promise<Attachment> {
     missing (cleared storage) — callers surface their own error state. */
 export async function loadAttachmentContent(att: Attachment): Promise<string> {
   if (!att.contentInVault) return att.content;
-  return (await idbGet<string>(vaultKey(att.id))) ?? '';
+  return (await idbGet<string>(vaultKey(att.contentVaultId ?? att.id))) ?? '';
 }
 
 /** Read the latest explicitly saved DOCX. A missing revision must surface as
@@ -95,18 +115,24 @@ export async function inlineVaultedContent(nodes: ThoughtNode[]): Promise<Though
   const out: ThoughtNode[] = [];
   for (const n of nodes) {
     const atts = n.data.attachments;
-    if (!atts?.some((a) => a.contentInVault || a.editedDocxRevision)) { out.push(n); continue; }
+    if (!atts?.some((a) => a.contentInVault || a.editedDocxRevision || a.pdfFileRevision)) { out.push(n); continue; }
     const inlined: Attachment[] = [];
     for (const a of atts) {
       const rest = { ...a };
       if (a.contentInVault) {
         rest.content = await loadAttachmentContent(a);
         delete rest.contentInVault;
+        delete rest.contentVaultId;
       }
       if (a.editedDocxRevision && a.editedDocxContent === undefined) {
         const content = await loadDocumentContent(a);
         if (!content) throw new Error(`Saved DOCX revision is missing: ${a.name}`);
         rest.editedDocxContent = content;
+      }
+      if (a.pdfFileRevision && a.pdfFileContent === undefined) {
+        const content = await loadNodePdfFile(a);
+        if (!content) throw new Error(`Saved PDF revision is missing: ${a.name}`);
+        rest.pdfFileContent = content;
       }
       inlined.push(rest);
     }
@@ -121,7 +147,7 @@ export async function internNodes(nodes: ThoughtNode[]): Promise<ThoughtNode[]> 
   const out: ThoughtNode[] = [];
   for (const n of nodes) {
     const atts = n.data.attachments;
-    if (!atts?.some((a) => shouldVault(a) || shouldVaultRevision(a))) { out.push(n); continue; }
+    if (!atts?.some((a) => shouldVault(a) || shouldVaultRevision(a) || a.pdfFileContent !== undefined)) { out.push(n); continue; }
     const interned: Attachment[] = [];
     for (const a of atts) interned.push(await internAttachment(a));
     out.push({ ...n, data: { ...n.data, attachments: interned } });

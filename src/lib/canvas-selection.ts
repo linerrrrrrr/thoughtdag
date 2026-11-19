@@ -3,6 +3,12 @@ import { isFrameNode, nodeRect, type Rect } from './frames';
 
 export type SelectionTarget = 'nodes' | 'edges' | 'frames';
 
+/** Keep the selection through a pan. A stationary pane click settles in onPaneClick. */
+export function isCanvasPanTarget(target: EventTarget | null): boolean {
+  return target instanceof Element && (!!target.closest('.react-flow__controls-pan')
+    || target.matches('.react-flow__pane.draggable:not(.selection)'));
+}
+
 /** Rendering nodes are storage carriers; frames are a separate product type. */
 export function partitionSpatialSelection(nodes: ThoughtNode[], ids: string[]) {
   const selected = new Set(ids);

@@ -25,13 +25,16 @@ export async function migrateActiveCanvasToVault(): Promise<void> {
     payloads + the live one), then drop unreferenced vault entries. */
 export async function gcVaultAtBoot(): Promise<void> {
   try {
+    // This retired database contains only capabilities for writing imported
+    // OS files. Removing it detaches old imports without touching any file.
+    if (typeof indexedDB !== 'undefined') indexedDB.deleteDatabase('thoughtdag-document-sources');
     const ids = new Set<string>();
-    for (const n of useStore.getState().nodes) for (const a of n.data.attachments ?? []) ids.add(a.id);
+    for (const n of useStore.getState().nodes) for (const a of n.data.attachments ?? []) ids.add(a.contentVaultId ?? a.id);
     for (const p of useProjects.getState().projects) {
       const raw = await idbGet(projectStorageKey(p.id)).catch(() => null);
       const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
       const nodes = (parsed?.state?.nodes ?? []) as ThoughtNode[];
-      for (const n of nodes) for (const a of n.data.attachments ?? []) ids.add(a.id);
+      for (const n of nodes) for (const a of n.data.attachments ?? []) ids.add(a.contentVaultId ?? a.id);
     }
     const swept = await gcVault(ids);
     if (swept > 0) console.info(`[thoughtdag] vault GC: swept ${swept} orphaned payload(s)`);

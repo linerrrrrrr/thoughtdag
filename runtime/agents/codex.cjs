@@ -480,13 +480,23 @@ function createCodexRuntime({ log } = {}) {
           setTimeout(() => state.end('idle'), 5000);
         }, 15000);
         try {
-          const policy = await policyFor(cwd);
+          const policy = req.nativePermissions === true ? {} : await policyFor(cwd);
           const model = (req.model && typeof req.model === 'object' && req.model.id ? req.model.id : null) ?? await defaultModelId();
           let thread;
           let continued = false;
           let fresh = false;
           let injectedCount = 0;
           const settings = { cwd, ...policy, ...(model ? { model } : {}), ...(typeof req.instructions === 'string' ? { developerInstructions: req.instructions } : {}) };
+          let sandboxPolicy;
+          const openThread = async (method, params) => {
+            const response = await send(method, params);
+            const base = response.sandbox;
+            sandboxPolicy = undefined;
+            if (req.managedFileDirs?.length && base?.type === 'workspaceWrite') {
+              sandboxPolicy = { ...base, writableRoots: [...new Set([...(base.writableRoots ?? []), ...req.managedFileDirs])] };
+            }
+            return response.thread;
+          };
           const reserve = (id) => {
             if (threadReservations.has(id) || byThread.has(id)) return false;
             threadReservations.set(id, runId); state.reservedThreads.add(id); return true;
@@ -503,7 +513,7 @@ function createCodexRuntime({ log } = {}) {
               const beforeResume = await readRollout(file);
               const idle = !['active', 'systemError'].includes(stored?.status?.type);
               if (idle && beforeResume.sessionId === base.threadId && beforeResume.checkpoint === base.checkpoint && beforeResume.lastTurnId === base.turnId) {
-                const resumed = (await send('thread/resume', { threadId: base.threadId, excludeTurns: true, ...settings })).thread;
+                const resumed = await openThread('thread/resume', { threadId: base.threadId, excludeTurns: true, ...settings });
                 const afterResume = await readRollout(resumed.path ?? file);
                 if (afterResume.checkpoint === base.checkpoint && afterResume.lastTurnId === base.turnId) {
                   thread = { ...resumed, path: resumed.path ?? file };
@@ -515,14 +525,14 @@ function createCodexRuntime({ log } = {}) {
             if (!thread) release(base.threadId);
           }
           if (!thread && nativeInput) {
-            thread = (await send('thread/start', settings)).thread;
+            thread = await openThread('thread/start', settings);
             fresh = true;
           } else if (!thread) {
             const resumeId = typeof req.sessionId === 'string' && req.sessionId ? req.sessionId : req.sessionPath ? threadIdOf(req.sessionPath) : null;
             if (resumeId && !reserve(resumeId)) throw new Error('The native thread already has an active run');
-            if (req.forkEntryId && resumeId) { thread = (await send('thread/fork', { threadId: resumeId, lastTurnId: req.forkEntryId, excludeTurns: true, ...settings })).thread; fresh = true; }
-            else if (resumeId) { thread = (await send('thread/resume', { threadId: resumeId, excludeTurns: true, ...settings })).thread; continued = true; }
-            else { thread = (await send('thread/start', settings)).thread; fresh = true; }
+            if (req.forkEntryId && resumeId) { thread = await openThread('thread/fork', { threadId: resumeId, lastTurnId: req.forkEntryId, excludeTurns: true, ...settings }); fresh = true; }
+            else if (resumeId) { thread = await openThread('thread/resume', { threadId: resumeId, excludeTurns: true, ...settings }); continued = true; }
+            else { thread = await openThread('thread/start', settings); fresh = true; }
           }
           if (!thread?.id) throw new Error('The native runtime did not return a thread identity');
           // Session-scoped permissions belong only to the thread actually resumed.
@@ -544,7 +554,7 @@ function createCodexRuntime({ log } = {}) {
           const input = [{ type: 'text', text: String(req.prompt ?? ''), text_elements: [] }];
           for (const img of Array.isArray(req.images) ? req.images : []) if (img && typeof img.data === 'string') input.push({ type: 'image', url: `data:${img.mimeType};base64,${img.data}` });
           const effort = req.effort && model ? effortFor(model, req.effort) : null;
-          const started = await send('turn/start', { threadId: thread.id, input, summary: 'auto', ...(model ? { model } : {}), ...(effort ? { effort } : {}) }, 60 * 1000);
+          const started = await send('turn/start', { threadId: thread.id, input, summary: 'auto', ...(sandboxPolicy && { sandboxPolicy }), ...(model ? { model } : {}), ...(effort ? { effort } : {}) }, 60 * 1000);
           state.turnId = started?.turn?.id ?? null;
           state.emit({ ...session, turnId: state.turnId });
           if (state.abortRequested && state.turnId) send('turn/interrupt', { threadId: state.threadId, turnId: state.turnId }).catch(() => {});

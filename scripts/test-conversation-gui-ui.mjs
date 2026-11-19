@@ -168,16 +168,20 @@ try {
   if (!baseline) {
     await page.evaluate(() => window.__rf.setViewport({ x: 120, y: 160, zoom: .6 }, { duration: 0 }));
     await settle();
-    const screenFonts = await node().evaluate(element => ({
-      title: parseFloat(getComputedStyle(element.querySelector('.node-summary-name')).fontSize) * .6,
-      summary: parseFloat(getComputedStyle(element.querySelector('.node-summary-text')).fontSize) * .6,
-    }));
-    assert.ok(Math.abs(screenFonts.title - 16) < .1, `Summary title remains 16px on screen: ${screenFonts.title}`);
-    assert.ok(Math.abs(screenFonts.summary - 14) < .1, `Summary remains 14px on screen: ${screenFonts.summary}`);
+    const screenFonts = await node().evaluate(element => {
+      const screenFont = selector => {
+        const label = element.querySelector(selector);
+        return parseFloat(getComputedStyle(label).fontSize) * label.getBoundingClientRect().height / label.offsetHeight;
+      };
+      return { title: screenFont('[data-node-name]'), summary: screenFont('[data-node-preview]'),
+        density: parseFloat(getComputedStyle(element).getPropertyValue('--ui-scale')) };
+    });
+    assert.ok(Math.abs(screenFonts.title - 16 * screenFonts.density) < .35, `Summary title at interface density: ${screenFonts.title}`);
+    assert.ok(Math.abs(screenFonts.summary - 14 * screenFonts.density) < .35, `Summary preview at interface density: ${screenFonts.summary}`);
     await screenshot('light-summary-60-percent');
     await page.evaluate(() => window.__rf.setViewport({ x: 120, y: 160, zoom: 1 }, { duration: 0 }));
     await settle();
-    check('Summary typography compensates at 60% zoom to remain readable at 16px/14px');
+    check('Summary typography keeps the title and control roles at interface density through 60% zoom');
   }
   await detail('full');
   await openMetadata();
@@ -275,8 +279,8 @@ try {
     await openMetadata();
     assert.equal(await page.evaluate(() => window.__store.getState().nodes[0].height), 240);
     for (const selector of ['[data-node-title-input]', '[data-node-summary-input]', '[data-node-metadata-save]', '[data-node-metadata-cancel]', '[data-node-metadata-generate]']) {
-      await assertWithin(node().locator(selector), editor(), `Narrow metadata control ${selector}`);
       await assertClickable(node().locator(selector), `Narrow metadata control ${selector}`);
+      await assertWithin(node().locator(selector), editor(), `Narrow metadata control ${selector}`);
     }
     await node().locator('[data-node-title-input]').fill('新的研究名称');
     await node().locator('[data-node-summary-input]').fill('新的研究摘要保留完整结论。');

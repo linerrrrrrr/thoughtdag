@@ -47,8 +47,8 @@ try {
   await page.evaluate(() => {
     window.__ui.getState().setTutorialOpen(false);
     window.__ui.getState().setReleaseNotesOpen(false);
-    const nodes = ['a', 'b'].map((id, i) => ({ id, type: 'thought', width: 380, height: 280,
-      position: { x: 180 + i * 440, y: 220 }, data: {
+    const nodes = ['a', 'b'].map((id, i) => ({ id, type: 'thought', width: 440, height: 280,
+      position: { x: 180 + i * 450, y: 220 }, data: {
         displayName: `节点 ${id}`, question: `研究问题 ${id}`, response: `回答 ${id}`,
         responses: [`回答 ${id}`], responseIndex: 0, isCollapsed: false, isEditing: false, isLoading: false, tokenCount: 10, highlights: [], attachments: [],
       } }));
@@ -102,6 +102,8 @@ try {
   assert.equal(await zoom.getAttribute('title'), null);
   await hover(page.locator('.react-flow__controls-fitview'));
   assert.equal(await tip.innerText(), '适配整张画布');
+  await hover(page.getByRole('button', { name: '左键平移画布', exact: true }));
+  assert.equal(await tip.innerText(), '左键平移画布');
 
   const usage = page.locator('[data-node-token-usage]').first();
   await hover(usage);

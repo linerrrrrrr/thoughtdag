@@ -6,7 +6,9 @@ import type { Attachment } from '../types';
 import { useProjects } from '../store/projects';
 import { useT, fmt } from '../i18n';
 import { toast } from '../lib/ui-store';
-import { cachedDocxRevision, documentSourceKey, documentWriteError, useOriginalDocument } from '../lib/original-document';
+import { documentWriteError } from '../lib/document-errors';
+import { useFileEditPreview } from '../lib/document-edit-preview';
+import DocumentEditPreview from './DocumentEditPreview';
 import {
   activateDocx, activeDocxSession, attachDocxHost, claimDocxHost, docxSnapshot,
   exportDocxSession, getDocxSession, saveDocxSession, startDocxSession,
@@ -50,8 +52,8 @@ function LiveDocxEditor({ nodeId, attachment, compact, readOnly, onEditingChange
   const t = useT();
   const projectId = useProjects(state => state.activeId) ?? 'default';
   const session = useMemo(() => getDocxSession(projectId, nodeId, attachment), [projectId, nodeId, attachment]); // the registry retains identity across saved revisions
-  const original = useOriginalDocument(documentSourceKey(projectId, nodeId, attachment.id));
-  const needsSave = session.dirty || cachedDocxRevision(attachment) !== original.source?.writtenRevision;
+  const preview = useFileEditPreview(projectId, nodeId, attachment.id);
+  const needsSave = session.dirty;
   const [host, setHost] = useState<HTMLDivElement | null>(null);
   const [exportingPrevious, setExportingPrevious] = useState(false);
   useSyncExternalStore(subscribeDocx, docxSnapshot);
@@ -95,10 +97,10 @@ function LiveDocxEditor({ nodeId, attachment, compact, readOnly, onEditingChange
     } catch { toast('error', t('richDocument.exportFailed')); }
     finally { setExportingPrevious(false); }
   };
-  const status = <span role="status">{original.ready && t(session.saving ? 'richDocument.saving' : needsSave ? 'document.pendingWrite' : original.source?.writtenDigest ? 'document.written' : 'nativeDocument.saved')}</span>;
+  const status = <span role="status">{t(session.saving ? 'richDocument.saving' : needsSave ? 'docx.unsaved' : 'nativeDocument.saved')}</span>;
   const actions = <>
-    {!readOnly && <button type="button" data-superdoc-save disabled={!original.ready || session.saving || session.conflict || session.status !== 'ready' || !needsSave}
-      onClick={save} aria-label={t('common.save')} data-tooltip={t('document.saveOriginal')}><Save size={15} /></button>}
+    {!readOnly && <button type="button" data-superdoc-save disabled={session.saving || session.conflict || session.status !== 'ready' || !needsSave}
+      onClick={save} aria-label={t('common.save')} data-tooltip={t('document.saveNode')}><Save size={15} /></button>}
     <button type="button" data-superdoc-export disabled={session.status !== 'ready'} onClick={exportFile}
       aria-label={t('richDocument.exportDocx')} data-tooltip={t('richDocument.exportDocx')}><Download size={15} /></button>
   </>;
@@ -124,11 +126,12 @@ function LiveDocxEditor({ nodeId, attachment, compact, readOnly, onEditingChange
     <div className="docx-view-host" ref={setHost} />
     {!ownsView && session.status === 'ready' && <button type="button" className="docx-return-view text-control"
       onClick={() => { if (host) claimDocxHost(session, host); activateDocx(session); }}>{t('docx.editHere')}</button>}
+    {preview && !session.dirty && !session.saving && <DocumentEditPreview attachment={attachment} preview={preview} />}
     {session.status === 'loading' && <div className="docx-load-state text-control"><Loader2 size={18} className="animate-spin" />{t('richDocument.loading')}</div>}
     {session.status === 'error' && <div className="docx-load-state text-control" role="alert">{t('document.originalUnavailable')}
       <button type="button" onClick={() => void startDocxSession(session, true)}>{t('docx.retry')}</button></div>}
     {active && session.instance && createPortal(<div className={`${readerToolbar ? 'docx-toolbar-inline' : 'docx-toolbar-dock'} nodrag nopan nowheel`} data-superdoc-toolbar>
-      <SuperDocToolbar key={session.instance.superdocId} instance={session.instance} viewport={session.viewport} name={attachment.name} dirty={needsSave} saving={session.saving} canSave={original.ready && !session.conflict}
+      <SuperDocToolbar key={session.instance.superdocId} instance={session.instance} viewport={session.viewport} name={attachment.name} dirty={needsSave} saving={session.saving} canSave={!session.conflict}
         onSave={save} onExport={exportFile} onHide={() => activateDocx(null)} />
     </div>, readerToolbar ?? document.body)}
   </div>;

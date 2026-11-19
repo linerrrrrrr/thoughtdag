@@ -1,7 +1,7 @@
 import { useContext, useMemo } from 'react';
 import { BaseEdge, EdgeLabelRenderer, useStore as useFlowStore, type EdgeProps } from '@xyflow/react';
 import { routeEdge } from '../lib/edge-path';
-import { CanvasEdgeRouting } from '../lib/edge-routing-context';
+import { CanvasConnectionLayout, CanvasEdgeRouting } from '../lib/edge-routing-context';
 import { useCanvasEditing } from '../lib/canvas-editing';
 import { isViewerMode } from '../lib/viewer';
 import { useT } from '../i18n';
@@ -25,6 +25,7 @@ export default function ThoughtEdgeView({
 }: EdgeProps<ThoughtEdge>) {
   const requestProperties = useCanvasEditing((s) => s.requestProperties);
   const routingContext = useContext(CanvasEdgeRouting);
+  const fixedPorts = !!useContext(CanvasConnectionLayout);
   const visibleNodes = useFlowStore((s) => s.nodes as ThoughtNode[]);
   const edges = useFlowStore((s) => s.edges as ThoughtEdge[]);
   const zoom = useFlowStore((s) => s.transform[2]);
@@ -39,8 +40,8 @@ export default function ThoughtEdgeView({
   const annotationClass = 'max-w-[240px] rounded-tag border border-line bg-card px-2 py-1 text-control text-ink break-words';
   const { path, labelX, labelY } = useMemo(
     () => routeEdge(sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition, source, target, visibleNodes, routeMode,
-      { edgeId: id, context: routingContext, ...(!routingContext ? { edges } : {}) }),
-    [sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition, source, target, visibleNodes, routeMode, id, routingContext, edges],
+      { edgeId: id, context: routingContext, fixedPorts, ...(!routingContext ? { edges } : {}) }),
+    [sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition, source, target, visibleNodes, routeMode, id, routingContext, fixedPorts, edges],
   );
 
   // When selected, force full visibility (overrides the ancestor-dim pass)

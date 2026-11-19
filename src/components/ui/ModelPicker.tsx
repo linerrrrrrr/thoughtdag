@@ -5,26 +5,22 @@ import { useDismissableLayer } from '../../lib/use-dismissable-layer';
 import { useCanvasPanelPosition } from '../../lib/use-canvas-panel-position';
 import { useCanvasToolCard } from '../../lib/use-canvas-tool-card';
 import { uiRect, uiViewport } from '../../lib/ui-scale';
-import { isImeComposing } from '../../utils';
-import { Check, ChevronDown, Cpu, KeyRound, RefreshCw, Loader2, ChevronRight, Scale, SquareTerminal } from 'lucide-react';
-import { toast, useUiStore } from '../../lib/ui-store';
-import { profileLines } from '../../lib/profile';
-import { useModels, setModelsCache, ensureAgentsFresh, recheckAgents, type ModelInfo } from '../../lib/use-models';
-import { AGENT_PROVIDER, AGENT_RUNTIMES, LIVE_RUNTIMES, isAgentModel, runtimeOf } from '../../lib/agents/agent-runtime';
-import { JUDGE_LABELS, effectiveProvider, judgeConfigured, judgeTripped } from '../../lib/judge';
+import { Check, ChevronDown, Cpu, Loader2, ChevronRight } from 'lucide-react';
+import { useUiStore } from '../../lib/ui-store';
+import { useModels, ensureAgentsFresh, recheckAgents, type ModelInfo } from '../../lib/use-models';
+import { AGENT_PROVIDER, AGENT_RUNTIMES, LIVE_RUNTIMES, isAgentModel, runtimeLabelOf } from '../../lib/agents/agent-runtime';
+import CanvasModelMenu from './CanvasModelMenu';
+import CanvasModelList from './CanvasModelList';
+import CanvasModelSettings from './CanvasModelSettings';
 
 // Agent-run models fold by runtime: each runtime lists many models, so only
 // the runtime holding the current pick opens by itself; the others show their
 // name, count and a chevron. Which are open is remembered.
 const OPEN_RUNTIMES_KEY = 'thoughtdag.pickerOpenRuntimes';
-const runtimeLabelOf = (id: string): string => { const rt = runtimeOf(id); if (rt) return AGENT_RUNTIMES[rt].label; if (id.startsWith('harness/')) return 'Harness'; return id.split('/')[0] || 'agent'; };
 const loadOpenRuntimes = (): Set<string> => { try { const v = JSON.parse(appSettings.getItem(OPEN_RUNTIMES_KEY) ?? '[]'); return new Set(Array.isArray(v) ? v : []); } catch { return new Set(); } };
-import { refreshStoredProviders, pushProviders, storedProviders } from '../../lib/runtime-providers';
-import { IN_HARNESS } from '../../lib/embedded';
-import { apiVisionModels } from '../../lib/background-model';
 import { fmt } from '../../i18n';
 import { useT } from '../../i18n';
-import { modelMatchesExecution, type NodeExecutionKind } from '../../lib/node-execution';
+import type { NodeExecutionKind } from '../../lib/node-execution';
 
 interface PickerProps {
   /** Node mode: controlled value (undefined = inherit global) + change handler. */
@@ -32,9 +28,8 @@ interface PickerProps {
   onChange?: (id: string | undefined) => void;
   /** Compact styling for embedding in panel rows. */
   compact?: boolean;
-  /** A node's execution type restricts its model list and inherited default. */
-  executionKind?: NodeExecutionKind;
-  inheritedModel?: string;
+  /** Available choices and inherited default for the node's execution type. */
+  execution?: { kind: NodeExecutionKind; models: ModelInfo[]; inheritedModel?: string };
 }
 
 function NodePickerPortal({ enabled, children }: { enabled: boolean; children: ReactNode }) {
@@ -45,7 +40,7 @@ function NodePickerPortal({ enabled, children }: { enabled: boolean; children: R
 // keys exist in .env), grouped by provider. Without props it edits the
 // GLOBAL selection; with value/onChange it edits a per-node override and
 // offers an "inherit" entry.
-export default function ModelPicker({ value, onChange, compact, executionKind, inheritedModel }: PickerProps) {
+export default function ModelPicker({ value, onChange, compact, execution }: PickerProps) {
   const t = useT();
   const nodeMode = !!onChange;
   const selectedModel = useUiStore((s) => s.selectedModel);
@@ -59,7 +54,6 @@ export default function ModelPicker({ value, onChange, compact, executionKind, i
   // This credential draft lives only in this mounted control, never in the
   // generic draft cache. Outside dismissal suspends; Escape discards it.
   const [anysearchDraft, setAnysearchDraft] = useState(anysearchKey);
-  const [refreshing, setRefreshing] = useState(false);
   // the effort step unfolded under a just-picked agent model (see pick); closes with the menu
   const [effortStepFor, setEffortStepFor] = useState<string | null>(null);
   const agentEffort = useUiStore((s) => s.agentEffort);
@@ -114,17 +108,16 @@ export default function ModelPicker({ value, onChange, compact, executionKind, i
   const [pingSeen, setPingSeen] = useState(ping);
   if (ping !== pingSeen) {
     setPingSeen(ping);
-    if (!nodeMode) setOpen(true);
+    if (!nodeMode) { setEffortStepFor(null); setOpen(true); }
   }
 
-  const models = (data?.models ?? []).filter(model => !executionKind || modelMatchesExecution(model.id, executionKind));
-  // Empty installations use the two explicit connection entries in the toolbar.
-  if (!nodeMode && models.length === 0) return null;
+  const executionKind = execution?.kind;
+  const models = execution?.models ?? data?.models ?? [];
   // A generic node picker needs alternatives; execution-specific pickers
   // retain their setup action when their lane has no available model.
   if (nodeMode && !executionKind && models.length < 2) return null;
 
-  const globalId = nodeMode && executionKind ? inheritedModel
+  const globalId = nodeMode && execution ? execution.inheritedModel
     : selectedModel && models.some((m) => m.id === selectedModel) ? selectedModel : data?.default;
   const activeId = nodeMode ? (value ?? null) : globalId;
   const active = activeId ? models.find((m) => m.id === activeId) : null;
@@ -151,14 +144,19 @@ export default function ModelPicker({ value, onChange, compact, executionKind, i
     if (!m || !isAgentModel(m.id) || !m.efforts?.length) return '';
     return m.efforts.includes(agentEffort) ? agentEffort : (m.defaultEffort ?? '');
   };
-  const withEffort = (m: ModelInfo) => (effortWord(m) ? `${m.name} · ${effortWord(m)}` : m.name);
+  const withEffort = (m: ModelInfo) => {
+    const suffix = ` (${m.provider})`;
+    const name = !nodeMode && m.name.endsWith(suffix) ? m.name.slice(0, -suffix.length) : m.name;
+    const effort = effortWord(m);
+    return effort ? `${name} · ${effort}` : name;
+  };
 
   // a node without its own choice follows the global one: the button still
   // names that model in full (agent · model · effort), the tint says it is inherited
   const globalActive = globalId ? models.find((m) => m.id === globalId) : null;
   const label = nodeMode
     ? (active ? withEffort(active) : value ? (value.endsWith('/default') ? `${runtimeLabelOf(value)} · ${t('agent.defaultModel')}` : value) : (globalActive ? withEffort(globalActive) : executionKind === 'codex' ? t('nodeExecution.codexDefault') : executionKind ? t('nodeExecution.chooseModel') : t('model.inherit')))
-    : (active ? withEffort(active) : (activeId ?? (models.length === 0 ? t('model.none') : null)));
+    : (active ? withEffort(active) : activeId || t('model.catalogTab'));
 
   return (
     <div ref={rootRef} className="relative">
@@ -184,7 +182,7 @@ export default function ModelPicker({ value, onChange, compact, executionKind, i
 
       {open && (
         <NodePickerPortal enabled={nodeMode}>
-        <div ref={menuRef} className={nodeMode ? 'fixed z-[90] bg-card border border-line rounded-overlay shadow-lg py-1.5 w-80 max-w-[calc(calc(100*var(--ui-vw))-16px)] overflow-y-auto overscroll-contain nodrag nopan nowheel' : 'canvas-tool-panel canvas-tool-menu py-1.5'}
+        <div ref={menuRef} className={nodeMode ? 'fixed z-[90] bg-card border border-line rounded-overlay shadow-lg py-1.5 w-80 max-w-[calc(calc(100*var(--ui-vw))-16px)] overflow-y-auto overscroll-contain nodrag nopan nowheel' : 'canvas-tool-panel canvas-model-menu'}
           style={nodeMode ? { visibility: 'hidden' } : panelPosition} data-model-picker-panel
           onPointerDown={event => { if (nodeMode) event.stopPropagation(); }}
           onDoubleClick={event => { if (nodeMode) event.stopPropagation(); }}>
@@ -197,8 +195,7 @@ export default function ModelPicker({ value, onChange, compact, executionKind, i
               {!value && <Check size={13} strokeWidth={2} className="shrink-0" />}
             </button>
           )}
-          {!nodeMode && <p className="text-control text-ink-faint uppercase tracking-wider font-medium px-3 pt-2 pb-0.5" data-picker-answer-header>{t('model.answerGroup')}</p>}
-          {providers.map((provider) => (
+          {nodeMode && providers.map((provider) => (
             <div key={provider}>
               <p className="text-control text-ink-faint uppercase tracking-wider font-medium px-3 pt-2 pb-1 flex items-center gap-1.5" >
                 {provider === AGENT_PROVIDER ? t('model.agentGroup') : provider}
@@ -280,69 +277,16 @@ export default function ModelPicker({ value, onChange, compact, executionKind, i
               }}>{t(executionKind === 'codex' ? 'connection.agent' : 'connection.api')}</button>
             </div>
           )}
-          {!nodeMode && <JudgeRow onOpen={() => { setOpen(false); useUiStore.getState().setApiKeyModalOpen(true, 'judge'); }} />}
-          {!nodeMode && (
-            <div className="flex items-center pr-1 border-t border-line mt-1 pt-1">
-            <button onClick={() => { setOpen(false); useUiStore.getState().setApiKeyModalOpen(true, 'agents'); }}
-              className="flex-1 text-left px-3 py-1.5 text-control flex items-center gap-2 hover:bg-wash text-ink-muted" data-picker-agent>
-              <SquareTerminal size={13} strokeWidth={1.75} className="shrink-0" /> {t('connection.agent')}
-            </button>
-            {<button
-              onClick={() => { setOpen(false); useUiStore.getState().setApiKeyModalOpen(true); }}
-              className={`flex-1 text-left px-3 py-1.5 text-control flex items-center gap-2 transition-colors hover:bg-wash ${
-                models.length === 0 ? 'text-accent font-medium' : 'text-ink-muted'
-              }`}
-              data-picker-apikey
-            >
-              <KeyRound size={13} strokeWidth={1.75} className="shrink-0" /> {t('connection.api')}
-            </button>}
-            <button
-              onClick={() => {
-                setRefreshing(true);
-                void refreshStoredProviders()
-                  .then((d) => { if (d) setModelsCache(d); })
-                  .finally(() => setRefreshing(false));
-              }}
-              disabled={refreshing}
-              data-tooltip={t('model.refreshList')} aria-label={t('model.refreshList')}
-              className="w-6 h-6 rounded-control flex items-center justify-center text-ink-faint hover:text-accent hover:bg-wash transition-colors shrink-0"
-              data-model-refresh
-            >
-              <RefreshCw size={12} strokeWidth={1.75} className={refreshing ? 'animate-spin' : ''} />
-            </button>
-            </div>
-          )}
-          {!nodeMode && <GlobalCapabilities anysearchDraft={anysearchDraft} setAnysearchDraft={setAnysearchDraft} />}
+          {!nodeMode && <CanvasModelMenu
+            models={<CanvasModelList models={models} activeId={activeId} pending={data?.agentsPending}
+              onPick={pick} effortStepFor={effortStepFor}
+              renderEffort={model => <EffortStep model={model} onDone={() => setOpen(false)} />} />}
+            settings={<CanvasModelSettings anysearchDraft={anysearchDraft} setAnysearchDraft={setAnysearchDraft}
+              onConnection={section => { setOpen(false); useUiStore.getState().setApiKeyModalOpen(true, section); }} />}
+          />}
         </div>
         </NodePickerPortal>
       )}
-    </div>
-  );
-}
-
-// ── The decision model's row: one switch, one line of state, the dialog a click away ──
-function JudgeRow({ onOpen }: { onOpen: () => void }) {
-  const t = useT();
-  const judgeCfg = useUiStore((s) => s.judge);
-  const setJudge = useUiStore((s) => s.setJudge);
-  const on = judgeCfg.provider !== 'off';
-  const configured = judgeConfigured(judgeCfg);
-  const tripped = judgeTripped();
-  const state = !on ? t('judge.stateOff') : !configured ? t('judge.stateNoApi') : tripped ? t('judge.stateTripped') : fmt(t('judge.stateOn'), { j: JUDGE_LABELS[effectiveProvider(judgeCfg)] });
-  return (
-    <div className="border-t border-line mt-1 pt-1" data-picker-judge-row data-judge-state={!on ? 'off' : !configured ? 'no-api' : tripped ? 'tripped' : 'on'}>
-      <div className="px-3 py-1.5 flex items-center gap-2">
-        <button onClick={onOpen} className="flex-1 min-w-0 text-left flex items-center gap-2 group"  data-picker-judge>
-          <Scale size={13} strokeWidth={1.75} className="shrink-0 text-accent" />
-          <span className="min-w-0">
-            <span className="block text-control text-ink font-medium group-hover:text-accent">{t('judge.rowTitle')}</span>
-            <span className="block text-control text-ink-faint truncate">{state}{on && !configured ? <span className="text-accent ml-1">{t('judge.goConfigure')}</span> : null}</span>
-          </span>
-        </button>
-        <button role="switch" aria-checked={on} onClick={(e) => { e.stopPropagation(); setJudge({ provider: on ? 'off' : 'none' }); }} className={`relative w-8 h-[18px] rounded-control transition-colors shrink-0 ${on ? 'bg-accent' : 'bg-line-strong'}`} data-picker-judge-toggle>
-          <span className={`absolute top-0.5 left-0.5 w-3.5 h-3.5 shape-circle bg-white transition-transform ${on ? 'translate-x-3.5' : ''}`} />
-        </button>
-      </div>
     </div>
   );
 }
@@ -373,160 +317,6 @@ function EffortStep({ model, onDone }: { model: ModelInfo; onDone: () => void })
         {levels.map((l) => <option key={l} value={l}>{l}</option>)}
       </select>
       <button onClick={(e) => { e.stopPropagation(); onDone(); }} className="text-control px-2 py-1 rounded-tag bg-action text-white hover:bg-action-strong transition-colors shrink-0" data-agent-effort-ok>{t('model.effortConfirm')}</button>
-    </div>
-  );
-}
-
-// ── Capabilities: the engine-room report at the picker's foot ──
-// What this installation can do, what is missing (the ONLY place that
-// hints at hidden features), and the one extra model choice: which
-// vision model reads images and recognizes scanned pages.
-const CAPS_OPEN_KEY = 'thoughtdag.pickerCapsOpen';
-function GlobalCapabilities({ anysearchDraft, setAnysearchDraft }: { anysearchDraft: string; setAnysearchDraft: (value: string) => void }) {
-  const t = useT();
-  const [capsOpen, setCapsOpen] = useState<boolean>(() => { try { return appSettings.getItem(CAPS_OPEN_KEY) === 'open'; } catch { return false; } });
-  const data = useModels();
-  const visionModelPref = useUiStore((s) => s.visionModelPref);
-  const setVisionModelPref = useUiStore((s) => s.setVisionModelPref);
-  const searchEnginePref = useUiStore((s) => s.searchEnginePref);
-  const setSearchEnginePref = useUiStore((s) => s.setSearchEnginePref);
-  const anysearchKey = useUiStore((s) => s.anysearchKey);
-  const saveAnysearchKey = async () => {
-    const k = anysearchDraft.trim();
-    if (k === anysearchKey) return;
-    useUiStore.getState().setAnysearchKey(k);
-    toast('success', t(k ? 'caps.anysearchSaved' : 'caps.anysearchCleared'));
-    // capability refresh so the hosted worker re-reports the engine
-    if (storedProviders().length > 0) {
-      try { setModelsCache(await pushProviders(storedProviders())); } catch { /* best-effort */ }
-    }
-  };
-  const memoryEnabled = useUiStore((s) => s.memoryEnabled);
-  const setMemoryEnabled = useUiStore((s) => s.setMemoryEnabled);
-  const memoryCount = useUiStore((s) => profileLines(s.profile).length);
-  const setMemoryManagerOpen = useUiStore((s) => s.setMemoryManagerOpen);
-  const caps = data?.capabilities;
-  // the image readers: an agent sees images inside its own runs, it does not read one for the canvas
-  const visionModels = apiVisionModels(data?.models ?? []);
-  // an old proxy / offline fetch reports nothing — say nothing, not "missing"
-  if (!caps) return null;
-  const hasVision = visionModels.length > 0;
-  const dot = (on: boolean) => (
-    <span className={`w-1.5 h-1.5 shape-circle shrink-0 mt-1.5 ${on ? 'bg-emerald-500' : 'bg-line-strong'}`} />
-  );
-  const anysearchKeyRow = (hintKey: 'caps.anysearchHintQuota' | 'caps.anysearchHintEnable') => (
-    <div className="mt-1">
-      <input
-        type="password"
-        value={anysearchDraft}
-        onChange={(e) => setAnysearchDraft(e.target.value)}
-        onKeyDown={(e) => { if (e.key === 'Enter' && !isImeComposing(e)) { e.preventDefault(); void saveAnysearchKey(); } }}
-        onClick={(e) => e.stopPropagation()}
-        placeholder={t('caps.anysearchKeyPlaceholder')}
-        data-anysearch-key
-        className="w-full text-control text-ink-muted bg-wash border border-line rounded-control px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-accent/40 placeholder-ink-faint font-mono"
-      />
-      <button type="button" onClick={() => void saveAnysearchKey()} disabled={anysearchDraft.trim() === anysearchKey}
-        className="mt-1 text-control text-accent px-2 py-1 rounded-control hover:bg-wash disabled:opacity-40" data-anysearch-save>{t('common.save')}</button>
-      <p className="text-control text-ink-faint mt-0.5">
-        {t(hintKey)}{' '}
-        <a href="https://www.anysearch.com" target="_blank" rel="noreferrer" className="text-accent hover:underline" onClick={(e) => e.stopPropagation()}>anysearch.com</a>
-      </p>
-    </div>
-  );
-  return (
-    <div className="border-t border-line mt-1.5 pt-1 pb-1" data-picker-caps data-picker-caps-open={capsOpen ? 'open' : 'closed'}>
-      <button onClick={() => setCapsOpen((v) => { try { appSettings.setItem(CAPS_OPEN_KEY, v ? 'closed' : 'open'); } catch { /* per-session */ } return !v; })} className="w-full text-left px-3 pt-1 pb-1 flex items-center gap-1.5 hover:bg-wash transition-colors" data-picker-caps-toggle>
-        {capsOpen ? <ChevronDown size={12} strokeWidth={1.75} className="text-ink-faint" /> : <ChevronRight size={12} strokeWidth={1.75} className="text-ink-faint" />}
-        <span className="text-control text-ink-faint uppercase tracking-wider font-medium">{t('caps.title')}</span>
-        {!capsOpen && <span className="ml-auto flex items-center gap-1.5">{dot(!!caps?.webSearch)}<span className="text-control text-ink-faint">{t('caps.webSearch')}</span>{dot(memoryEnabled)}<span className="text-control text-ink-faint">{t('caps.memory')}</span></span>}
-      </button>
-      {capsOpen && <>
-      <div className="px-3 py-1 flex items-start gap-2">
-        {dot(!!caps?.webSearch)}
-        <div className="flex-1 min-w-0">
-          <p className="text-control text-ink-muted font-medium">{t('caps.webSearch')}</p>
-          {/* inside the harness the host's own web search serves its models
-              (its service is set in the harness), an own OpenRouter interface
-              searches as :online; the engine picker and the AnySearch key
-              would be dead controls there (#72) */}
-          {caps?.webSearch && IN_HARNESS ? (
-            <p className="text-control text-ink-faint mt-0.5">{t('caps.webSearchViaInterface')}</p>
-          ) : caps?.webSearch ? (
-            <select
-              value={searchEnginePref}
-              onChange={(e) => setSearchEnginePref(e.target.value)}
-              onClick={(e) => e.stopPropagation()}
-
-              className="mt-1 w-full text-control text-ink-muted bg-wash border border-line rounded-control px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-accent/40"
-            >
-              <option value="server">{fmt(t('caps.engineServer'), { engine: caps.searchEngine })}</option>
-              <option value="search_std">{t('caps.engineStd')}</option>
-              <option value="search_pro">{t('caps.enginePro')}</option>
-              {(caps.anysearch || anysearchKey) && <option value="anysearch">{t('caps.engineAnysearch')}</option>}
-              {(caps.deepseekSearch || searchEnginePref === 'deepseek') && <option value="deepseek">{t('caps.engineDeepseek')}</option>}
-            </select>
-          ) : (
-            <p className="text-control text-ink-faint mt-0.5">{t(IN_HARNESS ? 'caps.webSearchOffHost' : 'caps.webSearchOff')}</p>
-          )}
-          {!IN_HARNESS && caps?.webSearch && searchEnginePref === 'anysearch' && anysearchKeyRow('caps.anysearchHintQuota')}
-          {!IN_HARNESS && caps?.webSearch && searchEnginePref === 'deepseek' && (
-            <p className="text-control text-ink-faint mt-0.5" data-deepseek-search-hint>{t(caps.deepseekSearch ? 'caps.deepseekHintBilled' : 'caps.deepseekHintNoKey')}</p>
-          )}
-          {!IN_HARNESS && !caps?.webSearch && anysearchKeyRow('caps.anysearchHintEnable')}
-        </div>
-      </div>
-      <div className="px-3 py-1 flex items-start gap-2">
-        {dot(true)}
-        <p className="text-control text-ink-faint flex-1">
-          <span className="text-ink-muted font-medium">{t('caps.scholar')}</span>{' · '}{t('caps.scholarDesc')}
-        </p>
-      </div>
-      <div className="px-3 py-1 flex items-start gap-2">
-        {dot(memoryEnabled)}
-        <div className="flex-1 min-w-0 flex items-center gap-2">
-          <p className="text-control text-ink-muted font-medium flex-1">
-            {t('caps.memory')}
-            <span className="text-ink-faint font-normal"> · {memoryCount}</span>
-          </p>
-          <button
-            onClick={(e) => { e.stopPropagation(); setMemoryManagerOpen(true); }}
-            className="text-control text-ink-faint hover:text-accent underline decoration-dotted transition-colors shrink-0"
-          >
-            {t('memory.manage')}
-          </button>
-          <button
-            onClick={(e) => { e.stopPropagation(); setMemoryEnabled(!memoryEnabled); }}
-
-            className={`text-control px-2 py-0.5 rounded-tag transition-colors shrink-0 ${memoryEnabled ? 'bg-accent/10 text-accent' : 'bg-wash text-ink-faint'}`}
-          >
-            {memoryEnabled ? t('caps.on') : t('caps.off')}
-          </button>
-        </div>
-      </div>
-      <div className="px-3 py-1 flex items-start gap-2">
-        {dot(hasVision)}
-        <div className="flex-1 min-w-0">
-          <p className="text-control text-ink-muted font-medium">{t('caps.vision')}</p>
-          {hasVision ? (
-            <select
-              value={visionModels.some((m) => m.id === visionModelPref) ? visionModelPref : 'auto'}
-              onChange={(e) => setVisionModelPref(e.target.value)}
-              onClick={(e) => e.stopPropagation()}
-
-              className="mt-1 w-full text-control text-ink-muted bg-wash border border-line rounded-control px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-accent/40"
-            >
-              <option value="auto">{t('caps.visionAuto')}</option>
-              {visionModels.map((m) => (
-                <option key={m.id} value={m.id}>{m.id.split('/').pop()}</option>
-              ))}
-            </select>
-          ) : (
-            <p className="text-control text-ink-faint mt-0.5">{t('caps.visionOff')}</p>
-          )}
-        </div>
-      </div>
-      </>}
     </div>
   );
 }

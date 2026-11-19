@@ -2,10 +2,11 @@
 
 ## Move around the canvas
 
-- **Hold the middle or right mouse button and drag** to pan, or **hold Space and left-drag**.
+- Turn on **Pan canvas with the left mouse button** below the lock in the bottom-left controls. Left-drag empty space or a multi-selection to pan. Turn it off to box-select or move the selection again.
+- You can also pan by dragging with the middle or right mouse button, or by holding Space while you left-drag.
 - **Wheel or two-finger scroll** pans by default; scrolling inside node text still reads that text. The ⋯ menu can switch ordinary scrolling back to zoom.
 - **Ctrl/⌘ + scroll or pinch** zooms around the canvas viewport center, including when the pointer is inside a node or editor. On a Magic Mouse, Control + click opens the context menu.
-- **Left-drag on empty space** to select the object type chosen under **Select → Nodes / Lines** in the top toolbar. Each node must fit inside the box. Lines are selected where their visible paths cross the box. Ctrl / Cmd / Shift adds to the selection, and Ctrl / Cmd + A selects all objects of the current type.
+- With the pan button off, **left-drag empty space** to select nodes that fit inside the box. After release, you can switch to **Links** that cross the box or **Frames** that fit inside it. Ctrl / Cmd / Shift adds to the selection, and Ctrl / Cmd + A selects all objects of the current type.
 - **Drag a node** to change its position.
 
 The minimap and zoom controls provide another way to move through a large graph.
@@ -13,6 +14,8 @@ The minimap and zoom controls provide another way to move through a large graph.
 <img src="../map-en.gif" alt="A real canvas moving between full nodes, takeaway plaques, and icon-level semantic zoom" width="100%" loading="lazy"/>
 
 ## Change reading distance
+
+Open the model menu at the upper left and choose **Settings → Canvas typography** to preview text at different zoom levels. By default, conversation text reaches 16px at 100%. As you zoom in further the card grows, while prose, disclosure labels, action icons and timestamps hold their sizes. You can set the body size and adjust how body text and summaries respond to zoom. **Apply** saves the preference across canvases on this device. **Restore defaults** resets these typography settings in one click.
 
 With **Detail → Follow zoom**, zooming out changes a node from a full card to a named overview and then to a compact name. Its position and connections stay the same. Detail changes presentation only; it does not change model context or generate summaries.
 
@@ -67,7 +70,9 @@ The recording cycles through **Search nodes → Frame navigator → Tidy layout*
 
 Open **Layout** in the upper-right toolbar and choose the scope, method, direction, and spacing. Preview the result if needed, then select **Apply layout**. The selection is the default scope when objects are selected; otherwise, the whole canvas is used. Closing the panel preserves unapplied settings drafts. Vertical layouts keep each conversation chain in a column, while horizontal layouts keep it in a row, following wire direction in both cases.
 
-The separate **Connections** toolbar entry controls obstacle avoidance, clearance, and curvature across canvases on this device. Valid changes take effect immediately without moving nodes. When space is limited, open Connections from More actions.
+Turn on **Fixed input area** in the model menu’s **Settings** tab or in the **Connections** panel. Choose **Source sidebar**, **Top source bar**, or **Input dock** to place the sources beside, above, or outside the conversation. Upstream turns and linked canvas files share one input port, and continuations use a separate output. **Show attachment sources** controls which source details appear on the card.
+
+Open **Connections** in the top-right toolbar to adjust **Avoid nodes**, **Clearance**, and **Curve bend**. On narrow screens, open it from **More actions**. These preferences take effect immediately across canvases on this device.
 
 Automatic layout applies to the selected nodes while unselected nodes stay in place. When a frame is included, its current contents join the layout and its bounds fit the result, including nested frames. Each applied layout is one undo step.
 

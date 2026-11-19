@@ -129,6 +129,9 @@ const fixtureDir = mkdtempSync(path.join(localRoot, 'codex-stream-'));
 const transportEvents = [];
 let client;
 let requestedSummary;
+let requestedThread, requestedSandbox;
+const existingRoot = path.join(fixtureDir, 'external-project');
+const internalRoot = path.join(fixtureDir, 'internal-document');
 const notify = (method, params) => client.stdout.emit('data', Buffer.from(JSON.stringify({ method, params: { threadId: 'transport-thread', turnId: 'transport-turn', ...params } }) + '\n'));
 const spawn = () => {
   client = new EventEmitter();
@@ -139,9 +142,13 @@ const spawn = () => {
     const request = JSON.parse(line);
     const answer = (result) => queueMicrotask(() => client.stdout.emit('data', Buffer.from(JSON.stringify({ id: request.id, result }) + '\n')));
     if (request.method === 'initialize') answer({});
-    if (request.method === 'thread/start') answer({ thread: { id: 'transport-thread', path: null } });
+    if (request.method === 'thread/start') {
+      requestedThread = request.params;
+      answer({ thread: { id: 'transport-thread', path: null }, sandbox: { type: 'workspaceWrite', writableRoots: [existingRoot], networkAccess: false } });
+    }
     if (request.method === 'turn/start') {
       requestedSummary = request.params.summary;
+      requestedSandbox = request.params.sandboxPolicy;
       answer({ turn: { id: 'transport-turn' } });
       setImmediate(() => {
         notify('turn/started', { turn: { id: 'transport-turn', status: 'inProgress' } });
@@ -171,7 +178,7 @@ const runtime = loaded.exports.createCodexRuntime();
 try {
   await new Promise((resolve, reject) => {
     const timeout = setTimeout(() => reject(new Error('mock runtime did not complete')), 3000);
-    runtime.run({ cwd: fixtureDir, prompt: 'transport test', model: { id: 'fixture-model' } }, ({ event }) => {
+    runtime.run({ cwd: fixtureDir, prompt: 'transport test', nativePermissions: true, managedFileDirs: [internalRoot], model: { id: 'fixture-model' } }, ({ event }) => {
       transportEvents.push(event);
       if (event.type === 'run_end') { clearTimeout(timeout); resolve(); }
     }).catch(reject);
@@ -189,4 +196,10 @@ check('transport emits structured activity and exactly one terminal event', () =
   assert.equal(transportEvents.filter((e) => e.type === 'run_end').length, 1);
 });
 check('the runtime explicitly requests available public reasoning summaries', () => assert.equal(requestedSummary, 'auto'));
+check('native permissions retain cwd, approval defaults and existing writable roots when a canvas file is attached', () => {
+  assert.equal(requestedThread.cwd, fixtureDir);
+  assert.equal(requestedThread.approvalPolicy, undefined);
+  assert.equal(requestedThread.sandbox, undefined);
+  assert.deepEqual(requestedSandbox, { type: 'workspaceWrite', writableRoots: [existingRoot, internalRoot], networkAccess: false });
+});
 console.log(`\n${checks} Codex stream regressions passed.`);

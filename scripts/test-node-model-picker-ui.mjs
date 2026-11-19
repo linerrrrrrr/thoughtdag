@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
 import { chromium } from 'playwright-core';
+import { initNodePickerFixture, installNodeAgentCatalog } from './fixtures/node-picker.mjs';
 
 const appUrl = new URL(process.env.APP_URL ?? 'http://127.0.0.1:5174');
 const executablePath = process.env.CHROME_PATH ?? [
@@ -32,11 +33,7 @@ await page.route('**/*', route => {
   }
   return route.continue();
 });
-await context.addInitScript(() => {
-  localStorage.setItem('thoughtdag.seeded', 'yes');
-  localStorage.setItem('thoughtdag.tutorialDone', '1');
-  localStorage.setItem('thoughtdag.lang', 'zh');
-});
+await context.addInitScript(initNodePickerFixture);
 const id = 'node-model-picker-fixture';
 const card = () => page.locator(`.react-flow__node[data-id="${id}"]`);
 const picker = () => card().locator('[data-node-execution-picker]');
@@ -71,9 +68,12 @@ const assertAnchored = async anchor => {
 try {
   await page.goto(appUrl.href, { waitUntil: 'networkidle' });
   await page.waitForFunction(() => window.__store?.persist.hasHydrated() && window.__rf && window.__ui);
+  await page.evaluate(installNodeAgentCatalog, catalog.models);
   await page.evaluate(async ({ id, catalog }) => {
-    (await import('/src/lib/use-models.ts')).setModelsCache(catalog);
-    (await import('/src/i18n/index.ts')).useI18n.getState().setLang('zh');
+    const { setModelsCache, recheckAgents } = await window.__importLive('/src/lib/use-models.ts');
+    setModelsCache(catalog);
+    await recheckAgents();
+    (await window.__importLive('/src/i18n/index.ts')).useI18n.getState().setLang('zh');
     const ui = window.__ui.getState();
     ui.setSelectedModel('api-test'); ui.setTutorialOpen(false); ui.setReleaseNotesOpen(false); ui.setPanelOpen(false);
     window.__store.getState().setNodes([{ id, type: 'thought', width: 560, height: 300, position: { x: 0, y: 0 }, data: {
@@ -134,8 +134,8 @@ try {
   await assertAnchored(trigger());
   await page.setViewportSize({ width: 900, height: 700 });
   await page.evaluate(async () => {
-    (await import('/src/lib/appearance.ts')).useAppearance.getState().setLighting('dark');
-    (await import('/src/i18n/index.ts')).useI18n.getState().setLang('en');
+    (await window.__importLive('/src/lib/appearance.ts')).useAppearance.getState().setLighting('dark');
+    (await window.__importLive('/src/i18n/index.ts')).useI18n.getState().setLang('en');
     const anchor = document.querySelector('[data-node-execution-picker] [data-model-picker-trigger]').getBoundingClientRect();
     const view = window.__rf.getViewport();
     window.__rf.setViewport({ ...view, x: view.x + 894 - anchor.right, y: view.y + 680 - anchor.bottom }, { duration: 0 });
@@ -153,7 +153,8 @@ try {
     id: `codex/codex/test-model-${i + 1}`, name: `Codex · test-model-${i + 1}`, provider: '__agent__', vision: false,
     ...(i === 23 ? { efforts: ['low', 'high'], defaultEffort: 'low' } : {}),
   }))] };
-  await page.evaluate(async catalog => (await import('/src/lib/use-models.ts')).setModelsCache(catalog), longCatalog);
+  await page.evaluate(installNodeAgentCatalog, longCatalog.models);
+  await page.evaluate(async () => (await window.__importLive('/src/lib/use-models.ts')).recheckAgents());
   const lastLong = panel().getByRole('button', { name: 'test-model-24', exact: true });
   await lastLong.waitFor({ state: 'attached' });
   assert.equal(await panel().evaluate(el => el.scrollHeight > el.clientHeight), true);

@@ -5,6 +5,7 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
+const { execFile } = require('node:child_process');
 const { searchDirs, childEnv } = require('./where.cjs');
 
 const fsp = fs.promises;
@@ -91,8 +92,33 @@ async function resolveCandidate(candidate, failures) {
   return { binary: actual };
 }
 
-/** Full spawn contract. Discovery never executes a shell, changes global config,
- * or removes CODEX_WINDOWS_REGISTERED_CORE / other inherited policy variables.
+// An ordinary Windows terminal does not inherit the desktop app's private PATH.
+// Ask for the current user's registered package so app updates and other install
+// volumes do not leave us pointing at an old, versioned WindowsApps directory.
+async function registeredDesktopCli(searched, failures) {
+  const family = 'OpenAI.Codex_2p2nqsd0c76g0';
+  const powershell = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
+  searched.push(family);
+  const query = "[Console]::OutputEncoding = [Text.UTF8Encoding]::new($false); Get-AppxPackage -Name OpenAI.Codex -ErrorAction Stop"
+    + ` | Where-Object PackageFamilyName -eq '${family}' | Select-Object -ExpandProperty InstallLocation`;
+  const output = await new Promise((resolve) => {
+    execFile(powershell, ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', query],
+      { encoding: 'utf8', windowsHide: true, timeout: 5000, maxBuffer: 64 * 1024 }, (error, stdout, stderr) => {
+        if (error) failures.push({ path: family, code: 'APPX_QUERY_FAILED', message: String(stderr || error.message).trim().slice(0, 400) });
+        resolve(error ? '' : stdout);
+      });
+  });
+  for (const location of output.trim().split(/\r?\n/)) {
+    if (!path.isAbsolute(location)) continue;
+    const binary = path.join(location, 'app', 'resources', 'codex.exe');
+    searched.push(binary);
+    if (await fileExists(binary, failures)) return { binary, desktopBundle: true };
+  }
+  return null;
+}
+
+/** Full spawn contract. The Windows fallback only queries package registration.
+ * Preserve global config and all inherited policy variables.
  */
 async function resolveCodexLaunch({ extraHomes = [], projectRoot = PROJECT_ROOT } = {}) {
   const failures = [];
@@ -141,6 +167,10 @@ async function resolveCodexLaunch({ extraHomes = [], projectRoot = PROJECT_ROOT 
     if (found?.desktopBundle) desktopFallback = { found, candidate };
   }
   if (desktopFallback) return build(desktopFallback.found, 'desktop-bundle-mxc', desktopFallback.candidate);
+  if (process.platform === 'win32') {
+    const registered = await registeredDesktopCli(searched, failures);
+    if (registered) return build(registered, 'desktop-bundle-mxc');
+  }
   const detail = failures[0] ? ` (${failures[0].code}: ${failures[0].path})` : '';
   return unavailable(`No standalone CLI was found${detail}. Install it from the official distribution with: ${INSTALL_COMMAND}; or set THOUGHTDAG_CODEX_PATH to your standalone CLI.`);
 }

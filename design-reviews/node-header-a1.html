@@ -1,0 +1,301 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ThoughtDAG · A1 节点顶栏</title>
+<style>
+* { box-sizing: border-box; }
+:root {
+  color-scheme: light;
+  --paper: #faf9f7; --rule: #d6d9dd; --label: #515e70;
+  --type: Inter, "Microsoft YaHei", "PingFang SC", sans-serif;
+  --mono: "JetBrains Mono", Consolas, monospace;
+}
+body { margin: 0; background: #efefef; color: #232935; font: 14px/1.5 var(--type); }
+button, select { font: inherit; color: inherit; }
+button { border: 0; background: none; cursor: pointer; }
+:where(button, select, a):focus-visible { outline: 2px solid #8676eb; outline-offset: 2px; }
+.sheet { max-width: 1240px; margin: auto; padding: 23px clamp(16px,3.5vw,44px) 20px; background: var(--paper); }
+.mast, .brand, .intro, .controls, .pair-label, .control, .iconbtn, .textbtn { display: flex; align-items: center; }
+.mast { justify-content: space-between; border-bottom: 1px solid var(--rule); padding-bottom: 12px; }
+.brand { gap: 7px; font-size: 17px; font-weight: 650; letter-spacing: -.5px; }
+.brandmark { width: 25px; height: 25px; }
+.back { color: var(--label); font-size: 13px; text-decoration: underline; text-underline-offset: 3px; }
+.intro { justify-content: space-between; gap: 20px; margin: 22px 0 17px; }
+h1 { margin: 0; font-size: clamp(26px,3vw,37px); line-height: 1.3; letter-spacing: -.04em; }
+.intro p { margin: 5px 0 0; color: var(--label); }
+.controls { flex: none; gap: 10px; flex-wrap: wrap; }
+.control { color: var(--label); font-size: 12px; gap: 7px; }
+select, #theme { border: 1px solid var(--rule); background: white; border-radius: 6px; font-size: 13px; padding: 5px 8px; }
+#theme { display: inline-flex; gap: 6px; align-items: center; }
+.variant { border-top: 1px solid var(--rule); padding: 15px 0 17px; }
+.pair { display: grid; grid-template-columns: minmax(0,1.36fr) minmax(0,1fr); gap: 12px; }
+.stage, dialog {
+  --canvas: #171b22; --card: #222833; --wash: #2b3240; --line: #465164; --quiet-line: #343d4b;
+  --ink: #e9edf4; --muted: #bac3d2; --faint: #a1afc1; --accent: #a79ff4; --dot: #384254;
+  --q: #b0a0d6; --a: #9aafc5; --tool: #cfaa79; --think: #7db7a9; --danger: #e0796f;
+  --bubble: #263b58; --bubble-ink: #e6eefb; color-scheme: dark;
+}
+body.light :is(.stage,dialog) {
+  --canvas: #f4f5f7; --card: #fff; --wash: #ebeef3; --line: #cdd3dd; --quiet-line: #dde1e7;
+  --ink: #202632; --muted: #515e70; --faint: #5d6b82; --accent: #6b5ce7; --dot: #c5cdd9;
+  --q: #8474b4; --a: #7a8da5; --tool: #ad8251; --think: #548e83; --danger: #b42923;
+  --bubble: #edf2fa; --bubble-ink: #263851; color-scheme: light;
+}
+
+.stage {
+  display: flex; align-items: stretch; justify-content: center; min-width: 0;
+  position: relative; overflow: hidden; padding: 28px 12px 0; border-radius: 9px;
+  background: radial-gradient(circle, var(--dot) .85px, transparent 1px) 3px 4px / 16px 16px, var(--canvas);
+  box-shadow: inset 0 0 0 1px rgb(106 116 133 / .19);
+}
+.pair-label { position: absolute; top: 3px; left: 12px; font: 11px/18px var(--mono); color: var(--faint); }
+.node { display: flex; flex-direction: column; position: relative; container-type: inline-size; flex: none;
+  width: min(100%, var(--target)); color: var(--ink); background: var(--card);
+  border: 1px solid var(--line); border-bottom: 0; border-radius: 14px 14px 0 0; }
+.node[data-width="520"] { --target: 520px; }
+.node[data-width="360"] { --target: 360px; }
+.node::before { content: ""; position: absolute; bottom: 100%; left: calc(50% - 1px); height: 30px; width: 2px; background: var(--accent); }
+.node::after { content: ""; position: absolute; top: -4px; left: calc(50% - 3px); width: 6px; height: 6px; background: var(--accent); opacity: .8; }
+.node-head { padding: 12px 16px; border-bottom: 1px solid var(--quiet-line); }
+.mainrow { display: grid; grid-template-areas: "id author usage actions";
+  grid-template-columns: max-content minmax(0,1fr) max-content max-content; min-height: 28px; align-items: center; gap: 8px 10px; }
+.ident, .author, .tools, .usage-line, .tool-count, .flags, .status { display: flex; align-items: center; }
+.ident { grid-area: id; gap: 2px; }
+.num { font: 600 14px/1.5 var(--mono); font-variant-numeric: tabular-nums; color: var(--ink); }
+.author { grid-area: author; min-width: 0; gap: 7px; font-size: 12px; color: var(--muted); }
+.source { flex: none; line-height: 1.5; }
+.model { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 12px/1.5 var(--mono); color: var(--ink); }
+.slash { color: var(--faint); }
+.tools { grid-area: actions; justify-self: end; gap: 2px; }
+.icon { flex: none; width: 16px; height: 16px; stroke: currentColor; stroke-width: 1.75; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+.iconbtn, .textbtn { justify-content: center; border-radius: 6px; color: var(--muted); }
+.iconbtn { width: 28px; height: 28px; padding: 0; }
+.textbtn { gap: 5px; min-height: 28px; padding: 3px 7px; font-size: 14px; }
+.iconbtn:hover, .textbtn:hover { color: var(--ink); background: var(--wash); }
+[data-action=delete]:is(:hover,:focus-visible) { color: var(--danger); }
+.usage { grid-area: usage; justify-self: start; display: flex; flex-direction: column; gap: 4px; min-width: 104px; width: max-content; }
+.usage-line { gap: 12px; color: var(--muted); font-size: 12px; line-height: 16px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.tool-count { gap: 4px; }
+.tool-count .icon { width: 13px; height: 13px; }
+.bar { height: 6px; width: 100%; border: 1px solid color-mix(in srgb,var(--muted) 55%,var(--card)); border-radius: 4px; background-clip: padding-box; }
+.author { border-left: 1px solid var(--line); padding-left: 10px; }
+.flags { flex-wrap: wrap; gap: 3px 10px; padding-top: 8px; }
+.flags .textbtn { background: var(--wash); }
+.status { gap: 6px; color: var(--muted); font-size: 13px; }
+.status::before { content: ""; width: 6px; height: 6px; background: var(--think); border-radius: 50%; }
+.stopped::before { background: var(--faint); }
+.iconbtn.stop { background: color-mix(in srgb,var(--danger) 12%,transparent); color: var(--danger); }
+.stop .icon { fill: currentColor; width: 11px; height: 11px; }
+.excerpt { position: relative; min-height: 38px; flex: 1; overflow: hidden; color: var(--muted); }
+.excerpt > div { position: absolute; inset: 0; }
+.meta-strip { display: flex; align-items: center; gap: 8px; height: 38px; padding: 8px 16px; font-size: 14px; }
+.meta-strip + .meta-strip { border-top: 1px solid var(--quiet-line); background: color-mix(in srgb,var(--wash) 40%,var(--card)); }
+.meta-strip .icon { width: 13px; height: 13px; }
+.collapsed, .empty { min-height: 66px; display: flex; align-items: center; gap: 6px; padding: 12px 16px; }
+.collapsed strong { font-size: 14px; }
+.empty { justify-content: space-between; font-size: 13px; }
+.empty .textbtn { color: var(--accent); }
+dialog { width: min(420px,calc(100vw - 32px)); padding: 20px; border: 1px solid var(--line); border-radius: 14px;
+  color: var(--ink); background: var(--card); box-shadow: 0 8px 32px rgb(0 0 0 / .2); }
+dialog::backdrop { background: rgb(16 20 29 / .42); }
+dialog h3 { margin: 0; font-size: 17px; }
+dialog p { margin: 12px 0; }
+.dialog-head,.dialog-actions { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.dialog-actions { justify-content: flex-end; margin-top: 14px; }
+.dialog-actions button { background: var(--wash); min-height: 32px; padding: 4px 12px; border-radius: 6px; }
+.dialog-actions .destructive { color: var(--danger); }
+.detail-model { font: 12px/1.6 var(--mono); color: var(--muted); overflow-wrap: anywhere; }
+.question { background: var(--bubble); color: var(--bubble-ink); padding: 10px 13px; margin-left: 24px; border-radius: 8px 8px 4px 8px; }
+footer { padding-top: 14px; font-size: 12px; line-height: 1.7; color: var(--label); }
+footer { border-top: 1px solid var(--rule); }
+@container (max-width: 430px) {
+  .mainrow { grid-template-areas: "id author actions"; grid-template-columns: max-content minmax(0,1fr) max-content; }
+  .usage { display: none; }
+  .author { padding-left: 0; border: 0; }
+}
+@media (max-width: 1040px) {
+  .pair { grid-template-columns: minmax(0,1fr); }
+  .intro { align-items: flex-start; flex-wrap: wrap; }
+}
+@media (max-width: 600px) {
+  .sheet { padding: 15px 12px; }
+  .pair { gap: 7px; }
+  .stage { padding-inline: 8px; }
+  .intro { margin: 16px 0; gap: 12px; }
+}
+</style>
+</head>
+<body>
+<svg width="0" height="0" aria-hidden="true" style="position:absolute"><defs><symbol id="i-wrench" viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.106-3.105c.32-.322.863-.22.983.218a6 6 0 0 1-8.259 7.057l-7.91 7.91a1 1 0 0 1-2.999-3l7.91-7.91a6 6 0 0 1 7.057-8.259c.438.12.54.662.219.984z"></path></symbol>
+<symbol id="i-square" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2"></rect></symbol>
+<symbol id="i-chevron-down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"></path></symbol>
+<symbol id="i-chevron-right" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"></path></symbol>
+<symbol id="i-book-open" viewBox="0 0 24 24"><path d="M12 7v14"></path><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"></path></symbol>
+<symbol id="i-trash-2" viewBox="0 0 24 24"><path d="M10 11v6"></path><path d="M14 11v6"></path><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"></path><path d="M3 6h18"></path><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></symbol>
+<symbol id="i-git-merge" viewBox="0 0 24 24"><circle cx="18" cy="18" r="3"></circle><circle cx="6" cy="6" r="3"></circle><path d="M6 21V9a9 9 0 0 0 9 9"></path></symbol>
+<symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></symbol>
+<symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2"></path><path d="M12 20v2"></path><path d="m4.93 4.93 1.41 1.41"></path><path d="m17.66 17.66 1.41 1.41"></path><path d="M2 12h2"></path><path d="M20 12h2"></path><path d="m6.34 17.66-1.41 1.41"></path><path d="m19.07 4.93-1.41 1.41"></path></symbol>
+<symbol id="i-moon" viewBox="0 0 24 24"><path d="M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401"></path></symbol>
+<symbol id="i-rotate-ccw" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><path d="M3 3v5h5"></path></symbol></defs></svg>
+<main class="sheet">
+  <header class="mast"><span class="brand"><svg class="brandmark" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 44 44">
+  <rect width="44" height="44" rx="10" fill="#FAF9F7"/>
+  <line x1="19" y1="10" x2="19" y2="18" stroke="#6B5CE7" stroke-width="2.5" stroke-linecap="round"/>
+  <line x1="19" y1="25" x2="19" y2="33" stroke="#6B5CE7" stroke-width="2.5" stroke-linecap="round"/>
+  <line x1="22.5" y1="23.5" x2="30" y2="28.5" stroke="#E08A3C" stroke-width="2.5" stroke-linecap="round" stroke-dasharray="3 3"/>
+  <circle cx="19" cy="7" r="3.8" fill="#6B5CE7"/>
+  <circle cx="19" cy="21.5" r="3.8" fill="none" stroke="#6B5CE7" stroke-width="2.6"/>
+  <circle cx="19" cy="36" r="3.8" fill="#6B5CE7" opacity="0.4"/>
+  <circle cx="33" cy="30" r="3.8" fill="#E08A3C"/>
+</svg>
+ThoughtDAG</span><a class="back" href="node-header-a.html">查看上一轮方案</a></header>
+  <div class="intro"><div><h1>A1 · 单行节点顶栏</h1><p>节点可用宽度为 430 px 及以下时，隐藏整组用量信息。</p></div>
+    <div class="controls"><label class="control">运行状态<select id="scenario"><option value="done">已完成</option><option value="running">生成中</option><option value="complex">长模型 · 多来源</option><option value="busy">生成中 · 多工具 · 长编号</option></select></label><button type="button" id="theme"></button></div>
+  </div>
+  <section class="variant" aria-label="同一节点的宽窄对照">
+    <div class="pair"><div class="stage"><span class="pair-label">520 px</span><div class="node" data-width="520"></div></div><div class="stage"><span class="pair-label">360 px</span><div class="node" data-width="360"></div></div></div>
+  </section>
+  <footer>色条依次表示提问、回答、工具记录和思考的 token 占比。模型全名可在节点详情中查看。预览操作只作用于示例。</footer>
+</main>
+<dialog id="panel" aria-labelledby="panel-title"><div class="dialog-head"><h3 id="panel-title"></h3><button class="iconbtn" id="dismiss" aria-label="关闭"></button></div><div id="panel-body"></div></dialog>
+<script>
+const query = selector => document.querySelector(selector);
+const icon = name => '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-' + name + '"></use></svg>';
+const cards = [...document.querySelectorAll('.node')];
+const samples = new WeakMap();
+const panel = query('#panel');
+const scenarios = {
+  done: { id: 7, model: 'gpt-6.2-sol', tokens: [22,146,0,0], calls: 0 },
+  running: { id: 7, model: 'gpt-6.2-sol', tokens: [22,72,0,0], calls: 0, running: true },
+  complex: { id: 7, model: 'research-reasoning-instruct-extended-context', tokens: [220,6310,4200,1750], calls: 4, sources: 3 },
+  busy: { id: 1287, model: 'research-reasoning-instruct-extended-context', tokens: [480,6710,4210,1080], calls: 12, sources: 3, running: true }
+};
+const data = () => scenarios[query('#scenario').value];
+const fixture = {
+  name: '提问的动机',
+  question: '这是在干什么，我前文问这些问题的动机是什么',
+  answer: '从你的追问看，你先问“是什么意思”，是想弄懂我说的英文。后来问“这是在干嘛”，更像是想弄清我为什么那样回你，以及这段对话到底在聊什么。'
+};
+let dialogCard, returnAction;
+function button(action, glyph, label, style = 'iconbtn', text = '', extra = '') {
+  return '<button type="button" class="' + style + '" data-action="' + action + '" aria-label="' + label + '" ' + extra + '>' + icon(glyph) + text + '</button>';
+}
+
+function usage(item) {
+  const sum = item.tokens.reduce((a,b) => a+b, 0);
+  const colors = ['q','a','tool','think'];
+  let consumed = 0;
+  const stops = item.tokens.flatMap((count, index) => {
+    if (!count) return [];
+    const start = consumed / sum * 100;
+    consumed += count;
+    return ['var(--' + colors[index] + ') ' + start + '% ' + (consumed / sum * 100) + '%'];
+  });
+  const calls = item.calls ? '<span class="tool-count" aria-label="' + item.calls + ' 次工具调用">' + icon('wrench') + item.calls + '</span>' : '';
+  return '<span class="usage" role="group" aria-label="本轮 token 用量估算"><span class="usage-line">≈ ' +
+    sum.toLocaleString('en-US') + ' tokens' + calls + '</span><span class="bar" aria-hidden="true" style="background-image:linear-gradient(to right,' + stops.join(',') + ')"></span></span>';
+}
+function render(card) {
+  const item = data();
+  const state = samples.get(card);
+  if (state.deleted) {
+    card.innerHTML = '<div class="empty">示例节点已删除' + button('restore','rotate-ccw','恢复示例','textbtn','恢复示例') + '</div>';
+    return;
+  }
+  const fold = button('collapse',state.collapsed ? 'chevron-right' : 'chevron-down',state.collapsed ? '展开节点' : '收起节点','iconbtn','','aria-expanded="' + !state.collapsed + '"');
+  const identity = '<span class="ident">' + fold + '<span class="num">#' + item.id + '</span></span>';
+  if (state.collapsed) {
+    card.innerHTML = '<div class="collapsed">' + identity + '<strong>' + fixture.name + '</strong></div>';
+    return;
+  }
+  const model = '<span class="model">' + item.model + '</span>';
+  const source = '<span class="source">Codex</span>';
+  const author = '<span class="author">' + source + '<span class="slash" aria-hidden="true">/</span>' + model + '</span>';
+  const stop = item.running && !state.stopped ? button('stop','square','停止生成','iconbtn stop') : '';
+  const actions = '<div class="tools">' + button('details','book-open','查看节点详情') + stop + button('delete','trash-2','删除节点') + '</div>';
+  let flags = '';
+  if (item.running) flags += '<span class="status' + (state.stopped ? ' stopped' : '') + '">' + (state.stopped ? '已停止' : '生成中') + '</span>';
+  if (item.sources) flags += button('sources','git-merge','查看三路上下文','textbtn','上下文 · 3 路');
+  const main = identity + author + usage(item) + actions;
+  card.innerHTML = '<div class="node-head"><div class="mainrow">' + main + '</div>' + (flags ? '<div class="flags">' + flags + '</div>' : '') +
+    '</div><div class="excerpt" aria-hidden="true"><div><div class="meta-strip">' + icon('chevron-right') + '名称与摘要</div><div class="meta-strip"></div></div></div>';
+}
+function resetExamples() {
+  for (const card of cards) {
+    samples.set(card, { collapsed: false, stopped: false, deleted: false });
+    render(card);
+  }
+}
+function openPanel(card, action) {
+  dialogCard = card;
+  returnAction = action;
+  const titles = { details: '节点 #' + data().id + ' · ' + fixture.name, sources: '节点 #' + data().id + ' 的上下文来源', delete: '删除示例节点 #' + data().id + '？' };
+  query('#panel-title').textContent = titles[action];
+  const contents = {
+    details: '<p class="detail-model">Codex / ' + data().model + '</p><p class="question">' + fixture.question + '</p><p>' + fixture.answer + '</p>',
+    sources: '<ol><li>对话开场 · #1</li><li>英文回复的含义 · #3</li><li>前文追问 · #6</li></ol>',
+    delete: '<p>可以在原位置恢复这个示例。</p><div class="dialog-actions"><button data-result="cancel">取消</button><button class="destructive" data-result="delete">删除示例</button></div>'
+  };
+  query('#panel-body').innerHTML = contents[action];
+  panel.showModal();
+  panel.querySelector(action === 'delete' ? '[data-result=cancel]' : '#dismiss').focus();
+}
+function focusAction(card, action) {
+  card.querySelector('[data-action="' + action + '"]')?.focus({ preventScroll: true });
+}
+
+for (const card of cards) {
+  card.addEventListener('dblclick', event => {
+    if (event.target.closest('.node-head') && !event.target.closest('button')) openPanel(card, 'details');
+  });
+  card.addEventListener('click', event => {
+    const action = event.target.closest('button')?.dataset.action;
+    if (!action) return;
+    if (['details','delete','sources'].includes(action)) return openPanel(card, action);
+    const state = samples.get(card);
+    if (action === 'collapse') state.collapsed = !state.collapsed;
+    if (action === 'stop') state.stopped = true;
+    if (action === 'restore') state.deleted = false;
+    render(card);
+    focusAction(card, action === 'stop' ? 'details' : action === 'restore' ? 'collapse' : action);
+  });
+}
+query('#dismiss').innerHTML = icon('x');
+panel.addEventListener('click', event => {
+  if (event.target.closest('[data-result=delete]')) {
+    samples.get(dialogCard).deleted = true;
+    render(dialogCard);
+    returnAction = 'restore';
+  }
+  if (event.target.closest('button')) panel.close();
+  else if (event.target === panel) {
+    const rect = panel.getBoundingClientRect();
+    if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) panel.close();
+  }
+});
+panel.addEventListener('close', () => focusAction(dialogCard, returnAction));
+
+query('#scenario').addEventListener('change', resetExamples);
+function setTheme(light) {
+  document.body.classList.toggle('light', light);
+  const toggle = query('#theme');
+  toggle.innerHTML = icon(light ? 'sun' : 'moon') + (light ? '浅色节点' : '深色节点');
+  toggle.setAttribute('aria-label',light ? '切换为深色节点' : '切换为浅色节点');
+}
+query('#theme').addEventListener('click', () => setTheme(!document.body.classList.contains('light')));
+setTheme(false);
+resetExamples();
+
+const sizeObserver = new ResizeObserver(entries => {
+  for (const { target } of entries) {
+    const actual = Math.round(target.getBoundingClientRect().width);
+    const nominal = Number(target.dataset.width);
+    target.previousElementSibling.textContent = actual === nominal ? nominal + ' px' : nominal + ' px 样张 · 当前 ' + actual + ' px';
+  }
+});
+cards.forEach(card => sizeObserver.observe(card));
+</script>
+</body>
+</html>

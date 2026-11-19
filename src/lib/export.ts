@@ -8,7 +8,7 @@ import { isParadigmFile } from './paradigm';
 import { getContextPath } from './graph';
 import { normalizeConversationEdge } from './normalize-graph';
 import { countTokens } from '../utils';
-import { confirmDialog, toast } from './ui-store';
+import { confirmDialog, toast, useUiStore } from './ui-store';
 import { inlineVaultedContent, internNodes } from './attachment-vault';
 import { t, fmt } from '../i18n';
 import type { ThoughtNode, ThoughtEdge } from '../types';
@@ -30,14 +30,41 @@ export function downloadFile(filename: string, content: string, mime: string): v
   URL.revokeObjectURL(url);
 }
 
-export async function copyText(text: string): Promise<void> {
+export async function copyText(text: string, { notify = true } = {}): Promise<void> {
   await navigator.clipboard.writeText(text);
-  toast('success', t('toast.copied'));
+  if (notify) toast('success', t('toast.copied'));
+}
+
+function activeProject() {
+  const { projects, activeId } = useProjects.getState();
+  return projects.find((p) => p.id === activeId);
 }
 
 export function activeProjectName(): string {
-  const { projects, activeId } = useProjects.getState();
-  return projects.find((p) => p.id === activeId)?.name ?? 'canvas';
+  return activeProject()?.name ?? 'canvas';
+}
+
+export async function exportActiveProjectHtml(): Promise<void> {
+  // Keep the graph and filename together even if the user switches canvases
+  // while the confirmation is open or a document is rendering.
+  const { nodes, edges } = useStore.getState();
+  const project = activeProject();
+  const name = project?.name ?? 'canvas';
+  let progress: string | undefined;
+  try {
+    const { confirmIfSensitive } = await import('./sensitive-scan');
+    if (!await confirmIfSensitive(nodes)) return;
+    progress = toast('info', t('richDocument.exporting'), 0);
+    const { buildCanvasHtml } = await import('./canvas-html');
+    const html = await buildCanvasHtml(name, nodes, edges, project?.kind);
+    downloadFile(`${sanitizeFilename(name)}.html`, html, 'text/html;charset=utf-8');
+    toast('success', fmt(t('toast.exported'), { name }));
+  } catch (error) {
+    console.error('[thoughtdag] HTML export failed', error);
+    toast('error', t('richDocument.exportFailed'));
+  } finally {
+    if (progress) useUiStore.getState().dismissToast(progress);
+  }
 }
 
 // ─── Whole-canvas JSON backup ───────────────────────────────────
@@ -48,7 +75,7 @@ export async function exportActiveProjectJson(opts?: { sharedReadonly?: boolean 
   const { confirmIfSensitive } = await import('./sensitive-scan');
   if (!await confirmIfSensitive(gateNodes)) return;
   appSettings.setItem('thoughtdag.lastBackupAt', String(Date.now()));
-  const { nodes: rawNodes, edges, events } = useStore.getState();
+  const { nodes: rawNodes, edges, events, lastNodeNumber } = useStore.getState();
   // A backup file must be self-contained: pull vaulted payloads back inline
   const nodes = await inlineVaultedContent(rawNodes);
   const { projects, activeId } = useProjects.getState();
@@ -65,6 +92,7 @@ export async function exportActiveProjectJson(opts?: { sharedReadonly?: boolean 
     // this into an editable copy (a file in someone's hands is theirs)
     ...(opts?.sharedReadonly ? { sharedReadonly: true } : {}),
     nodes: stripTransient(nodes),
+    lastNodeNumber,
     edges: edges.map(normalizeConversationEdge),
     events,
   });
@@ -78,10 +106,10 @@ export async function exportActiveProjectJson(opts?: { sharedReadonly?: boolean 
  * the caller can show a picker.
  */
 export async function exportActiveParadigm(): Promise<void> {
-  const { nodes: rawNodes, edges } = useStore.getState();
+  const { nodes: rawNodes, edges, lastNodeNumber } = useStore.getState();
   const nodes = await inlineVaultedContent(rawNodes);
   const name = activeProjectName();
-  const payload = JSON.stringify({ kind: 'thoughtdag-paradigm', version: 1, name, nodes: stripTransient(nodes), edges: edges.map(normalizeConversationEdge) });
+  const payload = JSON.stringify({ kind: 'thoughtdag-paradigm', version: 1, name, lastNodeNumber, nodes: stripTransient(nodes), edges: edges.map(normalizeConversationEdge) });
   downloadFile(`${sanitizeFilename(name)}.paradigm.json`, payload, 'application/json');
   toast('success', fmt(t('toast.exported'), { name }));
 }
@@ -105,7 +133,7 @@ export async function parseImportFile(file: File): Promise<
   if (isParadigmFile(parsed)) {
     const id = crypto.randomUUID();
     const reconciled = await internNodes(await reconcileImportedModels(parsed.nodes));
-    await idbSet(projectStorageKey(id), JSON.stringify({ state: { nodes: stripTransient(reconciled), edges: parsed.edges.map(normalizeConversationEdge) }, version: PERSIST_VERSION }));
+    await idbSet(projectStorageKey(id), JSON.stringify({ state: { nodes: stripTransient(reconciled), lastNodeNumber: parsed.lastNodeNumber, edges: parsed.edges.map(normalizeConversationEdge) }, version: PERSIST_VERSION }));
     await adoptImportedProject(id, parsed.name || 'Paradigm', 'paradigm');
     toast('success', fmt(t('toast.imported'), { name: parsed.name, n: parsed.nodes.length }));
     return { kind: 'own', ok: true };
@@ -192,7 +220,7 @@ async function reconcileImportedModels(nodes: ThoughtNode[]): Promise<ThoughtNod
 }
 
 export async function importProjectFromFile(file: File, pre?: unknown): Promise<boolean> {
-  let parsed: { name?: string; nodes?: ThoughtNode[]; edges?: ThoughtEdge[]; events?: unknown[]; instantiatedFrom?: ProjectMeta['instantiatedFrom']; sharedReadonly?: boolean };
+  let parsed: { name?: string; nodes?: ThoughtNode[]; edges?: ThoughtEdge[]; events?: unknown[]; lastNodeNumber?: number; instantiatedFrom?: ProjectMeta['instantiatedFrom']; sharedReadonly?: boolean };
   try {
     parsed = (pre ?? JSON.parse(await file.text())) as typeof parsed;
   } catch {
@@ -219,7 +247,7 @@ export async function importProjectFromFile(file: File, pre?: unknown): Promise<
   const reconciled = await internNodes(await reconcileImportedModels(parsed.nodes));
   // Write in the zustand-persist envelope format so rehydration accepts it.
   await idbSet(projectStorageKey(id), JSON.stringify({
-    state: { nodes: stripTransient(reconciled), edges: parsed.edges.map(normalizeConversationEdge), ...(Array.isArray(parsed.events) ? { events: parsed.events } : {}) },
+    state: { nodes: stripTransient(reconciled), lastNodeNumber: parsed.lastNodeNumber, edges: parsed.edges.map(normalizeConversationEdge), ...(Array.isArray(parsed.events) ? { events: parsed.events } : {}) },
     version: PERSIST_VERSION,
   }));
   const name = parsed.name?.trim() || file.name.replace(/\.thoughtdag\.json$|\.json$/i, '') || 'Imported canvas';

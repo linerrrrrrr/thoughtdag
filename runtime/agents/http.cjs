@@ -16,6 +16,7 @@ const RUNTIME_FACTORIES = {
 };
 
 function createAgentsHttp({ workspaceRoot = path.join(process.env.THOUGHTDAG_HOME || path.join(os.homedir(), '.thoughtdag'), 'workspaces'), log = () => {} } = {}) {
+  const documentFile = require('../managed-documents.cjs').createManagedDocuments(workspaceRoot);
   const runtimes = new Map();
   const owners = new Map();      // runId → runtime name
   const clients = new Set();     // SSE responses
@@ -65,7 +66,8 @@ function createAgentsHttp({ workspaceRoot = path.join(process.env.THOUGHTDAG_HOM
       if (p === '/agents/run' && method === 'POST') {
         const r = body && typeof body === 'object' ? body : {};
         const name = RUNTIME_FACTORIES[r.runtime] ? r.runtime : 'pi';
-        const runId = await runtime(name).run(r, broadcast);
+        const request = await require('../managed-documents.cjs').prepareManagedRun(workspaceRoot, r);
+        const runId = await runtime(name).run(request, broadcast);
         owners.set(runId, name);
         return json(res, 200, { runId }), true;
       }
@@ -87,6 +89,8 @@ function createAgentsHttp({ workspaceRoot = path.join(process.env.THOUGHTDAG_HOM
       if (p === '/agents/workspace' && method === 'POST') return json(res, 200, { dir: await ops.workspaceFor(workspaceRoot, String(body?.canvasId ?? 'default')) }), true;
       if (p === '/agents/guard' && method === 'POST') return json(res, 200, { ok: await ops.writeGuard(String(body?.cwd ?? ''), body?.config) }), true;
       if (p === '/agents/materials' && method === 'POST') return json(res, 200, await ops.writeMaterials(String(body?.cwd ?? ''), body?.files)), true;
+      if (p === '/agents/document' && method === 'GET') return json(res, 200, { service: 'thoughtdag-managed-documents', version: 1 }), true;
+      if (p === '/agents/document' && method === 'POST') return json(res, 200, await documentFile(body)), true;
       if (p === '/agents/open-in-cli' && method === 'POST') return json(res, 200, await terminal.openInTerminal(String(body?.runner ?? ''), body?.cwd ?? null, String(body?.sessionId ?? ''))), true;
       return false;
     } catch (e) {

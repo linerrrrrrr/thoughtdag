@@ -1,0 +1,148 @@
+/* Fixed input regions share the node's saved footprint. Their list rows are
+   descriptive sources; React Flow handles remain the only physical ports. */
+[data-connection-layout] {
+  --node-input-width: clamp(164px, 32%, 200px);
+  display: grid;
+  grid-template-columns: var(--node-input-width) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  align-items: stretch;
+  isolation: isolate;
+}
+
+[data-connection-layout] > .node-input-region {
+  grid-column: 1;
+  grid-row: 1;
+  min-width: 0;
+  min-height: 0;
+  max-height: 100%;
+  overflow: auto;
+  overscroll-behavior: contain;
+  border-right: 1px solid var(--color-line);
+  border-radius: var(--radius-node) 0 0 var(--radius-node);
+  background: color-mix(in srgb, var(--color-accent) 3%, var(--color-card));
+}
+
+[data-connection-layout] > :is(.conversation-node-content, [data-glyph-node]) {
+  grid-column: 2;
+  grid-row: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: clip;
+  container-type: inline-size;
+}
+
+[data-connection-layout='top'] {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 104px) minmax(0, 1fr);
+}
+
+[data-connection-layout='top'] > .node-input-region {
+  max-height: 104px;
+  border-right: 0;
+  border-bottom: 1px solid var(--color-line);
+  border-radius: var(--radius-node) var(--radius-node) 0 0;
+}
+
+[data-connection-layout='top'] > .node-input-region .node-input-heading {
+  min-height: 32px;
+  padding-block: var(--spacing-control-gap);
+  border-bottom: 0;
+}
+[data-connection-layout='top'] .node-input-groups {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  padding-top: 0;
+}
+[data-connection-layout='top'] .node-input-groups > :only-child { grid-column: 1 / -1; }
+[data-connection-layout='top'] .input-source-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 150px), 1fr));
+  gap: var(--spacing-control-gap);
+}
+[data-connection-layout='top'] .input-source-row + .input-source-row { margin-top: 0; }
+[data-connection-layout='top'][data-node-overview-surface] { grid-template-rows: auto minmax(0, 1fr); }
+
+[data-connection-layout='top'] > :is(.conversation-node-content, [data-glyph-node]) {
+  grid-column: 1;
+  grid-row: 2;
+}
+
+/* The detached source box and short stem are inside the node bounds, so
+   selection, routing obstacles and manual sizes include the entire object. */
+.thought-node[data-connection-layout='dock'],
+[data-node-overview-surface][data-connection-layout='dock'] {
+  grid-template-columns: var(--node-input-width) minmax(0, 1fr);
+  column-gap: var(--spacing-section-gap);
+  background: transparent;
+  border-color: transparent;
+  border-left-width: 1px;
+}
+
+[data-connection-layout='dock'] > .node-input-region {
+  align-self: start;
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-content);
+  margin-top: 32px;
+  max-height: calc(100% - 32px);
+}
+
+[data-connection-layout='dock'] > :is(.conversation-node-content, [data-glyph-node]) {
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-node);
+  background: var(--conversation-surface, var(--color-card));
+}
+
+[data-connection-layout='dock']::before {
+  content: '';
+  position: absolute;
+  left: var(--node-input-width);
+  top: 55px;
+  width: var(--spacing-section-gap);
+  height: 1px;
+  background: var(--color-line-strong);
+  z-index: -1;
+  pointer-events: none;
+}
+
+.react-flow .react-flow__node > [data-node-overview-surface][data-connection-layout='dock'] {
+  background: transparent;
+  border-color: transparent;
+  border-left-width: 1px;
+}
+
+.thought-node.root-node[data-connection-layout='dock'] > .conversation-node-content {
+  border-left: 3px solid var(--color-accent);
+}
+
+.thought-node.node-selected[data-connection-layout='dock'],
+[data-node-overview-surface].glyph-selected[data-connection-layout='dock'] {
+  border-color: transparent;
+  outline: 1px solid var(--color-accent);
+  outline-offset: 3px;
+}
+
+/* Overview sources keep their identity while the reading body follows the
+   existing semantic zoom. Port offsets stay in unscaled canvas coordinates. */
+[data-connection-layout][data-node-overview-surface] > .node-input-region {
+  align-self: stretch;
+}
+[data-connection-layout='dock'][data-node-overview-surface] > .node-input-region {
+  margin-top: 0;
+  max-height: 100%;
+}
+[data-connection-layout][data-node-overview-surface='compact'] > [data-glyph-node] {
+  justify-content: center;
+}
+
+/* Fixed-height cards must leave the reading panes the remaining grid space. */
+.conversation-node[data-connection-layout][data-thought-resized] > .conversation-node-content {
+  height: 100%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+.conversation-node[data-connection-layout][data-thought-resized] .conversation-node-split-body {
+  flex: 1 0 auto;
+  min-height: 180px;
+}

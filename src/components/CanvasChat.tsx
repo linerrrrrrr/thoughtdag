@@ -54,8 +54,7 @@ export default function CanvasChat({ open, onClose, onLocate }: { open: boolean;
   useEffect(() => { setFocusCleared(false); }, [selectedNodeId]);
   const focusId = !focusCleared && selectedNodeId && nodes.some((n) => n.id === selectedNodeId && !n.data.archived) ? selectedNodeId : null;
   const focusNode = focusId ? nodes.find((n) => n.id === focusId) : undefined;
-  // numbers are per request; the map of the latest state resolves older turns too (the order is canvas order)
-  const { byAlias, byId } = useMemo(() => aliasNodes(nodes), [nodes]);
+  const { byId } = useMemo(() => aliasNodes(nodes), [nodes]);
 
   const send = async () => {
     const q = draft.trim();
@@ -79,7 +78,7 @@ export default function CanvasChat({ open, onClose, onLocate }: { open: boolean;
   };
 
   // the map a turn's numbers were made with: its own, kept on the turn; the current one for turns from before 0.5.16
-  const mapOf = (turn: CanvasChatTurn): Map<string, string> => (turn.aliases ? new Map(Object.entries(turn.aliases)) : byAlias);
+  const mapOf = (turn: CanvasChatTurn): Map<string, string> => (turn.aliases ? new Map(Object.entries(turn.aliases)) : aliasNodes(nodes, true).byAlias);
   const drop = (turn: CanvasChatTurn, question: string) => {
     if (turn.project && turn.project !== projectId) return;
     const st = useStore.getState();

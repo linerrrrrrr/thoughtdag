@@ -1,5 +1,5 @@
 import { appSettings } from './lib/disk-storage';
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   ReactFlow,
   Background,
@@ -26,6 +26,8 @@ import CanvasControls from './components/CanvasControls';
 import CanvasDetailControl from './components/CanvasDetailControl';
 import ParadigmNode from './components/ParadigmNode';
 import { useAppearance, edgePalette, LEGACY_EDGE_HEX } from './lib/appearance';
+import { canvasTypeScale } from './lib/canvas-typography';
+import { useCanvasTypographyPreferences } from './lib/canvas-typography-preferences';
 import ContentNode from './components/ContentNode';
 import FrameNode from './components/FrameNode';
 import ThoughtEdgeView from './components/ThoughtEdgeView';
@@ -39,9 +41,10 @@ import { useCanvasSelectionCard, useCanvasToolCard, useCanvasToolCards } from '.
 import { useCanvasEditing } from './lib/canvas-editing';
 import { useContextInspection } from './lib/context-inspection';
 import { CanvasQuickLayoutContext, quickCanvasLayout } from './lib/canvas-layout-preferences';
-import { createEdgeAnchorResolver, positionNodeAtConnectionEnd } from './lib/edge-anchors';
+import { createEdgeAnchorResolver, positionNodeAtConnectionEnd, supportsFixedPorts } from './lib/edge-anchors';
 import { createEdgeRoutingContext } from './lib/edge-path';
-import { CanvasEdgeRouting } from './lib/edge-routing-context';
+import { CanvasConnectionLayout, CanvasEdgeRouting } from './lib/edge-routing-context';
+import { useConnectionLayoutPreferences } from './lib/connection-layout-preferences';
 import { useEdgeRoutingPreferences } from './lib/edge-routing-preferences';
 import FocusPanel from './components/focus-panel';
 import SelectionResizeControls from './components/SelectionResizeControls';
@@ -68,7 +71,6 @@ import { projectStorageKey } from './store/projects';
 import { set as idbSet } from './lib/disk-storage';
 import { instantiateParadigm } from './lib/paradigm';
 import { isContentKind, spawnContentNode, ingestFiles, fetchLinkIntoNode, clipboardTextToMarkdown } from './lib/content';
-import { chooseMaterialFiles, droppedFiles } from './lib/original-document';
 import { createQuestionDraft } from './lib/question-draft';
 import { generateId, isImeComposing } from './utils';
 import { recapToNote, recapCamera } from './lib/recap';
@@ -78,7 +80,7 @@ import { hasNativeDocxSource, isDocxDocument } from './lib/document-copy';
 import { isConversationStart } from './lib/graph';
 import { contextFocusForSelection } from './lib/context-focus';
 import { buildContext } from './store/context-builder';
-import { exportActiveParadigm, exportActiveProjectJson, exportEventLogCsv } from './lib/export';
+import { exportActiveParadigm, exportActiveProjectHtml, exportActiveProjectJson, exportEventLogCsv } from './lib/export';
 import { countTokens } from './utils';
 import { buildExampleGraph } from './lib/example-graph';
 import { COLORS, FRAME_COLORS, PANEL_INSET, EDGE_ARROW_GEOMETRY } from './lib/constants';
@@ -87,6 +89,7 @@ import { useReaderDock } from './lib/reader-dock';
 import { screenToUi, uiToScreen } from './lib/ui-scale';
 import { handleDismissableLayerKeyDown, useDismissableLayer } from './lib/use-dismissable-layer';
 import { migrateActiveCanvasToVault, gcVaultAtBoot } from './lib/attachment-vault-boot';
+import { watchNodeFiles } from './lib/node-files';
 import { consumeOpenRouterCallback, handMintedKeyToModal, startOpenRouterOAuth } from './lib/openrouter-oauth';
 import { bootDesktopUpdateUI } from './lib/desktop-update-ui';
 import { confirmDialog, toast, useUiStore } from './lib/ui-store';
@@ -108,7 +111,6 @@ import WhatsNewDialog from './components/ui/WhatsNewDialog';
 import LadderJobCard from './components/ui/LadderJobCard';
 if (import.meta.env.DEV) void import('./lib/ladder-lab');
 import ReleaseNotesDialog from './components/ui/ReleaseNotesDialog';
-import ConnectionEntries from './components/ui/ConnectionEntries';
 import WaitingPill from './components/ui/WaitingPill';
 import { pluginUpdateCommand } from './lib/plugin-update';
 import { useT, t as ti, fmt, useI18n } from './i18n';
@@ -140,6 +142,9 @@ const edgeTypes = { smoothstep: memo(ThoughtEdgeView) };
 export default function App() {
   const [hydrated, setHydrated] = useState(isViewerMode || useStore.persist.hasHydrated());
   useEffect(() => useStore.persist.onFinishHydration(() => setHydrated(true)), []);
+  useEffect(() => {
+    if (hydrated && !isViewerMode) return watchNodeFiles();
+  }, [hydrated]);
   // Attachment vault: whenever the graph changes (hydration, project
   // switch, seed load, import), lighten any PDF still carrying its bytes
   // inline. The check is one cheap some() pass and the migration itself is
@@ -256,6 +261,9 @@ function Canvas() {
   const setAnnotationsHidden = useUiStore((s) => s.setAnnotationsHidden);
   const wheelPans = useUiStore((s) => s.wheelPans);
   const setWheelPans = useUiStore((s) => s.setWheelPans);
+  const [leftDragPans, setLeftDragPans] = useState(isViewerMode);
+  const marqueeOnDrag = !isViewerMode && !leftDragPans;
+  const panButtons = isViewerMode ? [1] : [1, 2];
   const [inputValue, setInputValue] = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
@@ -333,6 +341,9 @@ function Canvas() {
   const condenseRunState = useUiStore((s) => s.condenseRun);
   const condenseBuilding = condenseRunState.status === 'building';
   const isParadigm = useProjects((s) => s.projects.find((p) => p.id === s.activeId)?.kind === 'paradigm');
+
+  const fixedLayout = useConnectionLayoutPreferences(({ settings }) =>
+    settings.enabled && !isParadigm ? settings.layout : undefined);
 
   // No configured model: do NOT ambush the first open with the key dialog —
   // the example canvas needs no key and must be the first thing a newcomer
@@ -511,7 +522,7 @@ function Canvas() {
       if (!dt) return;
       const pos = flowPosAt(lastMouse.current);
       const text = dt.getData('text/plain').trim();
-      const files = droppedFiles(dt);
+      const files = Array.from(dt.files);
       // FILES WIN when a real document rides along: a Finder/Explorer copy
       // puts the file's PATH in text/plain and the file itself in files —
       // the user copied a file, not its path (regression fixed: the plain
@@ -623,7 +634,7 @@ function Canvas() {
         }
         const handles = rfInstance.current?.getInternalNode(id)?.internals.handleBounds?.target;
         if (!node.measured?.width || !node.measured.height || !handles?.length) continue;
-        const position = positionNodeAtConnectionEnd(parent, node, pending.end, handles);
+        const position = positionNodeAtConnectionEnd(parent, node, pending.end, handles, fixedLayout);
         next = next.map(item => item.id === id ? { ...item, position } : item);
         settled.set(pending.node, position);
         pendingConnectionDrops.current.delete(id);
@@ -636,7 +647,7 @@ function Canvas() {
         } : snapshot) }));
       } else setNodes(next);
     },
-    [setNodes, layoutPreview]
+    [setNodes, layoutPreview, fixedLayout]
   );
 
   const onEdgesChange: OnEdgesChange = useCallback(
@@ -756,33 +767,36 @@ function Canvas() {
     if (connectionState.isValid) return; // landed on a handle — onConnect owns it
     if (connectionState.fromHandle?.type !== 'source' || !connectionState.fromNode) return;
     const parentId = connectionState.fromNode.id;
-    // Dropped on a card (not a handle): connect as a reference — aiming at
-    // the card is enough. Materials and frames accept nothing (One Rule).
-    const overNode = (event.target as HTMLElement)?.closest?.('.react-flow__node');
+    const { clientX, clientY } = 'changedTouches' in event ? event.changedTouches[0] : event;
+    // Touch events retain the original target throughout a gesture.
+    const hit = 'changedTouches' in event ? document.elementFromPoint(clientX, clientY) : event.target;
+    const surface = hit instanceof Element ? hit : null;
+    const overNode = surface?.closest('.react-flow__node');
     if (overNode) {
       const targetId = overNode.getAttribute('data-id');
       if (targetId && targetId !== parentId) {
         const tgt = useStore.getState().nodes.find((n) => n.id === targetId);
         const kind = tgt?.data.stepKind ?? '';
-        if (tgt && !['note', 'file', 'link', 'frame'].includes(kind)) {
+        if (fixedLayout && supportsFixedPorts(kind) && !surface?.closest('[data-node-input-region]')) return;
+        if (tgt && tgt.connectable !== false && !['note', 'file', 'link', 'frame'].includes(kind)) {
           useStore.getState().addCrossLink(parentId, targetId);
         }
       }
       return;
     }
-    const { clientX, clientY } = 'changedTouches' in event ? event.changedTouches[0] : event;
+    if (fixedLayout && !surface?.matches('.react-flow__pane')) return;
     const end = rfInstance.current?.screenToFlowPosition({ x: clientX, y: clientY }, { snapToGrid: false });
     if (!end) return;
     const st = useStore.getState();
     if (st.nodes.find((n) => n.id === parentId)?.data.stepKind === 'frame') return;
-    const id = createQuestionDraft({ connectionEnd: end, parentId });
+    const id = createQuestionDraft({ connectionEnd: end, connectionLayout: fixedLayout, parentId });
     const node = useStore.getState().nodes.find(item => item.id === id);
     if (node) {
       pendingConnectionDrops.current.set(node.id, { parentId, end, node });
       // The pointer already chose a visible location; keep this viewport and zoom.
       prevNodeCount.current = useStore.getState().nodes.length;
     }
-  }, [isParadigm]);
+  }, [isParadigm, fixedLayout]);
 
   const selectedNodeId = useStore((s) => s.selectedNodeId);
   const selectedNodeIds = useStore((s) => s.selectedNodeIds);
@@ -1057,6 +1071,7 @@ function Canvas() {
   // so the action toolbar stays short in both languages and with the panel
   // dragged wide.
   const [moreRequested, setMoreOpen] = useState(false);
+  const [exportingHtml, setExportingHtml] = useState(false);
   const [overflowMenu, setOverflowMenu] = useState<HTMLDivElement | null>(null);
   const overflowContext = useMemo(() => ({ target: overflowMenu, close: () => setMoreOpen(false) }), [overflowMenu]);
   const moreOpen = useCanvasToolCard('more', moreRequested, () => setMoreOpen(false));
@@ -1194,10 +1209,10 @@ function Canvas() {
     anchorResolver.current.prune(highlightedEdges);
     const lookup = new Map(displayNodes.map((node) => [node.id, node]));
     return highlightedEdges.map((edge) => {
-      const anchors = anchorResolver.current.resolve(edge, lookup);
+      const anchors = anchorResolver.current.resolve(edge, lookup, undefined, fixedLayout);
       return anchors ? { ...edge, sourceHandle: anchors.sourceHandle, targetHandle: anchors.targetHandle } : edge;
     });
-  }, [highlightedEdges, displayNodes]);
+  }, [highlightedEdges, displayNodes, fixedLayout]);
   const edgeRoutingSettings = useEdgeRoutingPreferences(state => state.settings);
   const routingContext = useMemo(() => createEdgeRoutingContext(displayNodes, displayEdges, edgeRoutingSettings), [displayNodes, displayEdges, edgeRoutingSettings]);
 
@@ -1281,7 +1296,7 @@ function Canvas() {
           if (!hasNodes && !isParadigm && e.dataTransfer.files.length > 0) {
             e.preventDefault();
             setIsDraggingLanding(false);
-            startFromDocuments(droppedFiles(e.dataTransfer));
+            startFromDocuments(Array.from(e.dataTransfer.files));
             return;
           }
           // Drops land on the empty pane OR inside a frame region (frames
@@ -1308,7 +1323,7 @@ function Canvas() {
           }
           if (e.dataTransfer.files.length > 0) {
             e.preventDefault();
-            const files = filterDroppedFiles(droppedFiles(e.dataTransfer));
+            const files = filterDroppedFiles(Array.from(e.dataTransfer.files));
             if (files.length === 0) return;
             const id = spawnContentNode('file', pos);
             void ingestFiles(id, files);
@@ -1316,7 +1331,9 @@ function Canvas() {
         }}
       >
       <CanvasEdgeRouting.Provider value={routingContext}>
+      <CanvasConnectionLayout.Provider value={fixedLayout}>
       <ReactFlow
+        data-fixed-connection-layout={fixedLayout}
         onKeyDownCapture={event => {
           // Resolve our active editor before the library deselects a focused node.
           if (event.key !== 'Escape' || isImeComposing(event)) return;
@@ -1342,7 +1359,7 @@ function Canvas() {
         onPointerDownCapture={(event) => {
           marqueeClickPending.current = false;
           const target = event.target as HTMLElement;
-          if (isViewerMode || event.button !== 0 || !target.classList.contains('react-flow__pane') || !target.classList.contains('selection')) return;
+          if (!marqueeOnDrag || event.button !== 0 || !target.classList.contains('react-flow__pane') || !target.classList.contains('selection')) return;
           const state = useStore.getState();
           const previous = useCanvasEditing.getState().selectionRegion;
           const additive = event.ctrlKey || event.metaKey || event.shiftKey;
@@ -1490,10 +1507,10 @@ function Canvas() {
         selectionMode={SelectionMode.Full}
         selectionKeyCode={null}
         multiSelectionKeyCode={['Control', 'Meta', 'Shift']}
-        selectionOnDrag={!isViewerMode}
+        selectionOnDrag={marqueeOnDrag}
         nodesDraggable={canvasNodesDraggable}
         nodesConnectable={!isViewerMode && !layoutPreview}
-        panOnDrag={isViewerMode ? true : [1, 2]}
+        panOnDrag={leftDragPans ? [0, ...panButtons] : panButtons}
         // Ordinary scrolling respects node scroll regions. Modified scrolling is
         // captured by CanvasWheelZoom, including over node editors and the minimap.
         panOnScroll={wheelPans}
@@ -1521,10 +1538,10 @@ function Canvas() {
         <ZoomTierTag />
         <CanvasWheelZoom />
         {!isViewerMode && <SelectionRegion hasNodeSurface={canvasNodesDraggable && !layoutOpen && selectedNodeIds.length > 1} />}
-        {canvasNodesDraggable && !layoutOpen && <SelectionResizeControls onNodeContextMenu={onNodeContextMenu} />}
+        {canvasNodesDraggable && !layoutOpen && <SelectionResizeControls leftDragPans={leftDragPans} onNodeContextMenu={onNodeContextMenu} />}
         <ThoughtMapPill panelShiftWidth={occupiedPanelWidth} />
         <TimelineBar />
-        <CanvasControls>
+        <CanvasControls leftDragPans={leftDragPans} onTogglePan={() => setLeftDragPans(active => !active)}>
         {nodes.length > 0 && <MiniMap
           nodeColor={(node) => {
             const data = node.data as Record<string, unknown>;
@@ -1550,6 +1567,7 @@ function Canvas() {
         />}
         </CanvasControls>
       </ReactFlow>
+      </CanvasConnectionLayout.Provider>
       </CanvasEdgeRouting.Provider>
 
       {/* Initial input */}
@@ -1696,7 +1714,7 @@ function Canvas() {
             {/* Second entrance: start from a document (material-first). The
                 whole landing is the drop target; this card names the gesture. */}
             <div
-              onClick={() => { void chooseMaterialFiles(docFileRef.current, startFromDocuments).catch(() => toast('error', t('document.openFailed'))); }}
+              onClick={() => docFileRef.current?.click()}
               className={`mt-3 border-2 border-dashed rounded-content px-5 py-3.5 cursor-pointer transition-all text-center bg-card ${
                 isDraggingLanding ? 'border-accent bg-accent/5 ring-2 ring-accent/20' : 'border-line hover:border-accent/40 hover:bg-accent/5'
               }`}
@@ -1871,7 +1889,6 @@ function Canvas() {
           </>
         )}
         {!isParadigm && <WaitingPill />}
-        {!isParadigm && <ConnectionEntries />}
         {/* Batch replay: visible only when something is stale. Price at the
             decision point — N generations is the one many-calls-per-click
             action in the app, so it confirms with a token estimate. */}
@@ -2181,6 +2198,21 @@ function Canvas() {
                   data-tooltip={t('viewer.shareTitle')}
                 >
                   <Share2 size={14} strokeWidth={1.75} className="text-ink-faint shrink-0" /> {t('toolbar.menuShare')}
+                </button>
+              )}
+              {hasNodes && (
+                <button
+                  type="button"
+                  disabled={exportingHtml}
+                  onClick={() => {
+                    setMoreOpen(false);
+                    setExportingHtml(true);
+                    void exportActiveProjectHtml().finally(() => setExportingHtml(false));
+                  }}
+                  className="w-full text-left px-3 py-2 text-control text-ink hover:bg-wash disabled:opacity-50 transition-colors flex items-center gap-2.5"
+                  data-menu-export-html
+                >
+                  <FileDown size={14} strokeWidth={1.75} className="text-ink-faint shrink-0" /> {t('toolbar.exportHtml')}
                 </button>
               )}
               {hasNodes && (
@@ -2519,11 +2551,17 @@ function ThoughtMapPill({ panelShiftWidth }: { panelShiftWidth: number }) {
 function ZoomTierTag() {
   const tier = useZoomTier();
   const zoom = useRfStore((s) => s.transform[2]);
-  useEffect(() => {
-    document.querySelector('.react-flow')?.setAttribute('data-zoom-tier', tier);
-  }, [tier]);
-  useEffect(() => {
-    (document.querySelector('.react-flow') as HTMLElement | null)?.style.setProperty('--tdag-zoom', String(zoom));
-  }, [zoom]);
+  const canvas = useRfStore((s) => s.domNode);
+  const typography = useCanvasTypographyPreferences((s) => s.settings);
+  useLayoutEffect(() => {
+    canvas?.setAttribute('data-zoom-tier', tier);
+  }, [canvas, tier]);
+  useLayoutEffect(() => {
+    if (!canvas) return;
+    const scale = canvasTypeScale(typography, zoom);
+    canvas.style.setProperty('--tdag-zoom', String(zoom));
+    canvas.style.setProperty('--canvas-conversation-scale', String(scale.conversation));
+    canvas.style.setProperty('--canvas-summary-type-scale', String(scale.summary));
+  }, [canvas, zoom, typography]);
   return null;
 }

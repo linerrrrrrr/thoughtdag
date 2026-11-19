@@ -59,11 +59,27 @@ const fixture = () => ({
 const textOf = (result) => result.messages.map((message) => message.content).join('\n');
 
 try {
-  buildSync({ stdin: { contents: `${source}\n${scopeSource}\nexport { partitionContext } from '../lib/graph';`,
+  buildSync({ stdin: { contents: `${source}\n${scopeSource}\nexport { partitionContext } from '../lib/graph'; export * from '../lib/node-numbers';`,
     resolveDir: join(root, 'src/store'), loader: 'ts' }, bundle: true, format: 'esm', platform: 'node', outfile: bundle,
     define: { 'import.meta.env': '{}' }, logLevel: 'silent' });
-  const { buildContext, buildIncomingContext, referenceBlockContent, upstreamFingerprint, partitionContext,
+  const { buildContext, buildIncomingContext, referenceBlockContent, upstreamFingerprint, partitionContext, numberCanvasNodes, resolveNodeNumberReferences,
     getContextPath, collectMapLines, ladderContextFor, contextChainMarkdown, setExportGraph, compileContextBundle } = await import(pathToFileURL(bundle).href);
+
+  test('node numbers survive reordering and restore; deleted and duplicated nodes cannot steal references', () => {
+    const imported = numberCanvasNodes([node('legacy'), node('file', { nodeNumber: 9 }), node('duplicate', { nodeNumber: 9 }),
+      node('frame', { stepKind: 'frame' })]);
+    assert.deepEqual(imported.nodes.map(n => n.data.nodeNumber), [10, 9, 11, undefined]);
+    const copied = { ...imported.nodes[1], id: 'copy' };
+    const live = numberCanvasNodes([copied, ...imported.nodes.slice().reverse()], imported.lastNodeNumber, imported.nodes);
+    assert.equal(live.nodes[0].data.nodeNumber, 12);
+    const afterDelete = numberCanvasNodes(live.nodes.filter(n => n.id !== 'copy'), live.lastNodeNumber, live.nodes);
+    const reloaded = numberCanvasNodes(afterDelete.nodes, afterDelete.lastNodeNumber);
+    const next = numberCanvasNodes([...reloaded.nodes, node('new')], reloaded.lastNodeNumber, reloaded.nodes);
+    assert.equal(next.nodes.at(-1).data.nodeNumber, 13);
+    const refs = resolveNodeNumberReferences('修改＃９，对照#10，再看 #9。#12 #f12 #123abc tag#13 /#13', next.nodes);
+    assert.deepEqual(refs.nodes.map(n => n.id), ['file', 'legacy']);
+    assert.deepEqual(refs.missing, [12]);
+  });
 
   test('a reference sends only the source turn without mutating saved edges', () => {
     const graph = fixture();
@@ -282,6 +298,17 @@ try {
     assert.deepEqual(state.getInheritedAttachments('target'), []);
     graph.edges.push(edge('material', 'target', { isCrossLink: true }));
     assert.deepEqual(state.getInheritedAttachments('target').map((item) => item.attachment.id), ['material']);
+  });
+
+  await asyncTest('a typed node number sends only the exact same-named file and creates one reference', async () => {
+    const files = [4, 8].map(number => node('file-' + number, { stepKind: 'file', nodeNumber: number,
+      question: '', response: '', attachments: [{ ...textAttachment(String(number)), name: 'plan.txt' }] }));
+    const store = makeStore({ nodes: files, edges: [] });
+    await store.get().addQuestion('Read #8 and summarize #8.');
+    const captured = globalThis.__capturedGeneration;
+    assert.deepEqual(store.get().edges.map(edge => edge.source), ['file-8']);
+    assert.ok(textOf(captured).includes('ATTACHMENT_8_SENTINEL'));
+    assert.ok(!textOf(captured).includes('ATTACHMENT_4_SENTINEL'));
   });
 
   for (const hasParent of [false, true]) await asyncTest(`first-generation @mention with ${hasParent ? 'a continuation parent' : 'no parent'} includes the referenced turn and each own item once`, async () => {

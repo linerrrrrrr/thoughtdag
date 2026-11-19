@@ -133,15 +133,16 @@ try {
   assert.equal((await data()).questionEditor, 'canvas');
   assert.equal(await focused(canvasInput()), true);
   await canvasInput().press('End');
-  await canvasInput().press('Enter');
+  await canvasInput().press('Shift+Enter');
   assert.equal(await panelInput().inputValue(), '画布再次修改\n');
   await panelInput().press('End');
-  await panelInput().press('Enter');
+  await panelInput().press('Shift+Enter');
   assert.equal(await canvasInput().inputValue(), '画布再次修改\n\n');
   assert.equal(await page.evaluate(() => window.__draftSurfaceSends.length), 0);
   pass('Drafts synchronize in both directions while focus ownership follows the input being edited');
 
   await panelInput().fill('');
+  await panelInput().press('Enter');
   assert.equal(await canvasInput().inputValue(), '');
   assert.equal(await draft(), '');
   await panel.locator('[data-node-details-close]').click();
@@ -158,7 +159,7 @@ try {
   await panelInput().fill('退出仍保留');
   await panelInput().evaluate(element => {
     for (const key of ['Enter', 'Escape']) element.dispatchEvent(new KeyboardEvent('keydown', {
-      key, ctrlKey: true, bubbles: true, cancelable: true, isComposing: true, keyCode: 229,
+      key, bubbles: true, cancelable: true, isComposing: true, keyCode: 229,
     }));
   });
   assert.equal(await focused(panelInput()), true);
@@ -227,7 +228,7 @@ try {
   await page.setViewportSize({ width: 1680, height: 1000 });
   await setViewport();
   await panelInput().fill('只明确发送一次');
-  await panel.locator('[data-question-send]').click();
+  await panelInput().press('Enter');
   await settle();
   assert.deepEqual(await page.evaluate(() => window.__draftSurfaceSends), [{ id: nodeId, question: '只明确发送一次' }]);
   assert.equal(await canvasInput().count(), 0);
@@ -237,7 +238,7 @@ try {
   assert.equal(await panel.locator('[data-node-execution-picker]').count(), 0);
   await openPanel('draft-agent');
   await canvasInput('draft-agent').fill('从画布发送一次');
-  await card('draft-agent').locator('[data-ask-submit]').click();
+  await canvasInput('draft-agent').press('Enter');
   await settle();
   assert.deepEqual(await page.evaluate(() => window.__draftSurfaceSends), [
     { id: nodeId, question: '只明确发送一次' }, { id: 'draft-agent', question: '从画布发送一次' },
@@ -245,7 +246,20 @@ try {
   assert.equal(await canvasInput('draft-agent').count(), 0);
   assert.equal(await panelInput().count(), 0);
   assert.equal(await draft('draft-agent'), undefined);
-  pass('Explicit send from either surface submits once and both surfaces switch to the saved question');
+  pass('Enter in either question input submits once and both surfaces show the saved question');
+
+  await panel.locator('[data-edit-question]').click();
+  await panelInput().fill('修订后的问题');
+  await panelInput().press('Enter');
+  await panelInput().waitFor({ state: 'detached' });
+  assert.equal((await data('draft-agent')).question, '修订后的问题');
+  await card(nodeId).locator('[data-edit-question]').click();
+  await canvasInput().fill('在画布修订问题');
+  await canvasInput().press('Enter');
+  await canvasInput().waitFor({ state: 'detached' });
+  assert.equal((await data()).question, '在画布修订问题');
+  assert.equal(await page.evaluate(() => window.__draftSurfaceSends.length), 4);
+  pass('Enter submits a revised question once from either surface');
   assert.deepEqual(errors, [], 'No page errors');
   assert.deepEqual(writes, [], 'No real API writes');
 } catch (error) {

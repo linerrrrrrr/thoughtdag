@@ -22,6 +22,7 @@ function fixture() {
   const entries = new Map();
   const accessCalls = [];
   const spawns = [];
+  const appx = { location: '', error: null, queries: 0 };
   const modules = new Map();
   const env = { PATH: 'C:\\tools', APPDATA: 'C:\\user\\AppData\\Roaming' };
   const key = (candidate) => win.normalize(candidate).toLowerCase();
@@ -85,7 +86,14 @@ function fixture() {
         if (name === 'node:os') return { homedir: () => 'C:\\user' };
         if (name === 'node:child_process') return {
           spawn,
-          execFile() { throw new Error('Discovery must not execute a shell or CLI in these fixtures'); },
+          execFile(binary, args, options, callback) {
+            assert.equal(binary, 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe');
+            assert.match(args.at(-1), /Get-AppxPackage -Name OpenAI\.Codex /);
+            assert.match(args.at(-1), /PackageFamilyName -eq 'OpenAI\.Codex_2p2nqsd0c76g0'/);
+            assert.equal(options.windowsHide, true);
+            appx.queries++;
+            callback(appx.error, appx.location, '');
+          },
         };
         if (name === './where.cjs') return load('runtime/agents/where.cjs');
         if (name === './codex-launch.cjs') return load('runtime/agents/codex-launch.cjs');
@@ -97,7 +105,7 @@ function fixture() {
     return module.exports;
   }
   return {
-    env, accessCalls, spawns, load,
+    env, accessCalls, spawns, load, appx,
     put(candidate, value = {}) {
       entries.set(key(candidate), value);
       if (/\\codex\.cmd$/i.test(candidate) && !value.error && !value.exception && value.kind !== 'directory') {
@@ -292,6 +300,7 @@ if (!baseline) {
     const found = await resolve(f);
     assert.equal(found.command, 'C:\\standalone\\codex.exe');
     assert.equal(found.source, 'path');
+    assert.equal(f.appx.queries, 0);
     assert.deepEqual(Array.from(found.args), ['app-server', '--listen', 'stdio://']);
   });
 
@@ -326,6 +335,38 @@ if (!baseline) {
     const found = await resolve(f);
     assert.equal(found.command, bundled);
     assert.equal(found.windowsSandbox, 'mxc');
+    assert.equal(f.appx.queries, 0);
+  });
+
+  await check('an ordinary Windows host follows current-user registration across desktop updates', async () => {
+    const f = fixture();
+    const runtime = f.load('runtime/agents/codex.cjs').createCodexRuntime();
+    try {
+      for (const version of ['26.1103.7773.0', '26.1111.9664.0']) {
+        const location = `D:\\WindowsApps\\OpenAI.Codex_${version}_x64__2p2nqsd0c76g0`;
+        const binary = win.join(location, 'app', 'resources', 'codex.exe');
+        f.put(binary);
+        f.appx.location = location + '\r\n';
+        assert.equal(await runtime.available(), binary);
+      }
+      const result = await runtime.models();
+      assert.equal(result.installed, true);
+      assert.deepEqual(Array.from(f.spawns[0].args), ['-c', 'windows.sandbox=mxc', 'app-server', '--listen', 'stdio://']);
+    } finally { runtime.shutdown(); }
+  });
+
+  await check('a failed registration query is reported and retried', async () => {
+    const f = fixture();
+    f.appx.error = new Error('Access denied');
+    const result = await resolve(f);
+    assert.equal(result.path, null);
+    assert.ok(result.failures.some((failure) => failure.code === 'APPX_QUERY_FAILED' && failure.message === 'Access denied'));
+    f.appx.error = null;
+    f.appx.location = 'C:\\missing';
+    const retry = await resolve(f);
+    assert.equal(retry.path, null);
+    assert.ok(retry.searched.includes('C:\\missing\\app\\resources\\codex.exe'));
+    assert.equal(f.appx.queries, 2);
   });
 
   await check('an explicit invalid installation never silently selects another CLI', async () => {
@@ -335,6 +376,7 @@ if (!baseline) {
     const found = await resolve(f);
     assert.equal(found.path, null);
     assert.match(found.error, /THOUGHTDAG_CODEX_PATH/);
+    assert.equal(f.appx.queries, 0);
   });
 
   await check('an explicitly selected desktop CLI still cannot omit MXC', async () => {

@@ -14,6 +14,7 @@ import { rehypeUserHighlights } from '../lib/rehype-user-highlights';
 import { useT, fmt } from '../i18n';
 import { localPathOf, basenameOf } from '../lib/local-path';
 import { foldToolCalls } from '../lib/tool-markup';
+import { normalizeMath } from '../lib/markdown-math';
 import { useAppearance } from '../lib/appearance';
 import { localTargetOf, safeMarkdownUrl } from '../lib/local-target';
 import { ConversationLink } from './ConversationLink';
@@ -21,18 +22,6 @@ import { remarkFileCitations } from '../lib/remark-file-citations';
 
 const REMARK_PLUGINS = [remarkGfm, remarkMath, remarkFileCitations];
 
-// Models freely emit \( \) and \[ \] math delimiters; remark-math only
-// parses $-style. Normalize outside code fences/spans so formulas render
-// everywhere (cards, panel, rail, reader) instead of leaking raw.
-function normalizeMath(src: string): string {
-  if (!src || (!src.includes('\\(') && !src.includes('\\['))) return src;
-  const parts = src.split(/(```[\s\S]*?```|`[^`\n]*`)/g);
-  return parts
-    .map((seg, i) => (i % 2 === 1 ? seg : seg
-      .replace(/\\\[([\s\S]+?)\\\]/g, (_, m) => `\n$$\n${m.trim()}\n$$\n`)
-      .replace(/\\\((.+?)\\\)/g, (_, m) => `$${m.trim()}$`)))
-    .join('');
-}
 // Raw HTML in an answer is kept for what it is used for (details, sub/sup,
 // kbd, mark, tables, line breaks) and stripped of what can run or embed:
 // iframe, object, embed, script, style, link, meta, base, form. An answer is

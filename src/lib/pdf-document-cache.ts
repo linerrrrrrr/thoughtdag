@@ -1,6 +1,6 @@
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 import type { Attachment } from '../types';
-import { loadAttachmentContent } from './attachment-vault';
+import { loadNodePdfFile } from './attachment-vault';
 
 type Pdfjs = typeof import('pdfjs-dist');
 type PdfTask = ReturnType<Pdfjs['getDocument']>;
@@ -23,6 +23,7 @@ export interface PdfDocumentResource {
   task?: PdfTask;
   source?: string;
   size: number;
+  revision?: string;
   refs: number;
   disposed: boolean;
   failed: boolean;
@@ -40,7 +41,7 @@ const MAX_PAGE_PIXELS = 4_000_000;
 const resources = new Map<string, PdfDocumentResource>();
 let pdfjsPromise: Promise<Pdfjs> | undefined;
 
-function loadPdfjs(): Promise<Pdfjs> {
+export function loadPdfjs(): Promise<Pdfjs> {
   return pdfjsPromise ??= Promise.all([
     import('pdfjs-dist'), import('pdfjs-dist/build/pdf.worker.min.mjs?url'),
   ]).then(([pdfjs, worker]) => {
@@ -52,8 +53,19 @@ function loadPdfjs(): Promise<Pdfjs> {
 export const pdfDocumentKey = (projectId: string | null, nodeId: string, attachmentId: string) =>
   JSON.stringify([projectId, nodeId, attachmentId]);
 
+/** Both readers paint the current canvas marks separately from the PDF pages. */
+export async function readPdfPageBytes(attachment: Attachment): Promise<Uint8Array> {
+  const content = await loadNodePdfFile(attachment);
+  if (!content) throw new Error('PDF source missing');
+  const bytes = Uint8Array.from(atob(content), character => character.charCodeAt(0));
+  if (!attachment.pdfSavedAnnotations?.length) return bytes;
+  const { canvasPdfPages } = await import('./pdf-annotations');
+  return canvasPdfPages(bytes, attachment.pdfSavedAnnotations);
+}
+
 function matches(resource: PdfDocumentResource, attachment: Attachment) {
-  return resource.size === attachment.size && (!attachment.content || !resource.source || resource.source === attachment.content);
+  return resource.revision === attachment.pdfFileRevision && resource.size === attachment.size
+    && (!attachment.content || !resource.source || resource.source === attachment.content);
 }
 
 export function peekPdfDocument(key: string, attachment: Attachment) {
@@ -87,18 +99,16 @@ export function acquirePdfDocument(key: string, attachment: Attachment, retry = 
       if (!previous.refs) dispose(previous);
     }
     resource = {
-      key, size: attachment.size, source: attachment.content || undefined,
+      key, size: attachment.size, revision: attachment.pdfFileRevision, source: attachment.content || undefined,
       refs: 0, disposed: false, failed: false, lastUsed: performance.now(),
       pages: new Map(), pageRatios: new Map(), widths: new Map(),
       promise: undefined as unknown as PdfDocumentResource['promise'],
     };
     const entry = resource;
     entry.promise = (async () => {
-      const [pdfjs, content] = await Promise.all([loadPdfjs(), loadAttachmentContent(attachment)]);
+      const [pdfjs, bytes] = await Promise.all([loadPdfjs(), readPdfPageBytes(attachment)]);
       if (entry.disposed) throw new Error('PDF resource released');
-      if (!content) throw new Error('PDF source missing');
-      const binary = atob(content);
-      entry.task = pdfjs.getDocument({ data: Uint8Array.from(binary, character => character.charCodeAt(0)) });
+      entry.task = pdfjs.getDocument({ data: bytes });
       const doc = await entry.task.promise;
       if (entry.disposed) { void doc.destroy(); throw new Error('PDF resource released'); }
       entry.document = doc;

@@ -87,9 +87,9 @@ export default function QuestionSection({
   };
 
   const handleEditKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key !== 'Enter' || isImeComposing(e)) return;
-    // Multiline questions keep Enter for line breaks; submission is explicit.
-    if (e.metaKey || e.ctrlKey) { e.preventDefault(); handleEditSubmit(); }
+    if (e.key !== 'Enter' || e.shiftKey || isImeComposing(e)) return;
+    e.preventDefault();
+    handleEditSubmit();
   };
 
   const autoGrowTa = (el: HTMLTextAreaElement | null) => {

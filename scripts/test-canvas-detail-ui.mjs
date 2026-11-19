@@ -18,6 +18,10 @@ page.setDefaultTimeout(12000);
 const errors = [], writes = [], checks = [];
 page.on('pageerror', (error) => errors.push(error.message));
 await context.route('**/api/**', (route) => {
+  // The file node in this browser-only graph uses its fixture text, independent of any local document host.
+  if (route.request().method() === 'GET' && new URL(route.request().url()).pathname === '/api/agents/document') {
+    return route.fulfill({ status: 404, body: '' });
+  }
   if (['GET', 'HEAD', 'OPTIONS'].includes(route.request().method())) return route.continue();
   writes.push(`${route.request().method()} ${route.request().url()}`);
   return route.abort('blockedbyclient');
@@ -163,10 +167,25 @@ try {
   await setViewport(0.25);
   await globalDetail('auto');
   assert.equal(await detail(), 'compact');
+  const levels = panel().getByRole('radiogroup');
+  const radio = value => levels.locator(`[data-canvas-detail="${value}"]`);
+  await panel().focus();
+  await page.keyboard.press('Tab');
+  assert.equal(await radio('auto').evaluate(el => document.activeElement === el && el.checked), true);
+  await page.keyboard.press('ArrowLeft');
+  assert.equal(await radio('full').isChecked(), true);
+  assert.equal(await detail(), 'full', 'Arrow selection immediately updates the canvas');
+  await page.keyboard.press('ArrowRight');
+  assert.equal(await radio('auto').isChecked(), true, 'Arrows wrap around the four levels');
+  await page.keyboard.press('Tab');
+  assert.equal(await levels.evaluate(el => el.contains(document.activeElement)), false);
+  check('Canvas detail is one keyboard stop with immediate arrow selection');
   await globalDetail('summary');
   for (const id of ['detail-thought', 'detail-note', 'detail-file', 'detail-link']) assert.equal(await detail(id), 'summary');
   assert.equal(await node().locator('[data-node-preview]').count(), 1, 'Fixed summary includes preview at distant zoom');
   await globalDetail('full');
+  const rowCount = () => levels.getByRole('radio').evaluateAll(items => new Set(items.map(el => Math.round(el.getBoundingClientRect().y))).size);
+  assert.equal(await rowCount(), 1, 'Short labels fit on one row');
   for (const id of ['detail-thought', 'detail-note', 'detail-file', 'detail-link']) assert.equal(await detail(id), 'full');
   assert.ok((await node().textContent()).includes('第 20 条分析'), 'Full mode renders full answer, not its summary');
   check('Global detail overrides zoom for thought, note, file and link nodes');
@@ -216,6 +235,11 @@ try {
   const bounds = await panel().boundingBox();
   assert.ok(bounds.x >= 0 && bounds.x + bounds.width <= 640 && bounds.y + bounds.height <= 900);
   await page.screenshot({ path: `${output}/detail-narrow.png` });
+  await page.evaluate(async () => (await import('/src/i18n/index.ts')).useI18n.getState().setLang('en'));
+  await levels.getByRole('radio', { name: 'Follow zoom' }).waitFor();
+  assert.equal(await rowCount(), 2, 'Longer labels wrap into two pairs');
+  await levels.screenshot({ path: `${output}/detail-english-narrow.png` });
+  await page.evaluate(async () => (await import('/src/i18n/index.ts')).useI18n.getState().setLang('zh'));
   check('Detail controls fit desktop and narrow viewports in both themes');
 
   assert.equal(await page.evaluate(() => window.__store.getState().nodes.find((n) => n.id === 'detail-thought').data.detailLevel), 'summary', 'Lock remains in live graph');

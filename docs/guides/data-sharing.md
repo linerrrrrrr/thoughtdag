@@ -37,6 +37,7 @@ The desktop app provides the complete experience; the browser entry appears only
 
 ## Manual import and export
 
+- Choose **More actions → Export canvas (.html)** in the upper-right corner. Open the file in a browser to explore the canvas and read nodes and documents offline.
 - **Export backup** for a complete graph file and later restoration.
 - Export a context chain or selected nodes as Markdown.
 - Export highlights, memory, or event metadata when needed.

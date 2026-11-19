@@ -51,6 +51,7 @@ contextBridge.exposeInMainWorld('desktopAgents', {
   guardWrite: (cwd, config) => ipcRenderer.invoke('agents:guard-write', cwd, config),
   pickCwd: () => ipcRenderer.invoke('agents:pick-cwd'),
   writeMaterials: (cwd, files) => ipcRenderer.invoke('agents:write-materials', cwd, files),
+  managedDocument: (request) => ipcRenderer.invoke('agents:document', request),
   onEvent: (cb) => { ipcRenderer.on('agents:event', (_e, payload) => cb(payload)); },
 });
 

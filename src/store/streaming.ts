@@ -1,6 +1,7 @@
 import type { StoreApi } from 'zustand';
 import { getContextPath, isConversationStart } from '../lib/graph';
 import { upstreamFingerprint, upstreamParts, recordParts, recordsForAgent, recordsWithTools, type MessageSource } from './context-builder';
+import { resolveNodeNumberReferences } from '../lib/node-numbers';
 import { sha256Hex, canonicalStringify } from '../lib/context-bundle';
 import { pruneHighlights } from '../lib/highlight-match';
 import { llmCallStream, declaresTools, type ContextMessage, type ImageAttachment } from '../lib/api';
@@ -324,6 +325,18 @@ export async function runNodeGeneration(
   // and a request that declares search tools has those
   if (isAgentModel(requestedModel) || isHarnessAgentModel(requestedModel)) messages = recordsForAgent(messages);
   else if (declaresTools(requestedModel, toolPrefsNow())) messages = recordsWithTools(messages);
+
+  if (!agentRoute && !harnessRoute) {
+    const referenced = resolveNodeNumberReferences(question, get().nodes);
+    if (referenced.nodes.length) {
+      const numbers = new Map(referenced.nodes.map(node => [node.id, node.data.nodeNumber]));
+      messages = messages.map(message => {
+        const sourceId = message.canvasSource?.nodeId ?? message.canvasSource?.refSourceId;
+        const number = sourceId ? numbers.get(sourceId) : undefined;
+        return number ? { ...message, content: `[Canvas #${number}]\n${message.content}` } : message;
+      });
+    }
+  }
 
   let flushStream = () => {};
   try {

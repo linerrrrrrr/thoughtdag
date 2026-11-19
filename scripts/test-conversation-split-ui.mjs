@@ -326,7 +326,9 @@ try {
   near(await answer('panel').evaluate(el => el.scrollTop), 0, 1, 'Scrolling back suspends automatic following');
   await answer('panel').evaluate(el => {
     const content = el.querySelector('.focus-response-section > .focus-assistant-message');
-    el.scrollTop = Math.max(0, content.getBoundingClientRect().bottom - el.getBoundingClientRect().top + el.scrollTop - el.clientHeight);
+    const paneRect = el.getBoundingClientRect();
+    const tail = (content.getBoundingClientRect().bottom - paneRect.top) * el.clientHeight / paneRect.height;
+    el.scrollTop = Math.max(0, tail + el.scrollTop - el.clientHeight);
   });
   await settle();
   const resumedScroll = await answer('panel').evaluate(el => el.scrollTop);

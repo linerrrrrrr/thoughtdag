@@ -1,8 +1,7 @@
-import { useState, useRef, useCallback, useEffect, useLayoutEffect } from 'react';
-import { describeModel } from '../lib/use-models';
+import { useState, useRef, useCallback, useEffect, useLayoutEffect, useContext } from 'react';
 import { conclusionOf } from '../lib/turn-insight';
 import { useReactFlow, useUpdateNodeInternals, type NodeProps } from '@xyflow/react';
-import { AlertTriangle, Archive, BookOpen, Check, ChevronDown, ChevronLeft, ChevronRight, ClipboardCopy, Globe, Hourglass, Minimize2, RefreshCw, Send, Square, Trash2, UserRound, X, Pencil } from 'lucide-react';
+import { AlertTriangle, Archive, BookOpen, Check, ChevronDown, ChevronRight, Globe, Hourglass, Minimize2, RefreshCw, Send, Square, Trash2, UserRound, X, Pencil } from 'lucide-react';
 import 'katex/dist/katex.min.css';
 
 /** A tool's status line standing in for the answer while it runs (see
@@ -14,7 +13,6 @@ import { staleHiddenByJudge, currentStaleVerdict } from '../lib/stale-judge';
 import { setNodeDetail, useNodeDetail } from '../lib/node-detail';
 import { isImeComposing , activeSummary, awaitingInput, formatStamp } from '../utils';
 import { processFile } from '../lib/attachments';
-import { copyText } from '../lib/export';
 import { isRunLocked } from '../lib/paradigm';
 import { useTextHighlighter } from '../lib/use-text-highlighter';
 import NodeHighlightsSection from './NodeHighlightsSection';
@@ -24,6 +22,7 @@ import NodeExecutionPicker, { NodeExecutionBadge } from './ui/NodeExecutionPicke
 import { Markdown, HighlightedMarkdown } from './Markdown';
 import ReasoningDisclosure from './ui/ReasoningDisclosure';
 import NodeOverview from './NodeOverview';
+import NodeNumber from './NodeNumber';
 import NodeDetailsButton from './NodeDetailsButton';
 import NodeConnectionHandles from './NodeConnectionHandles';
 import NodeResizeControls from './NodeResizeControls';
@@ -32,7 +31,10 @@ import { getNodeDisplayName, getNodeNameSource } from '../lib/node-display-name'
 import NodeMetadataEditor from './NodeMetadataEditor';
 import NodeTokenUsage from './NodeTokenUsage';
 import NodeContextSources from './NodeContextSources';
+import NodeInputRegion from './NodeInputRegion';
+import { CanvasConnectionLayout } from '../lib/edge-routing-context';
 import './ConversationSurface.css';
+import './NodeConnectionLayout.css';
 import ConversationSplit from './ConversationSplit';
 import './ConversationNodeSplit.css';
 import { ApprovalCard } from './ui/ApprovalCard';
@@ -40,6 +42,7 @@ import { AgentTrace } from './ui/AgentTrace';
 import { AgentActivityView } from './ui/AgentActivityView';
 import { activeAgentActivity, originalQuestionBeforeInstructions } from '../lib/agent-activity';
 import { AgentRerunButton } from './ui/AgentRerunButton';
+import { ResponseCopyButton, ResponseVersions } from './ui/ResponseActions';
 import { SquareTerminal } from 'lucide-react';
 import { useT, fmt } from '../i18n';
 import { isViewerMode } from '../lib/viewer';
@@ -66,8 +69,6 @@ export default function ThoughtNode({ id, data, selected }: NodeProps<ThoughtNod
   const stopGeneration = useStore((s) => s.stopGeneration);
   const setEditingResponse = useStore((s) => s.setEditingResponse);
   const editResponse = useStore((s) => s.editResponse);
-  const navigateVersion = useStore((s) => s.navigateVersion);
-  const deleteVersion = useStore((s) => s.deleteVersion);
   const setSelectedNodeId = useStore((s) => s.setSelectedNodeId);
   const selectedNodeId = useStore((s) => s.selectedNodeId);
   const addAttachment = useStore((s) => s.addAttachment);
@@ -110,6 +111,8 @@ export default function ThoughtNode({ id, data, selected }: NodeProps<ThoughtNod
   // structural parents complete (triggerParadigmCascade in store/streaming).
   const isWaitingUpstream = data.stepKind === 'prompt' && !data.response && !data.isLoading && !data.generationFailed;
   const isParadigmNode = isHuman || data.stepKind === 'prompt';
+  const canvasConnectionLayout = useContext(CanvasConnectionLayout);
+  const connectionLayout = isParadigmNode ? undefined : canvasConnectionLayout;
   const isAwaitingAsk = awaiting === 'ask';
   const isFailedQuestion = awaiting === 'failed';
   const isQuestionComposer = isAwaitingAsk || isFailedQuestion;
@@ -131,13 +134,13 @@ export default function ThoughtNode({ id, data, selected }: NodeProps<ThoughtNod
   const zoomedOut = mapMode && !protectWorkingCard;
   const overview = zoomedOut || isCollapsed;
   const viewHeight = useStableNodeViewHeight(nodeRef, !overview && configuredHeight == null,
-    [id, data.question, data.response, data.responseIndex, data.isLoading, overview], configuredWidth,
+    [id, data.question, data.response, data.responseIndex, data.isLoading, overview, connectionLayout], configuredWidth,
     !!(metadataEditing || questionEditActive || editingResponseHere));
   // Glyph tier: the node collapses to one seal — the thinking's skeleton
   const glyphTier = zoomTier === 'glyph' && zoomedOut;
   // Handles move to hug the seal at glyph tier — tell React Flow to re-measure
   const updateNodeInternals = useUpdateNodeInternals();
-  useEffect(() => { updateNodeInternals(id); }, [glyphTier, zoomedOut, isCollapsed, metadataEditing, configuredWidth, configuredHeight, id, updateNodeInternals]);
+  useEffect(() => { updateNodeInternals(id); }, [glyphTier, zoomedOut, isCollapsed, metadataEditing, configuredWidth, configuredHeight, connectionLayout, id, updateNodeInternals]);
   const contentCeiling = useRef<{ question: string; response: string; responseIndex: number; width: number | undefined; height: number } | undefined>(undefined);
   useLayoutEffect(() => {
     // Live tails and textareas intentionally bound their own content. Resume
@@ -146,7 +149,9 @@ export default function ThoughtNode({ id, data, selected }: NodeProps<ThoughtNod
     const unregister = registerNodeContentHeightMeasure(id, width => canLimit
       ? measureConversationContentHeight(nodeRef.current, width) : undefined);
     const root = nodeRef.current;
-    if (!root || !canLimit || zoomedOut || isCollapsed) return unregister;
+    // A connection layout is a viewing preference. Reflowing its source region
+    // must never normalize saved card dimensions or rewrite the undo baseline.
+    if (!root || !canLimit || zoomedOut || isCollapsed || connectionLayout) return unregister;
     const previous = contentCeiling.current;
     if (!previous || previous.question !== data.question || previous.response !== data.response
       || previous.responseIndex !== data.responseIndex || previous.width !== configuredWidth) {
@@ -167,21 +172,23 @@ export default function ThoughtNode({ id, data, selected }: NodeProps<ThoughtNod
       useStore.getState().normalizeNodeContentHeight(id, limit);
     };
     let frame: number | undefined;
-    const observer = new ResizeObserver(() => {
+    const scheduleNormalization = () => {
       if (frame !== undefined) cancelAnimationFrame(frame);
-      frame = requestAnimationFrame(() => { frame = undefined; normalize(); });
-    });
+      // Let the split and its footer finish reflowing before retaining a height ceiling.
+      frame = requestAnimationFrame(() => {
+        frame = requestAnimationFrame(() => { frame = undefined; normalize(); });
+      });
+    };
+    const observer = new ResizeObserver(scheduleNormalization);
     observer.observe(root);
-    for (const element of root.querySelectorAll<HTMLElement>(':scope > *, [data-conversation-split="node"], .conversation-split-content')) observer.observe(element);
-    // Wait until the split has reconciled its new panes after a content
-    // change; an intermediate layout must not become the saved ceiling.
-    frame = requestAnimationFrame(() => { frame = undefined; normalize(); });
+    for (const element of root.querySelectorAll<HTMLElement>('.conversation-node-content > *, [data-conversation-split="node"], .conversation-split-content, [data-node-response-footer]')) observer.observe(element);
+    scheduleNormalization();
     return () => {
       observer.disconnect();
       if (frame !== undefined) cancelAnimationFrame(frame);
       unregister();
     };
-  }, [id, data.question, data.response, data.responseIndex, data.isLoading, editingQuestionHere, editingResponseHere, metadataEditing, zoomedOut, isCollapsed, configuredWidth, customStyleHeight]);
+  }, [id, data.question, data.response, data.responseIndex, data.isLoading, editingQuestionHere, editingResponseHere, metadataEditing, zoomedOut, isCollapsed, configuredWidth, customStyleHeight, connectionLayout]);
   // Upstream changed since this answer was written (see recomputeStaleness)
   const isStale = useStore((s) => s.staleIds.includes(id) && !staleHiddenByJudge(s, id));
   const staleVerdict = useStore((s) => currentStaleVerdict(s, id));
@@ -333,9 +340,9 @@ export default function ThoughtNode({ id, data, selected }: NodeProps<ThoughtNod
   };
 
   const handleEditKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key !== 'Enter' || isImeComposing(e)) return;
-    // Both surfaces keep multiline questions and explicit submission alike.
-    if (e.metaKey || e.ctrlKey) { e.preventDefault(); handleEditSubmit(); }
+    if (e.key !== 'Enter' || e.shiftKey || isImeComposing(e)) return;
+    e.preventDefault();
+    handleEditSubmit();
   };
 
   const autoGrowTa = (el: HTMLTextAreaElement | null) => {
@@ -370,6 +377,11 @@ export default function ThoughtNode({ id, data, selected }: NodeProps<ThoughtNod
   const nameFallback = t(isAwaitingAsk ? 'node.unsentQuestion' : 'panel.question');
   const nodeName = getNodeDisplayName(namingData, nameFallback);
   const nodeNameSource = getNodeNameSource(namingData, nameFallback);
+  // Version navigation changes the displayed author. A pin describes the next generation.
+  const generatedModel = data.generatedBy?.[data.responseIndex];
+  const headerModel = generatedModel ?? data.model;
+  const modelHint = generatedModel && data.model && generatedModel !== data.model
+    ? `${headerModel}\n${fmt(t('node.pinnedModel'), { m: data.model })}` : headerModel;
   const takeawayType = data.summaryTypes?.[data.responseIndex] ?? undefined;
   const takeawayConfidence = data.summaryTypeConfidences?.[data.responseIndex] ?? undefined;
   const conclusive = data.summaryConclusiveness?.[data.responseIndex] ?? undefined;
@@ -409,6 +421,7 @@ export default function ThoughtNode({ id, data, selected }: NodeProps<ThoughtNod
       ref={nodeRef}
       style={{ width: configuredWidth ?? 520, height: fixedHeight }}
       data-thought-natural-height={overview || undefined}
+      data-connection-layout={connectionLayout}
       data-node-detail-level={overview ? (glyphTier ? 'compact' : 'summary') : 'full'}
       data-node-overview-surface={overview ? (glyphTier ? 'compact' : 'summary') : undefined}
       data-node-overview-kind={overview ? (isHuman ? 'human' : isStart ? 'start' : 'thought') : undefined}
@@ -416,7 +429,11 @@ export default function ThoughtNode({ id, data, selected }: NodeProps<ThoughtNod
       data-node-detail-locked={data.detailLevel || undefined}
       data-thought-resized={fixedHeight != null || undefined}
       data-awaiting-ask={isAwaitingAsk || undefined}
-      onPointerDownCapture={viewHeight.capture}
+      onPointerDownCapture={event => {
+        // Keep conversation buttons under the pointer until click capture freezes the height.
+        if (event.target instanceof Element && event.target.closest('[data-thought-body] button')) return;
+        viewHeight.capture();
+      }}
       onKeyDownCapture={event => { if (event.key === 'Enter' || event.key === ' ') viewHeight.capture(); }}
       onClickCapture={viewHeight.capture}
       onDoubleClickCapture={viewHeight.capture}
@@ -452,6 +469,7 @@ export default function ThoughtNode({ id, data, selected }: NodeProps<ThoughtNod
         </span>
       )}
       <NodeConnectionHandles id={id} large={overview} />
+      {connectionLayout && <NodeInputRegion nodeId={id} compact={overview} />}
 
       {/* Stale dot pins to the CARD's corner — at glyph tier the card is
           gone (one centered seal), so the seal wears an amber ring instead
@@ -467,6 +485,7 @@ export default function ThoughtNode({ id, data, selected }: NodeProps<ThoughtNod
           data-node-stale={isStale || undefined}
         >
           <NodeOverview
+            number={data.nodeNumber}
             name={nodeName}
             action={<NodeDetailsButton nodeId={id} />}
             source={nodeNameSource}
@@ -476,20 +495,49 @@ export default function ThoughtNode({ id, data, selected }: NodeProps<ThoughtNod
           />
         </div>
       ) : (
-      <>
+      <div className="conversation-node-content">
       {/* Header */}
-      <div data-node-details-header className="thought-node-header shrink-0 flex items-center justify-between gap-related px-surface-inset py-related border-b border-line drag-handle">
-        <div className="node-header-status flex flex-wrap items-center gap-2 min-w-0">
-          <button onClick={() => zoomedOut ? setNodeDetail(id, 'full') : fullDetail ? setNodeDetail(id, 'summary') : toggleCollapse(id)}
-            aria-label={t(zoomedOut || isCollapsed ? 'node.expandCard' : 'node.collapseCard')} className={`nodrag nopan rounded-control w-7 h-7 flex items-center justify-center transition-colors text-body font-bold ${
-            isHuman ? 'text-warm bg-warm/10 hover:bg-warm/15'
-                : isStart || isCollapsed ? 'text-accent bg-accent/10 hover:bg-accent/15'
-                  : 'text-ink-faint hover:bg-wash'
-          }`}>
-            {zoomedOut || isCollapsed ? <ChevronRight size={18} strokeWidth={1.75} /> : <ChevronDown size={18} strokeWidth={1.75} />}
-          </button>
+      <div data-node-details-header className="thought-node-header shrink-0 border-b border-line drag-handle">
+        <div className="node-header-main">
+          <div className="node-header-identity">
+            <button onClick={() => zoomedOut ? setNodeDetail(id, 'full') : fullDetail ? setNodeDetail(id, 'summary') : toggleCollapse(id)}
+              aria-label={t(zoomedOut || isCollapsed ? 'node.expandCard' : 'node.collapseCard')} className={`nodrag nopan rounded-control w-7 h-7 flex items-center justify-center transition-colors text-body font-bold ${
+                isHuman ? 'text-warm bg-warm/10 hover:bg-warm/15'
+                  : isStart || isCollapsed ? 'text-accent bg-accent/10 hover:bg-accent/15'
+                    : 'text-ink-faint hover:bg-wash'
+              }`}>
+              {zoomedOut || isCollapsed ? <ChevronRight size={18} strokeWidth={1.75} /> : <ChevronDown size={18} strokeWidth={1.75} />}
+            </button>
+            <NodeNumber number={data.nodeNumber} />
+          </div>
+          <div className="node-header-author">
+            {!isHuman && <NodeExecutionBadge data={data} />}
+            {!isHuman && headerModel && <span className="text-meta text-ink-faint" aria-hidden="true">/</span>}
+            {headerModel && <span className="text-meta font-mono text-ink truncate" data-tooltip={modelHint}>
+              {headerModel.split('/').pop()}
+            </span>}
+          </div>
           <NodeTokenUsage data={data} />
-          <NodeContextSources nodeId={id} />
+          <div className="node-header-actions nodrag nopan">
+            <NodeDetailsButton nodeId={id} />
+            {data.isLoading && (
+              <button
+                onClick={(e) => { e.stopPropagation(); stopGeneration(id); }}
+                aria-label={t('actions.stop')}
+                className="text-white bg-red-500 hover:bg-red-600 rounded-control w-7 h-7 flex items-center justify-center transition-colors"
+              >
+                <Square size={10} strokeWidth={1.75} fill="currentColor" />
+              </button>
+            )}
+            {!(isParadigmNode && runLocked) && !isViewerMode && (
+              <button onClick={() => deleteNode(id)} className="rounded-control w-7 h-7 flex items-center justify-center transition-colors object-action-danger" data-icon-only aria-label={t('actions.deleteNode')}>
+                <Trash2 size={16} strokeWidth={1.75} />
+              </button>
+            )}
+          </div>
+        </div>
+        <div className="node-header-status">
+          {!connectionLayout && <NodeContextSources nodeId={id} />}
           {data.condensedFrom && data.condensedFrom.length > 0 && (
             <button
               onClick={(e) => {
@@ -534,42 +582,6 @@ export default function ThoughtNode({ id, data, selected }: NodeProps<ThoughtNod
             <span className="text-control bg-wash text-ink-faint px-1.5 py-0.5 rounded-tag flex items-center gap-1 font-medium">
               <Hourglass size={11} strokeWidth={1.75} /> {t('paradigm.waitingUpstream')}
             </span>
-          )}
-          {!isHuman && <NodeExecutionBadge data={data} />}
-          {(() => {
-            // The chip answers "who wrote THIS answer" — the actual model
-            // recorded at generation time, following version paging. The
-            // per-node pin (data.model) is only the fallback before any
-            // answer exists; when both are known and differ, the tooltip
-            // names the pin so the next generation holds no surprise.
-            const gen = data.generatedBy?.[data.responseIndex] ?? undefined;
-            const label = gen ?? data.model;
-            if (!label) return null;
-            const pinNote = gen && data.model && data.model !== gen
-              ? `\n${fmt(t('node.pinnedModel'), { m: data.model })}`
-              : '';
-            return (
-              <span className="text-meta bg-wash text-ink-muted px-1.5 py-0.5 rounded-tag font-mono truncate max-w-[130px]" data-tooltip={`${label}${pinNote}`}>
-                {label.split('/').pop()}
-              </span>
-            );
-          })()}
-        </div>
-        <div className="nodrag nopan flex shrink-0 items-center gap-0.5">
-          <NodeDetailsButton nodeId={id} />
-          {data.isLoading && (
-            <button
-              onClick={(e) => { e.stopPropagation(); stopGeneration(id); }}
-              aria-label={t('actions.stop')}
-              className="text-white bg-red-500 hover:bg-red-600 rounded-control w-7 h-7 flex items-center justify-center transition-colors"
-            >
-              <Square size={10} strokeWidth={1.75} fill="currentColor" />
-            </button>
-          )}
-          {!(isParadigmNode && runLocked) && !isViewerMode && (
-            <button onClick={() => deleteNode(id)} className="rounded-control w-7 h-7 flex items-center justify-center transition-colors object-action-danger" data-icon-only aria-label={t('actions.deleteNode')}>
-              <Trash2 size={16} strokeWidth={1.75} />
-            </button>
           )}
         </div>
       </div>
@@ -630,9 +642,7 @@ export default function ThoughtNode({ id, data, selected }: NodeProps<ThoughtNod
                   </button>
                 </div>
               )}
-              {/* Revision confirms explicitly: visible exits instead of an
-                  invisible Enter contract. mousedown-preventDefault keeps the
-                  textarea's blur from racing the click. */}
+              {/* Keep focus in the draft until the clicked revision action completes. */}
               {!isHuman && !isQuestionComposer && (
                 <div className="flex items-center justify-end gap-2 mt-1.5">
                   {/* the node's own switches (what a re-ask runs with), editable
@@ -806,11 +816,11 @@ export default function ThoughtNode({ id, data, selected }: NodeProps<ThoughtNod
             </div>
           )}
 
-          {/* Response action row — LLM-chat convention: the actions that act
-              on THIS answer live right under it (regenerate = new version in
-              place; the sibling-branch variant lives in the panel's ⋯ menu) */}
+          </>} />
+
+          {/* Keep actions for the displayed version below both scrolling panes. */}
           {data.response && !data.isLoading && !editingResponseHere && !isHuman && !isAwaitingAsk && !data.generationFailed && (
-            <div className="conversation-actions mt-1.5 flex flex-wrap items-center gap-0.5 text-ink-faint">
+            <div className="conversation-actions nowheel flex flex-wrap items-center gap-0.5 text-ink-faint" data-node-response-footer>
               {!isViewerMode && (
                 <button
                   onClick={(e) => { e.stopPropagation(); void rerunNode(id); }}
@@ -821,14 +831,7 @@ export default function ThoughtNode({ id, data, selected }: NodeProps<ThoughtNod
                   <RefreshCw size={14} strokeWidth={1.75} />
                 </button>
               )}
-              <button
-                onClick={(e) => { e.stopPropagation(); void copyText(data.response); }}
-                className="rounded-control w-6 h-6 flex items-center justify-center hover:text-accent hover:bg-wash transition-colors"
-                aria-label={t('actions.copyResponse')}
-                data-tooltip={t('actions.copyResponse')}
-              >
-                <ClipboardCopy size={13} strokeWidth={1.75} />
-              </button>
+              <ResponseCopyButton key={data.responseIndex} text={data.response} />
               {!isViewerMode && (
                 <button
                   onClick={(e) => { e.stopPropagation(); startEditResponse(); }}
@@ -842,14 +845,6 @@ export default function ThoughtNode({ id, data, selected }: NodeProps<ThoughtNod
               <AgentRerunButton nodeId={id} data={data} />
               {data.focusRole === 'ctx' && (
                 <span className="w-[7px] h-[7px] rounded-full bg-accent inline-block ml-1 shrink-0" data-tooltip={t('focus.inContext')} data-focus-dot />
-              )}
-              {(data.generatedBy?.[data.responseIndex]) && (
-                <span
-                  className="text-meta text-ink-faint font-mono ml-1 truncate flex-1 min-w-0 max-w-[260px]"
-
-                >
-                  {describeModel(data.generatedBy[data.responseIndex], data.generatedEfforts?.[data.responseIndex], { compact: true })}
-                </span>
               )}
               {data.agentSession?.continued && (
                 <span className="text-meta text-ink-faint ml-1 shrink-0"  data-agent-continued>↩ {t('agent.continued')}</span>
@@ -874,45 +869,23 @@ export default function ThoughtNode({ id, data, selected }: NodeProps<ThoughtNod
                   {formatStamp(data.generatedAts[data.responseIndex]!)}
                 </span>
               )}
-              {hasMultipleVersions && (
-                <div className="flex items-center gap-1 text-control text-ink-muted ml-1">
-                  <button onClick={(e) => { e.stopPropagation(); navigateVersion(id, 'prev'); }} className="hover:text-accent hover:bg-wash rounded-control w-5 h-5 flex items-center justify-center transition-colors"><ChevronLeft size={14} strokeWidth={1.75} /></button>
-                  <span className="text-accent font-medium">v{data.responseIndex + 1}/{data.responses.length}</span>
-                  <button onClick={(e) => { e.stopPropagation(); navigateVersion(id, 'next'); }} className="hover:text-accent hover:bg-wash rounded-control w-5 h-5 flex items-center justify-center transition-colors"><ChevronRight size={14} strokeWidth={1.75} /></button>
-                  {!isViewerMode && (
-                    <button
-                      onClick={(e) => { e.stopPropagation(); deleteVersion(id, data.responseIndex); }}
-                      className="rounded-control w-5 h-5 flex items-center justify-center transition-colors object-action-danger" data-icon-only
-                      aria-label={t('common.deleteVersion')}
-                    >
-                      <Trash2 size={13} strokeWidth={1.75} />
-                    </button>
-                  )}
-                </div>
-              )}
+              {hasMultipleVersions && <ResponseVersions nodeId={id} index={data.responseIndex} count={data.responses.length} />}
             </div>
           )}
 
           {/* Failure status; the question composer owns sending again. */}
           {data.generationFailed && !data.isLoading && (
-            <div className="mt-2 flex items-center gap-2 text-control text-red-600 bg-red-50 border border-red-100 rounded-content px-3 py-2">
+            <div className="nowheel mt-2 flex flex-wrap items-center gap-2 text-control text-red-600 bg-red-50 border border-red-100 rounded-content px-3 py-2" data-node-response-footer>
               <AlertTriangle size={14} strokeWidth={1.75} className="shrink-0" />
               {t('common.generationFailed')}
-              {hasMultipleVersions && (
-                <span className="flex items-center gap-1 text-ink-muted shrink-0" >
-                  <button onClick={(e) => { e.stopPropagation(); navigateVersion(id, 'prev'); }} className="hover:text-accent rounded-control w-5 h-5 flex items-center justify-center"><ChevronLeft size={14} strokeWidth={1.75} /></button>
-                  v{data.responseIndex + 1}/{data.responses.length}
-                  <button onClick={(e) => { e.stopPropagation(); navigateVersion(id, 'next'); }} className="hover:text-accent rounded-control w-5 h-5 flex items-center justify-center"><ChevronRight size={14} strokeWidth={1.75} /></button>
-                </span>
-              )}
+              {hasMultipleVersions && <ResponseVersions nodeId={id} index={data.responseIndex} count={data.responses.length} allowDelete={false} />}
             </div>
           )}
 
-          </>} />
         </div>
       )}
 
-      </>
+      </div>
       )}
 
     </div>

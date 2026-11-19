@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
 import { chromium } from 'playwright-core';
+import { openModelConnection } from './fixtures/canvas-model-picker.mjs';
 
 const executablePath = process.env.CHROME_PATH ?? [
   'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe', '/usr/bin/chromium',
@@ -26,6 +27,7 @@ await page.addInitScript(() => {
   localStorage.setItem('thoughtdag.tutorialDone', '1');
 });
 const item = name => page.locator(`[data-${name}]`);
+const modelPicker = item('project-switcher').locator('[data-model-picker-trigger]');
 const geometry = () => page.evaluate(() => {
   const rect = selector => {
     const r = document.querySelector(selector).getBoundingClientRect();
@@ -197,15 +199,12 @@ try {
       ? { ...node, data: { ...node.data, isLoading: true, pendingApprovals: [{ id: 'test', name: 'Review', askedAt: Date.now(), answered: false }] } } : node) }));
   });
   await page.waitForTimeout(400);
-  for (const entry of ['agents', 'providers']) {
-    assert.equal(await item('project-switcher').locator(`[data-connection-entry="${entry}"]`).count(), 1, entry);
-    assert.equal(await item('top-toolbar').locator(`[data-connection-entry="${entry}"]`).count(), 0, entry);
-  }
+  assert.equal(await item('canvas-header').locator('[data-connection-entry]').count(), 0);
   assert.equal(await item('canvas-header').locator('[data-agent-cwd], [data-agent-permission-chip]').count(), 0);
   await page.setViewportSize({ width: 1760, height: 1000 });
   await page.evaluate(() => window.__ui.getState().setPanelOpen(false));
   await page.waitForTimeout(300);
-  await page.locator('[data-connection-entry="agents"]').click();
+  await openModelConnection(page, 'agents');
   await item('agent-connection-settings').waitFor();
   await leftDock('model-connection-panel');
   await item('agent-cwd').click();
@@ -236,7 +235,11 @@ try {
     return { agent: t('connection.agent'), api: t('connection.api') };
   });
   await item('toolbar-more').click();
-  await item('toolbar-more-panel').getByRole('button', { name: labels.agent, exact: true }).click();
+  for (const name of Object.values(labels)) {
+    assert.equal(await item('toolbar-more-panel').getByRole('button', { name, exact: true }).count(), 0);
+  }
+  await page.keyboard.press('Escape');
+  await openModelConnection(page, 'agents');
   await item('agent-cwd').click();
   await item('agent-cwd-menu').waitFor();
   await leftDock('model-connection-panel');
@@ -247,29 +250,28 @@ try {
   assert.equal(await item('agent-cwd').evaluate(el => el === document.activeElement), true);
   assert.equal(await item('agent-connection-page').isVisible(), true);
   await page.keyboard.press('Escape');
-  assert.equal(await item('toolbar-more').evaluate(el => el === document.activeElement), true);
-  await item('toolbar-more').click();
-  await item('toolbar-more-panel').getByRole('button', { name: labels.agent, exact: true }).click();
+  assert.equal(await modelPicker.evaluate(el => el === document.activeElement), true);
+  await openModelConnection(page, 'agents');
   await item('agent-permission-chip').click();
   await item('agent-permission-menu').waitFor();
   await leftDock('model-connection-panel');
   await page.keyboard.press('Escape');
   assert.equal(await item('agent-permission-chip').evaluate(el => el === document.activeElement), true);
   await page.keyboard.press('Escape');
-  assert.equal(await item('toolbar-more').evaluate(el => el === document.activeElement), true);
-  await item('toolbar-more').click();
-  await item('toolbar-more-panel').getByRole('button', { name: labels.agent, exact: true }).click();
+  assert.equal(await modelPicker.evaluate(el => el === document.activeElement), true);
+  await openModelConnection(page, 'agents');
   await item('agent-cwd').click();
   await item('agent-cwd-menu').waitFor();
   assert.equal(await item('agent-cwd-input').inputValue(), '');
   await page.keyboard.press('Escape');
   await page.keyboard.press('Escape');
-  await item('toolbar-more').click();
-  await item('toolbar-more-panel').getByRole('button', { name: labels.api, exact: true }).click();
+  await openModelConnection(page, 'api');
   assert.equal(await page.locator('[data-connection-page="api"]').isVisible(), true);
+  await leftDock('model-connection-panel');
   assert.equal(await item('agent-connection-settings').count(), 0);
   await page.keyboard.press('Escape');
-  console.log('PASS separate Agent/API entries, nested settings, and transient statuses fit and remain accessible from More');
+  assert.equal(await modelPicker.evaluate(element => element === document.activeElement), true);
+  console.log('PASS narrow layouts reach both connections from model settings and return focus to the model picker');
   await page.evaluate(async () => {
     const { useProjects } = await window.__importLive('/src/store/projects.ts');
     useProjects.setState(state => ({ projects: state.projects.map(project => ({ ...project, kind: 'paradigm' })) }));

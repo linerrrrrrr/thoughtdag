@@ -241,7 +241,11 @@ try {
   }
   await blur(); await page.keyboard.press('Control+z');
   assert.deepEqual(geometry(await readNodes()), geometry(beforeFit), 'Fit is one undoable operation');
-  await commit('width', 1150);
+  await field('width').fill('1149');
+  await page.getByRole('button', { name: '增加宽度', exact: true }).click();
+  assert.deepEqual(geometry(await readNodes()), geometry(beforeFit), 'A frame nudge stays in the geometry draft');
+  await page.keyboard.press('Enter');
+  assert.equal((await readNodes())[0].width, 1150);
   assert.deepEqual(geometry((await readNodes()).slice(1)), geometry(beforeFit.slice(1)), 'Changing frame size leaves child geometry alone');
   check('fit-to-content and numeric dimensions change only frame boundaries and support undo');
 

@@ -3,10 +3,10 @@ import type { ThoughtNode, ThoughtEdge } from '../../types';
 import { documentCopyText, isEditableDocument } from '../../lib/document-copy';
 import { generateId } from '../../utils';
 import { placeNewNodes } from '../../lib/layout';
-import { getDescendantIds, selectionSinks, walkUpAncestors } from '../../lib/graph';
+import { getContextPath, getDescendantIds, selectionSinks } from '../../lib/graph';
 import { COLORS } from '../../lib/constants';
-import type { ContextMessage, ImageAttachment } from '../../lib/api';
-import { buildContext, buildIncomingContext, type MessageSource } from '../context-builder';
+import type { ContextMessage } from '../../lib/api';
+import { buildContext, buildIncomingContext } from '../context-builder';
 import { activeAbortControllers, runNodeGeneration, triggerParadigmCascade } from '../streaming';
 import { useUiStore, toast, recallSnapshot } from '../../lib/ui-store';
 // the stale set a request carries is the one the preview shows: the fingerprint's minus the judge's dismissals (#51)
@@ -17,6 +17,28 @@ import { condenseGuard } from '../../lib/condense-guard';
 import { isNotebook, notebookContext } from '../../lib/notebook';
 import { requestAgentStop } from '../../lib/agents/agent-runtime';
 import { inheritedNodeExecution } from '../../lib/node-execution';
+import { resolveNodeNumberReferences } from '../../lib/node-numbers';
+
+/** A picker mention or typed number adds the same visible reference wire. */
+function withMentionEdges(targetId: string, question: string, nodes: ThoughtNode[], edges: ThoughtEdge[], picked: string[] = []): ThoughtEdge[] {
+  const numbered = resolveNodeNumberReferences(question, nodes);
+  const wanted = new Set([...picked, ...numbered.nodes.map(node => node.id)]);
+  if (!wanted.size) return edges;
+  const upstream = new Set(getContextPath(targetId, nodes, edges).map(node => node.id));
+  const extra: ThoughtEdge[] = [];
+  for (const id of wanted) {
+    if (id === targetId || upstream.has(id) || !nodes.some(n => n.id === id && n.data.stepKind !== 'frame')) continue;
+    extra.push({
+      id: `crosslink-${id}-${targetId}`, source: id, target: targetId,
+      sourceHandle: 'branch', targetHandle: 'left', type: 'smoothstep',
+      style: { stroke: COLORS.accent, strokeDasharray: '8 4', strokeWidth: 2 },
+      animated: true, data: { isCrossLink: true, createdAt: new Date().toISOString() },
+    });
+  }
+  if (!extra.length) return edges;
+  toast('info', fmt(t('mention.wired'), { n: extra.length }), 6000);
+  return [...edges, ...extra];
+}
 
 export const createLlmSlice: StateCreator<StoreState, [], [], LlmSlice> = (set, get) => ({
   addQuestion: async (question: string, opts: AddQuestionOptions = {}) => {
@@ -75,34 +97,7 @@ export const createLlmSlice: StateCreator<StoreState, [], [], LlmSlice> = (set, 
       data: {},
     } : null;
 
-    let newEdges: ThoughtEdge[] = newEdge ? [...get().edges, newEdge] : get().edges;
-    // @-mentions: any mentioned node NOT already flowing into this one gets
-    // a real dashed reference edge — @ is the keyboard's way of drawing a
-    // wire, never an invisible injection. Ones already upstream stay pure
-    // designators (their content is in the walk; nothing double-feeds).
-    const mentionIds = (mentions ?? []).filter((mid) => mid !== id && mid !== parentId && get().nodes.some((n) => n.id === mid));
-    if (mentionIds.length > 0) {
-      const structural = newEdges.filter((e) => !e.data?.isCrossLink);
-      const upstream = parentId
-        ? new Set(walkUpAncestors(parentId, get().nodes, structural).ordered.map((n) => n.id))
-        : new Set<string>();
-      const refSources = new Set(newEdges.filter((e) => e.data?.isCrossLink && e.target === id).map((e) => e.source));
-      let wired = 0;
-      for (const mid of mentionIds) {
-        if (upstream.has(mid) || refSources.has(mid)) continue;
-        newEdges = [...newEdges, {
-          id: `crosslink-${mid}-${id}`,
-          source: mid, target: id,
-          sourceHandle: 'branch', targetHandle: 'left',
-          type: 'smoothstep',
-          style: { stroke: COLORS.accent, strokeDasharray: '8 4', strokeWidth: 2 },
-          animated: true,
-          data: { isCrossLink: true, createdAt: new Date().toISOString() },
-        }];
-        wired++;
-      }
-      if (wired > 0) toast('info', fmt(t('mention.wired'), { n: wired }), 6000);
-    }
+    const newEdges = withMentionEdges(id, question, [...get().nodes, newNode], newEdge ? [...get().edges, newEdge] : get().edges, mentions);
     // Auto-collapse parent node when creating a child
     const updatedNodes = parentId
       ? get().nodes.map((n) => n.id === parentId ? { ...n, data: { ...n.data,
@@ -170,6 +165,7 @@ export const createLlmSlice: StateCreator<StoreState, [], [], LlmSlice> = (set, 
       if (staleCount > 0) toast('info', fmt(t('toast.editMakesStale'), { n: staleCount }), 7000);
     }
     set((state) => ({
+      edges: withMentionEdges(nodeId, q, state.nodes, state.edges),
       nodes: state.nodes.map((n) =>
         n.id === nodeId ? { ...n, data: { ...n.data, question: q, askedAt: new Date().toISOString(), isEditing: false } } : n
       ),
@@ -198,6 +194,7 @@ export const createLlmSlice: StateCreator<StoreState, [], [], LlmSlice> = (set, 
       ? { webSearch: useUiStore.getState().webSearchEnabled, scholarSearch: useUiStore.getState().scholarSearchEnabled, ...recallSnapshot() }
       : {};
     set((state) => ({
+      edges: withMentionEdges(nodeId, question, state.nodes, state.edges),
       nodes: state.nodes.map((n) =>
         n.id === nodeId ? { ...n, data: {
           ...n.data,
@@ -232,7 +229,7 @@ export const createLlmSlice: StateCreator<StoreState, [], [], LlmSlice> = (set, 
     get().pushHistory();
 
     // Find a structural parent (any incoming edge) for creating sibling
-    const parentEdge = get().edges.find((e) => e.target === nodeId);
+    const parentEdge = get().edges.find((e) => e.target === nodeId && !e.data?.isCrossLink);
     const parentId = parentEdge?.source;
 
     // Create a new sibling node with the same question
@@ -259,17 +256,16 @@ export const createLlmSlice: StateCreator<StoreState, [], [], LlmSlice> = (set, 
       },
     };
 
-    const newEdges = parentId
+    const parentEdges = parentId
       ? [...get().edges, { id: `edge-${parentId}-${id}`, source: parentId, target: id, type: 'smoothstep' }]
       : get().edges;
+    const newEdges = withMentionEdges(id, node.data.question, [...get().nodes, newNode], parentEdges);
 
     const newNodes = placeNewNodes([...get().nodes, newNode], newEdges, [id]);
     set({ nodes: newNodes, edges: newEdges, selectedNodeId: id });
 
     const regenSelf = get().nodes.find((n) => n.id === id);
-    const regenCtx = parentId
-      ? buildContext(parentId, get().nodes, get().edges, regenSelf?.data.excludedAttachmentIds, regenSelf?.data.includedAttachmentIds, shownStaleIds(get()))
-      : { messages: [] as ContextMessage[], images: [] as ImageAttachment[], sources: [] as MessageSource[] };
+    const regenCtx = buildIncomingContext(id, get().nodes, get().edges, regenSelf?.data.excludedAttachmentIds, regenSelf?.data.includedAttachmentIds, shownStaleIds(get()));
     const contextMessages = regenCtx.messages;
     contextMessages.push({ role: 'user', content: node.data.question });
 

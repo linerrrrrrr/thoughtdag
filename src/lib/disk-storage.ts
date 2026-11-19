@@ -237,9 +237,10 @@ function auditAttachments(values: Map<string, unknown>): void {
       const attachments = (node as { data?: { attachments?: unknown[] } })?.data?.attachments;
       if (!Array.isArray(attachments)) continue;
       for (const item of attachments) {
-        const att = item as { id?: string; contentInVault?: boolean; editedDocxRevision?: string };
+        const att = item as { id?: string; contentInVault?: boolean; editedDocxRevision?: string; pdfFileRevision?: string };
         if (att?.contentInVault && (!att.id || !values.has(`att-content:${att.id}`))) throw new Error('An attachment source is missing');
         if (att?.editedDocxRevision && !values.has(`att-docx-revision:${att.editedDocxRevision}`)) throw new Error('A saved document revision is missing');
+        if (att?.pdfFileRevision && !values.has(`att-pdf-revision:${att.pdfFileRevision}`)) throw new Error('A saved PDF revision is missing');
       }
     }
   }

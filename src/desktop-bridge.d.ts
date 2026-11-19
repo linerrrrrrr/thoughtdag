@@ -70,6 +70,10 @@ interface DesktopAgentModel {
 }
 
 interface DesktopAgentRunRequest {
+  /** Inherit the installed runtime's permissions unless the canvas selects an override. */
+  nativePermissions?: boolean;
+  /** Per-attachment directories; the host validates them under its own managed storage root. */
+  managedFileDirs?: string[];
   /** which runtime runs the turn (default: pi) */
   runtime?: 'pi' | 'codex' | 'claude-code';
   /** absolute working directory the agent runs in */
@@ -111,6 +115,7 @@ interface DesktopAgentsBridge {
   guardWrite(cwd: string, config: { mode: 'ask' | 'auto' | 'allow'; allow: string[] }): Promise<boolean>;
   /** the canvas's materials written under <cwd>/.thoughtdag/materials */
   writeMaterials(cwd: string, files: { name: string; content: string; encoding?: 'utf8' | 'base64' }[]): Promise<{ dir: string | null; written: string[] }>;
+  managedDocument?: (request: import('./lib/managed-document-file').HostDocumentRequest) => Promise<import('./lib/managed-document-file').HostDocumentResponse>;
   /** the local backup, written by the HOST instead of the browser.
    *
    *  The File System Access API is a browser capability: it needs a handle,

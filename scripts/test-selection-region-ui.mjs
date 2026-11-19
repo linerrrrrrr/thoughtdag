@@ -294,6 +294,82 @@ try {
       await assertContextPosition(dock);
     }
   });
+  await probe('left-drag pan toggle preserves the selection and switches back to marquee', async () => {
+    await fixture();
+    const buttons = page.locator('.react-flow__controls').getByRole('button');
+    const pan = buttons.nth(4);
+    assert.equal(await buttons.count(), 5);
+    assert.equal(await buttons.nth(3).getAttribute('aria-label'), '切换画布交互锁定');
+    assert.equal(await pan.getAttribute('aria-label'), '左键平移画布');
+    assert.equal(await pan.getAttribute('aria-pressed'), 'false');
+    await lineMarquee();
+    const saved = await region();
+    const pane = page.locator('.react-flow__pane');
+    await pan.click();
+    try {
+      assert.equal(await pan.getAttribute('aria-pressed'), 'true');
+      assert.equal(await pane.evaluate(el => getComputedStyle(el).cursor), 'grab');
+      await page.locator('.react-flow__controls').screenshot({ path: `${output}/pan-active.png` });
+      for (const button of ['left', 'middle', 'right']) {
+        const before = await viewport();
+        await page.mouse.move(260, 460); await page.mouse.down({ button });
+        await page.mouse.move(308, 492, { steps: 12 }); await page.mouse.up({ button });
+        const after = await viewport();
+        near(after.x, before.x + 48, `${button} pan x`); near(after.y, before.y + 32, `${button} pan y`);
+        assert.equal(after.zoom, before.zoom);
+        await selected([], ['ab']); await assertProjection(saved);
+      }
+    } finally {
+      await pan.press('Enter');
+    }
+    assert.equal(await pan.getAttribute('aria-pressed'), 'false');
+    assert.equal(await pane.evaluate(el => getComputedStyle(el).cursor), 'crosshair');
+    await page.mouse.click(260, 460);
+    const camera = await viewport();
+    await lineMarquee();
+    assert.deepEqual(await viewport(), camera);
+  });
+  await probe('canvas navigation buttons share feedback and distinguish enabled modes', async () => {
+    await fixture();
+    const buttons = await page.locator('.react-flow__controls').getByRole('button').all();
+    assert.equal(buttons.length, 5);
+    const paint = button => button.evaluate(async el => {
+      await Promise.all(el.getAnimations().map(animation => animation.finished));
+      const icon = getComputedStyle(el.querySelector('svg'));
+      return { ink: icon.stroke === 'none' ? icon.fill : icon.stroke, background: getComputedStyle(el).backgroundColor };
+    });
+    const samples = [];
+    for (const button of buttons) {
+      await page.mouse.move(260, 460);
+      const rest = await paint(button);
+      await button.hover();
+      const hover = await paint(button);
+      await page.mouse.down();
+      const down = await paint(button);
+      // Release outside so sampling feedback does not execute the action.
+      await page.mouse.move(260, 460); await page.mouse.up();
+      samples.push({ rest, hover, down });
+    }
+    for (const sample of samples.slice(1)) assert.deepEqual(sample, samples[0]);
+    assert.notDeepEqual(samples[0].rest, samples[0].hover);
+    assert.notDeepEqual(samples[0].hover, samples[0].down);
+    const lock = buttons[3], pan = buttons[4];
+    await lock.click(); await pan.click(); await page.mouse.move(260, 460);
+    try {
+      const on = await paint(lock);
+      assert.notDeepEqual(on, samples[0].hover);
+      for (const toggle of [lock, pan]) {
+        assert.equal(await toggle.getAttribute('aria-pressed'), 'true');
+        await toggle.hover();
+        assert.deepEqual(await paint(toggle), on, 'both modes retain the enabled color on hover');
+      }
+      await lock.click(); await page.mouse.move(260, 460);
+      assert.deepEqual(await paint(lock), samples[0].rest);
+      assert.deepEqual(await paint(pan), on, 'unlocking preserves pan feedback');
+    } finally {
+      for (const toggle of [lock, pan]) if (await toggle.getAttribute('aria-pressed') === 'true') await toggle.click();
+    }
+  });
   await probe('live line values survive object type switches and layered Escape', async () => {
     await fixture(true); await mixedMarquee(); await choose('edges'); await selected([], ['ab', 'cd']);
     const saved = await region();

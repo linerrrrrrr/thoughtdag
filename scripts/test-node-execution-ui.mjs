@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { chromium } from 'playwright-core';
+import { initNodePickerFixture, installNodeAgentCatalog } from './fixtures/node-picker.mjs';
 
 const appUrl = new URL(process.env.APP_URL ?? 'http://127.0.0.1:5174');
 const executablePath = process.env.CHROME_PATH ?? ['C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe', 'C:/Program Files/Google/Chrome/Application/chrome.exe'].find(existsSync);
@@ -30,44 +31,54 @@ await page.route('**/*', route => {
   }
   return route.continue();
 });
-await context.addInitScript(() => {
-  localStorage.setItem('thoughtdag.seeded', 'yes');
-  localStorage.setItem('thoughtdag.tutorialDone', '1');
-  localStorage.setItem('thoughtdag.lang', 'zh');
-});
+await context.addInitScript(initNodePickerFixture);
 const id = 'node-execution-fixture';
 const card = () => page.locator(`.react-flow__node[data-id="${id}"]`);
 const picker = () => card().locator('[data-node-execution-picker]');
+const panel = page.locator('[data-model-picker-panel]');
 const data = () => page.evaluate(id => window.__store.getState().nodes.find(n => n.id === id).data, id);
 const settle = () => page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+const recheck = () => page.evaluate(async () => (await window.__importLive('/src/lib/use-models.ts')).recheckAgents());
 const pass = label => { checks.push(label); console.log('PASS', label); };
 try {
   await page.goto(appUrl.href, { waitUntil: 'networkidle' });
   await page.waitForFunction(() => window.__store?.persist.hasHydrated() && window.__rf);
   await page.evaluate(async ({ id, catalog }) => {
-    const { useUiStore } = await import('/src/lib/ui-store.ts');
-    const { setModelsCache } = await import('/src/lib/use-models.ts');
-    (await import('/src/i18n/index.ts')).useI18n.getState().setLang('zh');
+    const useUiStore = window.__ui;
+    const { setModelsCache } = await window.__importLive('/src/lib/use-models.ts');
+    (await window.__importLive('/src/i18n/index.ts')).useI18n.getState().setLang('zh');
     setModelsCache(catalog);
     useUiStore.getState().setSelectedModel('api-test');
     useUiStore.getState().setTutorialOpen(false);
     useUiStore.getState().setReleaseNotesOpen(false);
     useUiStore.getState().setPanelOpen(false);
-    window.__store.getState().setNodes([{ id, type: 'thought', width: 520, position: { x: 0, y: 0 }, data: {
+    window.__store.getState().setNodes([{ id, type: 'thought', width: 520, dragHandle: '.drag-handle', position: { x: 0, y: 0 }, data: {
       executionKind: 'api', question: '', response: '', responses: [], responseIndex: -1,
       isCollapsed: false, isEditing: true, questionEditor: 'canvas', isEditingResponse: false, isLoading: false,
       detailLevel: 'full', tokenCount: 0, highlights: [], highlightMode: 'tag', attachments: [], excludedAttachmentIds: [], includedAttachmentIds: [],
     } }]);
+    window.__store.getState().setSelectedNodeId(id);
     window.__store.getState().setEdges([]);
     window.__rf.setViewport({ x: 100, y: 150, zoom: 1 }, { duration: 0 });
   }, { id, catalog });
   await picker().waitFor();
   await page.waitForTimeout(400);
   await page.evaluate(() => window.__rf.setViewport({ x: 100, y: 150, zoom: 1 }, { duration: 0 }));
+  const codexOption = picker().locator('[data-node-execution-option="codex"]');
+  assert.equal(await codexOption.count(), 0);
+  await picker().locator('[data-model-picker-trigger]').press('Enter');
+  await panel.getByText('API test model', { exact: true }).waitFor();
+  assert.equal(await panel.locator('[data-runtime-group]').count(), 0);
+  await page.keyboard.press('Escape');
+  await page.evaluate(installNodeAgentCatalog, catalog.models);
+  await page.evaluate(async catalog => (await window.__importLive('/src/lib/use-models.ts')).setModelsCache({ ...catalog, agentsPending: true }), catalog);
+  await settle();
+  assert.equal(await codexOption.count(), 0);
+  await recheck();
+  pass('Absent bridges and unverified catalog entries leave only API available until discovery confirms the runtime.');
   await picker().locator('[data-node-execution-option="codex"]').click();
   assert.equal((await data()).executionKind, 'codex');
   await picker().locator('[data-model-picker-trigger]').click();
-  const panel = page.locator('[data-model-picker-panel]');
   await panel.waitFor({ state: 'visible' });
   await panel.getByText('test-model', { exact: true }).waitFor({ state: 'visible' });
   assert.ok((await panel.textContent()).includes('test-model'));
@@ -77,7 +88,7 @@ try {
   assert.equal(await panel.count(), 0);
   assert.equal((await data()).question, '');
   pass('Codex type filters the catalog; Escape closes only the model menu without sending.');
-  await page.evaluate(async () => (await import('/src/lib/ui-store.ts')).useUiStore.getState().setSelectedModel('api-test'));
+  await page.evaluate(() => window.__ui.getState().setSelectedModel('api-test'));
   assert.equal((await data()).executionKind, 'codex');
   await picker().locator('[data-node-execution-option="api"]').click();
   await picker().locator('[data-model-picker-trigger]').click();
@@ -93,7 +104,7 @@ try {
   assert.equal((await data()).executionKind, 'api');
   pass('Type selection is one undoable change.');
   const child = await page.evaluate(async id => {
-    const { createQuestionDraft } = await import('/src/lib/question-draft.ts');
+    const { createQuestionDraft } = await window.__importLive('/src/lib/question-draft.ts');
     const childId = createQuestionDraft({ parentId: id, position: { x: 620, y: 0 } });
     const first = window.__store.getState().nodes.find(n => n.id === childId).data.executionKind;
     window.__store.getState().setNodeExecutionKind(childId, 'codex');
@@ -108,7 +119,7 @@ try {
   assert.equal(await panel.count(), 0);
   assert.equal(await card().locator('[data-canvas-question-editor]').inputValue(), 'Draft survives model dismissal');
   pass('Outside dismissal preserves the unsent question draft.');
-  await page.evaluate(async () => (await import('/src/lib/use-models.ts')).setModelsCache({ default: 'codex/codex/test-model', agentsPending: true, models: [{ id: 'codex/codex/test-model', name: 'Codex · test-model', provider: '__agent__', vision: false }] }));
+  await page.evaluate(async () => (await window.__importLive('/src/lib/use-models.ts')).setModelsCache({ default: 'codex/codex/test-model', agentsPending: true, models: [{ id: 'codex/codex/test-model', name: 'Codex · test-model', provider: '__agent__', vision: false }] }));
   await page.evaluate(() => window.__rf.setViewport({ x: 100, y: 150, zoom: 1 }, { duration: 0 }));
   await settle();
   await picker().locator('[data-model-picker-trigger]').click();
@@ -116,13 +127,14 @@ try {
   assert.ok((await panel.textContent()).includes('API'));
   await page.keyboard.press('Escape');
   pass('Missing API models show a setup action instead of silently using Codex.');
-  await page.evaluate(async catalog => (await import('/src/lib/use-models.ts')).setModelsCache(catalog), catalog);
-  await page.evaluate(async () => { document.documentElement.dataset.theme = 'light'; (await import('/src/i18n/index.ts')).useI18n.getState().setLang('zh'); window.__rf.setViewport({ x: 100, y: 150, zoom: 1 }, { duration: 0 }); });
+  await page.evaluate(async catalog => (await window.__importLive('/src/lib/use-models.ts')).setModelsCache(catalog), catalog);
+  await recheck();
+  await page.evaluate(async () => { document.documentElement.dataset.theme = 'light'; (await window.__importLive('/src/i18n/index.ts')).useI18n.getState().setLang('zh'); window.__rf.setViewport({ x: 100, y: 150, zoom: 1 }, { duration: 0 }); });
   await settle();
   await page.waitForTimeout(500);
   assert.equal(await picker().locator('[data-node-execution-option="api"]').innerText(), 'API 聊天');
   await page.screenshot({ path: `${out}/light-zh.png`, animations: 'disabled' });
-  await page.evaluate(async () => { document.documentElement.dataset.theme = 'dark'; (await import('/src/i18n/index.ts')).useI18n.getState().setLang('en'); });
+  await page.evaluate(async () => { document.documentElement.dataset.theme = 'dark'; (await window.__importLive('/src/i18n/index.ts')).useI18n.getState().setLang('en'); });
   await page.setViewportSize({ width: 900, height: 800 });
   await page.evaluate(() => window.__rf.setViewport({ x: 40, y: 150, zoom: .8 }, { duration: 0 }));
   await settle();
@@ -134,25 +146,40 @@ try {
     window.__originalEditQuestion = window.__store.getState().editQuestion;
     window.__store.setState({ editQuestion: (nodeId, question) => { window.__nodeExecutionSends.push({ nodeId, question, executionKind: window.__store.getState().nodes.find(n => n.id === nodeId).data.executionKind }); } });
     window.__store.setState(s => ({ nodes: s.nodes.map(n => n.id === id ? { ...n, data: { ...n.data, isEditing: true, questionEditor: 'panel' } } : n), selectedNodeId: id, selectedNodeIds: [id] }));
-    (await import('/src/lib/ui-store.ts')).useUiStore.getState().setPanelOpen(true, id);
+    window.__ui.getState().setPanelOpen(true, id);
   }, id);
   const focus = page.locator('[data-focus-panel]');
   const focusPicker = focus.locator('[data-node-execution-picker]');
   await focusPicker.locator('[data-node-execution-option="codex"]').click();
   await focus.locator('[data-conversation-question] textarea').fill('Panel draft stays here');
   await focusPicker.locator('[data-model-picker-trigger]').click();
+  await page.evaluate(installNodeAgentCatalog, []);
+  await recheck();
+  await panel.waitFor({ state: 'detached' });
+  assert.equal(await codexOption.count(), 0);
+  assert.equal(await focusPicker.locator('[data-node-execution-option="codex"], [data-model-picker-trigger]').count(), 0);
+  assert.equal((await data()).executionKind, 'codex');
+  assert.equal(await focus.locator('[data-conversation-question] textarea').inputValue(), 'Panel draft stays here');
+  await focusPicker.locator('[data-node-execution-option="api"]').click();
+  await focusPicker.locator('[data-model-picker-trigger]').click();
+  await panel.getByText('API test model', { exact: true }).waitFor();
   await page.keyboard.press('Escape');
+  await page.evaluate(installNodeAgentCatalog, catalog.models);
+  await recheck();
+  await focusPicker.locator('[data-node-execution-option="codex"]').waitFor();
+  assert.equal((await data()).executionKind, 'api');
+  pass('Disconnecting closes the open agent menu and preserves the draft; API stays usable and reconnecting restores the option.');
   assert.equal(await focus.count(), 1);
   assert.equal(await focus.locator('[data-conversation-question] textarea').inputValue(), 'Panel draft stays here');
   await focusPicker.locator('[data-node-execution-option="api"]').click();
   const questionInput = focus.locator('[data-conversation-question] textarea');
   await questionInput.fill('Panel line one');
   await questionInput.press('End');
-  await questionInput.press('Enter');
+  await questionInput.press('Shift+Enter');
   await questionInput.press('x');
   assert.equal(await questionInput.inputValue(), 'Panel line one\nx');
   assert.equal(await page.evaluate(() => window.__nodeExecutionSends.length), 0);
-  await questionInput.evaluate(input => input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, isComposing: true, bubbles: true })));
+  await questionInput.evaluate(input => input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', isComposing: true, bubbles: true })));
   assert.equal(await page.evaluate(() => window.__nodeExecutionSends.length), 0);
   await settle();
   await page.screenshot({ path: `${out}/panel-dark-en.png`, animations: 'disabled' });
@@ -169,9 +196,9 @@ try {
   await questionInput.fill('Keep on Escape');
   await questionInput.press('Escape');
   assert.equal(await page.evaluate(() => window.__nodeExecutionSends.length), 3);
-  assert.equal(await page.evaluate(async id => (await import('/src/lib/ui-store.ts')).useUiStore.getState().drafts[`question-edit:${id}`], id), 'Keep on Escape');
-  await page.evaluate(async () => { window.__store.setState({ editQuestion: window.__originalEditQuestion }); (await import('/src/lib/ui-store.ts')).useUiStore.getState().setPanelOpen(false); });
-  pass('The reading panel switches type, keeps Enter/IME/Esc unsent, and sends only via its button or Ctrl/Meta+Enter with the chosen type.');
+  assert.equal(await page.evaluate(id => window.__ui.getState().drafts[`question-edit:${id}`], id), 'Keep on Escape');
+  await page.evaluate(() => { window.__store.setState({ editQuestion: window.__originalEditQuestion }); window.__ui.getState().setPanelOpen(false); });
+  pass('The reading panel preserves line breaks and IME input and sends with the chosen execution type via its button or Ctrl/Meta+Enter.');
   const versionState = await page.evaluate(id => {
     window.__store.setState(s => ({ nodes: s.nodes.map(n => n.id === id ? { ...n, data: { ...n.data, agentSession: { runtime: 'codex', threadId: 'fixture' }, codexHistories: [{ threadId: 'v1' }, { threadId: 'v2' }] } } : n) }));
     window.__store.getState().setNodeExecutionKind(id, 'codex');

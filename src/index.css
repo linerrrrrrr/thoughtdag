@@ -524,9 +524,11 @@ body { zoom: var(--ui-scale); }
 }
 .canvas-map-dock { bottom: var(--spacing-canvas-inset); }
 .canvas-timeline {
+  --palette-offset: calc(var(--spacing-control-size) * 2 + var(--spacing-surface-inset) * 2);
+  --controls-height: calc(5 * var(--spacing-control-size) + 4 * var(--spacing-control-gap) + 2 * var(--spacing-toolbar-inset) + 2px);
   left: var(--spacing-canvas-inset);
-  top: calc(38% + var(--spacing-control-size) * 2 + var(--spacing-surface-inset) * 2);
-  max-height: max(0px, calc(62% - 270px));
+  top: calc(38% + var(--palette-offset));
+  max-height: max(0px, calc(62% - var(--palette-offset) - var(--controls-height) - var(--spacing-canvas-inset)));
 }
 .canvas-timeline > button { flex-shrink: 0; }
 
@@ -535,6 +537,10 @@ body { zoom: var(--ui-scale); }
 }
 
 .react-flow__controls {
+  --xy-controls-button-background-color: transparent;
+  --xy-controls-button-background-color-hover: var(--color-wash);
+  --xy-controls-button-color: var(--color-ink-muted);
+  --xy-controls-button-color-hover: var(--color-ink);
   background: var(--color-card) !important;
   border: 1px solid var(--color-line) !important;
   border-radius: var(--radius-overlay) !important;
@@ -546,21 +552,25 @@ body { zoom: var(--ui-scale); }
   gap: var(--spacing-control-gap);
 }
 
-.react-flow__controls-button {
-  background: var(--color-card) !important;
-  border-color: var(--color-line) !important;
-  fill: var(--color-ink-muted) !important;
-  width: var(--spacing-control-size) !important;
-  height: var(--spacing-control-size) !important;
-  padding: var(--spacing-toolbar-inset) !important;
-  border: 0 !important;
-  border-radius: var(--radius-control) !important;
+.react-flow .react-flow__controls-button {
+  width: var(--spacing-control-size);
+  height: var(--spacing-control-size);
+  padding: var(--spacing-toolbar-inset);
+  border: 0;
+  border-radius: var(--radius-control);
+  transition: color 0.15s, background-color 0.15s;
 }
 .react-flow__controls-button svg { width: 16px; height: 16px; max-width: 16px; max-height: 16px; }
+.react-flow__controls-button .lucide { fill: none; }
 
-.react-flow__controls-button:hover {
-  background: var(--color-wash) !important;
-  fill: var(--color-accent) !important;
+.react-flow__controls-button[aria-pressed="true"] {
+  --xy-controls-button-background-color: color-mix(in srgb, var(--color-accent) 9%, transparent);
+  --xy-controls-button-background-color-hover: var(--xy-controls-button-background-color);
+  --xy-controls-button-color: var(--color-accent);
+  --xy-controls-button-color-hover: var(--xy-controls-button-color);
+}
+.react-flow .react-flow__controls-button:enabled:active {
+  background-color: color-mix(in srgb, currentColor 16%, transparent);
 }
 
 .react-flow__minimap {
@@ -672,8 +682,8 @@ textarea[class*='outline-none']:focus-visible { outline: none; }
 }
 
 /* The first question is one input surface with its own aligned action row. */
-.thought-node[data-awaiting-ask] > [data-thought-body] { display: flex; flex-direction: column; }
-.thought-node[data-awaiting-ask] > [data-thought-body] > [data-node-name] { flex-shrink: 0; }
+.thought-node[data-awaiting-ask] [data-thought-body] { display: flex; flex-direction: column; }
+.thought-node[data-awaiting-ask] [data-thought-body] > [data-node-name] { flex-shrink: 0; }
 .node-question-composer {
   display: flex;
   flex-direction: column;

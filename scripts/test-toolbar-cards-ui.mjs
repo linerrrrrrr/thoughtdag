@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
 import { chromium } from 'playwright-core';
+import { openModelConnection } from './fixtures/canvas-model-picker.mjs';
 
 const executablePath = process.env.CHROME_PATH ?? [
   'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe', '/usr/bin/chromium',
@@ -60,7 +61,7 @@ const selectConnection = async () => {
   await one('selection-properties');
 };
 const openConnection = async () => {
-  await page.locator('[data-connection-entry="providers"]').click();
+  await openModelConnection(page, 'api');
   await one('model-connection-panel');
 };
 try {
@@ -93,8 +94,8 @@ try {
     window.__store.getState().setSelectedNodeId('a');
   });
   await one('selection-properties');
-  assert.equal(await card('project-switcher').locator('[data-model-picker-trigger]').count(), 0);
-  assert.equal(await card('project-switcher').locator('[data-connection-entry]').count(), 2);
+  assert.equal(await card('project-switcher').locator('[data-model-picker-trigger]').count(), 1);
+  assert.equal(await card('project-switcher').locator('[data-connection-entry]').count(), 0);
   assert.equal(await card('top-toolbar').locator('[data-model-picker-trigger]').count(), 0);
   for (const entry of ['search-entry', 'chat-entry', 'frame-nav-trigger', 'canvas-detail-trigger', 'toolbar-more']) {
     assert.equal(await card('project-switcher').locator(`[data-${entry}]`).count(), 0, entry);

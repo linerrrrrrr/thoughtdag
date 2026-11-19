@@ -515,11 +515,12 @@ function agentsRuntime(name = 'pi') {
 }
 const runOwners = new Map(); // runId → runtime name
 
-const workspaceFor = (canvasId) => agentOps.workspaceFor(
-  path.join(process.env.THOUGHTDAG_HOME || app.getPath('userData'), 'workspaces'), canvasId,
-);
+const agentWorkspaceRoot = path.join(process.env.THOUGHTDAG_HOME || app.getPath('userData'), 'workspaces');
+const workspaceFor = (canvasId) => agentOps.workspaceFor(agentWorkspaceRoot, canvasId);
+const documentFile = require(path.join(RUNTIME_DIR, 'managed-documents.cjs')).createManagedDocuments(agentWorkspaceRoot);
 
 function setupAgents() {
+  ipcMain.handle('agents:document', (_event, request) => documentFile(request));
   ipcMain.handle('agents:available', async () => {
     const out = {};
     for (const name of Object.keys(RUNTIME_FACTORIES)) out[name] = await agentsRuntime(name).available().catch(() => null);
@@ -531,7 +532,9 @@ function setupAgents() {
   ipcMain.handle('agents:run', async (_e, req) => {
     const r = req && typeof req === 'object' ? req : {};
     const name = RUNTIME_FACTORIES[r.runtime] ? r.runtime : 'pi';
-    const runId = await agentsRuntime(name).run(r, (payload) => { if (win && !win.isDestroyed()) win.webContents.send('agents:event', payload); });
+    const { prepareManagedRun } = require(path.join(RUNTIME_DIR, 'managed-documents.cjs'));
+    const request = await prepareManagedRun(agentWorkspaceRoot, r);
+    const runId = await agentsRuntime(name).run(request, (payload) => { if (win && !win.isDestroyed()) win.webContents.send('agents:event', payload); });
     runOwners.set(runId, name);
     return runId;
   });

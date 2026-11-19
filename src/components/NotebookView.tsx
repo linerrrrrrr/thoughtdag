@@ -29,15 +29,16 @@ export function NotebookView({ att }: { att: Attachment }) {
   const [nb, setNb] = useState<ParsedNotebook | null>(null);
   const [failed, setFailed] = useState(false);
 
-  // keyed by attachment id in the reader: one load per instance
   useEffect(() => {
     let dead = false;
+    setFailed(false);
+    setNb(null);
     loadAttachmentContent(att)
       .then((raw) => { if (!dead) setNb(parseNotebook(raw)); })
       .catch(() => { if (!dead) setFailed(true); });
     return () => { dead = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [att.id, att.nodeFileRevision]);
 
   // no original to hand (a shared viewer, a cleared vault): the converted copy still reads
   if (failed) {

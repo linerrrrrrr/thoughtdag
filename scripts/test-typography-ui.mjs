@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { chromium } from 'playwright-core';
+import { screenFont } from './fixtures/screen-font.mjs';
 
 const executablePath = process.env.CHROME_PATH ?? [
   'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',
@@ -154,34 +155,18 @@ try {
 
   await patch({ detailLevel: 'summary' });
   await zoom(.6);
-  await page.waitForFunction(() => {
-    const name = document.querySelector('.node-summary-name');
-    return name && Math.abs(window.__rf.getZoom() - .6) < .001 && Math.abs(parseFloat(getComputedStyle(name).fontSize) * .6 - 16) < .1;
-  });
-  const summarySizes = await node().evaluate(element => ({
-    zoom: window.__rf.getZoom(),
-    cssZoom: getComputedStyle(element).getPropertyValue('--tdag-zoom'),
-    name: parseFloat(getComputedStyle(element.querySelector('.node-summary-name')).fontSize) * .6,
-    preview: parseFloat(getComputedStyle(element.querySelector('.node-summary-text')).fontSize) * .6,
-  }));
-  assert.ok(Math.abs(summarySizes.name - 16) < .1, JSON.stringify(summarySizes));
-  assert.ok(Math.abs(summarySizes.preview - 14) < .1, JSON.stringify(summarySizes));
+  const summarySizes = {
+    name: await screenFont(node().locator('.node-summary-name')),
+    preview: await screenFont(node().locator('.node-summary-text')),
+  };
+  assert.ok(Math.abs(summarySizes.name - 12) < .1, JSON.stringify(summarySizes));
+  assert.ok(Math.abs(summarySizes.preview - 10.5) < .1, JSON.stringify(summarySizes));
   await screenshot('summary-60-percent');
   await patch({ detailLevel: 'compact' });
   await zoom(.3);
-  await page.waitForFunction(() => {
-    const name = document.querySelector('.node-overview--compact .node-overview-name');
-    return name && Math.abs(window.__rf.getZoom() - .3) < .001 && Math.abs(parseFloat(getComputedStyle(name).fontSize) * .3 - 12) < .1;
-  });
-  const compact = await node().locator('.node-overview-name').evaluate(element => ({
-    font: getComputedStyle(element).fontSize,
-    scale: getComputedStyle(element).getPropertyValue('--overview-scale'),
-    cssZoom: getComputedStyle(element).getPropertyValue('--tdag-zoom'),
-    zoom: window.__rf.getZoom(),
-  }));
-  measurements.push({ label: 'summary at 60%', ...summarySizes }, { label: 'compact at 30%', ...compact });
-  assert.ok(Math.abs(compact.zoom - .3) < .001);
-  assert.ok(Math.abs(parseFloat(compact.font) * compact.zoom - 12) < .1, `Compact name screen size: ${JSON.stringify(compact)}`);
+  const compact = await screenFont(node().locator('.node-overview--compact .node-overview-name'));
+  measurements.push({ label: 'summary at 60%', ...summarySizes }, { label: 'compact at 30%', name: compact });
+  assert.ok(Math.abs(compact - 10.5) < .1, `Compact name screen size: ${compact}`);
   await screenshot('compact-30-percent');
   check('Summary and compact names retain bounded screen-space typography at 60% and 30% zoom');
   await patch({ detailLevel: 'full' });

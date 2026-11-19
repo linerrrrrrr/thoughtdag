@@ -47,15 +47,22 @@ export function getNodeContentHeightLimit(nodeId: string, width?: number): numbe
 /** Full-detail height once both panes fit their own content without blank share. */
 export function measureConversationContentHeight(root: HTMLElement | null, width?: number): number | undefined {
   if (!root?.isConnected || root.dataset.nodeDetailLevel !== 'full') return;
-  if (width !== undefined && Number.isFinite(width) && width > 0 && Math.abs(root.offsetWidth - width) > 1) {
-    // Measure wrapping at the requested width synchronously, then restore the
-    // visible layout before the browser paints or notifies resize observers.
-    const previousWidth = root.style.width;
-    try {
-      root.style.width = `${width}px`;
-      return measureConversationContentHeight(root);
-    } finally { root.style.width = previousWidth; }
+  const changeWidth = width !== undefined && Number.isFinite(width) && width > 0 && Math.abs(root.offsetWidth - width) > 1;
+  const previousWidth = root.style.width;
+  // Graph dimensions use the standard logical type size even when the current
+  // viewport, including a restored viewport on first mount, reflows the text.
+  // Restore both inputs before paint and the next resize observer delivery.
+  root.dataset.measureContentHeight = '';
+  try {
+    if (changeWidth) root.style.width = `${width}px`;
+    return readConversationContentHeight(root);
+  } finally {
+    if (changeWidth) root.style.width = previousWidth;
+    delete root.dataset.measureContentHeight;
   }
+}
+
+function readConversationContentHeight(root: HTMLElement): number | undefined {
   const split = root.querySelector<HTMLElement>('[data-conversation-split="node"]');
   const question = split?.querySelector<HTMLElement>('[data-conversation-split-question]');
   const answer = split?.querySelector<HTMLElement>('[data-conversation-split-answer]');
@@ -71,6 +78,12 @@ export function measureConversationContentHeight(root: HTMLElement | null, width
   const answerHeight = Math.max(answerContent.offsetHeight, answerContent.scrollHeight);
   const readingHeight = questionHeight + answerHeight + divider.offsetHeight;
   let chromeHeight = root.offsetHeight - split.offsetHeight;
+  // A fixed intake may leave a short reading column. Its outer scroller keeps
+  // controls reachable; include the offscreen chrome in explicit resize limits.
+  if (root.dataset.connectionLayout) {
+    const content = root.querySelector<HTMLElement>(':scope > .conversation-node-content');
+    if (content) chromeHeight += Math.max(0, content.scrollHeight - content.clientHeight);
+  }
   // Expanded highlights may shrink before the reading area. Restore their
   // normal bounded height when computing the surrounding fixed sections.
   const highlights = root.querySelector<HTMLElement>('[data-node-highlights]');

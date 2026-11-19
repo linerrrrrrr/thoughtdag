@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import { documentBrowser, chooseFixtureOriginal } from './fixtures/original-file-browser.mjs';
+import { documentBrowser } from './fixtures/original-file-browser.mjs';
 import { createSuperdocFixture, inspectDocx } from './fixtures/superdoc-fixture.mjs';
 
 const output = 'local-tests/superdoc';
@@ -164,12 +164,12 @@ try {
 
   const originalPath = `${output}/${fixtures[0].data.attachments[0].name}`;
   await writeFile(originalPath, sources[0].buffer);
-  await chooseFixtureOriginal(page, originalPath);
+  await page.evaluate(() => { window.showOpenFilePicker = () => { throw new Error('Unexpected external file request'); }; });
   await canvasNode(1).locator('[data-superdoc-save]').click();
   await page.waitForFunction(() => !!window.__store.getState().nodes.find(node => node.id === 'superdoc-node-1').data.attachments[0].editedDocxRevision);
   assert.ok(await page.evaluate(() => window.__store.getState().nodes.find(node => node.id === 'superdoc-node-1').data.attachments[0].editedText?.includes('ALPHA-EDIT')));
   assert.equal(await root(1).getAttribute('data-superdoc-ready'), 'true');
-  await verifyExport(originalPath, sources[0], 'ALPHA-EDIT');
+  assert.deepEqual(await readFile(originalPath), sources[0].buffer);
   const [editedDownload] = await Promise.all([page.waitForEvent('download'), canvasNode(1).locator('[data-superdoc-export]').click()]);
   const editedFile = `${output}/edited-1.docx`;
   await editedDownload.saveAs(editedFile);
@@ -179,7 +179,7 @@ try {
     return loadAttachmentContent(window.__store.getState().nodes.find(node => node.id === 'superdoc-node-1').data.attachments[0]);
   });
   assert.equal(originalPreserved, sources[0].buffer.toString('base64'));
-  check('Explicit save writes the source path with its original layout and retains a separate import snapshot');
+  check('Explicit save keeps the layout in the node and leaves the source file untouched');
 
   const firstText = await documentText(1);
   await root(2).locator('[data-superdoc-scroll]').click({ position: { x: 180, y: 90 } });
@@ -273,10 +273,9 @@ try {
 
   const secondOriginal = `${output}/${fixtures[1].data.attachments[0].name}`;
   await writeFile(secondOriginal, sources[1].buffer);
-  await chooseFixtureOriginal(page, secondOriginal);
   await page.locator('[data-docx-save]').click();
   await page.waitForFunction(() => !window.__docxTestSessions[1].dirty);
-  await verifyExport(secondOriginal, sources[1], 'BRAVO-EDIT');
+  assert.deepEqual(await readFile(secondOriginal), sources[1].buffer);
   const englishNode = structuredClone(fixtures[1]);
   englishNode.id = 'english-preview'; englishNode.position = { x: 100, y: 90 };
   englishNode.data.attachments[0] = { ...englishNode.data.attachments[0], id: 'english-preview-att', name: 'Document layout.docx',

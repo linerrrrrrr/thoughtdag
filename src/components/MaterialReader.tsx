@@ -19,6 +19,8 @@ import { NotebookView } from './NotebookView';
 import { isNotebook } from '../lib/notebook';
 import { documentCopyText, hasNativeDocxSource, isEditableDocument, isDocxDocument } from '../lib/document-copy';
 import DocumentRichBody from './DocumentRichBody';
+import { StreamingFileText } from './FileTextPreview';
+import { previewTextParts, useFileEditPreview } from '../lib/document-edit-preview';
 import DocumentOriginalButton from './DocumentOriginalButton';
 import SearchToggles from './ui/SearchToggles';
 import HighlighterButton from './ui/HighlighterButton';
@@ -132,7 +134,7 @@ function ReaderOverlay({ node, onLocate, dock, activeAttachment }: { node: Thoug
   useDismissableLayer({ dismissOnFocusOutside: true, open: pickerOpen, refs: [pickerRef], onDismiss: () => setPickerOpen(false) });
   // Plain thought nodes carrying a PDF read as files too — the reading
   // loop belongs to the material, not to the node kind.
-  const kind = data.stepKind === 'file' || (!data.stepKind && (data.attachments ?? []).some((a) => a.type === 'application/pdf'))
+  const kind = activeAttachment || data.stepKind === 'file' || (!data.stepKind && (data.attachments ?? []).some((a) => a.type === 'application/pdf'))
     ? 'file' : data.stepKind === 'link' ? 'link' : 'note';
   const attachments = useMemo(() => activeAttachment ? [activeAttachment] : data.attachments ?? [], [activeAttachment, data.attachments]);
   const attachmentOptions = data.attachments ?? [];
@@ -179,6 +181,8 @@ function ReaderOverlay({ node, onLocate, dock, activeAttachment }: { node: Thoug
     }
     return data.question;
   }, [documentAttachment, kind, attachments, data.question]);
+  const stream = useFileEditPreview(projectId, node.id, attachments.length === 1 ? attachments[0].id : '');
+  const previewParts = !documentAttachment ? previewTextParts(textBody, stream) : null;
   const sections = useMemo(() => splitByPageMarks(textBody), [textBody]);
   // Highlights on the MATERIAL's own text (markdown files, notes, extracted
   // PDF copy) — same data shape as answer highlights, stored on the
@@ -1006,7 +1010,7 @@ function ReaderOverlay({ node, onLocate, dock, activeAttachment }: { node: Thoug
                     <SuperDocEditor nodeId={node.id} attachment={nativeDocx} readOnly={isViewerMode} />
                     </Suspense>
                   : <DocumentRichBody attachment={editableAttachment} />
-              ) : textBody.trim() === '' ? (
+              ) : previewParts ? <StreamingFileText parts={previewParts} /> : textBody.trim() === '' ? (
                 htmlAtt?.isExtracting ? (
                   <div className="flex items-center justify-center gap-2 py-16 text-control text-ink-muted">
                     <Loader2 size={16} strokeWidth={1.75} className="animate-spin text-accent" /> {t('reader.loading')}

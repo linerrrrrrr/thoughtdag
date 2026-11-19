@@ -116,7 +116,7 @@ try {
   await openPanel();
   const question = '看不懂这是什么意思';
   await canvasInput().fill(question);
-  await sendApi(() => card().locator('[data-ask-submit]').click());
+  await sendApi(() => canvasInput().press('Enter'));
   await canvasInput('other-input').fill('继续编辑其他问题');
   await finishApi('error');
   await waitFailed();
@@ -143,15 +143,15 @@ try {
     }));
   });
   await panelInput().press('End');
-  await panelInput().press('Enter');
+  await panelInput().press('Shift+Enter');
   assert.equal(await canvasInput().inputValue(), `${question}\n`);
   await page.mouse.click(900, 850);
   assert.equal(await canvasInput().inputValue(), `${question}\n`);
   assert.equal(sends.length, 1);
-  pass('Shared empty drafts, close/reopen, Escape, outside clicks, Enter and IME never submit');
+  pass('Shared empty drafts, close/reopen, Escape, outside clicks, Shift+Enter and IME never submit');
 
   await panelInput().fill(question);
-  await sendApi(() => panelInput().press('Control+Enter'));
+  await sendApi(() => panelInput().press('Enter'));
   assert.equal(sends.at(-1).messages.at(-1).content, question);
   await finishApi('empty');
   await waitFailed();

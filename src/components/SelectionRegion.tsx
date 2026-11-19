@@ -6,7 +6,7 @@ import { useCanvasEditing } from '../lib/canvas-editing';
 import { useDismissableLayer } from '../lib/use-dismissable-layer';
 import { useT } from '../i18n';
 import SelectionTargetControl from './SelectionTargetControl';
-import { partitionSpatialSelection } from '../lib/canvas-selection';
+import { isCanvasPanTarget, partitionSpatialSelection } from '../lib/canvas-selection';
 import './SelectionResizeControls.css';
 
 /** A confirmed marquee is a canvas selection, not a temporary popup. */
@@ -49,7 +49,7 @@ export default function SelectionRegion({ hasNodeSurface }: { hasNodeSurface: bo
       useStore.setState(state => ({ edges: state.edges.map(edge => edge.selected ? { ...edge, selected: false } : edge) }));
     },
     ignoreOutside: event => {
-      if (event.ctrlKey || event.metaKey || event.shiftKey) return true;
+      if (event.ctrlKey || event.metaKey || event.shiftKey || isCanvasPanTarget(event.target)) return true;
       if (!(event.target instanceof Element)) return false;
       if (event.target.closest('[data-selection-resizer], [data-selection-toolbar], [data-selection-menu], [data-selection-target-control], [data-edge-inspector], [data-batch-edge-inspector], [data-layout-quick], [data-canvas-layout-entry], [data-canvas-layout-panel], [data-node-details], [data-node-details-close]')) return true;
       const bounds = ref.current?.getBoundingClientRect();

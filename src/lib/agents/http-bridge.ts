@@ -15,7 +15,15 @@ export async function installAgentsHttpBridge(apiBase: string): Promise<boolean>
     const r = await fetch(api + '/agents/available', { credentials: 'same-origin' });
     if (!r.ok) return false;
     available = await r.json();
+    if (!available || !['pi', 'codex', 'claude-code'].some(name => Object.hasOwn(available, name)
+      && (available[name] === null || typeof available[name] === 'string'))) return false;
   } catch { return false; }
+  // Preparing a canvas writes complete files. Only offer that capability
+  // on a local or same-origin host that explicitly implements it.
+  const host = new URL(api || '/', window.location.origin);
+  const localFiles = host.origin === window.location.origin || ['localhost', '127.0.0.1', '[::1]'].includes(host.hostname);
+  const managedFiles = localFiles && await fetch(api + '/agents/document', { credentials: 'same-origin' })
+    .then(async r => r.ok && (await r.json())?.service === 'thoughtdag-managed-documents').catch(() => false);
   installLocalFilesBridge(api);
   const post = async <T,>(path: string, body: unknown): Promise<T> => {
     const r = await fetch(api + path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'same-origin', body: JSON.stringify(body ?? {}) });
@@ -113,6 +121,8 @@ export async function installAgentsHttpBridge(apiBase: string): Promise<boolean>
     pickCwd: () => pickThroughHarness(),
     guardWrite: async (cwd, config) => (await post<{ ok: boolean }>('/agents/guard', { cwd, config })).ok,
     writeMaterials: async (cwd, files) => post('/agents/materials', { cwd, files }),
+    ...(managedFiles && { managedDocument: (request: import('../managed-document-file').HostDocumentRequest) =>
+      post<import('../managed-document-file').HostDocumentResponse>('/agents/document', request) }),
     // the host writes the backup file (#66). Inside the harness frame the
     // canvas has no directory handle — Chromium's picker never returns there
     // on Windows — so the backup keeps a plain path string and the host does

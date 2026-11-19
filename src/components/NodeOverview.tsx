@@ -1,10 +1,12 @@
 import type { ReactNode } from 'react';
+import NodeNumber from './NodeNumber';
 import { useLadderLevel } from '../lib/use-map-mode';
 import './NodeOverview.css';
 
 /** Overview is wayfinding: a stable name, with a quiet preview only when close. */
-export default function NodeOverview({ name, source, preview, previewAlways = false, icon, action, meta, compact = false, variant = 'thought', typeLabel, fileTypes }: {
+export default function NodeOverview({ name, number, source, preview, previewAlways = false, icon, action, meta, compact = false, variant = 'thought', typeLabel, fileTypes }: {
   name: string;
+  number?: number;
   source?: string;
   preview?: string;
   previewAlways?: boolean;
@@ -26,6 +28,7 @@ export default function NodeOverview({ name, source, preview, previewAlways = fa
         {fileTypes?.slice(0, compact ? 1 : 3).map(type => <span className="node-file-type" key={type}>{type}</span>)}
       </div>}
       <div className="node-overview-heading">
+        <NodeNumber number={number} />
         {icon && <span className="node-overview-icon" aria-hidden="true">{icon}</span>}
         <div className="node-overview-name" data-tooltip={source || name} data-tooltip-overflow={!source || source === name || undefined} data-node-name>{name}</div>
         {action && <div className="node-overview-action">{action}</div>}

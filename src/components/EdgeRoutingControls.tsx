@@ -2,6 +2,8 @@ import { useId, useState } from 'react';
 import { useT } from '../i18n';
 import { useUiStore } from '../lib/ui-store';
 import { useEdgeRoutingPreferences } from '../lib/edge-routing-preferences';
+import ConnectionLayoutControls from './ConnectionLayoutControls';
+import CanvasSettingSwitch from './CanvasSettingSwitch';
 
 const DRAFT_KEY = 'canvas-edge-routing-inputs';
 type RoutingInputs = { clearance: string; curvature: string };
@@ -36,7 +38,6 @@ function RoutingValue({ name, label, value, applied, min, max, unit, hint, inval
 /** Valid changes update the local preference immediately; incomplete numeric input remains a session draft. */
 export default function EdgeRoutingControls() {
   const t = useT();
-  const switchId = useId();
   const settings = useEdgeRoutingPreferences(state => state.settings);
   const [inputs, setInputs] = useState<RoutingInputs>(() => {
     const applied = useEdgeRoutingPreferences.getState().settings;
@@ -69,12 +70,9 @@ export default function EdgeRoutingControls() {
   };
   return <div className="canvas-layout-fields canvas-routing-fields" data-routing-settings>
     <p className="text-control text-ink-muted">{t('edgeRouting.scopeHint')}</p>
-    <div className="canvas-routing-toggle" data-routing-avoid>
-      <span id={switchId} className="text-control font-medium">{t('edgeRouting.avoid')}</span>
-      <button type="button" role="switch" aria-checked={settings.avoidObstacles} aria-labelledby={switchId}
-        onClick={changeAvoidance} className="canvas-routing-switch">
-        <span className="canvas-routing-switch-track"><span /></span>
-      </button>
+    <ConnectionLayoutControls />
+    <div data-routing-avoid>
+      <CanvasSettingSwitch label={t('edgeRouting.avoid')} checked={settings.avoidObstacles} onChange={changeAvoidance} />
     </div>
     <RoutingValue name="clearance" label={t('edgeRouting.clearance')} value={inputs.clearance} applied={settings.obstacleClearance}
       min={8} max={64} unit="px" hint={t('edgeRouting.clearanceHint')} invalidHint={t('edgeRouting.clearanceInvalid')}

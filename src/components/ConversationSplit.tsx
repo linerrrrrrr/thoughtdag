@@ -45,7 +45,6 @@ function ResizableConversation({ nodeId, surface, availableHeight, question, ans
   const setRatio = useStore(s => s.setQuestionHeightRatio);
   const ratio = preview?.nodeId === nodeId ? preview.ratio : questionHeightRatio(savedRatio);
   const fullHeight = contentHeight.question + contentHeight.answer + 13;
-  const naturalHeight = Math.min(420, fullHeight);
   const panelHeight = surface === 'panel'
     ? preview?.height ?? Math.min(availableHeight ?? 420, fullHeight)
     : undefined;
@@ -151,7 +150,7 @@ function ResizableConversation({ nodeId, surface, availableHeight, question, ans
 
   return (
     <div ref={rootRef} className={`conversation-split${preview?.nodeId === nodeId ? ' conversation-split--dragging' : ''}`}
-      style={{ '--conversation-natural-height': `${naturalHeight}px`, height: panelHeight } as CSSProperties}
+      style={{ '--conversation-natural-height': `${fullHeight}px`, height: panelHeight } as CSSProperties}
       data-conversation-split={surface} data-conversation-node-id={nodeId}>
       <div id={`${id}-question`} className="conversation-split-question nodrag nopan nowheel"
         data-conversation-split-question style={{ flexGrow: questionGrow, maxHeight: contentHeight.question + 1 }}><div ref={questionRef} className="conversation-split-content">{question}</div></div>

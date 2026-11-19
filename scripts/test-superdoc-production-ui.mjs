@@ -107,10 +107,9 @@ try {
   checks.push('Production ZIP worker exports the edited native DOCX with image and merged table structures');
   await canvasNode.locator('[data-superdoc-save]').click();
   await page.waitForFunction(() => document.querySelector('.react-flow__node [data-superdoc-editor]')?.getAttribute('data-superdoc-dirty') === 'false');
-  const onDisk = await JSZip.loadAsync(await readFile(filePaths[0]));
-  assert.match(await onDisk.file('word/document.xml').async('string'), /CANVAS-EDIT/);
+  assert.deepEqual(await readFile(filePaths[0]), fixtures[0].buffer);
   assert.deepEqual(await readFile(filePaths[1]), fixtures[1].buffer);
-  checks.push('Explicit save writes the edited DOCX to the same OS path and leaves the second document untouched');
+  checks.push('Saving in production retains the node revision and leaves both imported OS files untouched');
   assert.deepEqual(errors, []);
   assert.deepEqual(failures, []);
   assert.deepEqual(badResponses, []);

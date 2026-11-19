@@ -6,24 +6,17 @@ import { fileIdentity, fileSizeLabel } from '../lib/file-identity';
 import { isViewerMode } from '../lib/viewer';
 import FileIdentity from './FileIdentity';
 
-/** A file's location is metadata, separate from the imported file contents. */
-export default function FileAttachmentHeader({ attachment, onRemove, statusRef, locationHint }: {
+export default function FileAttachmentHeader({ attachment, onRemove, statusRef }: {
   attachment: Attachment; onRemove: () => void;
   statusRef?: RefCallback<HTMLSpanElement>;
-  locationHint?: string;
 }) {
   const t = useT();
   const extension = fileIdentity(attachment.name).extension.slice(1).toUpperCase();
-  const location = attachment.sourcePath || locationHint || t('content.filePathUnavailable');
   return <div className="material-file-row material-file-header nodrag nopan" data-file-header={attachment.id}
     onDoubleClick={event => event.stopPropagation()}>
     <FileIdentity name={attachment.name} />
     <div className="min-w-0 flex-1">
       <div className="material-file-name" data-tooltip={attachment.name} data-tooltip-overflow>{attachment.name}</div>
-      <div className="material-file-path text-control font-mono text-ink-muted"
-        data-file-path={attachment.id} aria-label={`${t('content.filePath')}: ${location}`}>
-        {location}
-      </div>
       <div className="material-file-meta">
         {extension && <span>{extension}</span>}
         {fileSizeLabel(attachment.size) && <span>{fileSizeLabel(attachment.size)}</span>}

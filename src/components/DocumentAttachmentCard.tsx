@@ -3,8 +3,6 @@ import type { Attachment } from '../types';
 import { useT } from '../i18n';
 import { hasNativeDocxSource, isDocxDocument } from '../lib/document-copy';
 import { isViewerMode } from '../lib/viewer';
-import { documentSourceKey, useOriginalDocument } from '../lib/original-document';
-import { useProjects } from '../store/projects';
 import FileAttachmentHeader from './FileAttachmentHeader';
 import DocumentRichBody from './DocumentRichBody';
 const SuperDocEditor = lazy(() => import('./SuperDocEditor'));
@@ -18,8 +16,6 @@ export default function DocumentAttachmentCard({ nodeId, attachment, fill, onRem
   actionsHost?: HTMLElement | null;
 }) {
   const t = useT();
-  const projectId = useProjects(state => state.activeId) ?? 'default';
-  const original = useOriginalDocument(documentSourceKey(projectId, nodeId, attachment.id));
   const cardRef = useRef<HTMLElement>(null);
   const [statusHost, setStatusHost] = useState<HTMLSpanElement | null>(null);
   useEffect(() => {
@@ -37,9 +33,7 @@ export default function DocumentAttachmentCard({ nodeId, attachment, fill, onRem
   return <section ref={cardRef} data-document-card={attachment.id} data-document-fill={fill || undefined}
     className={`min-w-0 ${fill ? 'flex-1 min-h-0 flex flex-col overflow-hidden' : ''}`}
     onDoubleClick={event => event.stopPropagation()}>
-    <FileAttachmentHeader attachment={attachment} onRemove={onRemove} statusRef={setStatusHost}
-      locationHint={isViewerMode || !original.ready || (!nativeDocx && attachment.type !== 'application/pdf') ? undefined
-        : t(original.source?.handle ? 'document.linkedLocation' : 'document.selectOriginalLocation')} />
+    <FileAttachmentHeader attachment={attachment} onRemove={onRemove} statusRef={setStatusHost} />
     <Suspense fallback={<p className="text-control text-ink-faint">{t('reader.loading')}</p>}>
       {attachment.type === 'application/pdf'
         ? <PdfDocumentView nodeId={nodeId} attachment={attachment} compact onEditingChange={onAnnotationEditingChange} actionsHost={actionsHost} statusHost={statusHost} />

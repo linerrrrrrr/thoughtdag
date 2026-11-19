@@ -2,8 +2,8 @@
 // Isolated browser storage and fixtures. No live project or model writes.
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
-import { mkdir, writeFile } from 'node:fs/promises';
-import { documentBrowser, chooseFixtureOriginal } from './fixtures/original-file-browser.mjs';
+import { mkdir } from 'node:fs/promises';
+import { documentBrowser } from './fixtures/original-file-browser.mjs';
 import { createSuperdocFixture } from './fixtures/superdoc-fixture.mjs';
 
 const executablePath = process.env.CHROME_PATH ?? [
@@ -263,9 +263,6 @@ try {
   if (await page.locator('[data-docx-toolbar]').count()) {
     await page.locator('[data-docx-toolbar]').getByRole('button', { name: /收起工具栏|Hide toolbar/ }).click();
   }
-  const originalPath = `${output}/${attachment.name}`;
-  await writeFile(originalPath, source.buffer);
-  await chooseFixtureOriginal(page, originalPath);
   await root('native-real').locator('[data-superdoc-save]').click();
   await expectDetail('native-real', 'compact');
   await preference('summary');

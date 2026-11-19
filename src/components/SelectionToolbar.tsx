@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useMemo, useId } from 'react';
-import { Archive, ClipboardList, Files, FileDown, Highlighter, Layers, Trash2 } from 'lucide-react';
+import { Archive, ClipboardList, Files, FileDown, Highlighter, Layers, Minus, Plus, Trash2 } from 'lucide-react';
 import { useStore } from '../store';
 import { useProjects } from '../store/projects';
 import type { ThoughtNode } from '../types';
@@ -39,9 +39,6 @@ function GeometryEditor({ selectedNodes, allowPosition }: { selectedNodes: Thoug
       return Object.fromEntries(Object.entries(value).filter(([key, text]) => key in fieldLabels && typeof text === 'string'));
     } catch { return {}; }
   }, [draftText]);
-  const setDraft = (value: GeometryDraft | ((previous: GeometryDraft) => GeometryDraft)) => {
-    setDraftText(JSON.stringify(typeof value === 'function' ? value(draft) : value));
-  };
   const [editing, setEditing] = useState(false);
   const [error, setError] = useState<{ field: GeometryField; message: string } | null>(null);
   const errorId = useId();
@@ -117,33 +114,68 @@ function GeometryEditor({ selectedNodes, allowPosition }: { selectedNodes: Thoug
     // A range describes the selection; only an entered number becomes a draft.
     return { value: '', placeholder: `${numericText(Math.min(...values))}~${numericText(Math.max(...values))}` };
   };
-  const field = (name: GeometryField) => <label className={name === 'width' || name === 'height'
-    ? 'min-w-0 grid grid-cols-[minmax(0,1fr)_minmax(0,11rem)] items-center gap-3' : 'block min-w-0 space-y-1.5'}>
-    <span className="block text-control text-ink-muted">{t(fieldLabels[name])}</span>
-    <span className={`flex min-w-0 items-center h-9 rounded-control border bg-card focus-within:border-accent focus-within:ring-1 focus-within:ring-accent ${error?.field === name ? 'border-danger' : 'border-line'}`}>
-      <input type="text" inputMode="decimal" aria-label={t(fieldLabels[name])} data-node-format-field={name}
-        {...displayFor(name)} autoComplete="off"
-        aria-invalid={error?.field === name ? true : undefined}
-        aria-describedby={error?.field === name ? errorId : undefined}
-        onFocus={() => setEditing(true)}
-        onChange={event => {
-          const text = event.target.value;
-          setEditing(true); setError(null);
-          setDraft(previous => {
-            const next = { ...previous, [name]: text };
-            // With a locked ratio, the most recently edited axis drives size.
-            if (anyLocked && name === 'width') delete next.height;
-            if (anyLocked && name === 'height') delete next.width;
-            return next;
-          });
-        }}
-        onKeyDown={event => {
-          if (event.key === 'Enter' && !isImeComposing(event)) { event.preventDefault(); event.stopPropagation(); commit(); }
-        }}
-        className="w-full min-w-0 h-full bg-transparent px-2.5 text-control tabular-nums text-ink placeholder:text-ink-faint outline-none rounded-control" />
-      <span className="pr-2 text-control text-ink-faint select-none" aria-hidden="true">px</span>
-    </span>
-  </label>;
+  const changeField = (name: GeometryField, text: string) => {
+    setEditing(true);
+    setError(null);
+    const next = { ...draft, [name]: text };
+    // With a locked ratio, the most recently edited axis drives size.
+    if (anyLocked && name === 'width') delete next.height;
+    if (anyLocked && name === 'height') delete next.width;
+    setDraftText(JSON.stringify(next));
+  };
+  const field = (name: GeometryField) => {
+    const dimension = name === 'width' || name === 'height';
+    const display = displayFor(name);
+    const value = display.value.trim() ? Number(display.value) : NaN;
+    const min = dimension ? minimum(name) : -Infinity;
+    const max = dimension ? Math.floor(maximum(name) * 100) / 100 : Infinity;
+    const valid = Number.isFinite(value) && value >= min && value <= max;
+    const step = (delta: number) => {
+      if (!valid) return;
+      const next = Math.min(max, Math.max(min, value + delta));
+      if (next !== value) changeField(name, numericText(next));
+    };
+    const id = `${errorId}-${name}`;
+    return <div className={dimension
+      ? 'grid min-w-0 grid-cols-[auto_minmax(0,13rem)] items-center justify-between gap-2' : 'min-w-0 space-y-1.5'}>
+      <label htmlFor={id} className="block text-control text-ink-muted">{t(fieldLabels[name])}</label>
+      <div className={`flex min-w-0 items-center h-9 rounded-control border bg-card focus-within:border-accent focus-within:ring-1 focus-within:ring-accent ${error?.field === name ? 'border-danger' : 'border-line'}`}>
+        <input id={id} type="text" inputMode="decimal" data-node-format-field={name}
+          {...display} autoComplete="off"
+          aria-invalid={error?.field === name ? true : undefined}
+          aria-describedby={error?.field === name ? errorId : undefined}
+          aria-keyshortcuts={dimension ? 'ArrowUp ArrowDown Shift+ArrowUp Shift+ArrowDown' : undefined}
+          onFocus={() => setEditing(true)}
+          onChange={event => changeField(name, event.target.value)}
+          onKeyDown={event => {
+            if (isImeComposing(event)) return;
+            if (event.key === 'Enter') { event.preventDefault(); event.stopPropagation(); commit(); }
+            if (dimension && (event.key === 'ArrowUp' || event.key === 'ArrowDown') && !event.altKey && !event.ctrlKey && !event.metaKey) {
+              event.preventDefault(); event.stopPropagation();
+              step((event.key === 'ArrowUp' ? 1 : -1) * (event.shiftKey ? 10 : 1));
+            }
+          }}
+          className="min-w-0 flex-1 h-full bg-transparent px-2 text-control tabular-nums text-ink placeholder:text-ink-faint outline-none rounded-control" />
+        <span className="pr-2 text-control text-ink-faint select-none" aria-hidden="true">px</span>
+        {dimension && <div className="flex h-full shrink-0 items-center border-l border-line px-0.5">
+          {([-1, 1] as const).map(delta => {
+            const label = fmt(t(delta < 0 ? 'format.decrease' : 'format.increase'), { field: t(fieldLabels[name]) });
+            const Icon = delta < 0 ? Minus : Plus;
+            return <button key={delta} type="button" aria-label={label} data-tooltip={label}
+              disabled={!valid || (delta < 0 ? value <= min : value >= max)}
+              onClick={event => {
+                step(delta);
+                // After a pointer nudge, arrows and Enter still operate on the number.
+                if (event.detail > 0) document.getElementById(id)?.focus({ preventScroll: true });
+              }}
+              className="grid size-8 place-items-center rounded-control text-ink-muted enabled:hover:bg-wash enabled:hover:text-accent focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent disabled:opacity-40">
+              <Icon size={14} strokeWidth={1.75} aria-hidden="true" />
+            </button>;
+          })}
+        </div>}
+      </div>
+    </div>;
+  };
 
   return <div ref={editor} onBlur={dismiss.onBlur} data-node-format-geometry>
     <section className="px-4 py-3 space-y-3" aria-label={t('format.size')}>

@@ -1,13 +1,13 @@
 import { useEffect, useId, useRef, type RefObject } from 'react';
-import { Check, ChevronDown, ChevronRight, ShieldCheck, ShieldEllipsis, ShieldOff } from 'lucide-react';
+import { Check, ChevronDown, ChevronRight, Shield, ShieldCheck, ShieldEllipsis, ShieldOff } from 'lucide-react';
 import { useT, type MessageKey as TKey } from '../../i18n';
 import { useProjects } from '../../store/projects';
 import { setGuardMode } from '../../lib/agents/agent-runtime';
 import type { AgentPermissionMode } from '../../types';
 
 // The connected Agent page configures Codex approvals for the active canvas.
-const ICON = { ask: ShieldCheck, auto: ShieldEllipsis, allow: ShieldOff } as const;
-const LABEL: Record<AgentPermissionMode, TKey> = { ask: 'agent.permAsk', auto: 'agent.permAuto', allow: 'agent.permAllow' };
+const ICON = { native: Shield, ask: ShieldCheck, auto: ShieldEllipsis, allow: ShieldOff } as const;
+const LABEL: Record<AgentPermissionMode, TKey> = { native: 'agent.permNative', ask: 'agent.permAsk', auto: 'agent.permAuto', allow: 'agent.permAllow' };
 
 export default function AgentPermissionChip({ open, onOpenChange, triggerRef }: {
   open: boolean;
@@ -23,7 +23,7 @@ export default function AgentPermissionChip({ open, onOpenChange, triggerRef }: 
   const visible = !!window.desktopAgents;
 
   if (!visible || !activeId) return null;
-  const mode: AgentPermissionMode = guard?.mode ?? 'ask';
+  const mode: AgentPermissionMode = guard?.mode ?? 'native';
   const shown = mode;
   const choose = async (m: AgentPermissionMode) => { await setGuardMode(m); onOpenChange(false); };
 
@@ -59,6 +59,7 @@ export default function AgentPermissionChip({ open, onOpenChange, triggerRef }: 
       </button>
       {open && (
         <div id={menuId} ref={panelRef} tabIndex={-1} aria-label={t('connection.approvals')} className="node-metadata-fields agent-connection-setting-menu" onClick={(e) => e.stopPropagation()} data-agent-permission-menu>
+          {row('native', 'agent.permNativeHint')}
           {row('ask', 'agent.permAskCodex')}
           {row('auto', 'agent.permAutoCodex')}
           {row('allow', 'agent.permAllowHint')}

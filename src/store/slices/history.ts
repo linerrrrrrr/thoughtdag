@@ -66,12 +66,13 @@ function sameById<T extends { id: string }>(a: T[], b: T[], eq: (x: T, y: T) => 
 }
 
 function sameAttachment(a: Attachment, b: Attachment): boolean {
+  if ((a.nodeFileRevision || b.nodeFileRevision) && !a.contentInVault && !b.contentInVault && a.content !== b.content) return false;
   const manual = a.extractedBy === 'manual' || b.extractedBy === 'manual';
   if (manual && (a.extractedText !== b.extractedText || a.extractedBy !== b.extractedBy)) return false;
   const ao = a as unknown as Record<string, unknown>;
   const bo = b as unknown as Record<string, unknown>;
   for (const k of new Set([...Object.keys(ao), ...Object.keys(bo)])) {
-    if (!ATT_MACHINE.has(k) && !same(ao[k], bo[k])) return false;
+    if (k !== 'nodeFileRevision' && !ATT_MACHINE.has(k) && !same(ao[k], bo[k])) return false;
   }
   return true;
 }

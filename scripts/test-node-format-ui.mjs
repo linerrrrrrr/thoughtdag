@@ -258,6 +258,22 @@ try {
   assert.equal(await field('x').inputValue(), '100');
   assert.equal(await field('y').inputValue(), '180');
   const original = geometry(await readNodes());
+  const wider = page.getByRole('button', { name: '增加宽度', exact: true });
+  await wider.click();
+  assert.equal(await field('width').inputValue(), '401');
+  assert.ok(await field('width').evaluate(el => document.activeElement === el));
+  await page.keyboard.press('Shift+ArrowUp');
+  await field('width').press('ArrowDown');
+  assert.equal(await field('width').inputValue(), '410');
+  assert.deepEqual(geometry(await readNodes()), original, 'Stepping only updates the draft');
+  await field('width').evaluate(el => el.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', isComposing: true, bubbles: true })));
+  assert.equal(await field('width').inputValue(), '410');
+  await field('width').press('Escape');
+  assert.equal(await field('width').inputValue(), '400');
+  await field('width').fill('360');
+  assert.ok(await page.getByRole('button', { name: '减小宽度', exact: true }).isDisabled());
+  await field('width').press('Escape');
+  check('Dimension buttons and keyboard steps share the cancellable draft and respect IME');
   await field('width').fill('560');
   await field('width').press('Tab');
   assert.deepEqual(geometry(await readNodes()), original, 'Moving within geometry region does not commit');
@@ -326,7 +342,12 @@ try {
   assert.equal(await field('width').getAttribute('placeholder'), '400~480');
   assert.equal(await field('height').getAttribute('placeholder'), '260~300');
   const beforeMulti = await readNodes();
-  await commit('width', 600);
+  assert.equal(await wider.isDisabled(), true, 'A mixed dimension cannot be stepped without a shared value');
+  await field('width').fill('599');
+  await wider.click();
+  assert.equal(await field('width').inputValue(), '600');
+  assert.deepEqual(geometry(await readNodes()), geometry(beforeMulti));
+  await page.keyboard.press('Enter');
   const afterMulti = await readNodes();
   assert.equal(afterMulti[0].width, 600);
   assert.equal(afterMulti[1].width, 600);
@@ -334,6 +355,8 @@ try {
   assert.equal(afterMulti[1].height, beforeMulti[1].height);
   assert.deepEqual(afterMulti.map(n => n.position), beforeMulti.map(n => n.position));
   assert.equal(afterMulti[2].width, beforeMulti[2].width);
+  await page.evaluate(() => window.__store.getState().undo());
+  assert.deepEqual(geometry(await readNodes()), geometry(beforeMulti), 'One undo restores the entire stepped selection');
   check('multi-selection shows size ranges, edits selected dimensions uniformly and never unifies coordinates');
 
   await fixture(['a', 'b']);

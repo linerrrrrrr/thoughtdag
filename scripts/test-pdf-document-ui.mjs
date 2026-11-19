@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { PDFArray, PDFDict, PDFDocument, PDFName } from 'pdf-lib';
-import { documentBrowser, chooseFixtureOriginal } from './fixtures/original-file-browser.mjs';
+import { documentBrowser } from './fixtures/original-file-browser.mjs';
 
 const executablePath = process.env.CHROME_PATH ?? ['C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe', 'C:/Program Files/Google/Chrome/Application/chrome.exe', '/usr/bin/chromium'].find(existsSync);
 assert.ok(executablePath);
@@ -45,8 +45,12 @@ const fixture = { id: 'pdf-original', type: 'thought', dragHandle: '.drag-handle
     attachments: [{ id: 'pdf-original-att', name: '原页与扫描页.pdf', type: 'application/pdf', size: 1300, content: source, extractedText: 'Original source text.', numPages: 2 }] } };
 const originalPath = `${output}/${fixture.data.attachments[0].name}`;
 await writeFile(originalPath, Buffer.from(source, 'base64'));
-async function diskAnnotations() {
-  const pdf = await PDFDocument.load(await readFile(originalPath));
+async function savedAnnotations() {
+  const content = await page.evaluate(async () => {
+    const { loadNodePdfFile } = await import('/src/lib/attachment-vault.ts');
+    return loadNodePdfFile(window.__store.getState().nodes[0].data.attachments[0]);
+  });
+  const pdf = await PDFDocument.load(Buffer.from(content, 'base64'));
   return pdf.getPages().flatMap((page, index) => (page.node.Annots()?.asArray() ?? []).map(ref => {
     const dict = pdf.context.lookup(ref, PDFDict);
     return { page: index + 1, type: dict.get(PDFName.of('Subtype')).asString().slice(1),
@@ -111,15 +115,12 @@ try {
   await root().locator(`[data-pdf-comment-pin="${first.id}"]`).click();
   assert.equal(await comment().locator('textarea').inputValue(), '这是一条待保存的评论');
   const saveComment = comment().getByRole('button', { name: '保存', exact: true });
-  await page.evaluate(() => { window.showOpenFilePicker = async () => { throw new DOMException('Cancelled', 'AbortError'); }; });
+  await page.evaluate(() => { window.showOpenFilePicker = () => { throw new Error('Unexpected external file request'); }; });
   await saveComment.click();
-  assert.equal(await comment().locator('textarea').inputValue(), '这是一条待保存的评论');
-  assert.deepEqual(await readFile(originalPath), Buffer.from(source, 'base64'));
-  await chooseFixtureOriginal(page, originalPath);
-  await comment().getByRole('button', { name: '保存', exact: true }).click();
   await comment().waitFor({ state: 'hidden' });
   assert.equal((await annotations())[0].comment, '这是一条待保存的评论');
-  const firstSave = await diskAnnotations();
+  assert.deepEqual(await readFile(originalPath), Buffer.from(source, 'base64'));
+  const firstSave = await savedAnnotations();
   assert.equal(firstSave.length, 2);
   assert.equal(firstSave.find(mark => mark.id === 'existing').comment, 'Existing note');
   assert.equal(firstSave.find(mark => mark.id === first.id).comment, '这是一条待保存的评论');
@@ -161,7 +162,7 @@ try {
   await comment().getByRole('button', { name: '保存', exact: true }).click();
   await waitCount(3);
   assert.equal((await annotations())[2].comment, '扫描页位置评论');
-  const written = await diskAnnotations();
+  const written = await savedAnnotations();
   assert.equal(written.length, 4);
   const [highlight, note] = (await annotations()).slice(1);
   const region = written.find(mark => mark.id === highlight.id);
@@ -172,15 +173,16 @@ try {
   region.quad.forEach((value,index) => assert.ok(Math.abs(value-corners[index]) < .001));
   const diskNote = written.find(mark => mark.id === note.id);
   assert.equal(diskNote.type, 'Text'); assert.equal(diskNote.comment, '扫描页位置评论');
-  check('OS file readback preserves the existing note, Chinese comments and cropped, rotated highlight coordinates without duplicates');
+  check('Saved PDF bytes preserve the existing note, Chinese comments and cropped, rotated highlight coordinates without duplicates');
 
   await root().locator('[data-pdf-mode="read"]').click();
   await body.evaluate(element => { element.scrollTop = 0; });
   await root().locator(`[data-pdf-comment-pin="${first.id}"]`).click();
   await comment().locator('[data-pdf-delete-annotation]').click(); await waitCount(2);
   await canvasNode().locator('[data-pdf-save]').click();
-  await page.waitForFunction(() => document.querySelector('[data-pdf-save]').disabled && document.querySelector('[data-file-header]').textContent.includes('已写回原文件'));
-  assert.equal((await diskAnnotations()).some(mark => mark.id === first.id), false);
+  await page.waitForFunction(() => document.querySelector('[data-pdf-save]').disabled && document.querySelector('[data-file-header]').textContent.includes('已保存'));
+  assert.equal((await savedAnnotations()).some(mark => mark.id === first.id), false);
+  await page.evaluate(() => window.__store.getState().undo());
   await page.evaluate(() => window.__store.getState().undo()); await waitCount(3);
   const preserved = await page.evaluate(async () => {
     const { loadAttachmentContent } = await import('/src/lib/attachment-vault.ts');
@@ -195,9 +197,9 @@ try {
   await page.locator('[data-reader-body] [data-pdf-page][data-page="2"]').waitFor();
   assert.equal(await page.locator('[data-reader-edit-toggle]').count(), 0);
   const readerPdf = page.locator('[data-reader-body] [data-pdf-document]');
-  await readerPdf.locator('[data-pdf-save]').click();
-  await page.waitForFunction(() => document.querySelector('[data-reader-body] [data-pdf-save]').disabled && document.querySelector('[data-reader-body]').textContent.includes('已写回原文件'));
-  assert.equal((await diskAnnotations()).length, 4);
+  if (await readerPdf.locator('[data-pdf-save]').isEnabled()) await readerPdf.locator('[data-pdf-save]').click();
+  await page.waitForFunction(() => document.querySelector('[data-reader-body] [data-pdf-save]').disabled && document.querySelector('[data-reader-body]').textContent.includes('已保存'));
+  assert.equal((await savedAnnotations()).length, 4);
   await readerPdf.locator('[data-pdf-mode="highlight"]').click();
   await readerPdf.locator(`[data-pdf-comment-pin="${first.id}"]`).click();
   await comment().locator('textarea').fill('不保存的修改');

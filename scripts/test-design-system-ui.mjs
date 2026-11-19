@@ -87,7 +87,7 @@ const layout = async label => {
   const result = await page.evaluate(() => {
     const bounds = element => {
       const box = element.getBoundingClientRect();
-      return { x: box.x, right: box.right, width: box.width, height: box.height,
+      return { x: box.x, right: box.right, width: box.width, height: box.height, logicalWidth: element.offsetWidth,
         scrollWidth: element.scrollWidth, clientWidth: element.clientWidth };
     };
     return { viewport: document.documentElement.clientWidth, scrollWidth: document.documentElement.scrollWidth,
@@ -134,7 +134,7 @@ try {
         await choose('preview-width', width);
         const label = `${language}/${theme}/${width}`;
         const result = await layout(label);
-        for (const item of result.samples) near(item.width, Number(width), `${label} ${item.name} preview width`);
+        for (const item of result.samples) near(item.logicalWidth, Number(width), `${label} ${item.name} preview width`);
         await font(specimen('conversation').locator('.conversation-user-message'), 16, 28, `${label} card question`);
         await font(specimen('conversation').locator('.conversation-answer'), 16, 28, `${label} card answer`);
         await font(specimen('reader').locator('.focus-assistant-message'), 16, 28, `${label} reader answer`);
@@ -142,6 +142,8 @@ try {
         await font(specimen('tools').locator('.canvas-toolbar-button'), 14, 21, `${label} control`);
         await font(specimen('reader').locator('.focus-panel-title'), 16, 24, `${label} title`);
         await font(specimen('conversation').locator('.node-token-total'), 12, 18, `${label} metadata`);
+        assert.equal(await specimen('conversation').locator('.node-token-usage').isVisible(), Number(width) > 430,
+          `${label}: node width controls visibility of the complete usage group`);
         const surfaces = await page.evaluate(() => {
           const css = selector => getComputedStyle(document.querySelector(selector));
           const card = css('[data-specimen="conversation"]'), reader = css('[data-specimen="reader"]');

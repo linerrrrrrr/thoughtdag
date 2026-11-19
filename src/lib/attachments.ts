@@ -113,7 +113,7 @@ export function readFileToAttachment(file: File): Promise<Attachment | null> {
 }
 
 // Open a base64 PDF with pdfjs in the browser (worker configured by the import).
-async function openPdf(base64: string): Promise<PDFDocumentProxy> {
+export async function openPdf(base64: string): Promise<PDFDocumentProxy> {
   const [m, worker] = await Promise.all([
     import('pdfjs-dist'),
     import('pdfjs-dist/build/pdf.worker.min.mjs?url'),
@@ -129,7 +129,7 @@ const PAGE_RENDER_DPI = 150; // matches the proxy's pdftoppm default
 // the proxy's poppler when it is absent (the desktop app inherits a GUI PATH
 // that hides Homebrew; the public demo has no backend at all). Same shape
 // the proxy returns; the reader and Recognize consume both interchangeably.
-async function renderPdfPages(doc: PDFDocumentProxy): Promise<string[]> {
+export async function renderPdfPages(doc: PDFDocumentProxy): Promise<string[]> {
   const scale = PAGE_RENDER_DPI / 72; // PDF user units are 72/inch
   const images: string[] = [];
   for (let i = 1; i <= doc.numPages; i++) {

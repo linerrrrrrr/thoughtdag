@@ -151,6 +151,12 @@ try {
   assert.equal(await item('layout-entry').innerText(), '排版');
   assert.equal(await item('routing-entry').innerText(), '连线');
   assert.equal(await item('canvas-routing-panel').getByRole('heading').innerText(), '连线');
+  for (const route of ['curve', 'orthogonal']) {
+    const arrow = page.locator(`[data-edge-direction="${route}"]`);
+    assert.equal(await arrow.getAttribute('d'), 'M 0 0 L -11 -5 L -11 5 Z');
+    assert.notEqual(await arrow.evaluate(element => getComputedStyle(element).fill), 'none');
+  }
+  check('curved and orthogonal connections use the same filled direction arrow');
   assert.equal(await item('canvas-routing-panel').locator('[data-routing-apply], [data-routing-cancel]').count(), 0);
   assert.equal(await page.locator('[data-layout-tab]').count(), 0);
   assert.equal(await chosen('avoid'), 'on');
@@ -369,11 +375,11 @@ try {
     const panel = await item('canvas-routing-panel').boundingBox();
     assert.ok(panel && panel.x >= 0 && panel.y >= 0 && panel.x + panel.width <= width + 1 && panel.y + panel.height <= 901,
       lang + '/' + theme + '/' + width + ': routing card fits viewport');
-    const controls = await item('canvas-routing-panel').locator('[data-routing-avoid], [data-routing-clearance], [data-routing-curvature]').evaluateAll(elements => elements.map(element => {
+    const controls = await item('canvas-routing-panel').locator('[data-connection-layout-settings], [data-routing-avoid], [data-routing-clearance], [data-routing-curvature]').evaluateAll(elements => elements.map(element => {
       const rect = element.getBoundingClientRect();
       return { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom };
     }));
-    assert.equal(controls.length, 3);
+    assert.equal(controls.length, 4);
     assert.ok(controls.every(rect => rect.left >= panel.x && rect.right <= panel.x + panel.width + 1
       && rect.top >= panel.y && rect.bottom <= panel.y + panel.height + 1), lang + '/' + theme + '/' + width + ': controls remain visible');
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);

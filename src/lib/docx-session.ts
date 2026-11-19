@@ -2,9 +2,10 @@ import type { SuperDoc } from 'superdoc';
 import type { Attachment } from '../types';
 import { useStore } from '../store';
 import { useProjects } from '../store/projects';
-import { loadDocumentContent, saveDocumentRevision } from './attachment-vault';
+import { encodeBytes, loadDocumentContent } from './attachment-vault';
 import { DOCX_MIME_TYPE } from './document-copy';
-import { cachedDocxRevision, documentBlob, documentSourceKey, DocumentSourceError, saveToOriginal } from './original-document';
+import { DocumentSourceError } from './document-errors';
+import { docxRevisionPatch } from './node-file-edits';
 import { isViewerMode } from './viewer';
 import { handleDismissableLayerKeyDown } from './use-dismissable-layer';
 import { createDocxViewport } from './docx-viewport';
@@ -271,35 +272,23 @@ export async function saveDocxSession(session: DocxSession) {
         throw new DocumentSourceError('document.editChanged');
       }
     };
-    let patch: Partial<Attachment> = {};
-    const result = await saveToOriginal(documentSourceKey(session.projectId, session.nodeId, attachmentId), attachment, async () => {
-      assertCurrent();
-      if (!session.dirty) {
-        return { blob: documentBlob(await loadDocumentContent(attachment), DOCX_MIME_TYPE), revision: cachedDocxRevision(attachment) };
-      }
-      const blob = await instance.export({ exportType: ['docx'], triggerDownload: false });
-      const { extractRawText } = await import('mammoth');
-      const { value: text } = await extractRawText({ arrayBuffer: await blob.arrayBuffer() });
-      assertCurrent();
-      const revision = await saveDocumentRevision(attachment, blob);
-      const previousCopy = cachedDocxRevision(attachment) ? {} : {
-        legacyDocumentHtml: attachment.legacyDocumentHtml ?? attachment.editedHtml,
-        legacyDocumentText: attachment.legacyDocumentText ?? attachment.editedText,
-      };
-      patch = { ...revision, ...previousCopy, editedText: text, editedHtml: undefined };
-      return { blob, revision: revision.editedDocxRevision };
-    }, assertCurrent);
-    const current = currentAttachment();
-    if (!result || !current || current.editedDocxRevision !== baseRevision || generation !== session.generation) return;
-    if ((result.path || result.reconnected) && result.path !== current.sourcePath) patch.sourcePath = result.path;
-    if (!Object.keys(patch).length) return;
-    session.attachment = { ...current, ...patch };
-    session.revision = session.attachment.editedDocxRevision;
-    useStore.getState().pushHistory();
-    useStore.getState().setAttachmentData(session.nodeId, attachmentId, patch);
-    useStore.getState().pushHistory();
-    instance.ui.document.markClean(version);
-    session.conflict = false;
+    if (!session.dirty) return;
+    assertCurrent();
+    const blob = await instance.export({ exportType: ['docx'], triggerDownload: false });
+    const [patch, bytes, { saveNodeFile }] = await Promise.all([
+      docxRevisionPatch(attachment, blob), blob.arrayBuffer(), import('./node-files'),
+    ]);
+    assertCurrent();
+    await saveNodeFile(session.projectId, session.nodeId, attachment, encodeBytes(new Uint8Array(bytes)), assertCurrent, revision => {
+      patch.nodeFileRevision = revision;
+      session.attachment = { ...currentAttachment()!, ...patch };
+      session.revision = session.attachment.editedDocxRevision;
+      useStore.getState().pushHistory();
+      useStore.getState().setAttachmentData(session.nodeId, attachmentId, patch);
+      useStore.getState().pushHistory();
+      instance.ui.document.markClean(version);
+      session.conflict = false;
+    });
   } finally {
     session.saving = false;
     scheduleRelease(session);

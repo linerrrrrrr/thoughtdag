@@ -7,12 +7,14 @@ import { placeNewNodes } from './layout';
 import { useUiStore } from './ui-store';
 import { inheritedNodeExecution } from './node-execution';
 import { positionNodeAtConnectionEnd } from './edge-anchors';
+import type { ConnectionLayout } from './connection-layout-preferences';
 
 export interface QuestionDraftOptions {
   parentId?: string;
   position?: { x: number; y: number };
   /** Released wire tip in canvas coordinates; anchors the new input when a parent exists. */
   connectionEnd?: { x: number; y: number };
+  connectionLayout?: ConnectionLayout;
   editor?: 'canvas' | 'panel';
 }
 
@@ -43,7 +45,7 @@ export function createQuestionDraft(options: QuestionDraftOptions = {}): string 
     markerEnd: { type: 'arrowclosed', color: COLORS.accent, ...EDGE_ARROW_GEOMETRY },
     data: {},
   } : undefined;
-  if (parent && options.connectionEnd) node.position = positionNodeAtConnectionEnd(parent, node, options.connectionEnd);
+  if (parent && options.connectionEnd) node.position = positionNodeAtConnectionEnd(parent, node, options.connectionEnd, undefined, options.connectionLayout);
   const deselectedEdges = state.edges.map((existing) => existing.selected ? { ...existing, selected: false } : existing);
   const edges = edge ? [...deselectedEdges, edge] : deselectedEdges;
   const nodes = [...state.nodes.map((existing) => existing.selected ? { ...existing, selected: false } : existing), node];

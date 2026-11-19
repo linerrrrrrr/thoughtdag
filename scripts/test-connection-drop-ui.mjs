@@ -27,11 +27,13 @@ await page.addInitScript(() => {
   localStorage.setItem('thoughtdag.seeded', 'yes');
   localStorage.setItem('thoughtdag.tutorialDone', '1');
 });
-const fixture = async (zoom, theme, paper) => {
-  await page.evaluate(async ({ theme, paper }) => {
+const fixture = async (zoom, theme, paper, layout) => {
+  await page.evaluate(async ({ theme, paper, layout }) => {
     const { useAppearance } = await import('/src/lib/appearance.ts');
     useAppearance.getState().setLighting(theme);
     useAppearance.getState().setPaper(paper);
+    const { useConnectionLayoutPreferences } = await import('/src/lib/connection-layout-preferences.ts');
+    useConnectionLayoutPreferences.getState().setSettings(layout ? { enabled: true, layout } : { enabled: false });
     window.__canvasEditing.getState().reset();
     const node = { id: 'source', type: 'thought', position: { x: 0, y: 0 }, width: 420, height: 320,
       dragHandle: '.drag-handle', data: {
@@ -46,7 +48,7 @@ const fixture = async (zoom, theme, paper) => {
     window.__ui.getState().setTutorialOpen(false);
     window.__ui.getState().setReleaseNotesOpen(false);
     window.__ui.setState({ drafts: {} });
-  }, { theme, paper });
+  }, { theme, paper, layout });
   // Let initial-canvas framing finish before fixing the camera for a gesture.
   await page.waitForTimeout(650);
   await page.evaluate(zoom => window.__rf.setViewport({ x: 1200 - 210 * zoom, y: 700 - 160 * zoom, zoom }, { duration: 0 }), zoom);
@@ -74,10 +76,14 @@ try {
   await page.goto(appUrl, { waitUntil: 'networkidle' });
   await page.waitForFunction(() => window.__store?.persist.hasHydrated() && window.__rf && window.__canvasEditing);
   for (const zoom of [1, 0.65, 1.3]) {
-    for (const direction of ['down', 'right', 'up', 'left', 'diagonal']) {
+    const cases = ['down', 'right', 'up', 'left', 'diagonal'].map(direction => ({ direction }));
+    if (zoom === 1) cases.push({ direction: 'left', layout: 'sidebar' }, { direction: 'up', layout: 'top' }, { direction: 'diagonal', layout: 'dock' });
+    for (const { direction, layout } of cases) {
       const theme = zoom === 0.65 ? 'dark' : 'light';
-      await fixture(zoom, theme, zoom === 1.3 ? 'grid' : 'plain');
-      const side = { down: 'bottom', right: 'right', up: 'top', left: 'left', diagonal: 'bottom' }[direction];
+      await fixture(zoom, theme, zoom === 1.3 ? 'grid' : 'plain', layout);
+      const side = layout ? (layout === 'top' ? 'bottom' : 'right')
+        : { down: 'bottom', right: 'right', up: 'top', left: 'left', diagonal: 'bottom' }[direction];
+      if (layout) await page.locator(`[data-fixed-connection-layout="${layout}"]`).waitFor();
       const port = page.locator(`.react-flow__node[data-id="source"] [data-connection-role="source"][data-connection-side="${side}"]`);
       await page.locator('.react-flow__node[data-id="source"]').hover();
       const box = await port.boundingBox();
@@ -100,7 +106,8 @@ try {
       assert.equal(actual.editing, true);
       assert.equal(actual.response, '');
       assert.ok(!actual.data?.isCrossLink, 'An empty-canvas drop remains a continuation');
-      if (direction !== 'diagonal') assert.equal(actual.side, { down: 'in-top', right: 'in-left', up: 'in-bottom', left: 'in-right' }[direction]);
+      if (layout) assert.equal(actual.side, layout === 'top' ? 'in-top' : 'in-left');
+      else if (direction !== 'diagonal') assert.equal(actual.side, { down: 'in-top', right: 'in-left', up: 'in-bottom', left: 'in-right' }[direction]);
       if (direction === 'diagonal') await page.screenshot({ path: `${output}/${theme}-${zoom}.png` });
       await page.evaluate(() => window.__store.getState().undo());
       assert.deepEqual(await page.evaluate(() => ({ nodes: window.__store.getState().nodes.map(node => node.id), edges: window.__store.getState().edges.length })),
@@ -108,7 +115,7 @@ try {
       await page.evaluate(() => window.__store.getState().redo());
       const restored = await page.evaluate(id => window.__store.getState().nodes.find(node => node.id === id)?.position, actual.nodeId);
       assert.deepEqual(restored, actual.position, 'Redo restores the measured placement');
-      checks.push(`${direction} at ${zoom} in ${theme}`);
+      checks.push(`${layout ?? 'auto'} ${direction} at ${zoom} in ${theme}`);
       console.log(`PASS ${checks.at(-1)}`);
     }
   }

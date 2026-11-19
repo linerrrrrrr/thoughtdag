@@ -11,13 +11,14 @@
 // every call so a change takes effect mid-run:
 //   { "mode": "ask" | "allow", "allow": ["/a/directory", …] }
 // `allow` mode asks nothing; a path under an allowed directory passes.
-import { resolve, sep, dirname, join } from 'node:path';
+import { resolve, sep, dirname, join, isAbsolute } from 'node:path';
 import { homedir } from 'node:os';
 import { readFileSync, statSync } from 'node:fs';
 
 const SYSTEM_PREFIXES = ['/dev/', '/usr/', '/bin/', '/sbin/', '/opt/', '/etc/', '/tmp/', '/private/tmp/', '/private/var/', '/var/', '/System/', '/Library/', '/Applications/', '/proc/'];
 /** the separator between the human message and the structured tail of a confirm */
 const TAIL = '␟';
+const fileDirs = JSON.parse(process.env.TD_CANVAS_FILE_DIRS || '[]');
 
 function expand(p, cwd) {
   if (p === '~') return homedir();
@@ -50,8 +51,9 @@ function pathsOf(event, cwd) {
 function config(cwd) {
   try {
     const raw = JSON.parse(readFileSync(join(cwd, '.thoughtdag', 'guard.json'), 'utf8'));
-    return { mode: raw?.mode === 'allow' ? 'allow' : 'ask', allow: Array.isArray(raw?.allow) ? raw.allow.filter((x) => typeof x === 'string' && x.startsWith('/')).map((x) => resolve(x)) : [] };
-  } catch { return { mode: 'ask', allow: [] }; }
+    const configuredDirs = Array.isArray(raw?.allow) ? raw.allow.filter(x => typeof x === 'string' && isAbsolute(x)).map(x => resolve(x)) : [];
+    return { mode: raw?.mode === 'allow' ? 'allow' : 'ask', allow: [...fileDirs, ...configuredDirs] };
+  } catch { return { mode: 'ask', allow: fileDirs }; }
 }
 
 /** The directory to offer as "allow this location": the path itself when

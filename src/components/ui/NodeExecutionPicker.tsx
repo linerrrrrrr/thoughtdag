@@ -1,6 +1,6 @@
 import { useStore } from '../../store';
 import { useUiStore } from '../../lib/ui-store';
-import { useModels } from '../../lib/use-models';
+import { availableExecutionModels, useModels } from '../../lib/use-models';
 import { nodeExecutionKind, resolveNodeModel } from '../../lib/node-execution';
 import { useT } from '../../i18n';
 import type { ThoughtData } from '../../types';
@@ -16,12 +16,15 @@ export default function NodeExecutionPicker({ nodeId }: { nodeId: string }) {
   const models = useModels();
   if (!data || data.response || data.responses.length > 0 || data.isLoading || data.stepKind === 'human') return null;
   const kind = nodeExecutionKind(data);
-  const inherited = resolveNodeModel({ ...data, model: undefined }, globalModel, models?.models);
+  const codexModels = availableExecutionModels(models, 'codex');
+  const choices = kind === 'codex' ? codexModels : availableExecutionModels(models, kind);
+  const inherited = resolveNodeModel({ ...data, model: undefined }, globalModel, choices);
+  const options = codexModels.length ? (['api', 'codex'] as const) : (['api'] as const);
   return (
     <div className="flex flex-wrap items-center gap-2 nodrag nopan" data-node-execution-picker={nodeId}
       onClick={event => event.stopPropagation()} onMouseDown={event => event.stopPropagation()}>
       <div className="flex items-center gap-1" role="group" aria-label={t('nodeExecution.type')}>
-        {(['api', 'codex'] as const).map(option => (
+        {options.map(option => (
           <button key={option} type="button" aria-pressed={kind === option}
             data-node-execution-option={option} onClick={() => setKind(nodeId, option)}
             className={`h-8 px-2.5 rounded-control text-control transition-colors ${kind === option ? 'bg-accent/10 text-accent' : 'text-ink-muted hover:bg-line/50'}`}>
@@ -30,8 +33,10 @@ export default function NodeExecutionPicker({ nodeId }: { nodeId: string }) {
         ))}
       </div>
       {kind === 'legacy-agent' && <NodeExecutionBadge data={data} />}
-      <ModelPicker compact value={data.model} executionKind={kind} inheritedModel={inherited}
-        onChange={model => setModel(nodeId, model)} />
+      {kind === 'api' || choices.length > 0
+        ? <ModelPicker compact value={data.model} execution={{ kind, models: choices, inheritedModel: inherited }}
+            onChange={model => setModel(nodeId, model)} />
+        : <span className="text-control text-ink-muted">{t(models?.agentsPending ? 'connection.checking' : 'connection.disconnected')}</span>}
     </div>
   );
 }

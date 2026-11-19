@@ -9,7 +9,8 @@ import { useInlineEditDismiss } from '../lib/use-inline-edit-dismiss';
 import { useDismissableLayer } from '../lib/use-dismissable-layer';
 import { useSessionDraft } from '../lib/use-session-draft';
 import { toast, useUiStore } from '../lib/ui-store';
-import { documentSourceKey, DocumentSourceError, documentWriteError, saveToOriginal, useOriginalDocument } from '../lib/original-document';
+import { DocumentSourceError, documentWriteError } from '../lib/document-errors';
+import { encodeBytes, savePdfFileRevision } from '../lib/attachment-vault';
 import { isViewerMode } from '../lib/viewer';
 import { useProjects } from '../store/projects';
 import { useStore } from '../store';
@@ -41,10 +42,9 @@ export default function PdfDocumentView({ nodeId, attachment, compact = false, a
 }) {
   const t = useT();
   const projectId = useProjects(state => state.activeId);
-  const sourceKey = documentSourceKey(projectId ?? 'default', nodeId, attachment.id);
-  const original = useOriginalDocument(sourceKey);
+  const [saving, setSaving] = useState(false);
   const revision = useMemo(() => annotationRevision(attachment.pdfAnnotations), [attachment.pdfAnnotations]);
-  const needsWrite = original.ready && revision !== original.source?.writtenRevision;
+  const needsWrite = revision !== annotationRevision(attachment.pdfSavedAnnotations);
   const cacheKey = pdfDocumentKey(projectId, nodeId, attachment.id);
   const cached = peekPdfDocument(cacheKey, attachment);
   const initialResource = cached?.document && cached.pdfjs ? { doc: cached.document, pdfjs: cached.pdfjs, resource: cached } : null;
@@ -98,7 +98,7 @@ export default function PdfDocumentView({ nodeId, attachment, compact = false, a
     };
     // Vault migrations change storage location, not the immutable PDF identity.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cacheKey, retry]);
+  }, [cacheKey, attachment.pdfFileRevision, retry]);
 
   useEffect(() => {
     const element = root.current;
@@ -192,31 +192,33 @@ export default function PdfDocumentView({ nodeId, attachment, compact = false, a
   };
   const saveAnnotations = async (edited?: PdfAnnotation) => {
     const current = currentAttachment();
-    if (isViewerMode || !loaded || !current || !original.ready) return false;
+    if (isViewerMode || !loaded || !current || saving) return false;
     const previous = current.pdfAnnotations;
     const marks = previous ?? [];
     const next = !edited ? marks : marks.some(mark => mark.id === edited.id)
       ? marks.map(mark => mark.id === edited.id ? edited : mark) : [...marks, edited];
     const assertCurrent = () => {
       const live = currentAttachment();
-      if (!live || live.pdfAnnotations !== previous || resourceRef.current !== loaded.resource) throw new DocumentSourceError('document.editChanged');
+      if (!live || live.pdfAnnotations !== previous || live.pdfFileRevision !== current.pdfFileRevision
+        || resourceRef.current !== loaded.resource) throw new DocumentSourceError('document.editChanged');
     };
+    setSaving(true);
     try {
-      const result = await saveToOriginal(sourceKey, current, async () => {
-        const { annotatedPdf } = await import('../lib/pdf-annotations');
-        return { blob: await annotatedPdf(loaded.doc, next), revision: annotationRevision(next) };
-      }, assertCurrent);
-      if (!result) return false;
-      const live = currentAttachment();
-      if (!live) return false;
-      // Preserve concurrent additions while recording the explicitly saved
-      // comment. Any later canvas changes remain pending for the next Save.
-      if (edited && live.pdfAnnotations?.find(mark => mark.id === edited.id) === marks.find(mark => mark.id === edited.id)) {
-        commit(list => list.some(mark => mark.id === edited.id) ? list.map(mark => mark.id === edited.id ? edited : mark) : [...list, edited]);
-      }
-      if ((result.path || result.reconnected) && result.path !== live.sourcePath) useStore.getState().setAttachmentData(nodeId, attachment.id, { sourcePath: result.path });
+      const [{ annotatedPdf }, { saveNodeFile }] = await Promise.all([import('../lib/pdf-annotations'), import('../lib/node-files')]);
+      const blob = await annotatedPdf(loaded.doc, next);
+      const content = encodeBytes(new Uint8Array(await blob.arrayBuffer()));
+      const pdfFileRevision = await savePdfFileRevision(content);
+      assertCurrent();
+      await saveNodeFile(projectId ?? 'default', nodeId, current, content, assertCurrent, nodeFileRevision => {
+        const state = useStore.getState();
+        state.pushHistory();
+        state.setAttachmentData(nodeId, attachment.id, { pdfFileRevision, pdfFileContent: undefined,
+          pdfAnnotations: next, pdfSavedAnnotations: next, nodeFileRevision, size: blob.size });
+        state.pushHistory();
+      });
       return true;
     } catch (error) { toast('error', t(documentWriteError(error))); return false; }
+    finally { setSaving(false); }
   };
   const saveComment = async (annotation: PdfAnnotation, comment: string) => {
     if (!await saveAnnotations({ ...annotation, comment })) return false;
@@ -238,11 +240,11 @@ export default function PdfDocumentView({ nodeId, attachment, compact = false, a
     cancelComment(annotation);
   };
 
-  const saveButton = <button type="button" data-pdf-save disabled={!needsWrite || original.saving || !loaded}
-    onClick={() => void saveAnnotations()} aria-label={t('common.save')} data-tooltip={t('document.saveOriginal')}
+  const saveButton = <button type="button" data-pdf-save disabled={!needsWrite || saving || !loaded}
+    onClick={() => void saveAnnotations()} aria-label={t('common.save')} data-tooltip={t('document.saveNode')}
     className={actionsHost ? undefined : 'pdf-document-tool text-control text-ink-muted hover:bg-wash'}><Save size={15} strokeWidth={1.75} /></button>;
-  const status = <span role="status" className="text-meta text-ink-faint">{original.saving ? t('richDocument.saving')
-    : needsWrite ? t('document.pendingWrite') : original.source?.writtenDigest ? t('document.written') : ''}</span>;
+  const status = <span role="status" className="text-meta text-ink-faint">{saving ? t('richDocument.saving')
+    : needsWrite ? t('docx.unsaved') : t('nativeDocument.saved')}</span>;
   return <div ref={root} className={`pdf-document-view nodrag nopan nowheel ${compact ? 'pdf-document-compact' : ''}`}
     data-pdf-document={attachment.id} onDoubleClick={event => event.stopPropagation()} onMouseUp={selectText}>
     <div className="pdf-document-controls">
@@ -257,7 +259,7 @@ export default function PdfDocumentView({ nodeId, attachment, compact = false, a
         {statusHost && createPortal(status, statusHost)}
       </div>}
       {!isViewerMode && effectiveMode !== 'read' && <p className="pdf-document-mode-hint text-control text-ink-faint">{t(effectiveMode === 'highlight' ? 'pdfDocument.highlightHint' : 'pdfDocument.commentHint')}</p>}
-      {active && loaded && !error && <PdfComment key={active.id} annotation={active} nodeId={nodeId} attachmentId={attachment.id} isNew={pending?.id === active.id} saving={original.saving}
+      {active && loaded && !error && <PdfComment key={active.id} annotation={active} nodeId={nodeId} attachmentId={attachment.id} isNew={pending?.id === active.id} saving={saving}
         onClose={() => setActiveId(null)} onCancel={() => cancelComment(active)} onSave={comment => saveComment(active, comment)} onDelete={() => removeAnnotation(active)} />}
     </div>
     {error ? <div className="pdf-document-fallback" data-pdf-fallback>

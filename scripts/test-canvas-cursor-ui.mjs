@@ -308,6 +308,21 @@ try {
     await drag(at, 48, 24, at => cursorAt(at, 'grabbing', 'Moving multi-selection'));
     moved(before, await positions(), ['note', 'thought'], 48, 24, .65);
     await cursorAt(await point(page.locator('[data-selection-resize="both"]')), 'nwse-resize', 'Multi-selection resize');
+
+    const pan = page.locator('.react-flow__controls-pan');
+    await pan.click();
+    try {
+      const camera = await viewport(), selectedPositions = await positions();
+      const gap = await point(page.locator('[data-selection-move]'));
+      await drag(gap, 54, 32, current => cursorAt(current, 'grabbing', 'Panning over the selection'));
+      const after = await viewport();
+      near(after.x - camera.x, 54, 1, 'Selection pan x');
+      near(after.y - camera.y, 32, 1, 'Selection pan y');
+      assert.deepEqual(await positions(), selectedPositions);
+      assert.deepEqual(await page.evaluate(() => [...window.__store.getState().selectedNodeIds].sort()), ['note', 'thought']);
+    } finally {
+      await pan.click();
+    }
   });
 
   await probe('Disabled node dragging does not leave a grab cursor on headers or overviews', async () => {

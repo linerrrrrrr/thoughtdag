@@ -93,10 +93,10 @@ export default function ApiKeyModal() {
     setAdding(false); setProbed(null); setPicked(new Map()); setKey(''); setCustomURL(''); setCustomName(''); setFilter(''); setError('');
   };
   const layerRef = useRef<HTMLDivElement>(null);
-  useDismissableLayer({ open, refs: [layerRef], restoreFocus: false, ignoreOutside: event => event.target instanceof Element && !!event.target.closest('[data-connection-entry]'), onDismiss: (reason) => {
+  useDismissableLayer({ open, refs: [layerRef], restoreFocus: false, onDismiss: (reason) => {
     if (reason === 'escape' && !agentView) resetAdd();
     setOpen(false);
-    if (reason === 'escape') restoreCanvasToolbarFocus(document.querySelector(`[data-connection-entry="${agentView ? 'agents' : 'providers'}"]`));
+    if (reason === 'escape') restoreCanvasToolbarFocus(document.querySelector('[data-project-switcher] [data-model-picker-trigger]'));
   } });
   useEffect(() => { if (open) layerRef.current?.focus({ preventScroll: true }); }, [open]);
 

@@ -1,0 +1,86 @@
+.canvas-model-menu {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.canvas-model-menu-header {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 var(--spacing-toolbar-inset);
+  border-bottom: 1px solid var(--color-line);
+}
+.canvas-model-tabs {
+  display: flex;
+  align-items: stretch;
+  gap: var(--spacing-control-gap);
+}
+.canvas-model-tabs button {
+  position: relative;
+  min-height: 40px;
+  padding: 0 var(--spacing-toolbar-inset);
+  color: var(--color-ink-muted);
+}
+.canvas-model-tabs button[aria-selected="true"] {
+  color: var(--color-ink);
+  font-weight: 600;
+}
+.canvas-model-tabs button[aria-selected="true"]::after {
+  content: '';
+  position: absolute;
+  inset: auto var(--spacing-toolbar-inset) -1px;
+  height: 2px;
+  background: var(--color-accent);
+}
+.canvas-model-tabs button:hover { color: var(--color-ink); }
+.canvas-model-refresh {
+  display: grid;
+  place-items: center;
+  width: var(--spacing-control-size);
+  height: var(--spacing-control-size);
+  color: var(--color-ink-muted);
+  border-radius: var(--radius-control);
+}
+.canvas-model-refresh:hover { color: var(--color-ink); background: var(--color-wash); }
+.canvas-model-menu-header button:focus-visible { outline: 2px solid var(--color-accent); outline-offset: -2px; }
+.canvas-model-menu-body {
+  min-height: 0;
+  max-height: 25rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.canvas-model-menu-body:has([data-canvas-typography-toggle][aria-expanded="true"]) {
+  max-height: 42rem;
+}
+
+.canvas-type-preview {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--spacing-control-gap) var(--spacing-related);
+  padding: var(--spacing-toolbar-inset);
+  background: var(--color-wash);
+  border-radius: var(--radius-content);
+}
+.canvas-type-preview-row {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
+  align-items: center;
+  min-height: 32px;
+}
+.canvas-type-preview-node {
+  box-sizing: border-box;
+  width: max-content;
+  max-width: 100%;
+  min-height: 12px;
+  margin-inline: auto;
+  padding: 2px var(--spacing-control-gap);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-control);
+  background: var(--color-card);
+  text-align: center;
+  overflow-wrap: anywhere;
+  line-height: 1.4;
+}
+.canvas-type-preview-node span { display: block; }

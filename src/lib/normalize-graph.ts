@@ -16,8 +16,15 @@ const CURRENT_KINDS = new Set(['human', 'prompt', 'note', 'file', 'link', 'frame
 export function normalizeConversationNode(node: ThoughtNode): ThoughtNode {
   const original = node.data;
   const retiredKind = original.stepKind !== undefined && !CURRENT_KINDS.has(original.stepKind);
-  if (!retiredKind && !RETIRED_NODE_FIELDS.some(key => key in original)) return node;
+  const hasExternalPath = original.attachments?.some(att => 'sourcePath' in att);
+  if (!retiredKind && !hasExternalPath && !RETIRED_NODE_FIELDS.some(key => key in original)) return node;
   const data: ThoughtData = { ...original };
+  if (hasExternalPath) data.attachments = original.attachments?.map(att => {
+    if (!('sourcePath' in att)) return att;
+    const clean = { ...att };
+    Reflect.deleteProperty(clean, 'sourcePath');
+    return clean;
+  });
   // Preserve the person's selected words as visible question content,
   // including each question version, instead of hidden context metadata.
   const passage = typeof data.branchContext === 'string' ? data.branchContext.trim() : '';

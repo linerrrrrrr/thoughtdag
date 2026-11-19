@@ -12,7 +12,6 @@ import { toast, useUiStore } from './ui-store';
 import { t, fmt, useI18n } from '../i18n';
 import { documentCopyText, isEditableDocument } from './document-copy';
 import { adjacentFilePosition } from './single-file-nodes';
-import { documentSourceKey, rememberImportedDocument } from './original-document';
 
 // Content nodes: canvas material (note / file / link). Shared creation and
 // ingestion used by the palette, canvas paste, and canvas drop.
@@ -115,17 +114,11 @@ export async function ingestFiles(nodeId: string, files: FileList | File[]): Pro
   const projectKey = useStore.persist.getOptions().name;
   const { useProjects } = await import('../store/projects');
   if (useStore.persist.getOptions().name !== projectKey || useProjects.getState().switching) return;
-  const projectId = useProjects.getState().activeId ?? 'default';
   let notified = false;
   for (const file of Array.from(files)) {
-    // Browsers do not expose local paths. The desktop shell can resolve a
-    // user-selected file; synthetic and pasted files simply have no location.
-    let sourcePath = '';
-    try { sourcePath = window.desktop?.getPathForFile?.(file) ?? ''; } catch { /* older shells may not support File objects */ }
     let destinationId: string | undefined;
     await processFile(file, {
       add: (att) => {
-        if (sourcePath) att = { ...att, sourcePath };
         if (useStore.persist.getOptions().name !== projectKey) return;
         const state = useStore.getState();
         const target = state.nodes.find(node => node.id === nodeId);
@@ -156,7 +149,6 @@ export async function ingestFiles(nodeId: string, files: FileList | File[]): Pro
           destinationId = undefined;
           return;
         }
-        rememberImportedDocument(documentSourceKey(projectId, destinationId, att.id), file);
         if (destinationId !== nodeId && !notified) {
           toast('info', t('content.filesInSeparateNodes'));
           notified = true;

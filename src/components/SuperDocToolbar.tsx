@@ -171,13 +171,13 @@ export default function SuperDocToolbar({ instance, viewport, name, dirty, savin
     <div className="native-document-toolbar-header">
       <div className="native-document-toolbar-name" data-tooltip={name} data-tooltip-overflow>{name}</div>
       <span className="native-document-toolbar-status" data-dirty={dirty} role="status">
-        {t(saving ? 'richDocument.saving' : dirty ? 'document.pendingWrite' : 'nativeDocument.saved')}
+        {t(saving ? 'richDocument.saving' : dirty ? 'docx.unsaved' : 'nativeDocument.saved')}
       </span>
       <div className="native-document-toolbar-actions">
         <button type="button" className="native-document-text-action" disabled={saving || uploading}
           onClick={onExport} data-docx-export><Download size={15} />{t('richDocument.exportDocx')}</button>
         <button type="button" className="native-document-text-action native-document-save" disabled={!dirty || !canSave || saving || uploading}
-          onClick={onSave} data-docx-save data-tooltip={t('document.saveOriginal')}>
+          onClick={onSave} data-docx-save data-tooltip={t('document.saveNode')}>
           {saving ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />}
           {t(saving ? 'richDocument.saving' : 'common.save')}
         </button>

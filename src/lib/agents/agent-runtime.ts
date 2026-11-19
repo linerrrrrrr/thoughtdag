@@ -26,7 +26,8 @@ import { useStore } from '../../store';
 import { isAgentActivity } from '../agent-activity';
 import type { AppServerThread } from '../adapters/codex-appserver';
 import { t } from '../../i18n';
-import { DOCX_MIME_TYPE, documentCopyText, isEditableDocument } from '../document-copy';
+import { agentFileContext, finishAgentFileEdits, showAgentFilePreview, type AgentFileContext } from './node-file-context';
+import { groupNodeFileEdits } from '../node-files';
 import { compileCodexHistory, selectCodexBase, scopeNativeItems, historyFingerprint, nodeHistoryRevision, toolAttachmentsFingerprint, type CodexNativeHistory } from './codex-history';
 
 /** The runtimes the shell can run, keyed by the prefix of their picker ids. */
@@ -48,6 +49,13 @@ export const runtimeOf = (id: string | undefined | null): AgentRuntime | null =>
   return null;
 };
 export const isAgentModel = (id: string | undefined | null): boolean => runtimeOf(id) !== null;
+
+export function runtimeLabelOf(id: string): string {
+  const runtime = runtimeOf(id);
+  if (runtime) return AGENT_RUNTIMES[runtime].label;
+  if (id.startsWith('harness/')) return 'Harness';
+  return id.split('/')[0] || 'agent';
+}
 
 /** `<runtime prefix><provider>/<model>` → the runtime and its own coordinates, or null. */
 export function agentTarget(id: string): { runtime: AgentRuntime; provider: string; id: string } | null {
@@ -259,59 +267,6 @@ async function routeForParent(model: string | undefined, parentId?: string, chil
   return sessionPath ? { cwd, sessionId: own.sessionId, sessionPath, continue: true } : fresh;
 }
 
-/** The materials wired into a node's context — its own and its ancestors'
- *  document attachments — written where the agent can read them. Returns
- *  the note to append to the prompt, or '' when nothing was written. */
-async function materialsToDisk(nodeId: string | undefined, cwd: string, includedIds?: Set<string>): Promise<string> {
-  if (!nodeId || !window.desktopAgents) return '';
-  try {
-    const { useStore } = await import('../../store');
-    const { loadAttachmentContent } = await import('../attachment-vault');
-    const { nodes, edges } = useStore.getState();
-    const seen = new Set<string>();
-    const queue = [nodeId];
-    while (queue.length) {
-      const id = queue.shift()!;
-      if (seen.has(id)) continue;
-      seen.add(id);
-      for (const e of edges) if (e.target === id && !seen.has(e.source)) queue.push(e.source);
-    }
-    const files: { name: string; content: string; encoding?: 'utf8' | 'base64' }[] = [];
-    const names = new Set<string>();
-    for (const n of nodes) {
-      if (!seen.has(n.id)) continue;
-      for (const att of n.data.attachments ?? []) {
-        if (includedIds && !includedIds.has(att.id)) continue;
-        if (att.op || /^(tool|🔧|⌨️)/.test(att.name)) continue; // tool footprints are not materials
-        if (files.length >= 40) continue;
-        const isBinaryDocument = /^application\/pdf/.test(att.type) || att.type === DOCX_MIME_TYPE;
-        const isImage = att.type.startsWith('image/');
-        if (isImage) continue;
-        if (isEditableDocument(att) && att.editedText !== undefined) {
-          const copyName = `${att.name}.${att.id}.working.md`;
-          if (!names.has(copyName)) {
-            files.push({ name: copyName, content: documentCopyText(att) });
-            names.add(copyName);
-          }
-        }
-        if (names.has(att.name) || files.length >= 40) continue;
-        let content = '';
-        try { content = await loadAttachmentContent(att); } catch { content = att.content; }
-        if (!content) continue;
-        names.add(att.name);
-        if (isBinaryDocument) files.push({ name: att.name, content, encoding: 'base64' });
-        else files.push({ name: att.name, content });
-      }
-    }
-    if (files.length === 0) return '';
-    const r = await window.desktopAgents.writeMaterials(cwd, files);
-    if (!r.dir || r.written.length === 0) return '';
-    return `The canvas's materials are also on disk, readable with your tools, under ${r.dir}:\n` + r.written.map((f) => '- ' + f).join('\n')
-      + '\nA .working.md file is the user-saved working copy and takes precedence over the source document for its text.';
-  } catch {
-    return '';
-  }
-}
 
 /** The canvas's compiled messages, split for an agent that keeps its own
  *  history: the last user message is the question; everything before it is
@@ -333,7 +288,7 @@ export function compileForAgent(messages: ContextMessage[]): { question: string;
 
 type AgentEvent = { runId: string; event: Record<string, unknown> & { type: string } };
 const handlers = new Map<string, (event: AgentEvent['event']) => void>();
-const nodeRuns = new Map<string, { runId: string; runtime: AgentRuntime; stop: () => void }>();
+const nodeRuns = new Map<string, { runId: string; runtime: AgentRuntime; stop: () => void; files: AgentFileContext }>();
 
 /** Retryable native stop, independent of an already-aborted browser signal. */
 export function requestAgentStop(nodeId: string): boolean {
@@ -354,7 +309,15 @@ export async function steerAgentNode(nodeId: string, text: string): Promise<void
   const prompt = text.trim();
   if (!prompt) throw new Error('Additional instructions cannot be empty.');
   if (!active || active.runtime !== 'codex' || !window.desktopAgents?.steer) throw new Error('This agent run is not ready to receive additional instructions.');
-  if (!await window.desktopAgents.steer(active.runId, prompt)) throw new Error('The agent did not accept these instructions. Keep the draft and retry.');
+  const files = await agentFileContext(nodeId, prompt, new Set(), false);
+  const input = files.note ? files.note + '\n\n' + prompt : prompt;
+  if (nodeRuns.get(nodeId) !== active || !await window.desktopAgents.steer(active.runId, input)) throw new Error('The agent did not accept these instructions. Keep the draft and retry.');
+  for (const f of files.targets) {
+    const index = active.files.targets.findIndex(x => x.path === f.path);
+    if (index < 0) active.files.targets.push(f);
+    else active.files.targets[index] = f;
+  }
+  groupNodeFileEdits(files.targets, active.files);
   useStore.setState((state) => ({ nodes: state.nodes.map((node) => {
     if (node.id !== nodeId) return node;
     const question = `${node.data.question}\n\n${prompt}`;
@@ -446,11 +409,14 @@ export async function agentCallStream(
   signal?.throwIfAborted();
   const native = target.runtime === 'codex' ? await compileCodexHistory(messages, useStore.getState().nodes, nodeId, images) : undefined;
   const { question, context } = native ? { question: native.question, context: '' } : compileForAgent(messages);
-  await writeGuard(cwd, true);
+  const guard = await guardConfig();
+  if (guard.mode !== 'native') await writeGuard(cwd, true, guard);
   signal?.throwIfAborted();
   const continuing = !native && !!route?.continue && !!route?.sessionPath;
-  const materialIds = native ? new Set(messages.flatMap((m) => m.canvasSource?.attachmentIds ?? (m.canvasSource?.attachmentId ? [m.canvasSource.attachmentId] : []))) : undefined;
-  const materials = continuing && !native ? '' : await materialsToDisk(nodeId, cwd, materialIds);
+  const materialIds = new Set([...messages.flatMap((m) => m.canvasSource?.attachmentIds ?? (m.canvasSource?.attachmentId ? [m.canvasSource.attachmentId] : [])),
+    ...(images ?? []).flatMap(image => image.canvasSource?.attachmentId ? [image.canvasSource.attachmentId] : [])]);
+  const files = await agentFileContext(nodeId, useStore.getState().nodes.find(n => n.id === nodeId)?.data.question ?? question, materialIds, true);
+  const materials = files.note;
   signal?.throwIfAborted();
   if (native) {
     if (materials) {
@@ -461,7 +427,7 @@ export async function agentCallStream(
     }
     await selectCodexBase(native.history, native.instructions, useStore.getState().nodes, cwd);
   }
-  const ahead = native ? '' : continuing ? '' : [context, materials].filter(Boolean).join('\n\n');
+  const ahead = native ? '' : [continuing ? '' : context, materials].filter(Boolean).join('\n\n');
   const prompt = ahead ? `${ahead}\n\n---\n\n${question}` : question;
   const effort = useUiStore.getState().agentEffort || undefined;
   const permissionRoute = native ? (native.history.base ? { cwd, continue: true, sessionId: native.history.base.threadId } : { cwd }) : route;
@@ -473,10 +439,13 @@ export async function agentCallStream(
   let finalText: string | null = null;
   let stopRejected = false;
   let lastSession: NonNullable<ThoughtData['agentSession']> | undefined;
+  groupNodeFileEdits(files.targets, files);
   startingRuns++;
   const done = new Promise<{ how: string; error?: string }>((resolve) => {
     void bridge.run({
       runtime: target.runtime, cwd, prompt,
+      nativePermissions: guard.mode === 'native',
+      ...(files.targets.length && { managedFileDirs: [...new Set(files.targets.map(f => f.path.replace(/[\\/][^\\/]+$/, '')))] }),
       ...(native ? { codexHistory: native.history, instructions: native.instructions } : {
         ...(route?.sessionPath ? { sessionPath: route.sessionPath } : {}),
         ...(route?.forkEntryId ? { forkEntryId: route.forkEntryId } : {}),
@@ -507,7 +476,7 @@ export async function agentCallStream(
         }).finally(() => { stopPending = false; });
       };
       signal?.addEventListener('abort', stop, { once: true });
-      if (nodeId) nodeRuns.set(nodeId, { runId, runtime: target.runtime, stop });
+      if (nodeId) nodeRuns.set(nodeId, { runId, runtime: target.runtime, stop, files });
       handlers.set(runId, (event) => {
         switch (event.type) {
           case 'session': {
@@ -535,7 +504,7 @@ export async function agentCallStream(
             break;
           }
           case 'activity':
-            if (isAgentActivity(event.item)) callbacks?.onAgentActivity?.(event.item);
+            if (isAgentActivity(event.item) && !showAgentFilePreview(event.item, files)) callbacks?.onAgentActivity?.(event.item);
             break;
           case 'tool_execution_start': {
             if (target.runtime === 'codex') break;
@@ -606,8 +575,10 @@ export async function agentCallStream(
       });
   });
   const r = await done;
+  const syncFailure = await finishAgentFileEdits(files);
   if (r.how === 'error') throw new Error(r.error ?? 'agent run failed');
   if ((signal?.aborted && !stopRejected) || r.how === 'aborted' || r.how === 'interrupted') throw new DOMException('The operation was aborted.', 'AbortError');
+  if (syncFailure) throw syncFailure.reason;
   const saved = lastSession as NonNullable<ThoughtData['agentSession']> | undefined;
   if (native && saved?.nativeHistory && nodeId) {
     const captured = saved.nativeHistory;
@@ -700,18 +671,20 @@ export async function guardConfig(): Promise<{ mode: AgentPermissionMode; allow:
     const { useProjects } = await import('../../store/projects');
     const { projects, activeId } = useProjects.getState();
     const g = projects.find((p) => p.id === activeId)?.agentGuard;
-    return { mode: g?.mode === 'allow' || g?.mode === 'auto' ? g.mode : 'ask', allow: g?.allow ?? [] };
-  } catch { return { mode: 'ask', allow: [] }; }
+    return { mode: g?.mode ?? 'native', allow: g?.allow ?? [] };
+  } catch { return { mode: 'native', allow: [] }; }
 }
 
 /** Write the guard file for a working directory (the run's, or the
  *  canvas's current one when omitted). */
-export async function writeGuard(cwd?: string, required = false): Promise<void> {
+export async function writeGuard(cwd?: string, required = false, config?: Awaited<ReturnType<typeof guardConfig>>): Promise<void> {
   if (!window.desktopAgents) return;
   const dir = cwd ?? (await resolveAgentCwd())?.cwd;
   if (!dir) return;
   try {
-    const ok = await window.desktopAgents.guardWrite(dir, await guardConfig());
+    const { mode, allow } = config ?? await guardConfig();
+    if (mode === 'native') return;
+    const ok = await window.desktopAgents.guardWrite(dir, { mode, allow });
     if (!ok && required) throw new Error('The working directory permissions could not be saved. The agent was not started.');
   } catch (error) { if (required) throw error; }
 }

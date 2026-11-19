@@ -5,18 +5,21 @@ import type { Attachment, ThoughtNode as ThoughtNodeType } from '../types';
 import { useStore } from '../store';
 import { useNodeDetail } from '../lib/node-detail';
 import { toast, useUiStore } from '../lib/ui-store';
+import { useProjects } from '../store/projects';
+import { hasNodeFileHost, openNodeFile } from '../lib/node-files';
+import { revealLocalPath } from '../lib/local-path';
 import { triggerParadigmCascade } from '../store/streaming';
 import { extractImage, fetchLinkIntoNode, ingestFiles } from '../lib/content';
 import { FILE_INPUT_ACCEPT } from '../lib/attachments';
-import { chooseMaterialFiles, droppedFiles } from '../lib/original-document';
 import { Markdown } from './Markdown';
 import NodeOverview from './NodeOverview';
+import NodeNumber from './NodeNumber';
 import NodeConnectionHandles from './NodeConnectionHandles';
 import NodeResizeControls from './NodeResizeControls';
 import FileAttachmentHeader from './FileAttachmentHeader';
+import FileTextPreview from './FileTextPreview';
 import DocumentOriginalButton from './DocumentOriginalButton';
 import { fileIdentity } from '../lib/file-identity';
-import { revealLocalPath } from '../lib/local-path';
 import { getNodeDisplayName, getNodeNameSource } from '../lib/node-display-name';
 import { countTokens } from '../utils';
 import { useT, fmt } from '../i18n';
@@ -206,7 +209,7 @@ export default function ContentNode({ id, data, selected }: NodeProps<ThoughtNod
           if (kind === 'file' || kind === 'link' || fixedDetail) useUiStore.getState().setReaderNodeId(id);
           else rf.setCenter((nodePos?.x ?? 0) + 200, (nodePos?.y ?? 0) + 120, { zoom: 1, duration: 300 });
         }}>
-        <NodeOverview name={nodeName} source={nodeNameSource} compact icon={headerIcon} variant={kind} fileTypes={kind === 'file' ? fileTypes : undefined} />
+        <NodeOverview number={data.nodeNumber} name={nodeName} source={nodeNameSource} compact icon={headerIcon} variant={kind} fileTypes={kind === 'file' ? fileTypes : undefined} />
         <NodeConnectionHandles id={id} isTargetAllowed={false} muted large />
       </div>
     );
@@ -227,7 +230,7 @@ export default function ContentNode({ id, data, selected }: NodeProps<ThoughtNod
           if (kind !== 'file' || isViewerMode) return;
           e.preventDefault();
           e.stopPropagation();
-          await ingestFiles(id, droppedFiles(e.dataTransfer));
+          await ingestFiles(id, Array.from(e.dataTransfer.files));
         }}
         onDragOver={(e) => { if (kind === 'file') { e.preventDefault(); e.stopPropagation(); } }}
         data-content-plaque={kind}
@@ -235,6 +238,7 @@ export default function ContentNode({ id, data, selected }: NodeProps<ThoughtNod
       >
         <div className="drag-handle overflow-hidden">
           <NodeOverview
+            number={data.nodeNumber}
             name={nodeName}
             source={nodeNameSource}
             preview={kind === 'note' ? noteBody : kind === 'link' ? data.question : undefined}
@@ -270,7 +274,7 @@ export default function ContentNode({ id, data, selected }: NodeProps<ThoughtNod
         if (kind !== 'file' || isViewerMode) return;
         e.preventDefault();
         e.stopPropagation();
-        await ingestFiles(id, droppedFiles(e.dataTransfer));
+        await ingestFiles(id, Array.from(e.dataTransfer.files));
       }}
       onDragOver={(e) => { if (kind === 'file') { e.preventDefault(); e.stopPropagation(); } }}
     >
@@ -280,6 +284,7 @@ export default function ContentNode({ id, data, selected }: NodeProps<ThoughtNod
       <div className="material-header flex items-center justify-between px-surface-inset py-section-gap border-b drag-handle shrink-0">
         <div className="flex items-center gap-2 min-w-0">
           {headerIcon}
+          <NodeNumber number={data.nodeNumber} />
           <span className="text-control font-medium material-label">{materialLabel}</span>
           {kind === 'link'
             ? <span className="text-control text-ink-muted truncate">{linkDomain}</span>
@@ -299,9 +304,14 @@ export default function ContentNode({ id, data, selected }: NodeProps<ThoughtNod
           {kind === 'file' && <div ref={setDocumentActionsHost} className="material-document-actions" />}
           {kind === 'file' && attachments.length === 1 && !hasNativeDocxSource(attachments[0])
             && <DocumentOriginalButton attachment={attachments[0]} compact />}
-          {kind === 'file' && !isViewerMode && attachments.length === 1 && attachments[0].sourcePath && window.desktopLocal?.reveal &&
+          {kind === 'file' && !isViewerMode && attachments.length === 1 && hasNodeFileHost() && window.desktopLocal?.reveal &&
             <button type="button" aria-label={t('local.reveal')} data-tooltip={t('local.reveal')}
-              onClick={event => { event.stopPropagation(); void revealLocalPath(attachments[0].sourcePath!); }}
+              onClick={event => {
+                event.stopPropagation();
+                void openNodeFile(useProjects.getState().activeId ?? 'default', id, attachments[0])
+                  .then(file => file && revealLocalPath(file.path))
+                  .catch(() => toast('error', t('document.openFailed')));
+              }}
               className="w-6 h-6 shrink-0 rounded-control flex items-center justify-center text-ink-faint hover:text-accent">
               <FolderOpen size={14} strokeWidth={1.75} />
             </button>}
@@ -475,13 +485,12 @@ export default function ContentNode({ id, data, selected }: NodeProps<ThoughtNod
               ) : (
                 <div key={att.id}>
                   <FileAttachmentHeader attachment={att} onRemove={() => removeAttachment(id, att.id)} />
-                  {(att.extractedText || att.content) && <pre data-file-text-preview={att.id}
-                    className="max-h-[380px] overflow-auto nowheel nopan whitespace-pre-wrap break-words text-control text-ink-muted font-mono cursor-text">{(att.extractedText || att.content).slice(0, 12000)}</pre>}
+                  <FileTextPreview nodeId={id} attachment={att} />
                 </div>
               )
             ))}
             {!isViewerMode && attachments.length === 0 && <button
-              onClick={() => { void chooseMaterialFiles(fileRef.current, files => ingestFiles(id, files)).catch(() => toast('error', t('document.openFailed'))); }}
+              onClick={() => fileRef.current?.click()}
               className="material-upload w-full shrink-0 border border-dashed border-line hover:border-accent/40 hover:bg-accent/5 rounded-control text-control text-ink-faint hover:text-ink-muted transition-colors py-6"
             >
               {t('attach.upload')}
@@ -494,7 +503,7 @@ export default function ContentNode({ id, data, selected }: NodeProps<ThoughtNod
               multiple
               accept={FILE_INPUT_ACCEPT}
               className="hidden"
-              onChange={(e) => { if (e.target.files) void ingestFiles(id, e.target.files); e.target.value = ''; }}
+              onChange={(e) => { if (e.target.files) void ingestFiles(id, Array.from(e.target.files)); e.target.value = ''; }}
             />
           </div>
         )}

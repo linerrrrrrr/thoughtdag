@@ -7,7 +7,7 @@ import { bootProjects } from './store/projects'
 import { isViewerMode, bootViewer } from './lib/viewer'
 import { initAppearance } from './lib/appearance'
 import { installDshSessionsBridge } from './lib/agents/harness-bridge'
-import { API_BASE } from './lib/constants'
+import { ensureAgentHost } from './lib/agents/host'
 import { onDiskStorageError } from './lib/disk-storage'
 import { toast } from './lib/ui-store'
 import { t } from './i18n'
@@ -19,13 +19,7 @@ onDiskStorageError(() => toast('error', t('storage.writeFailed'), 0))
 const dshApi = import.meta.env.VITE_DSH_BRIDGE as string | undefined
 if (dshApi && !window.desktopSessions) installDshSessionsBridge(dshApi)
 if (dshApi) void import('./lib/plugin-update').then((mod) => mod.bootPluginUpdateCheck(dshApi))
-if (!window.desktopAgents) {
-  const agentsApi = dshApi ?? `${API_BASE}/api`
-  void import('./lib/agents/http-bridge').then(async (m) => {
-    const ok = await m.installAgentsHttpBridge(agentsApi)
-    if (ok && !dshApi && !window.desktopSessions) installDshSessionsBridge(agentsApi)
-  })
-}
+void ensureAgentHost()
 
 if (isViewerMode) void bootViewer()
 else {

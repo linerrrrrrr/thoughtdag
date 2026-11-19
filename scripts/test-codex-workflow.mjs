@@ -28,7 +28,8 @@ try {
           if (args.path === '../../i18n') contents = 'export const t=x=>x;';
           if (args.path === '../adapters') contents = `export const anyRunnerSessionConversation=async()=>globalThis.conversation;`;
           if (args.path === '../adapters/codex-appserver') contents = `export const appServerThreadConversation=()=>globalThis.conversation;`;
-          if (args.path === '../attachment-vault') contents = `export const loadAttachmentContent=async a=>a.content;`;
+          if (args.path === './node-file-context') contents = `export const agentFileContext=async()=>({note:'',targets:[]}),finishAgentFileEdits=async()=>{},showAgentFilePreview=()=>false;`;
+          if (args.path === '../node-files') contents = 'export const groupNodeFileEdits=()=>{};';
           if (args.path === './harness-bridge') contents = `export const currentDshSession=()=>null;`;
         }
         if (args.importer.endsWith('http-bridge.ts') && args.path === '../embedded') contents = 'export const IN_HARNESS_FRAME=false;';
@@ -186,6 +187,8 @@ try {
   const beforeCancel = sent.length;
   await assert.rejects(agentCallStream(messages, () => {}, preCancelled.signal, undefined, undefined, 'codex/native-model', resumed, 'child'), e => e.name === 'AbortError');
   assert.equal(sent.length, beforeCancel, 'an already stopped request never dispatches');
+  assert.equal(sent[0].nativePermissions, true, 'a canvas without a permission override uses the native runtime settings');
+  projects.projects[0].agentGuard = { mode: 'ask', allow: [] };
   window.desktopAgents.guardWrite = async () => false;
   await assert.rejects(agentCallStream(messages, () => {}, undefined, undefined, undefined, 'codex/native-model', resumed, 'child'), /permissions could not be saved/);
   assert.equal(sent.length, beforeCancel, 'a stale guard file cannot silently authorize a run');

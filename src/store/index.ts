@@ -1,4 +1,4 @@
-import { create } from 'zustand';
+import { create, type StateCreator } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { createIdbObjectStorage } from '../lib/persistence';
 import { isViewerMode } from '../lib/viewer';
@@ -16,6 +16,7 @@ import { recoverInterruptedAgentRun, settleAgentActivity } from '../lib/agent-ac
 import { t } from '../i18n';
 import { normalizeConversationNode, normalizeConversationEdge } from '../lib/normalize-graph';
 import { splitLegacyFileNodes } from '../lib/single-file-nodes';
+import { numberCanvasNodes } from '../lib/node-numbers';
 
 // Reset transient UI flags — applied both when persisting and when rehydrating,
 // so a refresh mid-stream/mid-edit never restores a node stuck in loading state.
@@ -45,7 +46,32 @@ export function stripTransient(nodes: ThoughtNode[]): ThoughtNode[] {
   });
 }
 
-export const useStore = create<StoreState>()(persist((...a) => ({
+// Both slice actions and imperative writes (imports, drops, runtime updates)
+// enter through this boundary. Allocate before subscribers or history see them.
+function withNodeNumbers(createState: StateCreator<StoreState>): StateCreator<StoreState> {
+  return (set, get, api) => {
+    const setNumbered: typeof set = (update, replace) => {
+      const current = get();
+      let patch = typeof update === 'function' ? update(current) : update;
+      const incoming = patch.nodes;
+      if (incoming && incoming !== current.nodes) {
+        const restoring = patch.historyIndex !== undefined && (patch.historyIndex !== current.historyIndex
+          || patch.history?.[patch.historyIndex]?.nodes === incoming);
+        const numbered = numberCanvasNodes(incoming, current.lastNodeNumber, restoring ? undefined : current.nodes);
+        if (numbered.nodes !== incoming || numbered.lastNodeNumber !== current.lastNodeNumber) {
+          const history = patch.history?.map(snapshot => snapshot.nodes === incoming ? { ...snapshot, nodes: numbered.nodes } : snapshot);
+          patch = { ...patch, ...numbered, ...(history ? { history } : {}) };
+        }
+      }
+      if (replace) set(patch as StoreState, true);
+      else set(patch);
+    };
+    api.setState = setNumbered;
+    return createState(setNumbered, get, api);
+  };
+}
+
+export const useStore = create<StoreState>()(persist(withNodeNumbers((...a) => ({
   ...createHistorySlice(...a),
   ...createNodeSlice(...a),
   ...createLlmSlice(...a),
@@ -53,7 +79,7 @@ export const useStore = create<StoreState>()(persist((...a) => ({
   ...createAttachmentSlice(...a),
   ...createReplaySlice(...a),
   ...createEventSlice(...a),
-}), {
+})), {
   // Placeholder name — bootProjects() (src/store/projects.ts) points this at
   // the active project's key via persist.setOptions() before rehydrating.
   name: 'thoughtdag',
@@ -68,18 +94,22 @@ export const useStore = create<StoreState>()(persist((...a) => ({
   // selection are session-scoped and would bloat the stored payload.
   partialize: (state): PersistedState => ({
     nodes: stripTransient(state.nodes),
+    lastNodeNumber: state.lastNodeNumber,
     edges: state.edges.map(normalizeConversationEdge).map((e) => (e.selected ? { ...e, selected: false } : e)),
     events: state.events,
   }),
   merge: (persisted, current) => {
     const p = (persisted ?? { nodes: [], edges: [] }) as PersistedState;
-    const { nodes, edges } = splitLegacyFileNodes({
+    const graph = splitLegacyFileNodes({
       nodes: stripTransient(p.nodes ?? []),
       edges: (p.edges ?? []).map(normalizeConversationEdge).map((e) => (e.selected ? { ...e, selected: false } : e)),
     });
+    const { nodes, lastNodeNumber } = numberCanvasNodes(graph.nodes, p.lastNodeNumber);
+    const { edges } = graph;
     return {
       ...current,
       nodes,
+      lastNodeNumber,
       edges,
       events: p.events ?? [],
       // The restored graph becomes the base snapshot of the undo stack.

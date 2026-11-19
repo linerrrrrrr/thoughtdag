@@ -1,10 +1,9 @@
 import { useState, useRef, useCallback, useEffect, type RefObject } from 'react';
 import { describeModel } from '../../lib/use-models';
-import { AlertTriangle, ChevronLeft, ChevronRight, ClipboardCopy, RefreshCw, Trash2, Pencil } from 'lucide-react';
+import { AlertTriangle, RefreshCw, Pencil } from 'lucide-react';
 import { useStore } from '../../store';
 import { useUiStore } from '../../lib/ui-store';
 import { isImeComposing } from '../../utils';
-import { copyText } from '../../lib/export';
 import { Markdown, HighlightedMarkdown } from '../Markdown';
 import { useT } from '../../i18n';
 import { isViewerMode } from '../../lib/viewer';
@@ -15,6 +14,7 @@ import { AgentTrace } from '../ui/AgentTrace';
 import { AgentActivityView } from '../ui/AgentActivityView';
 import { activeAgentActivity } from '../../lib/agent-activity';
 import { AgentRerunButton } from '../ui/AgentRerunButton';
+import { ResponseCopyButton, ResponseVersions } from '../ui/ResponseActions';
 import type { ThoughtData } from '../../types';
 import { useInlineEditDismiss } from '../../lib/use-inline-edit-dismiss';
 import { screenToUi } from '../../lib/ui-scale';
@@ -41,9 +41,7 @@ export default function ResponseSection({
 }) {
   const editResponse = useStore((s) => s.editResponse);
   const setEditingResponse = useStore((s) => s.setEditingResponse);
-  const navigateVersion = useStore((s) => s.navigateVersion);
   const rerunNode = useStore((s) => s.rerunNode);
-  const deleteVersion = useStore((s) => s.deleteVersion);
   const t = useT();
   const editingHere = data.isEditingResponse && data.responseEditor === 'panel';
   const activity = activeAgentActivity(data);
@@ -244,14 +242,7 @@ export default function ResponseSection({
           >
             <RefreshCw size={15} strokeWidth={1.75} />
           </button>}
-          <button
-            onClick={() => void copyText(data.response)}
-            className="rounded-control w-7 h-7 flex items-center justify-center hover:text-accent hover:bg-wash transition-colors"
-            aria-label={t('actions.copyResponse')}
-            data-tooltip={t('actions.copyResponse')}
-          >
-            <ClipboardCopy size={14} strokeWidth={1.75} />
-          </button>
+          <ResponseCopyButton key={data.responseIndex} text={data.response} />
           {!isViewerMode && (
             <button
               onClick={startEditResponse}
@@ -272,20 +263,7 @@ export default function ResponseSection({
               {describeModel(data.generatedBy[data.responseIndex], data.generatedEfforts?.[data.responseIndex])}
             </span>
           )}
-          {hasMultipleVersions && (
-            <div className="flex items-center gap-1 text-control text-ink-muted ml-1">
-              <button onClick={() => navigateVersion(nodeId, 'prev')} className="hover:text-accent hover:bg-wash rounded-control w-5 h-5 flex items-center justify-center transition-colors"><ChevronLeft size={14} strokeWidth={1.75} /></button>
-              <span className="text-accent font-medium">v{data.responseIndex + 1}/{data.responses.length}</span>
-              <button onClick={() => navigateVersion(nodeId, 'next')} className="hover:text-accent hover:bg-wash rounded-control w-5 h-5 flex items-center justify-center transition-colors"><ChevronRight size={14} strokeWidth={1.75} /></button>
-              {!isViewerMode && <button
-                onClick={() => deleteVersion(nodeId, data.responseIndex)}
-                className="rounded-control w-5 h-5 flex items-center justify-center transition-colors object-action-danger" data-icon-only
-                aria-label={t('common.deleteVersion')}
-              >
-                <Trash2 size={13} strokeWidth={1.75} />
-              </button>}
-            </div>
-          )}
+          {hasMultipleVersions && <ResponseVersions nodeId={nodeId} index={data.responseIndex} count={data.responses.length} />}
         </div>
       )}
 

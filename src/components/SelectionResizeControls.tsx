@@ -8,7 +8,7 @@ import { RESIZE_HIT_SIZE, RESIZE_TARGET_GAP, resizeControlStyle } from '../lib/r
 import { condenseGuard } from '../lib/condense-guard';
 import { useDismissableLayer } from '../lib/use-dismissable-layer';
 import { useCanvasEditing } from '../lib/canvas-editing';
-import type { SelectionRegion, SelectionTarget } from '../lib/canvas-selection';
+import { isCanvasPanTarget, type SelectionRegion, type SelectionTarget } from '../lib/canvas-selection';
 import { useT } from '../i18n';
 import type { ThoughtNode } from '../types';
 import ResizeGrip from './ResizeGrip';
@@ -17,7 +17,10 @@ import './SelectionResizeControls.css';
 type Direction = 'move' | 'width' | 'height' | 'both';
 type Gesture = { x: number; y: number; zoom: number; pointerId: number; direction: Direction; originals: ThoughtNode[]; changed: boolean; clickedId?: string; region: SelectionRegion | null; target: SelectionTarget };
 
-export default function SelectionResizeControls({ onNodeContextMenu }: { onNodeContextMenu: (event: MouseEvent, node: { id: string }) => void }) {
+export default function SelectionResizeControls({ leftDragPans, onNodeContextMenu }: {
+  leftDragPans: boolean;
+  onNodeContextMenu: (event: MouseEvent, node: { id: string }) => void;
+}) {
   const nodes = useStore(state => state.nodes);
   const ids = useStore(state => state.selectedNodeIds);
   const region = useCanvasEditing(state => state.selectionRegion);
@@ -64,14 +67,14 @@ export default function SelectionResizeControls({ onNodeContextMenu }: { onNodeC
     },
     // The selection's own editing controls form one interaction boundary.
     // Additive gestures must retain the old selection until React Flow reads it.
-    ignoreOutside: event => !!gesture.current || event.ctrlKey || event.metaKey || event.shiftKey
+    ignoreOutside: event => !!gesture.current || event.ctrlKey || event.metaKey || event.shiftKey || isCanvasPanTarget(event.target)
       || event.target instanceof Element && !!event.target.closest('[data-selection-toolbar], [data-selection-menu], [data-selection-target-control], [data-layout-quick], [data-canvas-layout-entry], [data-canvas-layout-panel], [data-node-details], [data-node-details-close]'),
   });
   useDismissableLayer({ open: active !== null, refs: [ref], priority: 10, dismissOnOutside: false, restoreFocus: false, onDismiss: () => finish(true) });
   if (selected.length < 2 || !bounds || !renderer) return null;
   const start = (event: PointerEvent<HTMLButtonElement>, direction: Direction) => {
     if (direction === 'move' && event.button === 2) contextOrigin.current = { x, y };
-    if (event.button !== 0 || gesture.current || condenseGuard()) return;
+    if (event.button !== 0 || gesture.current || (direction === 'move' && leftDragPans) || condenseGuard()) return;
     event.preventDefault(); event.stopPropagation();
     const state = useStore.getState();
     const hit = direction === 'move' ? document.elementsFromPoint(event.clientX, event.clientY).find(element => element.matches('.react-flow__node')) : undefined;

@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { get as idbGet, set as idbSet, del as idbDel } from '../lib/disk-storage';
 import { useStore } from './index';
+import type { StoreState } from './types';
 import { activeAbortControllers } from './streaming';
 import { flushPendingWrites } from '../lib/persistence';
 import { resetMemoryWriteCaps } from '../lib/memory';
@@ -90,6 +91,8 @@ let bootPromise: Promise<void> | null = null;
 
 export function bootProjects(): Promise<void> {
   bootPromise ??= (async () => {
+    // The graph store also imports project helpers. Subscribe once both modules are initialized.
+    useStore.subscribe(touchProjectOnGraphChange);
     let meta = await idbGet<{ projects: ProjectMeta[]; activeId: string }>(META_KEY);
     if (!meta || meta.projects.length === 0) {
       const legacy = await idbGet<string>(LEGACY_KEY); // raw persist envelope string
@@ -201,6 +204,8 @@ export async function deleteProject(id: string): Promise<void> {
     if (rest.length > 0) await switchProject(rest[0].id);
     else await createProject('My Canvas');
   }
+  const { removeCanvasDocuments } = await import('../lib/managed-document-file');
+  await removeCanvasDocuments(id);
   await idbDel(projectStorageKey(id));
   useProjects.setState((s) => ({ projects: s.projects.filter((p) => p.id !== id) }));
   await saveMeta();
@@ -239,7 +244,7 @@ if (import.meta.env.DEV) {
 
 // ─── updatedAt bookkeeping ──────────────────────────────────────
 let touchTimer: ReturnType<typeof setTimeout> | null = null;
-useStore.subscribe((state, prev) => {
+function touchProjectOnGraphChange(state: StoreState, prev: StoreState) {
   if (suppressTouch) return;
   if (state.nodes === prev.nodes && state.edges === prev.edges) return;
   if (touchTimer) clearTimeout(touchTimer);
@@ -251,4 +256,4 @@ useStore.subscribe((state, prev) => {
     }));
     void saveMeta();
   }, 1000);
-});
+}

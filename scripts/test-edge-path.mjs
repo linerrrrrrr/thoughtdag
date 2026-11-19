@@ -83,6 +83,15 @@ try {
     const points = clear(vertical(cards), cards);
     assert.ok(points.every((p, i) => p.x === 100 && (!i || p.y >= points[i - 1].y)));
   });
+  test('a reversed horizontal wire reaches both fixed ports on curved and orthogonal routes', () => {
+    const cards = [node('s', 600, 0), node('t', 0, 30)];
+    for (const mode of ['curve', 'orthogonal']) {
+      const route = routeEdge(800, 56, 'right', 0, 86, 'left', 's', 't', cards, mode, { fixedPorts: true });
+      const points = clear(route, cards);
+      assert.deepEqual(points[0], { x: 800, y: 56 });
+      assert.deepEqual(points.at(-1), { x: 0, y: 86 });
+    }
+  });
   test('automatic and curve modes preserve the natural unobstructed route', () => {
     const cards = [node('s', 0, 0), node('t', 240, 400)];
     const natural = vertical(cards);

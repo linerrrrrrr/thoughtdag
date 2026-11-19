@@ -2,13 +2,13 @@
 
 ## Connect and select a model
 
-Open **Connect a model** and choose a provider, plan route, local runtime, or custom endpoint. Authorize or provide a key, fetch the model list, then enable the models you want to use in ThoughtDAG. Normal use does not require editing `.env`; see [Connect a model](/setup) for the conditions of each route.
+Open the model menu at the top left of the canvas and select **Settings**. For a model endpoint, choose **API connection**, authorize or enter a key, fetch the model list, and save the models you want to use. For a local agent, choose **Agent connection**. See [Connect a model](/setup) for the available connection methods.
 
 ![The model-interface window with provider, plan, local-runtime, and custom-endpoint choices; the API-key field is empty and shows no real credential](../model-connect-en.png)
 
-The toolbar model is the **default for new nodes**. Its menu switches the default, reopens model interfaces, and reports whether web search, scholarly search, memory, and vision are available in the current installation. Pin a different model in the node panel only when that branch needs another cost, reasoning, or vision profile.
+The toolbar shows the **default model for new nodes**. In **Answer model**, expand a provider or agent and select a model to change the default. To use a different model for one node, select it in that node’s question composer. The model menu’s **Settings** tab also manages the decision model, memory, web search, and image recognition.
 
-![The toolbar model picker groups models by provider and reports available capabilities below the list](../model-capabilities-en.png)
+![The Answer model tab with models grouped by source](../model-capabilities-en.png)
 
 Each answer version records the model that produced it. Local models can run without sending model requests to a remote provider; remote costs and retention follow the endpoint you connect.
 

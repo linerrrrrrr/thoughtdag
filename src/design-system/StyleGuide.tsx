@@ -29,7 +29,7 @@ const wording = {
   answerBody: ['正文', 'Body text'], answerBodyDetail: ['中英文与长名称自然换行，代码在自身区域滚动。', 'Readable prose and long names, with code scrolling within its own area.'],
   answerSurface: ['容器', 'Surfaces'], answerSurfaceDetail: ['复用语义内边距与圆角，避免重复包裹。', 'Shared semantic insets and corners without repeated wrappers.'],
   bodyTokenDetail: ['负责正文，', ' governs prose; '], insetTokenDetail: ['负责内容边距。', ' governs content insets.'],
-  example: ['示例内容', 'Sample content'], completed: ['已完成', 'Complete'],
+  example: ['示例内容', 'Sample content'], executionSource: ['API 聊天', 'API chat'],
   read: ['阅读', 'Read'], copy: ['复制', 'Copy'], revise: ['修订', 'Revise'],
   sampleAction: ['已触发样张动作；没有写入画布。', 'Specimen action triggered; no canvas data was written.'],
   textareaLabel: ['正文输入样本', 'Body input sample'], textareaPlaceholder: ['输入中英文或多行内容，观察自动换行与焦点边界。', 'Type mixed-language or multiline content to inspect wrapping and focus.'],
@@ -139,9 +139,26 @@ function AnswerActions({ t }: { t: Translate }) {
 
 function ConversationSpecimen({ t }: { t: Translate }) {
   return <article className="thought-node conversation-node" data-specimen="conversation" aria-label={t('conversation')}>
-    <header className="thought-node-header ds-node-header">
-      <div className="ds-node-identity"><span className="node-start-label">{t('completed')}</span><span className="node-token-usage"><span className="node-token-heading"><span className="node-token-total">1,280 tokens</span><span className="node-tool-marks"><Wrench aria-hidden="true" />2</span></span></span></div>
-      <BookOpen className="ds-header-icon" aria-hidden="true" />
+    <header className="thought-node-header border-b border-line">
+      <div className="node-header-main">
+        <div className="node-header-identity">
+          <span className="ds-node-icon"><ChevronDown aria-hidden="true" /></span>
+          <span className="text-meta font-mono text-ink-muted" data-node-number={7}>#7</span>
+        </div>
+        <div className="node-header-author">
+          <span className="text-meta text-ink-muted shrink-0">{t('executionSource')}</span>
+          <span className="text-meta text-ink-faint" aria-hidden="true">/</span>
+          <span className="text-meta font-mono text-ink truncate">model-a</span>
+        </div>
+        <span className="node-token-usage">
+          <span className="node-token-heading"><span className="node-token-total">≈ 1,280 tokens</span><span className="node-tool-marks"><Wrench aria-hidden="true" />2</span></span>
+          <span aria-hidden="true" className="node-token-bar ds-token-composition" />
+        </span>
+        <div className="node-header-actions">
+          <span className="ds-node-icon"><BookOpen aria-hidden="true" /></span>
+          <span className="ds-node-icon"><Trash2 aria-hidden="true" /></span>
+        </div>
+      </div>
     </header>
     <div className="node-metadata"><div className="node-metadata-toggle"><ChevronDown aria-hidden="true" /><span>{t('name')}</span></div><h4 className="ds-node-name">{t('titleSample')}</h4></div>
     <div data-thought-body>

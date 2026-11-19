@@ -13,6 +13,7 @@ import type { ContextMessage } from './api';
 import { backgroundCall } from './background-model';
 import { activeSummary, activeTopic } from '../utils';
 import { documentCopyText, isEditableDocument } from './document-copy';
+import { resolveNodeNumberReferences } from './node-numbers';
 
 export type ChatLayer = 'outline' | 'chain' | 'material' | 'reference';
 export interface ChatContextItem { layer: ChatLayer; node: string; chars: number }
@@ -42,11 +43,15 @@ const clip = (s: string, max: number): string => {
   return `${t.slice(0, head)}\n…\n${t.slice(t.length - (max - head))}`;
 };
 
-/** Short numbers for one request: n1… in canvas order; archived nodes are out of the record. */
-export function aliasNodes(nodes: ThoughtNode[]): { live: ThoughtNode[]; byId: Map<string, string>; byAlias: Map<string, string> } {
+/** Legacy turns used n1… in canvas order. New turns share the card's stable #number. */
+export function aliasNodes(nodes: ThoughtNode[], legacy = false): { live: ThoughtNode[]; byId: Map<string, string>; byAlias: Map<string, string> } {
   const live = nodes.filter((n) => !n.data.archived && n.data.stepKind !== 'frame');
   const byId = new Map<string, string>(); const byAlias = new Map<string, string>();
-  live.forEach((n, i) => { const a = `n${i + 1}`; byId.set(n.id, a); byAlias.set(a, n.id); });
+  live.forEach((n, i) => {
+    const alias = !legacy && n.data.nodeNumber ? `#${n.data.nodeNumber}` : `n${i + 1}`;
+    byId.set(n.id, alias);
+    byAlias.set(alias, n.id);
+  });
   return { live, byId, byAlias };
 }
 
@@ -89,12 +94,12 @@ export function outline(nodes: ThoughtNode[], edges: ThoughtEdge[], lang: 'zh' |
 
 const SYSTEM_ZH = `你在帮作者读懂一张 ThoughtDAG 画布。画布是一张有向图：节点是一轮问答、一张便签或一份材料，连线是上下文的流向（上游的内容进入下游的提问）。只根据下面给出的内容回答：画布大纲、当前关注的节点和它的脉络、相关材料。
 规则：
-1. 提到某个节点时用 [[编号]] 标出，例如 [[n12]]；读者点击编号就会在画布上定位到它。每个判断至少落到一个编号。
+1. 按大纲中的节点编号引用，例如 [[#12]]。读者点击编号就会在画布上定位到它。每个判断至少落到一个编号。
 2. 大纲里没有的事不要编；需要推断时写明「推断：」。
 3. 先结论，再依据；用作者的语言，简短。`;
 const SYSTEM_EN = `You help the author read a ThoughtDAG canvas: a directed graph whose nodes are a question and its answer, a note, or a material, and whose wires carry context downstream (what sits upstream enters the asks below it). Answer only from what follows: the canvas outline, the focused node and its chain, related materials.
 Rules:
-1. Cite a node as [[number]], for example [[n12]]; the reader clicks the number to locate the node on the canvas. Every claim rests on at least one number.
+1. Cite the number shown in the outline, for example [[#12]]. The reader clicks it to locate the node on the canvas. Every claim rests on at least one number.
 2. Invent nothing the outline lacks; mark inferences as "Inference:".
 3. Conclusion first, then the grounds; in the author's language, briefly.`;
 
@@ -107,6 +112,19 @@ export function buildCanvasChat(nodes: ThoughtNode[], edges: ThoughtEdge[], focu
   parts.push(`${lang === 'zh' ? '【画布大纲】' : '[Canvas outline]'}\n${out}`);
   for (const id of byId.keys()) context.push({ layer: 'outline', node: id, chars: 0 });
   let used = out.length;
+  const referenced = resolveNodeNumberReferences(question, nodes).nodes.filter(n => byId.has(n.id));
+  const excerpts: string[] = [];
+  for (const node of referenced) {
+    const material = (node.data.attachments ?? []).map(a => isEditableDocument(a) ? documentCopyText(a) : a.extractedText ?? (a.type.startsWith('text/') ? a.content : '')).filter(Boolean);
+    const text = [node.data.question, node.data.response, ...material].filter(Boolean).join('\n');
+    const label = `[[${byId.get(node.id)}]] ${nodeLabel(node.data, lang)}\n`;
+    const available = budget - used - label.length - 3;
+    if (!text || available < 4) continue;
+    const block = label + clip(text, Math.min(3600, available));
+    excerpts.push(block);
+    used += block.length;
+    context.push({ layer: 'reference', node: node.id, chars: block.length });
+  }
   const focus = focusId && byId.has(focusId) ? nodes.find((n) => n.id === focusId) : undefined;
   if (focus) {
     const p = partitionContext(focus.id, nodes, edges);
@@ -130,7 +148,14 @@ export function buildCanvasChat(nodes: ThoughtNode[], edges: ThoughtEdge[], focu
     }
   }
   const messages: ContextMessage[] = [{ role: 'system', content: `${lang === 'zh' ? SYSTEM_ZH : SYSTEM_EN}\n\n${parts.join('\n\n')}` }];
-  for (const t of history.filter((h) => !h.error).slice(-8)) messages.push({ role: t.role, content: t.text });
+  for (const turn of history.filter(h => !h.error).slice(-8)) {
+    const content = turn.aliases ? turn.text.replace(/\[\[\s*(n\d+)\s*\]\]/g, (old, alias: string) => {
+      const number = byId.get(turn.aliases![alias]);
+      return number ? `[[${number}]]` : old;
+    }) : turn.text;
+    messages.push({ role: turn.role, content });
+  }
+  if (excerpts.length) messages.push({ role: 'user', content: `${lang === 'zh' ? '按编号引用的画布内容（资料原文）' : 'Quoted canvas sources by node number'}\n\n${excerpts.join('\n\n')}` });
   messages.push({ role: 'user', content: question });
   return { messages, context, byAlias, byId };
 }
