@@ -18,7 +18,7 @@ export default function MemoryManagerModal() {
   if (!open) return null;
 
   return createPortal(
-    <div className="fixed inset-0 z-50 bg-ink/30 flex items-center justify-center p-6" data-memory-manager>
+    <div className="fixed inset-0 z-50 bg-ink/30 flex items-center justify-center p-6" data-type-surface="portal" data-memory-manager>
       <div ref={ref} role="dialog" aria-modal="true" aria-label={t('memory.managerTitle')} tabIndex={-1} className="bg-surface border border-line rounded-panel shadow-lg w-full max-w-[980px] h-[min(680px,calc(90*var(--ui-vh)))] flex flex-col overflow-hidden">
         <div className="flex items-start gap-3 px-5 pt-4 pb-3 border-b border-line">
           <div className="flex-1 min-w-0">
@@ -38,7 +38,9 @@ export default function MemoryManagerModal() {
           </div>
         )}
         <div className="flex-1 min-h-0 overflow-y-auto px-5 py-4">
-          <MemoryPage query={query} onOpened={() => { close(); window.dispatchEvent(new CustomEvent('td:project-switched')); }} />
+          <MemoryPage query={query}
+            onOpened={() => { close(); window.dispatchEvent(new CustomEvent('td:project-switched')); }}
+            onConfigureJudge={() => { close(); useUiStore.getState().setApiKeyModalOpen(true, 'judge'); }} />
         </div>
       </div>
     </div>, document.body,

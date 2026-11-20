@@ -2,13 +2,13 @@
 
 ## Connect and select a model
 
-Open the model menu at the top left of the canvas and select **Settings**. For a model endpoint, choose **API connection**, authorize or enter a key, fetch the model list, and save the models you want to use. For a local agent, choose **Agent connection**. See [Connect a model](/setup) for the available connection methods.
+Open **Settings** in the upper-right toolbar. For a model endpoint, choose **Answer model → API connection**, authorize or enter a key, fetch the model list, and save the models you want to use. For a local agent, choose **Agent execution**. The default agent reasoning effort applies across canvases on this device. Supported models use the selected level on their next run. Codex uses the active canvas’s dedicated folder. You can view its path here and choose the approval mode for connected runs. See [Connect a model](/setup) for the available connection methods.
 
 ![The model-interface window with provider, plan, local-runtime, and custom-endpoint choices; the API-key field is empty and shows no real credential](../model-connect-en.png)
 
-The toolbar shows the **default model for new nodes**. In **Answer model**, expand a provider or agent and select a model to change the default. To use a different model for one node, select it in that node’s question composer. The model menu’s **Settings** tab also manages the decision model, memory, web search, and image recognition.
+The upper-left toolbar shows the **default model for new nodes**. Open the model menu, expand a provider or agent and select a model to change the default. To use a different model for one node, select it in that node’s question composer. The shortcut in the model menu opens **Settings → Answer model**, where you can choose the default and manage API connections. Under **Models and tools**, **Decision model** manages auxiliary decisions. **Search, vision & memory** contains web search, image recognition and memory.
 
-![The Answer model tab with models grouped by source](../model-capabilities-en.png)
+![The canvas model picker with models grouped by source](../model-capabilities-en.png)
 
 Each answer version records the model that produced it. Local models can run without sending model requests to a remote provider; remote costs and retention follow the endpoint you connect.
 

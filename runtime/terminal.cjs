@@ -22,7 +22,7 @@ const sessionToken = (id) => {
 };
 const PROGRAMS = {
   'claude-code': (id) => `claude --resume ${sessionToken(id)}`,
-  codex: (id) => `codex resume ${sessionToken(id)}`,
+  codex: (id) => `codex resume --cd . ${sessionToken(id)}`,
   pi: (id) => `pi --session ${sessionToken(id)}`,
 };
 
@@ -96,7 +96,9 @@ function buildTerminalRegistry(customTerminals = []) {
 async function openInTerminal(runner, cwd, sessionId, { preferred = '', customTerminals = [] } = {}) {
   const buildProgram = PROGRAMS[runner];
   if (!buildProgram || !/^[\w.-]{4,}$/.test(String(sessionId))) return { opened: false, via: '', command: '' };
-  const dir = typeof cwd === 'string' && path.isAbsolute(cwd) && await dirExists(cwd) ? cwd : os.homedir();
+  const cwdOk = typeof cwd === 'string' && path.isAbsolute(cwd) && await dirExists(cwd);
+  if (!cwdOk && runner === 'codex') return { opened: false, via: '', command: '' };
+  const dir = cwdOk ? cwd : os.homedir();
   const program = buildProgram(sessionId);
   const command = `cd ${shq(dir)} && ${program}`;
   const registry = buildTerminalRegistry(customTerminals);

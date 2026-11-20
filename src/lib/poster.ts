@@ -2,6 +2,7 @@ import { useStore } from '../store';
 import { collectTimeline, type TimelineEntry } from './timeline';
 import { generateGedankengang, getCached, graphFingerprint, type Gedankengang } from './gedankengang';
 import { isConversationStart } from './graph';
+import { posterFonts } from '../design-system/poster-typography';
 
 // The Gedankengang poster: the timeline overview rendered as a manuscript
 // chronicle — paper ground, serif ink, badge seals strung on a spine, the
@@ -20,9 +21,6 @@ const SEAL: Record<string, { color: string; glyph: string }> = {
   open: { color: '#d97706', glyph: '?' },
   insight: { color: '#25a06b', glyph: '✦' },
 };
-
-const SERIF = "'Songti SC', 'Noto Serif SC', Georgia, serif";
-const MONO = "'SF Mono', Menlo, monospace";
 
 /** Greedy wrap: CJK glyphs break anywhere, Latin words stay whole (break
     retreats to the last space), closing punctuation never starts a line. */
@@ -85,13 +83,13 @@ export async function drawGedankengangPoster({ title, journey, entries, lang }: 
   const probe = document.createElement('canvas').getContext('2d')!;
   const textW = W - PAD * 2;
 
-  probe.font = `700 52px ${SERIF}`;
+  probe.font = posterFonts.title;
   const titleLines = wrapText(probe, title, textW).slice(0, 3);
-  probe.font = `italic 30px ${SERIF}`;
+  probe.font = posterFonts.journey;
   const journeyLines = journey ? wrapText(probe, journey, textW) : [];
 
   const dayOf = (iso?: string) => (iso ? iso.slice(0, 10) : '');
-  probe.font = `28px ${SERIF}`;
+  probe.font = posterFonts.body;
   type Row =
     | { kind: 'day'; label: string }
     | { kind: 'entry'; e: PosterInput['entries'][number]; lines: string[] }
@@ -138,19 +136,19 @@ export async function drawGedankengangPoster({ title, journey, entries, lang }: 
 
   let y = 96;
   ctx.fillStyle = '#a08d5f';
-  ctx.font = `500 22px ${MONO}`;
+  ctx.font = posterFonts.eyebrow;
   const eyebrow = 'G E D A N K E N G A N G';
   ctx.fillText(eyebrow, PAD, y);
   y += 58;
 
   ctx.fillStyle = '#2b2416';
-  ctx.font = `700 52px ${SERIF}`;
+  ctx.font = posterFonts.title;
   for (const l of titleLines) { ctx.fillText(l, PAD, y); y += 64; }
 
   const days = entries.map((e) => dayOf(e.createdAt)).filter(Boolean);
   if (days.length) {
     ctx.fillStyle = '#a08d5f';
-    ctx.font = `20px ${MONO}`;
+    ctx.font = posterFonts.metadata;
     ctx.fillText(days[0] === days[days.length - 1] ? days[0] : `${days[0]} → ${days[days.length - 1]}`, PAD, y);
   }
   y += 30;
@@ -161,7 +159,7 @@ export async function drawGedankengangPoster({ title, journey, entries, lang }: 
     ctx.lineWidth = 3;
     ctx.beginPath(); ctx.moveTo(PAD, y - 26); ctx.lineTo(PAD, y - 30 + journeyLines.length * 44); ctx.stroke();
     ctx.fillStyle = '#5c4d31';
-    ctx.font = `italic 30px ${SERIF}`;
+    ctx.font = posterFonts.journey;
     for (const l of journeyLines) { ctx.fillText(l, PAD + 30, y); y += 44; }
     y += 36;
   }
@@ -177,7 +175,7 @@ export async function drawGedankengangPoster({ title, journey, entries, lang }: 
     if (r.kind === 'day') {
       y += 50;
       ctx.fillStyle = '#a08d5f';
-      ctx.font = `600 22px ${MONO}`;
+      ctx.font = posterFonts.label;
       ctx.fillText(r.label, PAD + 70, y);
       y += 28;
       continue;
@@ -186,7 +184,7 @@ export async function drawGedankengangPoster({ title, journey, entries, lang }: 
       const cy = y + 28;
       ctx.fillStyle = '#a89a78';
       ctx.beginPath(); ctx.arc(spineX, cy - 8, 3, 0, Math.PI * 2); ctx.fill();
-      ctx.font = `italic 24px ${SERIF}`;
+      ctx.font = posterFonts.omitted;
       ctx.fillText(lang === 'zh' ? `⋯ 中略 ${r.n} 步` : `⋯ ${r.n} steps pass`, PAD + 70, cy);
       y += 56;
       continue;
@@ -201,7 +199,7 @@ export async function drawGedankengangPoster({ title, journey, entries, lang }: 
       ctx.roundRect(spineX - s / 2, cy - s / 2, s, s, 12);
       ctx.fill();
       ctx.fillStyle = '#fff';
-      ctx.font = `26px ${SERIF}`;
+      ctx.font = posterFonts.glyph;
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       ctx.fillText(seal.glyph, spineX, cy + 2);
       ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
@@ -212,7 +210,7 @@ export async function drawGedankengangPoster({ title, journey, entries, lang }: 
       ctx.fill();
     }
     ctx.fillStyle = r.e.badged ? '#2b2416' : '#6d5f42';
-    ctx.font = `${r.e.badged ? 600 : 400} 28px ${SERIF}`;
+    ctx.font = r.e.badged ? posterFonts.emphasizedBody : posterFonts.body;
     let ty = y + 40;
     for (const l of r.lines) { ctx.fillText(l, PAD + 70, ty); ty += 38; }
     y += rowH;
@@ -226,13 +224,13 @@ export async function drawGedankengangPoster({ title, journey, entries, lang }: 
   ctx.fillStyle = '#8c2f26';
   ctx.beginPath(); ctx.roundRect(-30, -30, 60, 60, 9); ctx.fill();
   ctx.fillStyle = '#f7f3ea';
-  ctx.font = `700 34px ${SERIF}`;
+  ctx.font = posterFonts.signature;
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.fillText('思', 0, 3);
   ctx.restore();
   ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
   ctx.fillStyle = '#7d6a45';
-  ctx.font = `20px ${MONO}`;
+  ctx.font = posterFonts.metadata;
   ctx.fillText('ThoughtDAG · github.com/chenxiachan/thoughtdag', PAD + 90, fy);
 
   return new Promise((resolve, reject) => {

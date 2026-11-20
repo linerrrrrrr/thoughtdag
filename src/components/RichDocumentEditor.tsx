@@ -16,6 +16,7 @@ import { documentRichHtml, isDocxDocument } from '../lib/document-copy';
 import { documentHtmlToMarkdown } from '../lib/html-material';
 import { exportDocumentDocx } from '../lib/docx-export';
 import { richDocumentDraftKey } from '../lib/rich-document-draft';
+import { richTextHighlights } from '../lib/document-highlights';
 import { richDocumentExtensions, changeParagraphIndent } from '../lib/rich-document-extensions';
 import { isViewerMode } from '../lib/viewer';
 import { isImeComposing } from '../utils';
@@ -171,7 +172,8 @@ function RichDocumentBody({ nodeId, attachment, onClose, compact = false, initia
       if (!current || !isDocxDocument(current)) return;
       if (html !== current.editedHtml || text !== current.editedText) {
         state.pushHistory();
-        state.setAttachmentData(nodeId, attachment.id, { editedHtml: html, editedText: text });
+        state.setAttachmentData(nodeId, attachment.id, { editedHtml: html, editedText: text,
+          documentHighlights: richTextHighlights(html, current.documentHighlights) });
         state.pushHistory();
       }
       useUiStore.getState().setDraft(draftKey, '');
@@ -293,7 +295,7 @@ function RichDocumentBody({ nodeId, attachment, onClose, compact = false, initia
     </label>}
     <input ref={fileInput} type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple hidden data-rich-image-input
       onChange={event => { const files = [...(event.target.files ?? [])]; event.target.value = ''; void insertFiles(files, editor); }} />
-    <EditorContent editor={editor} className="rich-document-surface text-body" />
+    <EditorContent editor={editor} data-type-surface="native-document" className="rich-document-surface text-body" />
     <div className="flex items-center gap-2 flex-wrap">
       <button type="button" onClick={() => void exportDocx()} disabled={exporting || saving}
         className="flex items-center gap-1.5 px-3 py-1.5 rounded-control text-control text-ink-muted hover:bg-wash disabled:opacity-40" data-rich-export>

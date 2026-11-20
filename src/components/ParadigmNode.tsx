@@ -6,7 +6,6 @@ import { useStore } from '../store';
 import { useT } from '../i18n';
 import NodeConnectionHandles from './NodeConnectionHandles';
 import NodeOverview from './NodeOverview';
-import NodeNumber from './NodeNumber';
 import { useNodeDetail } from '../lib/node-detail';
 import { getNodeDisplayName } from '../lib/node-display-name';
 import { pixelDimension } from '../lib/node-content-height';
@@ -51,25 +50,24 @@ export default function ParadigmNode({ id, data, selected }: NodeProps<ThoughtNo
 
   return (
     <div ref={root} className={`bg-card border border-dashed rounded-node flex flex-col ${KIND_STYLES[kind]} ${overview && selected ? 'node-selected' : ''}`} style={{ width: configuredWidth ?? 440, height: overview ? undefined : configuredHeight }}
-      data-node-detail-level={overview ? (tier === 'glyph' ? 'compact' : 'summary') : 'full'} data-node-detail-locked={data.detailLevel || undefined}
+      data-type-surface="canvas-geometry" data-node-detail-level={overview ? (tier === 'glyph' ? 'compact' : 'summary') : 'full'} data-node-detail-locked={data.detailLevel || undefined}
       data-node-overview-surface={overview ? (tier === 'glyph' ? 'compact' : 'summary') : undefined}
       data-node-overview-kind={overview ? (kind === 'human' ? 'human' : 'start') : undefined} data-node-paradigm
       onFocusCapture={() => setEditing(true)}
       onBlurCapture={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) setEditing(false); }}>
       <NodeConnectionHandles id={id} muted large={overview} />
-      {overview ? <div className="drag-handle" onDoubleClick={(event) => {
+      {overview ? <div data-cursor="inherit" className="drag-handle" onDoubleClick={(event) => {
         event.stopPropagation();
         setEditing(true);
         requestAnimationFrame(() => root.current?.querySelector('input')?.focus());
       }}>
-        <NodeOverview number={data.nodeNumber} name={getNodeDisplayName(data, t('paradigm.titlePlaceholder'))} preview={data.instruction}
+        <NodeOverview name={getNodeDisplayName(data, t('paradigm.titlePlaceholder'))} preview={data.instruction}
           compact={tier === 'glyph'} previewAlways={!!fixed} typeLabel={t(`paradigm.kind.${kind}`)} />
       </div> : <>
 
       {/* header: drag handle + kind switcher + delete */}
-      <div className="flex shrink-0 items-center justify-between px-5 py-2 border-b border-line/60 drag-handle">
+      <div className="paradigm-header flex shrink-0 items-center justify-between px-5 py-2 border-b border-line/60 drag-handle" data-type-surface="canvas-object">
         <div className="flex gap-1">
-          <NodeNumber number={data.nodeNumber} />
           {KINDS.map(({ kind: k, icon: Icon, labelKey }) => (
             <button
               key={k}
@@ -95,14 +93,14 @@ export default function ParadigmNode({ id, data, selected }: NodeProps<ThoughtNo
         </button>
       </div>
 
-      <div className={`px-5 py-3 space-y-2.5 nodrag ${configuredHeight != null ? 'min-h-0 flex-1 overflow-y-auto nowheel' : ''}`}>
+      <div className="paradigm-content px-5 py-3 gap-2.5 nodrag flex flex-col min-h-0 flex-auto" data-type-surface="canvas-object">
         {/* step title */}
         <input
           type="text"
           value={data.question}
           onChange={(e) => patch({ question: e.target.value })}
           placeholder={t('paradigm.titlePlaceholder')}
-          className="w-full text-title font-semibold text-ink bg-transparent focus:outline-none placeholder-ink-faint"
+          className="w-full shrink-0 text-title font-semibold text-ink bg-transparent focus:outline-none placeholder-ink-faint"
         />
 
         {/* body: the prompt (machine) or operator guidance (human) */}
@@ -111,14 +109,14 @@ export default function ParadigmNode({ id, data, selected }: NodeProps<ThoughtNo
           onChange={(e) => patch({ instruction: e.target.value })}
           placeholder={t(kind === 'human' ? 'paradigm.humanHintPlaceholder' : 'paradigm.promptPlaceholder')}
           rows={kind === 'human' ? 3 : 4}
-          className={`w-full text-body text-ink bg-surface border border-line rounded-control px-2.5 py-2 focus:outline-none focus:ring-1 resize-y nowheel ${
+          className={`w-full min-h-0 text-body text-ink bg-surface border border-line rounded-control px-2.5 py-2 focus:outline-none focus:ring-1 nowheel nopan overscroll-contain ${configuredHeight != null ? 'flex-auto resize-none' : 'resize-y'} ${
             kind === 'human' ? 'focus:ring-warm/40' : 'focus:ring-accent/40'
           }`}
         />
 
         {/* per-step search permissions — carried into the instantiated run */}
         {kind === 'prompt' && (
-          <div className="flex items-center gap-1.5">
+          <div data-export-omit="run" className="flex shrink-0 items-center gap-1.5">
             <button
               onClick={() => patch({ webSearch: !data.webSearch })}
               aria-pressed={!!data.webSearch}

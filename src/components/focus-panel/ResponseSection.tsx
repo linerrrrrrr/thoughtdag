@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect, type RefObject } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { describeModel } from '../../lib/use-models';
 import { AlertTriangle, RefreshCw, Pencil } from 'lucide-react';
 import { useStore } from '../../store';
@@ -14,7 +14,7 @@ import { AgentTrace } from '../ui/AgentTrace';
 import { AgentActivityView } from '../ui/AgentActivityView';
 import { activeAgentActivity } from '../../lib/agent-activity';
 import { AgentRerunButton } from '../ui/AgentRerunButton';
-import { ResponseCopyButton, ResponseVersions } from '../ui/ResponseActions';
+import { MessageCopyButton, ResponseVersions } from '../ui/ResponseActions';
 import type { ThoughtData } from '../../types';
 import { useInlineEditDismiss } from '../../lib/use-inline-edit-dismiss';
 import { screenToUi } from '../../lib/ui-scale';
@@ -28,7 +28,7 @@ export default function ResponseSection({
   hasMultipleVersions,
   highlightedTexts,
   highlighter,
-  responseRef,
+  questionHighlights,
   onFocusNode,
 }: {
   nodeId: string;
@@ -36,7 +36,7 @@ export default function ResponseSection({
   hasMultipleVersions: boolean;
   highlightedTexts: Set<string>;
   highlighter: ReturnType<typeof useTextHighlighter>;
-  responseRef: RefObject<HTMLDivElement | null>;
+  questionHighlights: Set<string>;
   onFocusNode?: (id: string) => void;
 }) {
   const editResponse = useStore((s) => s.editResponse);
@@ -67,7 +67,6 @@ export default function ResponseSection({
   });
   const streamRef = useRef<HTMLDivElement>(null);
   const followingStreamRef = useRef(true);
-  const { markSelection } = highlighter;
 
   // Follow the stream — but only while the reader is at the bottom. Scroll
   // up during generation and the view stays put (read from the top while
@@ -119,27 +118,6 @@ export default function ResponseSection({
     };
   }, [data.isLoading, data.response, data.reasoning]);
 
-  // Text selection handler
-  const handleTextSelection = useCallback((e: MouseEvent) => {
-    if (e.button !== 0) return;
-    if (!(e.target instanceof Element) || e.target.closest('input, textarea, button')) return;
-    if (!responseRef.current?.contains(e.target)) return;
-
-    const selection = window.getSelection();
-    const range = selection?.rangeCount ? selection.getRangeAt(0) : null;
-    if (selection && range && selection.toString().trim().length > 0
-      && responseRef.current?.contains(range.startContainer)
-      && responseRef.current.contains(range.endContainer)) {
-      markSelection(selection, nodeId);
-    }
-  }, [markSelection, nodeId, responseRef]);
-
-  useEffect(() => {
-    if (!highlighter.active) return;
-    document.addEventListener('mouseup', handleTextSelection);
-    return () => document.removeEventListener('mouseup', handleTextSelection);
-  }, [handleTextSelection, highlighter.active]);
-
   // Button-triggered (see ThoughtNode): double-click stays a text gesture.
   const startEditResponse = () => {
     if (isViewerMode) return;
@@ -174,7 +152,8 @@ export default function ResponseSection({
       {data.isLoading && !!data.pendingApprovals?.length && (
         <div className="py-1 flex flex-col gap-1.5">{data.pendingApprovals.map((req) => <ApprovalCard key={req.id} nodeId={nodeId} request={req} />)}</div>
       )}
-      {!data.isLoading && activity.length > 0 && <AgentActivityView key={`${nodeId}:${data.responseIndex}`} entries={activity} base={data.agentSession?.cwd ?? data.importSource?.cwd} failed={data.generationFailed} />}
+      {!data.isLoading && activity.length > 0 && <AgentActivityView key={`${nodeId}:${data.responseIndex}`} entries={activity} base={data.agentSession?.cwd ?? data.importSource?.cwd} failed={data.generationFailed}
+        questionHighlights={questionHighlights} penActive={highlighter.active} />}
       {data.isLoading && activity.length > 0 ? (
         <AgentActivityView entries={activity} running base={data.agentSession?.cwd ?? data.importSource?.cwd} />
       ) : data.isLoading && data.agentTrace && data.agentTrace.length > 0 && (!data.response || data.restreaming) ? (
@@ -207,7 +186,7 @@ export default function ResponseSection({
             rows={10}
             autoFocus
           />
-          <div className="flex justify-end gap-2 mt-2">
+          <div data-export-omit="edit" className="flex justify-end gap-2 mt-2">
             <button onClick={cancelEdit} className="text-control text-ink-muted hover:text-ink px-3 py-1.5 rounded-control hover:bg-wash transition-colors">{t('common.cancel')}</button>
             <button onClick={handleResponseEditSubmit} className="text-control bg-action hover:bg-action-strong text-white px-4 py-1.5 rounded-control transition-colors">{t('common.save')}</button>
           </div>
@@ -218,7 +197,7 @@ export default function ResponseSection({
           {data.reasonings?.[data.responseIndex] && !activity.length && (
             <ReasoningDisclosure text={data.reasonings[data.responseIndex]!} />
           )}
-          <div ref={responseRef} className="focus-assistant-message markdown-body text-body text-ink cursor-text" onClick={handleCitationClick} data-highlighter-active={highlighter.active || undefined}>
+          <div data-highlight-turn="response" data-cursor="text" className="focus-assistant-message markdown-body text-body text-ink" onClick={handleCitationClick} data-highlighter-active={highlighter.active || undefined}>
             {highlightedTexts.size > 0 ? (
               <HighlightedMarkdown base={data.agentSession?.cwd ?? data.importSource?.cwd} content={data.response} highlights={highlightedTexts} />
             ) : (
@@ -235,14 +214,14 @@ export default function ResponseSection({
       {data.response && !data.isLoading && !editingHere && !data.generationFailed && (
         <div className="focus-response-actions flex flex-wrap items-center gap-0.5 text-ink-faint">
           {!isViewerMode && <button
-            onClick={() => void rerunNode(nodeId)}
+            data-export-omit="run" onClick={() => void rerunNode(nodeId)}
             className="rounded-control w-7 h-7 flex items-center justify-center hover:text-accent hover:bg-wash transition-colors"
             data-tooltip={t('common.regenerate')}
             aria-label={t('common.regenerate')}
           >
             <RefreshCw size={15} strokeWidth={1.75} />
           </button>}
-          <ResponseCopyButton key={data.responseIndex} text={data.response} />
+          <MessageCopyButton kind="response" key={data.responseIndex} text={data.response} />
           {!isViewerMode && (
             <button
               onClick={startEditResponse}

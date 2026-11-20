@@ -11,7 +11,7 @@ import { useModels, ensureAgentsFresh, recheckAgents, type ModelInfo } from '../
 import { AGENT_PROVIDER, AGENT_RUNTIMES, LIVE_RUNTIMES, isAgentModel, runtimeLabelOf } from '../../lib/agents/agent-runtime';
 import CanvasModelMenu from './CanvasModelMenu';
 import CanvasModelList from './CanvasModelList';
-import CanvasModelSettings from './CanvasModelSettings';
+import { defaultModelId } from '../../lib/model-sources';
 
 // Agent-run models fold by runtime: each runtime lists many models, so only
 // the runtime holding the current pick opens by itself; the others show their
@@ -50,16 +50,11 @@ export default function ModelPicker({ value, onChange, compact, execution }: Pic
   const cardOpen = useCanvasToolCard('model', requestedOpen && !nodeMode, () => setOpen(false));
   const open = nodeMode ? requestedOpen : cardOpen;
   const panelPosition = useCanvasPanelPosition(open && !nodeMode, 'left');
-  const anysearchKey = useUiStore(s => s.anysearchKey);
-  // This credential draft lives only in this mounted control, never in the
-  // generic draft cache. Outside dismissal suspends; Escape discards it.
-  const [anysearchDraft, setAnysearchDraft] = useState(anysearchKey);
-  // the effort step unfolded under a just-picked agent model (see pick); closes with the menu
-  const [effortStepFor, setEffortStepFor] = useState<string | null>(null);
   const agentEffort = useUiStore((s) => s.agentEffort);
   const [openRuntimes, setOpenRuntimes] = useState<Set<string>>(loadOpenRuntimes);
   const toggleRuntime = (label: string) => setOpenRuntimes((prev) => { const next = new Set(prev); if (next.has(label)) next.delete(label); else next.add(label); try { appSettings.setItem(OPEN_RUNTIMES_KEY, JSON.stringify([...next])); } catch { /* per-session then */ } return next; });
   const rootRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
   useLayoutEffect(() => {
@@ -68,7 +63,7 @@ export default function ModelPicker({ value, onChange, compact, execution }: Pic
     // A node can scroll, move, or zoom while its menu is open. Keep the
     // screen-space portal attached to its trigger and inside the viewport.
     const place = () => {
-      const anchor = rootRef.current, menu = menuRef.current;
+      const anchor = triggerRef.current, menu = menuRef.current;
       if (!anchor || !menu) return;
       const rect = uiRect(anchor), viewport = uiViewport();
       const inset = 8, gap = 6;
@@ -96,10 +91,7 @@ export default function ModelPicker({ value, onChange, compact, execution }: Pic
   // should not pay for
   useEffect(() => { if (open) ensureAgentsFresh(); }, [open]);
 
-  useDismissableLayer({ dismissOnFocusOutside: true, open, refs: [rootRef, menuRef], onDismiss: reason => {
-    if (reason === 'escape') setAnysearchDraft(anysearchKey);
-    setOpen(false);
-  } });
+  useDismissableLayer({ dismissOnFocusOutside: true, open, refs: [rootRef, menuRef], onDismiss: () => setOpen(false) });
 
   // A successful connect pings the GLOBAL picker open: the user lands on
   // their fresh model list instead of wondering whether anything happened.
@@ -108,7 +100,7 @@ export default function ModelPicker({ value, onChange, compact, execution }: Pic
   const [pingSeen, setPingSeen] = useState(ping);
   if (ping !== pingSeen) {
     setPingSeen(ping);
-    if (!nodeMode) { setEffortStepFor(null); setOpen(true); }
+    if (!nodeMode) setOpen(true);
   }
 
   const executionKind = execution?.kind;
@@ -118,7 +110,7 @@ export default function ModelPicker({ value, onChange, compact, execution }: Pic
   if (nodeMode && !executionKind && models.length < 2) return null;
 
   const globalId = nodeMode && execution ? execution.inheritedModel
-    : selectedModel && models.some((m) => m.id === selectedModel) ? selectedModel : data?.default;
+    : defaultModelId(data, selectedModel);
   const activeId = nodeMode ? (value ?? null) : globalId;
   const active = activeId ? models.find((m) => m.id === activeId) : null;
   const providers = [...new Set(models.map((m) => m.provider))];
@@ -128,15 +120,9 @@ export default function ModelPicker({ value, onChange, compact, execution }: Pic
   // a host that looked for runtimes and found none still gets the group: that is where the "not found" rows live
   if (executionKind !== 'api' && !providers.includes(AGENT_PROVIDER) && data?.runtimes && Object.values(data.runtimes).some((s) => s && !s.installed)) providers.push(AGENT_PROVIDER);
 
-
-  // Picking an agent model that reports effort levels keeps the menu open and
-  // unfolds the effort step right under the entry: the level is a decision the
-  // person should see being made, not a row to discover later. OK closes.
   const pick = (id: string | null) => {
     if (nodeMode) onChange!(id ?? undefined);
     else setSelectedModel(id === data?.default ? null : id);
-    const m = id ? models.find((x) => x.id === id) : null;
-    if (m && isAgentModel(m.id) && (m.efforts?.length ?? 0) > 0) { setEffortStepFor(m.id); return; }
     setOpen(false);
   };
   // the level the next turn will run at, as far as the runtime told us
@@ -160,10 +146,10 @@ export default function ModelPicker({ value, onChange, compact, execution }: Pic
 
   return (
     <div ref={rootRef} className="relative">
-      <button
+      <button ref={triggerRef}
         onClick={(e) => {
           e.stopPropagation();
-          setEffortStepFor(null); setOpen((v) => !v);
+          setOpen((v) => !v);
         }}
         className={compact
           ? `text-control px-3 py-2 rounded-control transition-colors flex items-center gap-1.5 max-w-[200px] ${value ? 'bg-accent/10 text-accent' : 'bg-wash hover:bg-line text-ink-muted'}`
@@ -183,7 +169,7 @@ export default function ModelPicker({ value, onChange, compact, execution }: Pic
       {open && (
         <NodePickerPortal enabled={nodeMode}>
         <div ref={menuRef} className={nodeMode ? 'fixed z-[90] bg-card border border-line rounded-overlay shadow-lg py-1.5 w-80 max-w-[calc(calc(100*var(--ui-vw))-16px)] overflow-y-auto overscroll-contain nodrag nopan nowheel' : 'canvas-tool-panel canvas-model-menu'}
-          style={nodeMode ? { visibility: 'hidden' } : panelPosition} data-model-picker-panel
+          style={nodeMode ? { visibility: 'hidden' } : panelPosition} data-type-surface="portal" data-model-picker-panel
           onPointerDown={event => { if (nodeMode) event.stopPropagation(); }}
           onDoubleClick={event => { if (nodeMode) event.stopPropagation(); }}>
           {nodeMode && (
@@ -233,38 +219,30 @@ export default function ModelPicker({ value, onChange, compact, execution }: Pic
                         {!isOpen && current && <span className="text-control text-accent truncate ml-auto max-w-[55%]">{current.name.replace(`${label} · `, '')}</span>}
                       </button>
                       {isOpen && list.map((m) => (
-                        <div key={m.id}>
-                          <button
-                            onClick={() => pick(m.id)}
-                            className={`w-full text-left pl-8 pr-3 py-1.5 text-control flex items-center gap-2 transition-colors hover:bg-wash ${m.id === activeId ? 'text-accent font-medium' : 'text-ink'}`}
-                          >
-                            <span className="flex-1 break-words leading-snug">{m.name.replace(` (${m.provider})`, '').replace(`${label} · `, '')}</span>
-                            {m.vision && <span className="text-control text-ink-faint shrink-0">{t('model.vision')}</span>}
-                            {m.id === activeId && <Check size={13} strokeWidth={2} className="shrink-0" />}
-                          </button>
-                          {effortStepFor === m.id && <EffortStep model={m} onDone={() => { setEffortStepFor(null); setOpen(false); }} />}
-                        </div>
+                        <button key={m.id} onClick={() => pick(m.id)}
+                          aria-pressed={m.id === activeId}
+                          className={`w-full text-left pl-8 pr-3 py-1.5 text-control flex items-center gap-2 transition-colors hover:bg-wash ${m.id === activeId ? 'text-accent font-medium' : 'text-ink'}`}>
+                          <span className="flex-1 break-words leading-snug">{m.name.replace(` (${m.provider})`, '').replace(`${label} · `, '')}</span>
+                          {m.vision && <span className="text-control text-ink-faint shrink-0">{t('model.vision')}</span>}
+                          {m.id === activeId && <Check size={13} strokeWidth={2} className="shrink-0" />}
+                        </button>
                       ))}
                     </div>
                   );
                 }), ...missingRows];
               })() : models.filter((m) => m.provider === provider).map((m) => (
-                <div key={m.id}>
-                <button
+                <button key={m.id}
                   onClick={() => pick(m.id)}
+                  aria-pressed={m.id === activeId}
                   data-tooltip={m.name} data-tooltip-overflow
                   className={`w-full text-left px-3 py-1.5 text-control flex items-center gap-2 transition-colors hover:bg-wash ${
                     m.id === activeId ? 'text-accent font-medium' : 'text-ink'
                   }`}
                 >
-                  {/* agent entries carry runtime · model · variant and tell apart only by
-                      their tail, so they wrap instead of losing it to an ellipsis (#43) */}
-                  <span className={provider === AGENT_PROVIDER ? 'flex-1 break-words leading-snug' : 'truncate flex-1'}>{m.name.replace(` (${m.provider})`, '')}</span>
+                  <span className="truncate flex-1">{m.name.replace(` (${m.provider})`, '')}</span>
                   {m.vision && <span className="text-control text-ink-faint shrink-0">{t('model.vision')}</span>}
                   {m.id === activeId && <Check size={13} strokeWidth={2} className="shrink-0" />}
                 </button>
-                {effortStepFor === m.id && <EffortStep model={m} onDone={() => { setEffortStepFor(null); setOpen(false); }} />}
-              </div>
               ))}
             </div>
           ))}
@@ -279,44 +257,12 @@ export default function ModelPicker({ value, onChange, compact, execution }: Pic
           )}
           {!nodeMode && <CanvasModelMenu
             models={<CanvasModelList models={models} activeId={activeId} pending={data?.agentsPending}
-              onPick={pick} effortStepFor={effortStepFor}
-              renderEffort={model => <EffortStep model={model} onDone={() => setOpen(false)} />} />}
-            settings={<CanvasModelSettings anysearchDraft={anysearchDraft} setAnysearchDraft={setAnysearchDraft}
-              onConnection={section => { setOpen(false); useUiStore.getState().setApiKeyModalOpen(true, section); }} />}
+              onPick={pick} />}
+            onSettings={() => { setOpen(false); useUiStore.getState().setApiKeyModalOpen(true, 'providers'); }}
           />}
         </div>
         </NodePickerPortal>
       )}
-    </div>
-  );
-}
-
-// ── Effort step: unfolds under the agent model just picked ──
-// The runtime's own levels, in its own words (read from the CLI, never
-// translated). The first option is its default, named when it says. The
-// choice is global like the model choice; OK closes the menu.
-function EffortStep({ model, onDone }: { model: ModelInfo; onDone: () => void }) {
-  const t = useT();
-  const effort = useUiStore((s) => s.agentEffort);
-  const setEffort = useUiStore((s) => s.setAgentEffort);
-  const levels = model.efforts ?? [];
-  const value = levels.includes(effort) ? effort : '';
-  return (
-    <div className="mx-3 mb-1.5 mt-0.5 rounded-content bg-wash/70 border border-line px-2 py-1.5 flex items-center gap-2" data-agent-effort>
-      <span className="text-control text-ink-faint uppercase tracking-wider font-medium shrink-0">{t('model.effort')}</span>
-      <select
-        value={value}
-        onChange={(e) => setEffort(e.target.value)}
-        onClick={(e) => e.stopPropagation()}
-        autoFocus
-        className="flex-1 min-w-0 text-control text-ink bg-card border border-line rounded-control px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-accent/40"
-        data-agent-effort-select
-        aria-label={t('model.effort')}
-      >
-        <option value="">{model.defaultEffort ? fmt(t('model.effortDefaultKnown'), { level: model.defaultEffort }) : t('model.effortDefault')}</option>
-        {levels.map((l) => <option key={l} value={l}>{l}</option>)}
-      </select>
-      <button onClick={(e) => { e.stopPropagation(); onDone(); }} className="text-control px-2 py-1 rounded-tag bg-action text-white hover:bg-action-strong transition-colors shrink-0" data-agent-effort-ok>{t('model.effortConfirm')}</button>
     </div>
   );
 }

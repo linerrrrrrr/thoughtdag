@@ -195,15 +195,13 @@ try {
     await selected(['a', 'b'], []);
   });
   await probe('a marquee replaces another tool card, while an empty marquee leaves it open', async () => {
-    for (const [entry, panel] of [['toolbar-more', 'toolbar-more-panel'], ['routing-entry', 'canvas-routing-panel']]) {
-      await fixture(true);
-      await page.locator(`[data-${entry}]`).click();
-      await page.locator(`[data-${panel}]`).waitFor();
-      await mixedMarquee();
-      await page.locator('[data-selection-properties]').waitFor();
-      assert.equal(await page.locator(`[data-${panel}]`).count(), 0);
-      await selected(['a', 'b'], []);
-    }
+    await fixture(true);
+    await page.locator('[data-toolbar-more]').click();
+    await page.locator('[data-toolbar-more-panel]').waitFor();
+    await mixedMarquee();
+    await page.locator('[data-selection-properties]').waitFor();
+    assert.equal(await page.locator('[data-toolbar-more-panel]').count(), 0);
+    await selected(['a', 'b'], []);
 
     await fixture(true);
     await page.locator('[data-layout-entry]').click();
@@ -214,6 +212,23 @@ try {
     await selected([], []);
     assert.equal(await page.locator('[data-selection-target-control]').count(), 0);
     assert.equal(await page.locator('[data-canvas-layout-panel]').isVisible(), true, 'an empty marquee does not replace the active card');
+  });
+  await probe('Settings intercept drag gestures above the canvas', async () => {
+    await fixture(true);
+    await page.locator('[data-settings-entry]').click();
+    const dialog = page.locator('[data-settings-panel]');
+    await dialog.waitFor();
+    const { x, y, width, height } = await dialog.boundingBox();
+    await page.mouse.move(x + width / 2, y + height / 2);
+    await page.mouse.down();
+    await page.mouse.move(x + width * 0.8, y + height * 0.85, { steps: 12 });
+    await page.mouse.up();
+    assert.equal(await dialog.isVisible(), true);
+    assert.equal(await region(), null);
+    await selected([], []);
+    await page.keyboard.press('Escape');
+    await dialog.waitFor({ state: 'detached' });
+    await mixedMarquee();
   });
   await probe('a marquee with only line candidates keeps layout until lines are selected', async () => {
     await fixture();
@@ -334,6 +349,8 @@ try {
     const buttons = await page.locator('.react-flow__controls').getByRole('button').all();
     assert.equal(buttons.length, 5);
     const paint = button => button.evaluate(async el => {
+      // Wait for the pointer state and React's pressed attribute to reach the next paint.
+      await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
       await Promise.all(el.getAnimations().map(animation => animation.finished));
       const icon = getComputedStyle(el.querySelector('svg'));
       return { ink: icon.stroke === 'none' ? icon.fill : icon.stroke, background: getComputedStyle(el).backgroundColor };

@@ -62,6 +62,7 @@
 }
 [data-connection-layout='top'] .input-source-row + .input-source-row { margin-top: 0; }
 [data-connection-layout='top'][data-node-overview-surface] { grid-template-rows: auto minmax(0, 1fr); }
+[data-connection-layout='top'][data-node-overview-surface] > .node-input-region { max-height: none; }
 
 [data-connection-layout='top'] > :is(.conversation-node-content, [data-glyph-node]) {
   grid-column: 1;
@@ -93,11 +94,10 @@
   background: var(--conversation-surface, var(--color-card));
 }
 
-[data-connection-layout='dock']::before {
-  content: '';
+.node-input-stem {
   position: absolute;
   left: var(--node-input-width);
-  top: 55px;
+  transform: translateY(-50%);
   width: var(--spacing-section-gap);
   height: 1px;
   background: var(--color-line-strong);
@@ -135,14 +135,7 @@
   justify-content: center;
 }
 
-/* Fixed-height cards must leave the reading panes the remaining grid space. */
-.conversation-node[data-connection-layout][data-thought-resized] > .conversation-node-content {
-  height: 100%;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  scrollbar-width: thin;
-}
-.conversation-node[data-connection-layout][data-thought-resized] .conversation-node-split-body {
-  flex: 1 0 auto;
-  min-height: 180px;
+/* The top intake yields space to the fixed conversation controls on short cards. */
+.conversation-node[data-connection-layout='top'][data-thought-resized] {
+  grid-template-rows: minmax(0, 104px) minmax(min-content, 1fr);
 }

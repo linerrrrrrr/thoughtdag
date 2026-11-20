@@ -17,6 +17,7 @@ try {
         setLastAutoBackupAt:()=>{},setAutoBackupDir:()=>{}
       })};`,
     i18n: `export const t=(key)=>key;`,
+    'canvas-workspace': `export const ensureCanvasWorkspace=async id=>globalThis.folderAvailable ? 'D:/workspaces/'+id+'/external' : null;`,
     projects: `export const useProjects={getState:()=>globalThis.projects};
       export const bootProjects=async()=>{};
       export const switchProject=async(id)=>{globalThis.projects.activeId=id};`,
@@ -50,6 +51,7 @@ try {
   globalThis.projects = { activeId: id1, projects: [{ id: id1, name: 'Same' }, { id: id2, name: 'Same' }] };
   globalThis.graph = { nodes: [{ id: 'node-1', data: { question: 'kept' } }], edges: [], events: [] };
   globalThis.toasts = [];
+  globalThis.folderAvailable = true;
   const opens = [];
   const writes = [];
   globalThis.window = {
@@ -65,10 +67,16 @@ try {
   assert.equal(projects.activeId, id2);
   assert.equal(globalThis.focus, 'node-1');
   assert.equal(await openWhyLink('thoughtdag://open?session=session-1&runner=codex&cwd=D%3A%2Fwork'), true);
-  assert.deepEqual(opens, [['codex', 'D:/work', 'session-1', 'terminal']]);
+  assert.deepEqual(opens, [['codex', `D:/workspaces/${id2}/external`, 'session-1', 'terminal']]);
+  globalThis.folderAvailable = false;
+  assert.equal(await openWhyLink('thoughtdag://open?session=session-1&runner=codex&cwd=D%3A%2Fwork'), false);
+  assert.equal(opens.length, 1);
+  assert.equal(await openWhyLink('thoughtdag://open?session=session-2&runner=pi&cwd=D%3A%2Fwork'), true);
+  assert.deepEqual(opens[1], ['pi', 'D:/work', 'session-2', 'terminal']);
   assert.equal(await openWhyLink('thoughtdag://open?canvas=missing'), false);
   const terminal = createRequire(import.meta.url)('../runtime/terminal.cjs');
-  assert.equal(terminal.PROGRAMS.codex('session-1'), 'codex resume session-1');
+  assert.equal(terminal.PROGRAMS.codex('session-1'), 'codex resume --cd . session-1');
+  assert.equal((await terminal.openInTerminal('codex', null, 'session-1')).opened, false);
   assert.throws(() => terminal.PROGRAMS.codex('bad;id'));
   assert.equal((await terminal.openInTerminal('codex', null, 'bad;id')).opened, false);
 

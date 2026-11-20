@@ -20,7 +20,7 @@ const stubs = {
   '../lib/agents/agent-runtime': 'export const agentOutbound=async()=>undefined, adoptAgentTurn=async()=>false, deriveFollowupModel=d=>d?.model, isAgentModel=()=>true;',
   '../utils': 'export const countTokens=x=>x.length, activeSummary=()=>"";',
   '../lib/ui-store': uiStub,
-  '../lib/use-models': 'export const getModelsOnce=async()=>({models:[],default:"codex/model"}), reconcileModelId=x=>x, describeModel=x=>x;',
+  '../lib/use-models': 'export const getCachedModels=()=>null, availableExecutionModels=()=>[], getModelsOnce=async()=>({models:[],default:"codex/model"}), reconcileModelId=x=>x, describeModel=x=>x;',
   '../lib/runtime-providers': 'export const contextLengthFor=()=>undefined;',
   '../lib/memory': 'export const memoryContextBlock=()=>null, judgeMemory=()=>{};',
   '../lib/recall': 'export const fetchRecallItems=async()=>({items:[],meta:{}}), recallContextBlock=()=>null;',
@@ -32,7 +32,7 @@ const stubs = {
   '../i18n': 'export const t=x=>x, fmt=x=>x;',
   '../lib/agents/waiting': 'export const notifyWaiting=()=>{};',
   '../lib/viewer': 'export const isViewerMode=false;',
-  './projects': 'export const useProjects={getState:()=>({projects:[],activeId:null})};',
+  './projects': 'export const useProjects={getState:()=>({projects:[],activeId:"canvas"})};',
 };
 
 try {
@@ -48,6 +48,10 @@ try {
         if (args.importer.endsWith('agent-runtime.ts') && args.path === '../../i18n') contents = 'export const t=x=>x;';
         if (args.importer.endsWith('agent-runtime.ts') && args.path === '../../store') contents = 'export const useStore={getState:()=>({nodes:[]}),setState:()=>{}};';
         if (args.importer.endsWith('agent-runtime.ts') && args.path === '../../store/projects') contents = stubs['./projects'];
+        if (args.importer.endsWith('agent-runtime.ts') && args.path === '../canvas-workspace') contents = 'export const ensureCanvasWorkspace=async()=>"/fixture/canvas/external";';
+        if (args.importer.endsWith('agent-runtime.ts') && args.path === './node-file-context') contents = 'export const agentFileContext=async()=>({note:"", targets:[]}), finishAgentFileEdits=async()=>{}, showAgentFilePreview=()=>false;';
+        if (args.importer.endsWith('agent-runtime.ts') && args.path === '../node-files') contents = 'export const groupNodeFileEdits=()=>{};';
+        if (args.importer.endsWith('codex-history.ts') && args.path === '../context-bundle') contents = stubs['../lib/context-bundle'];
         if (args.importer.endsWith('agent-runtime.ts') && args.kind === 'dynamic-import' && !contents) contents = 'export const unused=true;';
         if (args.importer.endsWith('http-bridge.ts') && args.path === '../embedded') contents = 'export const IN_HARNESS_FRAME=false;';
         if (contents) return { path: args.importer + ':' + args.path, namespace: 'host-stub', pluginData: contents };
@@ -55,7 +59,7 @@ try {
       b.onLoad({ filter: /.*/, namespace: 'host-stub' }, (args) => ({ contents: args.pluginData, loader: 'js' }));
     } }],
   });
-  globalThis.window = { setTimeout, addEventListener() {}, dispatchEvent() {} };
+  globalThis.window = { location: { origin: 'http://localhost' }, setTimeout, addEventListener() {}, dispatchEvent() {} };
   const { activeAgentActivity, originalQuestionBeforeInstructions, upsertAgentActivity, settleAgentActivity, recoverInterruptedAgentRun, agentCallStream, installAgentsHttpBridge, runNodeGeneration } = await import(pathToFileURL(bundle));
   const item = (id, extra = {}) => ({ id, kind: 'command', status: 'running', command: 'npm run build', startedAt: 100, ...extra });
   const ordered = upsertAgentActivity(upsertAgentActivity([], item('a')), item('b'));

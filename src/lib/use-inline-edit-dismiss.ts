@@ -4,6 +4,8 @@ import { useDismissableLayer } from './use-dismissable-layer';
 interface InlineEditDismissOptions<T extends HTMLElement> {
   active: boolean;
   ref: RefObject<T | null>;
+  /** An action row can be docked outside the scrolling editor. */
+  actionsRef?: RefObject<HTMLElement | null>;
   /** Commit a reversible short field, or suspend a cached content draft. */
   onOutside: () => void;
   onCancel: () => void;
@@ -29,7 +31,7 @@ export function useInlineEditDismiss<T extends HTMLElement>(options: InlineEditD
   };
   const { isTopLayer } = useDismissableLayer({
     open: options.active,
-    refs: [options.ref],
+    refs: options.actionsRef ? [options.ref, options.actionsRef] : [options.ref],
     onDismiss: reason => finish(reason === 'escape'),
     ignoreOutside: options.ignoreOutside,
     independentOutside: options.independentOutside,
@@ -42,7 +44,7 @@ export function useInlineEditDismiss<T extends HTMLElement>(options: InlineEditD
       // Pointer dismissal handles blank canvas; neither case is a Tab exit.
       const next = event.relatedTarget;
       if (options.ignoreFocusOutside?.(next)) return;
-      if (next instanceof Node && !options.ref.current?.contains(next) && isTopLayer()) finish(false);
+      if (next instanceof Node && !options.ref.current?.contains(next) && !options.actionsRef?.current?.contains(next) && isTopLayer()) finish(false);
     },
   };
 }

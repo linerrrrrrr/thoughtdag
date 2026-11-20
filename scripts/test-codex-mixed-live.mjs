@@ -29,6 +29,7 @@ await build({ stdin: { contents: `export {agentCallStream} from './lib/agents/ag
       const stubs = {
         '../../store': 'export const useStore={getState:()=>globalThis.graph,setState:p=>Object.assign(globalThis.graph,typeof p==="function"?p(globalThis.graph):p)};',
         '../../store/projects': 'export const useProjects={getState:()=>globalThis.projects}; export const subscribedSessionIds=()=>[]; export const patchLedgerEntry=async()=>{};',
+        '../canvas-workspace': 'export const ensureCanvasWorkspace=async()=>window.desktopAgents.canvasWorkspace();',
         '../ui-store': 'export const useUiStore={getState:()=>globalThis.ui};export const toast=()=>{};',
         '../../i18n': 'export const t=x=>x;',
         '../attachment-vault': 'export const loadAttachmentContent=async a=>a.content;',
@@ -46,7 +47,7 @@ let deliver;
 const requests = [];
 const events = [];
 globalThis.window = { dispatchEvent() {}, desktopAgents: {
-  models: async () => runtime.models(), workspace: async () => cwd,
+  models: async () => runtime.models(), canvasWorkspace: async () => cwd,
   guardWrite: async (where, config) => { await writeFile(join(where, '.thoughtdag', 'guard.json'), JSON.stringify(config)); return true; },
   writeMaterials: async () => ({ dir: null, written: [] }),
   onEvent: cb => { deliver = cb; },

@@ -8,14 +8,15 @@ Use this page to locate the main areas of the app. The labels and gestures below
 
 ## 1. Toolbar
 
-The canvas entry at the upper left switches and manages canvases. The upper-right toolbar shows controls relevant to the current canvas:
+Use the upper-left toolbar to switch canvases or choose the default answer model. The model menu also has a shortcut to its settings. The upper-right toolbar provides the following controls.
 
-- [**Model picker**](/guides/models-tools#connect-and-select-a-model), including model and capability configuration;
-- [**Replay stale**](/guides/versions-replay#replay-dependent-work), shown only when stale nodes exist;
+- **Settings** opens a large dialog centered over the canvas. Choose a category under **Canvas** or [**Models and tools**](/guides/models-tools#connect-and-select-a-model). On narrow screens, use the category selector at the top.
 - [**Frame navigator**](/guides/canvas-projects#use-frames), shown only when frames exist;
-- [**Search nodes**](/guides/canvas-projects#find-a-node), language, and [**Local auto-backup**](/guides/data-sharing#automatic-folder-backup);
-- [**Layout**](/guides/canvas-projects#arrange-the-graph) and **Connections** open separate settings for node layout and connections across canvases on this device; Connections moves into More when space is limited;
+- [**Search nodes**](/guides/canvas-projects#find-a-node) and [**Local auto-backup**](/guides/data-sharing#automatic-folder-backup);
+- [**Layout**](/guides/canvas-projects#arrange-the-graph) arranges nodes on the current canvas or within the selection. **Settings → Connection routing** controls default paths across canvases on this device.
 - [**More actions**](#more-actions-menu), [undo and redo](/guides/data-sharing#recover-changes).
+
+Under **Settings → Appearance & controls**, choose the language, theme and canvas background. Grid paper also enables node snapping. **Show annotations** controls the visibility of frames and unconnected material nodes. Under **Node display**, choose the default detail level, typography and input area layout.
 
 ### **More actions** menu
 
@@ -23,26 +24,22 @@ The upper-right **⋯** contains lower-frequency canvas-wide actions:
 
 | Menu item | What it does |
 |---|---|
-| [**Show / Hide annotations**](/guides/canvas-projects#use-frames) | Temporarily shows or hides frames and unlinked material. This changes only the view; it neither deletes content nor changes model context. |
 | [**All highlights**](/guides/organize#highlight-and-weave) | Collects every highlight on the canvas for locating, weaving, or Markdown export. Appears only when highlights exist. |
 | [**All materials**](/guides/materials#other-material-flows) | Lists files, images, links, and other material nodes and locates them on the canvas. Appears only when material exists. |
 | [**Condense**](/guides/organize#condense-a-path) | Finds conversation runs whose granularity can drop and creates a condensed copy beside the original graph. The original stays unchanged. |
 | [**Diagnose canvas**](/features#organize-and-review) | Reports structural issues such as residual edges, shadow references, blind-pool breaches, and unusually long chains; it does not silently repair them. |
-| [**Share read-only link**](/guides/data-sharing#share-a-read-only-graph) | Runs a sensitive-content check, then creates a read-only viewer link. Recipients can browse but cannot modify the source canvas. |
+| [**Share canvas**](/guides/data-sharing#share-a-canvas-file) | Exports a complete canvas file or thought-map image; the canvas file can carry a read-only mark. |
 | [**Export backup (.json)**](/guides/data-sharing#import-and-export) | Exports the active project's nodes, wires, and content as a local JSON backup for migration or recovery. |
 | [**Export event log (.csv)**](/guides/data-sharing#import-and-export) | Exports timestamped asks, generations, highlights, archiving, and other canvas events. Appears only when events exist. |
-| **Lighting** | Chooses Light, Dark, or System appearance. |
-| **Paper** | Switches between plain and grid paper; grid paper also enables node snapping. |
 | [**Memory**](/guides/models-tools#manage-ambient-memory) | Opens cross-canvas ambient memory for viewing, editing, importing, or exporting. When memory is enabled, admitted entries join the system layer of ordinary generations. |
 | [**How it works**](/) | Opens the built-in ten-step interaction guide and keyboard shortcuts. |
 
-The menu omits actions that do not apply to the current canvas, so yours may be shorter than the screenshot.
+Menu items depend on what the current canvas contains.
 
-![English toolbar and More actions menu](/screenshots/interface-overview/en/toolbar-more-en.png)
 
 ## 2. Canvas
 
-The canvas is the main workspace. Hold the middle or right mouse button and drag to pan, or hold Space and left-drag; the wheel or a pinch zooms. On a trackpad, turn on "Scroll pans the canvas" in the ⋯ menu: two-finger scroll then pans, pinch zooms, and ⌘/Ctrl + scroll zooms too. Left-drag on empty space to box-select, double-click empty space to create a question, and drag a node to reposition it. Selecting one or more nodes opens [Object format](/guides/canvas-projects#object-format-panel) below the toolbar, with **Align** and a direct **Create frame** button. Zoom controls appear at the bottom, and the minimap can also pan and zoom the view. See [Canvas, navigation, and frames](/guides/canvas-projects) for the complete interaction guide.
+The canvas is the main workspace. Hold the middle or right mouse button and drag to pan, or hold Space and left-drag. The wheel and two-finger scrolling pan by default. Pinch or use ⌘/Ctrl + scroll to zoom. Turn off **Wheel pans the canvas** under **Settings → Appearance & controls** to zoom with the wheel. Left-drag on empty space to box-select, double-click empty space to create a question, and drag a node to reposition it. Selecting one or more nodes opens [Object format](/guides/canvas-projects#object-format-panel) below the toolbar, with **Align** and a direct **Create frame** button. Zoom controls appear at the bottom, and the minimap can also pan and zoom the view. See [Canvas, navigation, and frames](/guides/canvas-projects) for the complete interaction guide.
 
 ## 3. Nodes
 

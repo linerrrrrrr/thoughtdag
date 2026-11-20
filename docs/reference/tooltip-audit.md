@@ -66,7 +66,7 @@ GlobalTooltip 只渲染显式 data-tooltip；不再代理、暂存或恢复任�
 | 17 | [src/App.tsx](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/App.tsx) · 原 2162 行 | 隐藏注释（分区框与未连线的材料） | 保留：简短动作名、范围、快捷键或完整路径；改为 data-tooltip，禁止原生窗口。 |
 | 18 | [src/App.tsx](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/App.tsx) · 原 2170 行 | 默认开启：滚轮和触控板双指滑动平移画布，节点正文内滚动阅读。按住 Ctrl/⌘ 滚动或捏合，始终以画布可视区域中心缩放，鼠标位于节点内也有效。关闭后普通滚轮缩放。 | 删除：教学性、解释性或重复状态文案占用悬浮层；功能和必要的可访问名称保留。 |
 | 19 | [src/App.tsx](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/App.tsx) · 原 2199 行 | 凝练：让模型检查全图，建议哪些轮次可以降低颗粒度 | 删除：教学性、解释性或重复状态文案占用悬浮层；功能和必要的可访问名称保留。 |
-| 20 | [src/App.tsx](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/App.tsx) · 原 2230 行 | 复制只读链接：打开的人只能浏览，不能修改 | 保留：简短动作名、范围、快捷键或完整路径；改为 data-tooltip，禁止原生窗口。 |
+| 20 | [src/App.tsx](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/App.tsx) | 分享画布文件 | 菜单入口使用简短动作名，具体格式在分享卡片说明。 |
 | 21 | [src/App.tsx](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/App.tsx) · 原 2248 行 | 导出带时间戳的画布操作记录 | 保留：简短动作名、范围、快捷键或完整路径；改为 data-tooltip，禁止原生窗口。 |
 | 22 | [src/App.tsx](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/App.tsx) · 原 2292 行 | 管理跨画布保留的记忆 | 保留：简短动作名、范围、快捷键或完整路径；改为 data-tooltip，禁止原生窗口。 |
 | 23 | [src/App.tsx](https://github.com/linerrrrrrr/thoughtdag/blob/main/src/App.tsx) · 原 2306 行 | 在 Harness 的「插件」页重新添加 {pkg}，然后重启 Harness / 在终端运行：{cmd} | 删除：教学性、解释性或重复状态文案占用悬浮层；功能和必要的可访问名称保留。 |

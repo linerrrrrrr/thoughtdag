@@ -324,10 +324,11 @@ try {
   await patch({ data: { response: `${streamStart}\n\n${streamStart}\n\n${streamStart}` } });
   await settle();
   near(await answer('panel').evaluate(el => el.scrollTop), 0, 1, 'Scrolling back suspends automatic following');
-  await answer('panel').evaluate(el => {
+  await answer('panel').evaluate(async el => {
+    const { screenToUi } = await import('/src/lib/ui-scale.ts');
     const content = el.querySelector('.focus-response-section > .focus-assistant-message');
     const paneRect = el.getBoundingClientRect();
-    const tail = (content.getBoundingClientRect().bottom - paneRect.top) * el.clientHeight / paneRect.height;
+    const tail = screenToUi(content.getBoundingClientRect().bottom - paneRect.top);
     el.scrollTop = Math.max(0, tail + el.scrollTop - el.clientHeight);
   });
   await settle();

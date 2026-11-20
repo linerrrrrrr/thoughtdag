@@ -29,7 +29,7 @@ const browser = await chromium.launch({ executablePath, headless: true });
 const context = await browser.newContext({ viewport: { width: 1500, height: 1050 }, locale: 'zh-CN', reducedMotion: 'reduce' });
 const checks = [], measurements = [], errors = [], writes = [];
 await context.routeWebSocket('**', socket => socket.close());
-await context.route('**/__thoughtdag_storage**', route => route.abort('blockedbyclient'));
+await context.route('**/__thoughtdag_storage**', route => route.fulfill({ status: 404, body: '' }));
 await context.route('**/api/**', route => {
   if (!['GET', 'HEAD', 'OPTIONS'].includes(route.request().method())) writes.push(route.request().url());
   return route.fulfill({ json: { models: [], providers: [], sessions: [], topics: [] } });

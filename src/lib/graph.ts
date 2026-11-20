@@ -1,4 +1,42 @@
-import type { ThoughtNode, ThoughtEdge } from '../types';
+import type { Attachment, ThoughtNode, ThoughtEdge } from '../types';
+import { attachmentContextKey } from './attachment-fingerprint';
+
+export function inheritedAttachments(nodeId: string, nodes: ThoughtNode[], edges: ThoughtEdge[]) {
+  const result: { attachment: Attachment; sourceNodeId: string; sourceQuestion: string; excludedByAncestor: boolean }[] = [];
+  const seenFingerprints = new Set<string>();
+  // References do not inherit attachments; list the same material and
+  // conversation layers that the prompt compiler actually consumes.
+  const { materials, mainline } = partitionContext(nodeId, nodes, edges);
+  const ordered = [...materials, ...mainline];
+
+  // Collect all ancestor exclusions (propagation)
+  const ancestorExcludes = new Set<string>();
+  for (const node of ordered) {
+    if (node.id !== nodeId) {
+      for (const exId of (node.data.excludedAttachmentIds || [])) {
+        ancestorExcludes.add(exId);
+      }
+    }
+  }
+
+  // Collect attachments from ancestors (not self), with dedup
+  for (const node of ordered) {
+    if (node.id === nodeId || node.data.archived) continue;
+    for (const att of (node.data.attachments || [])) {
+      const fp = attachmentContextKey(att);
+      if (seenFingerprints.has(fp)) continue;
+      seenFingerprints.add(fp);
+      result.push({
+        attachment: att,
+        sourceNodeId: node.id,
+        sourceQuestion: node.data.question,
+        excludedByAncestor: ancestorExcludes.has(att.id),
+      });
+    }
+  }
+
+  return result;
+}
 
 /**
  * Post-order DFS up all incoming conversation and reference edges.

@@ -25,13 +25,17 @@ const EXTRA_HOMES = [path.join(os.homedir(), '.codex', 'bin')];
 /** The codex binary and the directories walked to find it (see where.cjs). */
 const findCodex = createCodexLaunchResolver({ extraHomes: EXTRA_HOMES });
 
-/** The guard file the canvas writes per working directory, as Codex policy:
+/** The canvas approval mode expressed as a Codex policy:
  *  ask → the workspace sandbox, escalations asked of the person; auto → the
  *  same, with escalations decided by Codex's own reviewer (anything it turns
  *  down still comes to the person); allow → no sandbox, nothing asked. */
-async function policyFor(cwd) {
-  let mode = 'ask';
-  try { mode = JSON.parse(await fsp.readFile(path.join(cwd, '.thoughtdag', 'guard.json'), 'utf8'))?.mode ?? 'ask'; } catch { /* default */ }
+async function policyFor(req, cwd) {
+  let mode = req.codexWorkspace?.permissionMode;
+  if (mode === 'native' || (!req.codexWorkspace && req.nativePermissions === true)) return {};
+  if (!req.codexWorkspace) {
+    // Older clients persist their chosen policy in the run directory.
+    try { mode = JSON.parse(await fsp.readFile(path.join(cwd, '.thoughtdag', 'guard.json'), 'utf8'))?.mode; } catch { /* default to ask */ }
+  }
   if (mode === 'allow') return { approvalPolicy: 'never', sandbox: 'danger-full-access', approvalsReviewer: 'user' };
   return { approvalPolicy: 'on-request', sandbox: 'workspace-write', approvalsReviewer: mode === 'auto' ? 'auto_review' : 'user' };
 }
@@ -480,7 +484,7 @@ function createCodexRuntime({ log } = {}) {
           setTimeout(() => state.end('idle'), 5000);
         }, 15000);
         try {
-          const policy = req.nativePermissions === true ? {} : await policyFor(cwd);
+          const policy = await policyFor(req, cwd);
           const model = (req.model && typeof req.model === 'object' && req.model.id ? req.model.id : null) ?? await defaultModelId();
           let thread;
           let continued = false;
@@ -550,7 +554,9 @@ function createCodexRuntime({ log } = {}) {
             throw new Error(`Native history injection failed: ${error instanceof Error ? error.message : String(error)}`);
           }
           state.emit(session);
-          const before = await snapshotDir(cwd).catch(() => null);
+          // External workspace files belong to the user. Only legacy runs
+          // capture directory changes as implicit canvas attachments.
+          const before = req.codexWorkspace ? null : await snapshotDir(cwd).catch(() => null);
           const input = [{ type: 'text', text: String(req.prompt ?? ''), text_elements: [] }];
           for (const img of Array.isArray(req.images) ? req.images : []) if (img && typeof img.data === 'string') input.push({ type: 'image', url: `data:${img.mimeType};base64,${img.data}` });
           const effort = req.effort && model ? effortFor(model, req.effort) : null;

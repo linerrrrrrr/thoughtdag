@@ -110,8 +110,16 @@ async function reconcile(key: ManagedFileKey, readChanges: boolean): Promise<Man
     if (!bytes && (binary(att) || att.contentInVault)) throw new Error(t('document.openFailed'));
     return managedDocumentFile(key, { op: 'ensure', base64: bytes });
   };
-  if (!prior) {
+  if (!prior || prior.key.name !== key.name) {
+    // A renamed attachment has a different managed path. Initialize it the
+    // same way as an imported attachment; other paths may still be in use.
     file = att.nodeFileRevision ? await managedDocumentFile(key, { op: 'read', knownRevision: att.nodeFileRevision }) : null;
+    if (file && file.base64 === undefined && att.extractedBy === 'manual' && !binary(att) && !att.contentInVault) {
+      // A text edit may have been persisted just before reload, while the
+      // managed file still has the last synchronized bytes.
+      file = await managedDocumentFile(key, { op: 'write', expectedRevision: file.revision, base64: await bytesOf(att) });
+      if (file?.conflict) file = await managedDocumentFile(key, { op: 'read' });
+    }
     file ??= await ensure();
   } else if (!sameBytes(prior.attachment, att)) {
     // An undo, redo or canvas edit restored different bytes. A concurrent

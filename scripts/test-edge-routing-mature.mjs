@@ -75,11 +75,15 @@ function parallelForward(a, b, message) {
   const product = length(a) * length(b);
   assert.ok(product > 1e-8 && dot(a, b) / product > 0.99999, message);
 }
-function geometry(route, cards, sourceSide, targetSide) {
+function geometry(route, cards, sourceSide, targetSide, perpendicularity = 1) {
   const curves = segments(route.path), points = samples(curves);
-  parallelForward(tangent(curves[0].points), normal[sourceSide], 'source tangent must follow its outward port normal');
-  const targetNormal = normal[targetSide];
-  parallelForward(tangent(curves.at(-1).points, true), { x: -targetNormal.x, y: -targetNormal.y }, 'target tangent must enter along its inward normal');
+  for (const [outward, segment] of [[normal[sourceSide], curves[0].points], [normal[targetSide], [...curves.at(-1).points].reverse()]]) {
+    const chord = subtract(segment.at(-1), segment[0]);
+    const angle = (v) => Math.atan2(cross(outward, v), dot(outward, v));
+    const freeAngle = cross(outward, chord) === 0 ? 0 : Math.max(-Math.PI / 2, Math.min(Math.PI / 2, angle(chord)));
+    assert.ok(Math.abs(angle(tangent(segment)) - (1 - perpendicularity) * freeAngle) < 1e-7,
+      'both endpoint tangents must match the requested approach angle from outside the card');
+  }
   for (let i = 1; i < curves.length; i++) {
     // SVG segments have independent parameter speeds. Compare geometric
     // tangent continuity, rather than equating their control-arm lengths.
@@ -150,6 +154,29 @@ try {
     const ss = e.sourceHandle.slice(4), ts = e.targetHandle.slice(3), s = point(source, ss), t = point(target, ts);
     return routeEdge(s.x, s.y, ss, t.x, t.y, ts, e.source, e.target, cards, mode, context ? { edgeId: e.id, context } : {});
   };
+  test('endpoint perpendicularity sets both tangent angles on clear, obstructed and reversed curves', () => {
+    const cases = [
+      { sides: ['right', 'top'], cards: [node('s', 0, 0), node('t', 800, 400)] },
+      { sides: ['bottom', 'top'], cards: [node('s', 0, 0), node('t', 0, 900), node('block', -80, 260, 360, 200)] },
+      { sides: ['bottom', 'top'], cards: [node('s', 0, 0), node('t', 0, 700), node('tight', -60, 82, 320, 260)] },
+      { sides: ['top', 'bottom'], cards: [node('s', 0, 0), node('t', 600, 400)] },
+      { sides: ['left', 'right'], cards: [node('s', 800, 300), node('t', 0, 0)] },
+    ];
+    for (const { cards, sides } of cases) {
+      const e = edge('s-t', 's', 't', ...sides);
+      for (const mode of ['auto', 'curve']) {
+        for (const curvature of [0, 0.25, 1]) {
+          const paths = [0, 0.4, 1].map((endpointPerpendicularity) => {
+            const context = createEdgeRoutingContext(cards, [e], { curvature, endpointPerpendicularity });
+            const result = route(cards, e, mode, context);
+            geometry(result, cards, ...sides, endpointPerpendicularity);
+            return result.path;
+          });
+          assert.equal(new Set(paths).size, paths.length, 'each setting must visibly change an offset connection');
+        }
+      }
+    }
+  });
   for (const vertical of [false, true]) test(`long ${vertical ? 'vertical' : 'horizontal'} offset keeps a broad, natural S instead of a near-diagonal`, () => {
     const cards = vertical ? [node('s', 0, 0), node('t', 500, 1280)] : [node('s', 0, 0), node('t', 1400, 500)];
     const e = edge('s-t', 's', 't', vertical ? 'bottom' : 'right', vertical ? 'top' : 'left');

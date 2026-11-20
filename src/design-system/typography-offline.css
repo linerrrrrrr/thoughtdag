@@ -1,0 +1,5 @@
+/* Preserve the original inline React Flow transform until the reader moves
+   the camera. All typography inside the captured app keeps its native roles. */
+html[data-type-surface="offline-viewer"] .react-flow[data-export-navigated] .react-flow__viewport {
+  transform: translate(var(--export-camera-x), var(--export-camera-y)) scale(var(--export-camera-zoom)) !important;
+}

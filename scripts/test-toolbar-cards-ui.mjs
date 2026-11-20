@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
 import { chromium } from 'playwright-core';
-import { openModelConnection } from './fixtures/canvas-model-picker.mjs';
+import { assertSettingsModal, clickSettingsBackdrop, openModelConnection, openSettingsSection } from './fixtures/canvas-model-picker.mjs';
 
 const executablePath = process.env.CHROME_PATH ?? [
   'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe', '/usr/bin/chromium',
@@ -26,11 +26,15 @@ const output = 'local-tests/toolbar-cards';
 await mkdir(output, { recursive: true });
 const uiScale = 0.75;
 const card = name => page.locator(`[data-${name}]`);
-const rightCards = new Set(['selection-properties', 'canvas-layout-panel', 'canvas-routing-panel',
+const rightCards = new Set(['selection-properties', 'canvas-layout-panel',
   'canvas-detail-panel', 'toolbar-more-panel', 'frame-nav-panel', 'diagnostics-panel']);
 const one = async name => {
   await card(name).waitFor();
-  assert.equal(await page.locator('.canvas-tool-panel:visible').count(), 1, name);
+  assert.equal(await page.locator('.canvas-tool-panel:visible, [data-settings-panel]:visible').count(), 1, name);
+  if (name === 'settings-panel') {
+    await assertSettingsModal(page);
+    return;
+  }
   const panel = await card(name).boundingBox();
   const header = await card('canvas-header').boundingBox();
   const anchor = await card(rightCards.has(name) ? 'top-toolbar' : 'project-switcher').boundingBox();
@@ -43,7 +47,7 @@ const one = async name => {
 const check = name => console.log('PASS', name);
 const none = async () => {
   await page.waitForTimeout(400);
-  assert.equal(await page.locator('.canvas-tool-panel:visible, [data-canvas-chat]').count(), 0,
+  assert.equal(await page.locator('.canvas-tool-panel:visible, [data-settings-panel], [data-canvas-chat]').count(), 0,
     'replaced panels must stay closed after their replacement closes');
 };
 const selectFormat = async () => {
@@ -62,7 +66,7 @@ const selectConnection = async () => {
 };
 const openConnection = async () => {
   await openModelConnection(page, 'api');
-  await one('model-connection-panel');
+  await one('settings-panel');
 };
 try {
   await page.goto(process.env.APP_URL ?? 'http://127.0.0.1:5193');
@@ -82,7 +86,7 @@ try {
     window.__store.setState({ nodes, edges, selectedNodeIds: [], selectedNodeId: null, history: [{ nodes, edges }], historyIndex: 0 });
     window.__maxVisibleCards = 0;
     const observe = () => {
-      const count = [...document.querySelectorAll('.canvas-tool-panel')].filter(el => el.getClientRects().length).length;
+      const count = [...document.querySelectorAll('.canvas-tool-panel, [data-settings-panel]')].filter(el => el.getClientRects().length).length;
       window.__maxVisibleCards = Math.max(window.__maxVisibleCards, count);
       requestAnimationFrame(observe);
     };
@@ -102,7 +106,8 @@ try {
     assert.equal(await card('top-toolbar').locator(`[data-${entry}]`).count(), 1, entry);
   }
   assert.equal(await card('top-toolbar').locator('[data-layout-entry]').count(), 1);
-  assert.equal(await card('top-toolbar').locator('[data-routing-entry]').count(), 1);
+  assert.equal(await card('top-toolbar').locator('[data-settings-entry]').count(), 1);
+  assert.equal(await card('top-toolbar').locator('[data-routing-entry]').count(), 0);
   check('session entries stay on the left; canvas tools and layout live on the right');
 
   await card('layout-entry').click(); await one('canvas-layout-panel');
@@ -148,15 +153,17 @@ try {
   await card('provider-add').click();
   await page.locator('[data-preset="custom"]').click();
   await card('provider-url').fill('https://draft.invalid/v1');
+  await clickSettingsBackdrop(page);
   await card('canvas-detail-trigger').click(); await one('canvas-detail-panel');
   await openConnection();
   assert.equal(await card('provider-url').inputValue(), 'https://draft.invalid/v1');
   await card('provider-url').fill('');
+  await clickSettingsBackdrop(page);
   await card('toolbar-more').click(); await one('toolbar-more-panel');
   await openConnection();
   assert.equal(await card('provider-url').inputValue(), '');
   await page.keyboard.press('Escape'); await none();
-  check('switching cards preserves connection drafts, including empty values');
+  check('backdrop dismissal and opening another tool preserve connection drafts, including empty values');
 
   await card('layout-entry').click(); await one('canvas-layout-panel');
   await page.evaluate(() => window.__store.getState().setSelectedNodeIds(['a', 'b']));
@@ -164,9 +171,11 @@ try {
   await page.evaluate(() => window.__store.getState().setSelectedNodeId('a'));
   await one('canvas-layout-panel');
   await card('layout-direction').locator('label:has(input[value="horizontal"])').click();
-  await card('routing-entry').click(); await one('canvas-routing-panel');
+  await openSettingsSection(page, 'edges'); await one('settings-panel');
   assert.equal(await card('layout-entry').getAttribute('aria-expanded'), 'false');
-  assert.equal(await card('routing-entry').getAttribute('aria-expanded'), 'true');
+  assert.equal(await card('settings-entry').getAttribute('aria-expanded'), 'true');
+  await page.keyboard.press('Escape');
+  await none();
   await card('layout-entry').click(); await one('canvas-layout-panel');
   assert.equal(await card('layout-direction').locator('input:checked').inputValue(), 'horizontal');
   await card('toolbar-more').click(); await one('toolbar-more-panel');

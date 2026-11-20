@@ -1,8 +1,8 @@
 import { useState, useRef, useCallback } from 'react';
 import { ChevronRight, FileText, Loader2, Paperclip, X, BookOpen } from 'lucide-react';
-import { useStore } from '../../store';
 import { useUiStore } from '../../lib/ui-store';
-import { processFile, FILE_INPUT_ACCEPT } from '../../lib/attachments';
+import { FILE_INPUT_ACCEPT } from '../../lib/attachments';
+import { importNodeFiles } from '../../lib/node-file-import';
 import { isNotebook } from '../../lib/notebook';
 import { useT, fmt } from '../../i18n';
 import { isViewerMode } from '../../lib/viewer';
@@ -13,7 +13,6 @@ export default function AttachmentsSection({
   attachments,
   excludedAttachmentIds,
   includedAttachmentIds,
-  addAttachment,
   removeAttachment,
   toggleExcludeAttachment,
   setAttachmentRenderMode,
@@ -23,7 +22,6 @@ export default function AttachmentsSection({
   attachments: Attachment[];
   excludedAttachmentIds: string[];
   includedAttachmentIds: string[];
-  addAttachment: (nodeId: string, attachment: Attachment) => void;
   removeAttachment: (nodeId: string, attachmentId: string) => void;
   toggleExcludeAttachment: (nodeId: string, attachmentId: string, ancestorExcluded?: boolean) => void;
   setAttachmentRenderMode: (nodeId: string, attachmentId: string, mode: 'full' | 'text-only') => void;
@@ -36,11 +34,8 @@ export default function AttachmentsSection({
   const excludeSet = new Set(excludedAttachmentIds);
 
   const handleFile = useCallback((file: File) => {
-    void processFile(file, {
-      add: (att) => addAttachment(nodeId, att),
-      update: (attId, patch) => useStore.getState().setAttachmentData(nodeId, attId, patch),
-    });
-  }, [nodeId, addAttachment]);
+    void importNodeFiles(nodeId, [file]);
+  }, [nodeId]);
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -64,7 +59,7 @@ export default function AttachmentsSection({
   return (
     <div className="panel-card px-4 py-3">
       <details className="group">
-        <summary className="text-control font-semibold text-warm cursor-pointer hover:text-warm/80 transition-colors flex items-center gap-1.5 select-none">
+        <summary className="text-control font-semibold text-warm hover:text-warm/80 transition-colors flex items-center gap-1.5 select-none">
           <ChevronRight size={12} strokeWidth={1.75} className="transition-transform group-open:rotate-90" />
           {t('attach.title')}
           {hasContent && (
@@ -75,13 +70,13 @@ export default function AttachmentsSection({
         </summary>
         <div className="mt-2 space-y-3">
           {/* Upload area */}
-          {!isViewerMode && <div
+          {!isViewerMode && <div data-export-omit="files"
             onDrop={handleDrop}
             onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
             onDragLeave={() => setIsDragging(false)}
             onPaste={handlePaste}
             onClick={() => fileInputRef.current?.click()}
-            className={`border-2 border-dashed rounded-content px-4 py-3 text-center cursor-pointer transition-all ${
+            data-cursor="action" className={`border-2 border-dashed rounded-content px-4 py-3 text-center transition-all ${
               isDragging
                 ? 'border-accent bg-accent/5'
                 : 'border-line hover:border-accent/40 hover:bg-surface'
@@ -130,7 +125,7 @@ export default function AttachmentsSection({
                       <div className="mt-1 flex items-center gap-1.5">
                         <span className="text-control text-amber-600">{fmt(t('attach.pagesWarning'), { n: att.numPages, tok: (att.numPages * 1500).toLocaleString() })}</span>
                         <button
-                          onClick={() => setAttachmentRenderMode(nodeId, att.id, att.renderMode === 'full' ? 'text-only' : 'full')}
+                          data-export-omit="edit" onClick={() => setAttachmentRenderMode(nodeId, att.id, att.renderMode === 'full' ? 'text-only' : 'full')}
                           className={`text-control px-2 py-0.5 rounded-tag transition-colors ${
                             att.renderMode === 'full'
                               ? 'bg-accent/10 text-accent'
@@ -146,7 +141,7 @@ export default function AttachmentsSection({
                       <div className="mt-1 flex items-center gap-1.5">
                         <span className="text-meta text-ink-faint">{fmt(t('attach.figures'), { n: att.figures.length })}</span>
                         <button
-                          onClick={() => setAttachmentRenderMode(nodeId, att.id, att.renderMode === 'full' ? 'text-only' : 'full')}
+                          data-export-omit="edit" onClick={() => setAttachmentRenderMode(nodeId, att.id, att.renderMode === 'full' ? 'text-only' : 'full')}
                           className={`text-control px-2 py-0.5 rounded-tag transition-colors ${
                             att.renderMode === 'full'
                               ? 'bg-accent/10 text-accent'
@@ -160,7 +155,7 @@ export default function AttachmentsSection({
                   </div>
                   {att.type === 'application/pdf' && !att.isExtracting && (
                     <button
-                      onClick={() => useUiStore.getState().setReaderNodeId(nodeId)}
+                      data-open-export-reader={nodeId} data-document-open={att.id} onClick={() => useUiStore.getState().setReaderNodeId(nodeId)}
                       data-tooltip={t('attach.openReader')}
                       aria-label={t('attach.openReader')}
                       className="text-ink-faint hover:text-accent transition-colors shrink-0"
@@ -169,7 +164,7 @@ export default function AttachmentsSection({
                     </button>
                   )}
                   {!isViewerMode && <button
-                    onClick={() => removeAttachment(nodeId, att.id)}
+                    data-export-omit="edit" onClick={() => removeAttachment(nodeId, att.id)}
                     className="text-ink-faint hover:text-red-500 transition-colors shrink-0 opacity-0 group-hover:opacity-100"
                   >
                     <X size={14} strokeWidth={1.75} />
@@ -205,7 +200,7 @@ export default function AttachmentsSection({
                     </div>
                     {att.type === 'application/pdf' && (
                       <button
-                        onClick={() => useUiStore.getState().setReaderNodeId(sourceNodeId)}
+                        data-open-export-reader={sourceNodeId} data-document-open={att.id} onClick={() => useUiStore.getState().setReaderNodeId(sourceNodeId)}
                         data-tooltip={t('attach.openReader')}
                         aria-label={t('attach.openReader')}
                         className="text-ink-faint hover:text-accent transition-colors shrink-0"
@@ -214,7 +209,7 @@ export default function AttachmentsSection({
                       </button>
                     )}
                     <button
-                      onClick={() => toggleExcludeAttachment(nodeId, att.id, excludedByAncestor)}
+                      data-export-omit="edit" onClick={() => toggleExcludeAttachment(nodeId, att.id, excludedByAncestor)}
                       className={`text-control px-2 py-1 rounded-control transition-colors shrink-0 ${
                         isEffectivelyExcluded
                           ? 'bg-red-100 text-red-500 hover:bg-red-200'

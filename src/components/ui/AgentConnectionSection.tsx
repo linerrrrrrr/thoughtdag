@@ -3,6 +3,7 @@ import { CircleCheck, CircleDashed, Loader2, RefreshCw, SquareTerminal } from 'l
 import { useT, fmt } from '../../i18n';
 import { availableExecutionModels, ensureAgentsFresh, recheckAgents, useModels } from '../../lib/use-models';
 import { canRetryAgentHost } from '../../lib/agents/host';
+import { diskStorageNamespace } from '../../lib/disk-storage';
 import { useDismissableLayer } from '../../lib/use-dismissable-layer';
 import AgentCwdChip from './AgentCwdChip';
 import AgentPermissionChip from './AgentPermissionChip';
@@ -19,6 +20,7 @@ export default function AgentConnectionSection() {
   const [checking, setChecking] = useState(true);
   const pending = checking || !!data?.agentsPending;
   const connected = models.length > 0;
+  const hasCanvasWorkspace = diskStorageNamespace() !== 'browser' || !!window.desktopAgents?.canvasWorkspace;
   const [setting, setSetting] = useState<'cwd' | 'approvals'>('cwd');
   const [settingOpen, setSettingOpen] = useState(false);
   const settingsRef = useRef<HTMLDivElement>(null);
@@ -36,7 +38,7 @@ export default function AgentConnectionSection() {
   // Keep both triggers inside one boundary so collapsing a menu cannot move
   // the other trigger between pointerdown and click.
   useDismissableLayer({
-    open: connected && settingOpen,
+    open: settingOpen && (setting === 'cwd' ? hasCanvasWorkspace : connected),
     refs: [settingsRef],
     dismissOnFocusOutside: true,
     restoreFocusRef: setting === 'cwd' ? cwdTriggerRef : approvalsTriggerRef,
@@ -50,24 +52,25 @@ export default function AgentConnectionSection() {
   return <div className="agent-connection" data-agent-connection-page>
     <div className="agent-connection-overview">
       <div className="agent-connection-runtime">
-        <SquareTerminal size={20} strokeWidth={1.75} className="text-ink-muted shrink-0" aria-hidden="true" />
-        <p className="text-title font-semibold text-ink">Codex</p>
+        <span className="agent-connection-runtime-icon" aria-hidden="true"><SquareTerminal size={20} strokeWidth={1.75} /></span>
+        <div className="min-w-0">
+          <p className="text-title font-semibold text-ink">Codex</p>
+          <div className="agent-connection-status text-control" role="status"
+            data-agent-connection-status={pending ? 'pending' : connected ? 'connected' : 'disconnected'}>
+            <span className="agent-connection-state">
+              {pending ? <Loader2 size={14} className="animate-spin" aria-hidden="true" />
+                : connected ? <CircleCheck size={14} strokeWidth={1.75} aria-hidden="true" />
+                  : <CircleDashed size={14} strokeWidth={1.75} aria-hidden="true" />}
+              {t(pending ? 'connection.checking' : connected ? 'connection.ready' : 'connection.disconnected')}
+            </span>
+            {connected && !pending && <span className="agent-connection-model-count">{fmt(t('connection.modelCount'), { n: models.length })}</span>}
+          </div>
+        </div>
         <button type="button" disabled={!canRetryAgentHost() || pending} onClick={reconnect} data-agent-connect
-          aria-label={t(connected ? 'model.recheck' : 'connection.connect')}
-          data-tooltip={t(connected ? 'model.recheck' : 'connection.connect')}
-          data-tooltip-icon-only={connected || pending || undefined}
-          className={`agent-connection-action ${connected || pending ? 'agent-connection-action-icon' : ''}`}>
-          {pending ? <Loader2 size={16} className="animate-spin" aria-hidden="true" /> : <RefreshCw size={16} strokeWidth={1.75} aria-hidden="true" />}
-          {!connected && !pending && <span>{t('connection.connect')}</span>}
+          data-tooltip={t(connected ? 'model.recheck' : 'connection.connect')} className="agent-connection-action">
+          <RefreshCw size={14} strokeWidth={1.75} aria-hidden="true" />
+          <span>{t(connected ? 'model.recheck' : 'connection.connect')}</span>
         </button>
-      </div>
-      <div className="agent-connection-status text-control" role="status"
-        data-agent-connection-status={pending ? 'pending' : connected ? 'connected' : 'disconnected'}>
-        {pending ? <Loader2 size={14} className="animate-spin" aria-hidden="true" />
-          : connected ? <CircleCheck size={14} strokeWidth={1.75} aria-hidden="true" />
-            : <CircleDashed size={14} strokeWidth={1.75} aria-hidden="true" />}
-        <span>{t(pending ? 'connection.checking' : connected ? 'connection.ready' : 'connection.disconnected')}</span>
-        {connected && !pending && <span className="agent-connection-model-count text-meta">{fmt(t('connection.modelCount'), { n: models.length })}</span>}
       </div>
       {!connected && <p className="agent-connection-message text-control text-ink-muted">
         {pending ? t('connection.agentIntro') : !available
@@ -75,9 +78,9 @@ export default function AgentConnectionSection() {
           : status?.error || t('connection.agentUnavailable')}
       </p>}
     </div>
-    {connected && <div ref={settingsRef} className="agent-connection-settings" data-agent-connection-settings>
-      <AgentCwdChip open={settingOpen && setting === 'cwd'} onOpenChange={open => showSetting('cwd', open)} triggerRef={cwdTriggerRef} />
-      <AgentPermissionChip open={settingOpen && setting === 'approvals'} onOpenChange={open => showSetting('approvals', open)} triggerRef={approvalsTriggerRef} />
+    {(hasCanvasWorkspace || connected) && <div ref={settingsRef} className="agent-connection-settings settings-section-divider" data-agent-connection-settings>
+      {hasCanvasWorkspace && <AgentCwdChip open={settingOpen && setting === 'cwd'} onOpenChange={open => showSetting('cwd', open)} triggerRef={cwdTriggerRef} />}
+      {connected && <AgentPermissionChip open={settingOpen && setting === 'approvals'} onOpenChange={open => showSetting('approvals', open)} triggerRef={approvalsTriggerRef} />}
     </div>}
   </div>;
 }

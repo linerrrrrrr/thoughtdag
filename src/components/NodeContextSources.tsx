@@ -71,7 +71,7 @@ export default function NodeContextSources({ nodeId, compact = false }: { nodeId
       </>}
     </button>
     {visible && createPortal(<div ref={panel} id={panelId} tabIndex={-1} role="dialog"
-      aria-label={t('contextSources.title')} data-context-sources-popover={nodeId}
+      aria-label={t('contextSources.title')} data-type-surface="portal" data-context-sources-popover={nodeId}
       className="node-context-sources-popover nodrag nopan nowheel" style={{ visibility: 'hidden' }}
       onPointerDown={event => event.stopPropagation()} onClick={event => event.stopPropagation()}
       onDoubleClick={event => event.stopPropagation()}

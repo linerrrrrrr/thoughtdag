@@ -28,7 +28,7 @@ Guide: [Conversation nodes and panel](/guides/conversations)
 - Purple solid conversation paths and purple dashed single-node references. All conversation nodes share the same behavior; context follows their incoming connections.
 - The canvas node’s **Context · N sources** entry inspects multiple inputs and orders incoming conversation blocks.
 - Delete or convert a wire without deleting its nodes; archive content to exclude it while retaining it.
-- Context fingerprints, stale markers, answer versions, and dependency-ordered replay.
+- Context fingerprints flag stale answers. Each flagged node can be regenerated individually.
 - Controlled comparison by regenerating the same question and model after a context change.
 
 Guide: [Control context](/guides/context-control) · [Versions, staleness, and replay](/guides/versions-replay)
@@ -47,7 +47,7 @@ Guide: [Material nodes and reader](/guides/materials)
 
 - **Merge summary**, **Merge & delete**, **Weave highlights**, structured highlights, and multiple downstream highlight modes.
 - Condensed copy of consecutive unbranched runs while preserving the original path and protected decisions/pivots.
-- Graph diagnostics and explicit replay of dependent work.
+- Graph diagnostics.
 
 Guide: [Merge, highlight, and condense](/guides/organize)
 
@@ -66,8 +66,8 @@ Guide: [Memory](/guides/memory) · [Models, tools, and memory](/guides/models-to
 
 ## Toolbar, menus, and data
 
-- Toolbar access to models, replay, frames, search, language, backup, overflow actions, undo, and redo.
+- Toolbar access to models, frames, search, language, backup, overflow actions, undo, and redo.
 - Overflow menu for annotation visibility, layout, highlight/material overviews, condense, diagnostics, sharing, exports, appearance, memory, and tutorial.
-- IndexedDB persistence, automatic folder backup, complete JSON import/export, selected/context-chain Markdown, event CSV, and read-only URL sharing.
+- IndexedDB persistence, automatic folder backup, complete JSON import/export, selected/context-chain Markdown, event CSV, and canvas-file sharing.
 
 Guide: [Interface overview](/guides/interface-overview) · [Data, backup, and sharing](/guides/data-sharing)

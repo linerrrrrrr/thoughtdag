@@ -2,6 +2,7 @@ import { appSettings } from '../../lib/disk-storage';
 import { useLayoutEffect, useRef, useState } from 'react';
 import { X } from 'lucide-react';
 import { useStore } from '../../store';
+import type { ThoughtNode } from '../../types';
 import { useUiStore } from '../../lib/ui-store';
 import { PANEL_WIDTH_KEY, PANEL_MIN_WIDTH, PANEL_DEFAULT_WIDTH, PANEL_INSET } from '../../lib/constants';
 import { activeSummary, awaitingInput } from '../../utils';
@@ -16,11 +17,12 @@ import RelatedSection from './RelatedSection';
 import QuestionSection from './QuestionSection';
 import ResponseSection from './ResponseSection';
 import NodeHighlightsSection from '../NodeHighlightsSection';
-import { useTextHighlighter } from '../../lib/use-text-highlighter';
+import { canHighlightConversation, hasConversationHighlightText, useConversationHighlights, useTextHighlighter } from '../../lib/use-text-highlighter';
 import HeaderActions from './HeaderActions';
 import { useDismissableLayer } from '../../lib/use-dismissable-layer';
 import { handleCanvasPanelKeyDown } from '../../lib/canvas-shortcuts';
 import { getNodeNameSource } from '../../lib/node-display-name';
+import { nodeExecutionKind } from '../../lib/node-execution';
 import NodeMetadataEditor from '../NodeMetadataEditor';
 import ConversationSplit from '../ConversationSplit';
 import './FocusPanel.css';
@@ -30,17 +32,16 @@ import { screenToUi, uiViewport } from '../../lib/ui-scale';
 // The panel reads one turn. Further questions belong to a
 // new linked node, whose own question editor opens before any request runs.
 
-export default function FocusPanel({ nodeId, onFocusNode }: { nodeId: string; onFocusNode?: (id: string) => void }) {
+export default function FocusPanel({ nodeId, onFocusNode, snapshotNode }: { nodeId: string; onFocusNode?: (id: string) => void; snapshotNode?: ThoughtNode }) {
   const {
     nodes,
-    addAttachment, removeAttachment, toggleExcludeAttachment, setAttachmentRenderMode, getInheritedAttachments,
+    removeAttachment, toggleExcludeAttachment, setAttachmentRenderMode, getInheritedAttachments,
   } = useStore();
   const t = useT();
   const panelRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const preludeRef = useRef<HTMLDivElement>(null);
   const inspectRef = useRef<HTMLDivElement>(null);
-  const responseRef = useRef<HTMLDivElement>(null);
   const [availableHeight, setAvailableHeight] = useState(420);
   // This working panel can outlive its opener; restoring stale canvas focus would reselect it.
   useDismissableLayer({ open: true, refs: [panelRef], dismissOnOutside: false, restoreFocus: false,
@@ -85,13 +86,14 @@ export default function FocusPanel({ nodeId, onFocusNode }: { nodeId: string; on
     setMetadataOpen(false);
   }
 
-  const node = nodes.find((n) => n.id === nodeId);
-  const canHighlight = !!node && !isViewerMode && !!node.data.response && !node.data.isLoading && !node.data.isEditingResponse;
+  const node = snapshotNode ?? nodes.find((n) => n.id === nodeId);
+  const canHighlight = !!node && canHighlightConversation(node.data);
   const highlighter = useTextHighlighter({
-    scopeKey: `${nodeId}:${node?.data.responseIndex}:${node?.data.response}`,
+    scopeKey: JSON.stringify([nodeId, node?.data.responseIndex, node?.data.question, node?.data.response]),
     enabled: canHighlight,
-    surfaceRef: responseRef,
+    surfaceRef: contentRef,
   });
+  const { questionHighlights, responseHighlights: highlightedTexts } = useConversationHighlights(node?.data.highlights);
   const nodeExists = !!node;
   useLayoutEffect(() => {
     const content = contentRef.current;
@@ -129,11 +131,9 @@ export default function FocusPanel({ nodeId, onFocusNode }: { nodeId: string; on
   const hasAnswer = !!(data.response || data.isLoading || data.isEditingResponse
     || data.generationFailed || activeAgentActivity(data).length);
 
-  const highlightedTexts = new Set(data.highlights.map((h) => h.text));
-
   return (
     <div
-      ref={panelRef} data-focus-panel data-focus-node-id={nodeId}
+      ref={panelRef} data-type-surface="reading" data-focus-panel data-focus-node-id={nodeId}
       role="complementary" aria-label={t('panel.reading')}
       className={`focus-panel-shell absolute right-canvas-inset top-0 bottom-0 z-20 border rounded-panel overflow-clip flex flex-col ${resizing ? 'select-none' : ''}`}
       style={{ width: panelWidth, maxWidth: 'calc(70 * var(--ui-vw))', minWidth: `min(${PANEL_MIN_WIDTH}px, calc(100 * var(--ui-vw) - ${PANEL_INSET * 2}px))` }}
@@ -145,7 +145,7 @@ export default function FocusPanel({ nodeId, onFocusNode }: { nodeId: string; on
         onPointerMove={onResizePointerMove}
         onPointerUp={onResizePointerUp}
         onDoubleClick={onResizeDoubleClick}
-        className={`absolute left-0 top-0 h-full w-[8px] -ml-[3px] z-20 cursor-col-resize hover:bg-accent/20 transition-colors flex items-center justify-center ${resizing ? 'bg-accent/30' : ''}`}
+        data-cursor="resize-column" className={`absolute left-0 top-0 h-full w-[8px] -ml-[3px] z-20 hover:bg-accent/20 transition-colors flex items-center justify-center ${resizing ? 'bg-accent/30' : ''}`}
         role="separator" aria-orientation="vertical" aria-label={t('panel.resizeTitle')}
         data-panel-resize
       >
@@ -176,13 +176,14 @@ export default function FocusPanel({ nodeId, onFocusNode }: { nodeId: string; on
             name={getNodeNameSource(data, t('ctx.unnamedNode'))}
             preview={data.displaySummary ?? activeSummary(data)} overview={false}
             open={metadataOpen} onOpenChange={setMetadataOpen} variant="panel" />
-          {(data.response || data.highlights.length > 0) && <NodeHighlightsSection key={`h-${nodeId}`}
+          {(hasConversationHighlightText(data) || data.highlights.length > 0) && <NodeHighlightsSection key={`h-${nodeId}`}
             nodeId={nodeId} highlights={data.highlights} highlightMode={data.highlightMode}
             highlighter={highlighter} canHighlight={canHighlight} />}
           <AgentSessionLine data={data} />
           <HandoffLine nodeId={nodeId!} data={data} />
         </div>
-        <div className={`focus-panel-conversation${hasAnswer ? '' : ' focus-panel-conversation--unsplit'}`}
+        <div data-cursor="native" onMouseUp={event => highlighter.markConversationSelection(event, nodeId)}
+          className={`focus-panel-conversation${hasAnswer ? '' : ' focus-panel-conversation--unsplit'}`}
           style={hasAnswer ? undefined : { maxHeight: availableHeight }}>
           <ConversationSplit nodeId={nodeId} surface="panel" enabled={hasAnswer} availableHeight={availableHeight}
             question={
@@ -191,10 +192,13 @@ export default function FocusPanel({ nodeId, onFocusNode }: { nodeId: string; on
                 nodeId={nodeId!}
                 base={data.agentSession?.cwd ?? data.importSource?.cwd}
                 question={data.question}
+                highlights={questionHighlights}
+                penActive={highlighter.active}
                 displayQuestion={originalQuestionBeforeInstructions(data.question, activeAgentActivity(data))}
                 isEditing={data.isEditing && data.questionEditor === 'panel'}
                 isHuman={data.stepKind === 'human'}
                 awaiting={!!awaiting}
+                needsAgentModel={!isViewerMode && awaiting === 'ask' && nodeExecutionKind(data) === 'codex'}
                 generationFailed={data.generationFailed && !data.isLoading}
                 placeholder={awaiting ? (data.instruction || t('node.askPlaceholder')) : undefined}
               />
@@ -207,7 +211,7 @@ export default function FocusPanel({ nodeId, onFocusNode }: { nodeId: string; on
                 hasMultipleVersions={hasMultipleVersions}
                 highlightedTexts={highlightedTexts}
                 highlighter={highlighter}
-                responseRef={responseRef}
+                questionHighlights={questionHighlights}
                 onFocusNode={onFocusNode}
               />
             }
@@ -222,7 +226,6 @@ export default function FocusPanel({ nodeId, onFocusNode }: { nodeId: string; on
             attachments={data.attachments || []}
             excludedAttachmentIds={data.excludedAttachmentIds || []}
             includedAttachmentIds={data.includedAttachmentIds || []}
-            addAttachment={addAttachment}
             removeAttachment={removeAttachment}
             toggleExcludeAttachment={toggleExcludeAttachment}
             setAttachmentRenderMode={setAttachmentRenderMode}

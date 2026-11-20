@@ -1,12 +1,10 @@
 import type { ReactNode } from 'react';
-import NodeNumber from './NodeNumber';
 import { useLadderLevel } from '../lib/use-map-mode';
 import './NodeOverview.css';
 
 /** Overview is wayfinding: a stable name, with a quiet preview only when close. */
-export default function NodeOverview({ name, number, source, preview, previewAlways = false, icon, action, meta, compact = false, variant = 'thought', typeLabel, fileTypes }: {
+interface OverviewProps {
   name: string;
-  number?: number;
   source?: string;
   preview?: string;
   previewAlways?: boolean;
@@ -17,18 +15,22 @@ export default function NodeOverview({ name, number, source, preview, previewAlw
   variant?: 'thought' | 'start' | 'note' | 'file' | 'link';
   typeLabel?: string;
   fileTypes?: string[];
-}) {
+}
+
+export default function NodeOverview(props: OverviewProps) {
   const level = useLadderLevel();
-  const showPreview = !compact && (previewAlways || level === 3);
+  return <NodeOverviewBody {...props} showPreview={!props.compact && (!!props.previewAlways || level === 3)} />;
+}
+
+export function NodeOverviewBody({ name, source, preview, icon, action, meta, compact = false, variant = 'thought', typeLabel, fileTypes, showPreview }: OverviewProps & { showPreview: boolean }) {
   const text = preview?.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1').replace(/[#*`>]/g, '').replace(/\s+/g, ' ').trim();
   return (
-    <div className={`node-overview node-overview--${variant}${compact ? ' node-overview--compact' : ''}`} data-node-overview data-overview-detail={showPreview ? 'preview' : 'name'}>
+    <div className={`node-overview node-overview--${variant}${compact ? ' node-overview--compact' : ''}`} data-node-overview data-type-surface="overview" data-overview-detail={showPreview ? 'preview' : 'name'}>
       {((typeLabel && !compact) || !!fileTypes?.length) && <div className="node-overview-identity">
         {!compact && typeLabel && <span>{typeLabel}</span>}
         {fileTypes?.slice(0, compact ? 1 : 3).map(type => <span className="node-file-type" key={type}>{type}</span>)}
       </div>}
       <div className="node-overview-heading">
-        <NodeNumber number={number} />
         {icon && <span className="node-overview-icon" aria-hidden="true">{icon}</span>}
         <div className="node-overview-name" data-tooltip={source || name} data-tooltip-overflow={!source || source === name || undefined} data-node-name>{name}</div>
         {action && <div className="node-overview-action">{action}</div>}

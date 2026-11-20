@@ -20,7 +20,7 @@ function FilePreview({ value, onClose }: { value: Preview; onClose: () => void }
     ref.current?.querySelector<HTMLButtonElement>('[data-file-preview-close]')?.focus();
     selected.current?.scrollIntoView({ block: 'center' });
   }, []);
-  return createPortal(<div className="file-preview-backdrop nodrag nopan" onClick={e => e.stopPropagation()} onPointerDown={e => e.stopPropagation()}>
+  return createPortal(<div data-type-surface="portal" className="file-preview-backdrop nodrag nopan" onClick={e => e.stopPropagation()} onPointerDown={e => e.stopPropagation()}>
     <div ref={ref} className="file-preview" role="dialog" aria-modal="true" aria-label={t('local.preview')} data-file-preview>
       <header>
         <FileText size={17} />
@@ -88,7 +88,7 @@ export function ConversationLink({ base, title, ...props }: AnchorHTMLAttributes
         }
       }}
     />
-    {point && createPortal(<div ref={menu} role="menu" aria-label={target ? t('local.open') : t('local.openLink')} data-file-menu
+    {point && createPortal(<div ref={menu} role="menu" aria-label={target ? t('local.open') : t('local.openLink')} data-type-surface="portal" data-file-menu
       className="conversation-link-menu nodrag nopan" style={{ left: Math.max(8, Math.min(point.x, uiViewport().width - 240)), top: Math.max(8, Math.min(point.y, uiViewport().height - (target ? 250 : 105))) }}
       onPointerDown={e => e.stopPropagation()} onClick={e => e.stopPropagation()} onContextMenu={e => e.preventDefault()}
       onKeyDown={e => {

@@ -225,22 +225,27 @@ try {
 
   await input.click();
   await page.keyboard.press('Tab');
-  const focus = await page.locator('[data-sample-preview]').evaluate(element => {
-    const css = getComputedStyle(element);
+  const measureFocus = (element, useLabel) => {
+    const target = useLabel ? element.nextElementSibling : element;
+    // Chromium snaps the outline to device pixels under the UI's CSS zoom.
+    const reference = document.createElement('span');
+    reference.style.cssText = 'position:absolute;visibility:hidden;outline:2px solid';
+    target.parentElement.append(reference);
+    const minimum = parseFloat(getComputedStyle(reference).outlineWidth);
+    reference.remove();
+    const css = getComputedStyle(target);
     return { focused: document.activeElement === element, visible: element.matches(':focus-visible'),
-      style: css.outlineStyle, width: parseFloat(css.outlineWidth), color: css.outlineColor };
-  });
+      style: css.outlineStyle, width: parseFloat(css.outlineWidth), color: css.outlineColor, minimum };
+  };
+  const focus = await page.locator('[data-sample-preview]').evaluate(measureFocus, false);
   assert.equal(focus.focused, true, 'Tab from the input reaches the explicit preview action');
   assert.equal(focus.visible, true, 'Keyboard focus matches :focus-visible');
-  assert.ok(focus.width >= 2 && focus.style !== 'none' && focus.color !== 'rgba(0, 0, 0, 0)', JSON.stringify(focus));
+  assert.ok(focus.minimum > 0 && focus.width >= focus.minimum && focus.style !== 'none' && focus.color !== 'rgba(0, 0, 0, 0)', JSON.stringify(focus));
   await page.locator('[data-choice="language"] input[value="zh"]').focus();
   await page.keyboard.press('ArrowRight');
   assert.equal(await page.locator('[data-choice="language"] input[value="en"]').isChecked(), true, 'Radio choices support arrow-key navigation');
-  const radioFocus = await page.locator('[data-choice="language"] input[value="en"]').evaluate(element => {
-    const css = getComputedStyle(element.nextElementSibling);
-    return { focused: document.activeElement === element, width: parseFloat(css.outlineWidth), style: css.outlineStyle };
-  });
-  assert.ok(radioFocus.focused && radioFocus.width >= 2 && radioFocus.style !== 'none', JSON.stringify(radioFocus));
+  const radioFocus = await page.locator('[data-choice="language"] input[value="en"]').evaluate(measureFocus, true);
+  assert.ok(radioFocus.focused && radioFocus.visible && radioFocus.minimum > 0 && radioFocus.width >= radioFocus.minimum && radioFocus.style !== 'none', JSON.stringify(radioFocus));
   check('Keyboard navigation exposes a visible button focus ring and a visible segmented-choice focus boundary');
 
   for (const windowWidth of [320, 390]) {

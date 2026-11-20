@@ -142,7 +142,7 @@ export async function selectCodexBase(history: CodexHistoryRequest, instructions
     const record = nativeRecord(node);
     const session = node.data.agentSession;
     return record?.checkpoint && record.turnId && record.outputFingerprint && record.itemCount != null
-      && record.itemCount <= history.items.length && session?.sessionFile && normalize(session.cwd) === normalize(cwd)
+      && record.itemCount <= history.items.length && session?.sessionFile && typeof session.cwd === 'string' && normalize(session.cwd) === normalize(cwd)
       && history.mappings.some((mapping) => mapping.nodeId === node.id && mapping.representation === 'native' && mapping.turnId === record.turnId && mapping.itemEnd === record.itemCount)
       && session.sessionId === record.threadId;
   }).sort((a, b) => (nativeRecord(b)!.itemCount ?? 0) - (nativeRecord(a)!.itemCount ?? 0));

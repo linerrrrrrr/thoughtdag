@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { chromium } from 'playwright-core';
+import { openSettingsSection } from './fixtures/canvas-model-picker.mjs';
 
 const outputDir = 'local-tests/context-sources';
 const captureOnly = process.env.CONTEXT_SOURCES_CAPTURE_ONLY === '1';
@@ -75,10 +76,10 @@ const seed = async ({ direction = 'vertical', reference = false, shared = false,
     ui.setPanelOpen(false); ui.setTutorialOpen(false); ui.setReleaseNotesOpen(false); window.__rf.setViewport({ x: 30, y: shared ? 140 : 40, zoom }, { duration: 0 });
   }, { direction, reference, shared, zoom });
   // Use the visible settings entry so Vite HMR cannot leave a second imported store.
-  await page.locator('[data-toolbar-more]').click();
+  await openSettingsSection(page, 'general');
   await page.locator('[data-menu-language]').getByRole('button', { name: lang === 'en' ? 'English' : '中文', exact: true }).click();
   await page.locator('[data-appearance-lighting] button').nth(lighting === 'light' ? 0 : 1).click();
-  await page.locator('[data-toolbar-more]').click();
+  await page.keyboard.press('Escape');
   await page.waitForTimeout(650);
   await page.evaluate(({ zoom, shared }) => window.__rf.setViewport({ x: 30, y: shared ? 140 : 40, zoom }, { duration: 0 }), { zoom, shared });
   await page.waitForTimeout(180);

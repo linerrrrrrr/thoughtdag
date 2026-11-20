@@ -1,10 +1,29 @@
 /* Only the positioned text spans promise selection; page and toolbar gaps do not. */
-.pdf-document-view { min-width: 0; color: var(--color-ink); cursor: default; }
+.pdf-document-view { min-width: 0; color: var(--color-ink); }
 .pdf-document-controls { position: sticky; top: 0; z-index: 12; background: var(--color-card); }
+.pdf-document-compact { display: flex; flex: 1 1 auto; flex-direction: column; min-height: 0; }
+.pdf-document-compact > .pdf-document-controls { position: relative; flex-shrink: 0; }
+.pdf-document-compact > .pdf-page-viewport { flex: 1 1 auto; min-height: 0; overflow: auto; overscroll-behavior: contain; }
 .pdf-document-toolbar { display: flex; flex-wrap: wrap; gap: 4px; padding: 8px 0; border-bottom: 1px solid var(--color-line); }
 .pdf-document-tool { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 32px; padding: 4px 10px; border-radius: var(--radius-control); }
-.pdf-document-tool:disabled { cursor: default; opacity: .4; }
+.pdf-document-tool:disabled { opacity: .4; }
 .pdf-document-mode-hint { margin: 0; padding: 8px 0; }
+.material-file-header .pdf-document-toolbar { flex-wrap: nowrap; padding: 0; border: 0; }
+.material-file-header .pdf-document-tool { width: 24px; min-height: 24px; padding: 0; }
+[data-material-short] .pdf-document-mode-hint { padding: 0; }
+/* A canvas comment stays by the tools and leaves part of the page available
+   for reading and scrolling, including when the node is short. */
+.pdf-document-compact .pdf-document-comment {
+  position: absolute;
+  inset-inline-end: 0;
+  top: 100%;
+  width: min(24rem, calc(100% - var(--spacing-control-size)));
+  box-shadow: var(--shadow-md);
+}
+[data-material-tight] .pdf-document-mode-hint { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+[data-material-tight] .pdf-fallback-notice { padding: 0; }
+[data-material-tight] .pdf-fallback-notice p { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+[data-material-tight] .pdf-fallback-notice button { min-height: 24px; padding-block: 0; }
 .pdf-document-comment { display: flex; flex-direction: column; gap: 8px; max-height: min(360px, calc(55 * var(--ui-vh))); overflow: auto; overscroll-behavior: contain; padding: 12px; border: 1px solid var(--color-line); border-radius: var(--radius-content); background: var(--color-card); }
 .pdf-document-quote { margin: 0; border-left: 2px solid var(--color-line); padding-left: 10px; max-height: 56px; overflow: auto; white-space: pre-wrap; }
 .pdf-document-pages { display: flex; flex-direction: column; align-items: center; gap: 20px; padding: 12px 16px 20px; }
@@ -17,11 +36,11 @@
 .pdf-document-fallback-comments { display: flex; flex-direction: column; gap: 12px; }
 .pdf-document-fallback-comment { display: flex; flex-direction: column; gap: 8px; padding-top: 12px; border-top: 1px solid var(--color-line); }
 .pdf-document-render-error { position: absolute; inset: 0; display: grid; place-content: center; color: #991b1b; }
-.pdf-document-mark { position: absolute; z-index: 3; border: 0; padding: 0; opacity: .35; mix-blend-mode: multiply; border-radius: 0; cursor: pointer; }
+.pdf-document-mark { position: absolute; z-index: 3; border: 0; padding: 0; opacity: .35; mix-blend-mode: multiply; border-radius: 0; }
 .pdf-document-mark-active { opacity: .55; outline: 1px solid #b58d15; }
 .pdf-document-mark-draft { outline: 1px dashed #b58d15; }
-.pdf-document-comment-pin, .pdf-document-thread-pin { position: absolute; right: -14px; z-index: 5; display: grid; place-content: center; width: 24px; height: 24px; padding: 0; border: 1px solid var(--color-line); border-radius: var(--radius-control); color: var(--color-ink-muted); background: var(--color-card); cursor: pointer; }
+.pdf-document-comment-pin, .pdf-document-thread-pin { position: absolute; right: -14px; z-index: 5; display: grid; place-content: center; width: 24px; height: 24px; padding: 0; border: 1px solid var(--color-line); border-radius: var(--radius-control); color: var(--color-ink-muted); background: var(--color-card); }
 .pdf-document-thread-pin { right: auto; left: -14px; color: var(--color-accent); }
 .pdf-document-thread-mark { position: absolute; z-index: 2; pointer-events: none; background: var(--color-accent); }
-.pdf-document-region-layer { position: absolute; inset: 0; z-index: 7; cursor: crosshair; touch-action: none; }
+.pdf-document-region-layer { position: absolute; inset: 0; z-index: 7; touch-action: none; }
 .pdf-document-region-band { position: absolute; border: 1px solid #b58d15; background: rgb(244 204 72 / .25); pointer-events: none; }

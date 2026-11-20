@@ -17,7 +17,7 @@ export type CanvasLayoutError = 'empty-selection' | 'cycle' | 'boundary-conflict
 export interface CanvasLayoutResult { nodes: ThoughtNode[]; error?: CanvasLayoutError }
 
 const SPACING = { compact: { gap: 48, crossGap: 40 }, standard: { gap: 80, crossGap: 64 }, relaxed: { gap: 128, crossGap: 96 } };
-const widthOf = (node: ThoughtNode) => node.width ?? node.measured?.width ?? NODE_CSS_WIDTH;
+const widthOf = (node: ThoughtNode) => node.width ?? node.measured?.width ?? (isFrameNode(node) ? nodeRect(node).width : NODE_CSS_WIDTH);
 const heightOf = (node: ThoughtNode) => isFrameNode(node) ? node.height ?? node.measured?.height ?? 420 : nodeHeight(node);
 const compare = (a: ThoughtNode, b: ThoughtNode) => (a.data.createdAt ?? '').localeCompare(b.data.createdAt ?? '') || a.id.localeCompare(b.id);
 
@@ -60,29 +60,31 @@ export async function planCanvasLayout(
 ): Promise<CanvasLayoutResult> {
   const fail = (error: CanvasLayoutError): CanvasLayoutResult => ({ nodes, error });
   const scope = new Set(selectedIds ?? nodes.map((node) => node.id));
-  const contents = new Map(nodes.filter(isFrameNode).map((frame) => [frame.id, frameMembers(frame, nodes)]));
-  if (options.method !== 'manual') for (const frame of nodes.filter((node) => isFrameNode(node) && scope.has(node.id))) {
-    for (const member of contents.get(frame.id)!) scope.add(member.id);
-  }
-  const cards = nodes.filter((node) => scope.has(node.id) && !isFrameNode(node)).sort(compare);
-  if (!cards.length) return fail('empty-selection');
   const preferences = (node: ThoughtNode) => ({ ...node.data, layoutDirection: options.direction, edgeRouteDefault: options.route });
-  if (options.method === 'manual') return { nodes: nodes.map((node) => scope.has(node.id) && !isFrameNode(node) ? { ...node, data: preferences(node) } : node) };
-  // Only scoped cards move; other cards remain fixed layout boundaries.
-  // Empty selected regions still occupy space. Omitting them lets arranged
-  // cards enter the region and silently changes membership on the next run.
-  const frames = nodes.filter((node) => isFrameNode(node) && scope.has(node.id)).sort(compare);
-  const moving = [...cards, ...frames].sort(compare);
+  if (options.method === 'manual') {
+    if (!nodes.some(node => scope.has(node.id) && !isFrameNode(node))) return fail('empty-selection');
+    return { nodes: nodes.map(node => scope.has(node.id) && !isFrameNode(node) ? { ...node, data: preferences(node) } : node) };
+  }
+  const allFrames = nodes.filter(isFrameNode);
+  const contents = new Map(allFrames.map(frame => [frame.id, new Set(frameMembers(frame, nodes).map(node => node.id))]));
+  for (const frame of allFrames.filter(node => scope.has(node.id))) {
+    for (const id of contents.get(frame.id)!) scope.add(id);
+  }
+  const moving = nodes.filter(node => scope.has(node.id)).sort(compare);
+  const cards = moving.filter(node => !isFrameNode(node));
+  if (!cards.length && moving.length < 2) return fail('empty-selection');
+  const frames = moving.filter(isFrameNode);
+  const fixedFrames = allFrames.filter(frame => !scope.has(frame.id)).sort(compare);
   const ids = new Set(moving.map((node) => node.id));
   const byId = new Map(nodes.map((node) => [node.id, node]));
   const parent = new Map<string, string>();
   const smaller = [...frames].sort((a, b) => nodeRect(a).width * nodeRect(a).height - nodeRect(b).width * nodeRect(b).height || compare(a, b));
   for (const node of moving) {
-    const containing = smaller.filter((frame) => contents.get(frame.id)!.some((member) => member.id === node.id));
+    const containing = smaller.filter((frame) => contents.get(frame.id)!.has(node.id));
     if (!containing.length) continue;
     const first = containing[0];
     // Overlapping sibling frames cannot both own one compound-graph child.
-    if (containing.slice(1).some((frame) => !contents.get(frame.id)!.some((member) => member.id === first.id))) return fail('frame-conflict');
+    if (containing.slice(1).some((frame) => !contents.get(frame.id)!.has(first.id))) return fail('frame-conflict');
     parent.set(node.id, first.id);
   }
   const live = orderConversationEdges(nodes, edges.filter((edge) => byId.has(edge.source) && byId.has(edge.target)
@@ -109,10 +111,12 @@ export async function planCanvasLayout(
     firstChildren.add(edge.source); return true;
   }).map((edge) => edge.id));
   const structuralIds = new Set(structural.map((edge) => edge.id));
-  const shapes: LayoutShape[] = nodes.filter((node) => ids.has(node.id) || !isFrameNode(node)).sort(compare).map((node) => ({
+  const shapes: LayoutShape[] = [...nodes].sort(compare).map((node) => ({
     id: node.id, ...node.position, width: widthOf(node), height: heightOf(node), frame: isFrameNode(node),
     parent: parent.get(node.id), fixed: !ids.has(node.id),
-    ...(isFrameNode(node) ? { ...(contents.get(node.id)!.length ? { minWidth: FRAME_MIN_WIDTH, minHeight: FRAME_MIN_HEIGHT } : {}),
+    fixedContainers: ids.has(node.id) && fixedFrames.length
+      ? fixedFrames.filter(frame => contents.get(frame.id)!.has(node.id)).map(frame => frame.id) : undefined,
+    ...(isFrameNode(node) ? { ...(contents.get(node.id)!.size ? { minWidth: FRAME_MIN_WIDTH, minHeight: FRAME_MIN_HEIGHT } : {}),
       aspectRatio: node.data.lockAspectRatio ? widthOf(node) / heightOf(node) : undefined } : {}),
   }));
   const problem: LayoutProblem = { shapes, links: live.filter((edge) => ids.has(edge.source) || ids.has(edge.target)).map((edge) => ({

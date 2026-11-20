@@ -8,7 +8,7 @@
 
 ## Highlight and weave
 
-Choose a mode in the highlights section of a node or its [panel](/guides/conversations#floating-panel-areas), then turn on the highlighter and select useful passages. **Reading only** keeps the visible marks while passing the full original text downstream; **Tag important** labels marked passages in the full text; **Highlights only** passes just the marked passages. You can choose a mode before marking text, and switching modes preserves existing highlights. When selected nodes contain highlights, choose **Weave highlights** to create cited prose from those excerpts.
+Turn on the pen in the highlights section of a node or its [panel](/guides/conversations#floating-panel-areas), then select a passage in the question, a follow-up instruction, or the answer. **Reading only** keeps the marks and passes the full original text downstream. **Tag important** labels marked passages in the full text. **Highlights only** treats each speaker separately. It passes a speaker’s marked passages if there are any, or their full text otherwise. You can choose a mode before marking text, and switching modes preserves existing highlights. When selected nodes contain highlights, choose **Weave highlights** to create cited prose from those excerpts.
 
 <img src="../highlight-panel-en.png" alt="Highlighted text and the Highlights area in a real ThoughtDAG node panel" width="100%" loading="lazy"/>
 

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { chromium } from 'playwright-core';
+import { openSettingsSection } from './fixtures/canvas-model-picker.mjs';
 
 const appUrl = process.env.APP_URL ?? 'http://127.0.0.1:5176';
 const executablePath = process.env.CHROME_PATH ?? [
@@ -494,7 +495,7 @@ try {
   await page.screenshot({ path: `${outputDir}/desktop-align.png` });
   await closeMenus();
   assert.equal(await page.locator('[data-selection-group], [data-group-action]').count(), 0);
-  await page.locator('[data-toolbar-more]').click();
+  await openSettingsSection(page, 'general');
   await page.getByRole('button', { name: 'English', exact: true }).click();
   await page.locator('[data-appearance-lighting]').getByRole('button', { name: 'Dark', exact: true }).click();
   await closeMenus();
@@ -505,7 +506,7 @@ try {
   await menuWithinViewport('Align');
   await page.screenshot({ path: `${outputDir}/dark.png` });
   await closeMenus();
-  await page.locator('[data-toolbar-more]').click();
+  await openSettingsSection(page, 'general');
   await page.getByRole('button', { name: '中文', exact: true }).click();
   await page.locator('[data-appearance-lighting]').getByRole('button', { name: '亮', exact: true }).click();
   await closeMenus();

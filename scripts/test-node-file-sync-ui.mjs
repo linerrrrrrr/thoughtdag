@@ -8,12 +8,12 @@ import path from 'node:path';
 import { documentBrowser } from './fixtures/original-file-browser.mjs';
 import { createSuperdocFixture } from './fixtures/superdoc-fixture.mjs';
 import managed from '../runtime/managed-documents.cjs';
-import { createServer } from 'vite';
+import { createTestServer } from './fixtures/vite-test-server.mjs';
 
 const root = await mkdtemp(path.join(tmpdir(), 'td-node-files-'));
 const api = managed.createManagedDocuments(root);
-const server = process.env.APP_URL ? null : await createServer({
-  server: { host: '127.0.0.1', port: 0 }, cacheDir: path.join(root, 'vite-cache'), logLevel: 'error',
+const server = process.env.APP_URL ? null : await createTestServer({
+  cacheDir: path.join(root, 'vite-cache'), logLevel: 'error',
 });
 await server?.listen();
 const url = process.env.APP_URL ?? server.resolvedUrls.local[0];
@@ -28,16 +28,18 @@ try {
   await writeFile(original, source);
   await context.route('**/__thoughtdag_storage', route => route.fulfill({ status: 404, body: '' }));
   await context.exposeFunction('managedTestFile', api);
-  await context.addInitScript(() => {
+  const workspace = path.join(root, 'external');
+  await context.addInitScript(workspace => {
     localStorage.setItem('thoughtdag.seeded', 'yes');
     localStorage.setItem('thoughtdag.tutorialDone', '1');
     window.desktopAgents = {
+      canvasWorkspace: async () => workspace,
       managedDocument: request => window.managedTestFile(request),
       models: async () => ({ installed: false, models: [] }),
       onEvent: fn => { window.agentEvent = fn; },
       run: async request => { window.agentRequest = request; return 'test-turn'; },
     };
-  });
+  }, workspace);
   const page = await context.newPage();
   page.on('pageerror', e => console.error(e.message));
   await page.goto(url);
@@ -72,7 +74,7 @@ try {
   assert.notEqual(fixture.path, fixture.other);
   await page.waitForFunction(() => window.agentRequest);
   const request = await page.evaluate(() => window.agentRequest);
-  assert.equal(request.cwd, 'test-external-project');
+  assert.equal(request.cwd, workspace);
   assert.equal(request.nativePermissions, true);
   const note = request.codexHistory.items.at(-1).content[0].text;
   assert.ok(note.includes(JSON.stringify(fixture.path)) && !note.includes(JSON.stringify(fixture.other)));

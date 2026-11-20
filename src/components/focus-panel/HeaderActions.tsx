@@ -80,7 +80,7 @@ export default function HeaderActions({ nodeId, isLoading }: { nodeId: string; i
       )}
       {nodeData && <NodeExecutionBadge data={nodeData} />}
 
-      <div ref={menuRef} className="relative">
+      <div ref={menuRef} data-export-omit="edit" className="relative">
         <button ref={menuButtonRef} onClick={() => setMenuOpen((v) => !v)} aria-label={t('panel.more')} aria-expanded={menuOpen} className={`${iconBtn} ${menuOpen ? 'bg-line/50 text-ink' : ''}`}>
           <Ellipsis size={17} strokeWidth={1.75} />
         </button>

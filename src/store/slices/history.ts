@@ -68,7 +68,7 @@ function sameById<T extends { id: string }>(a: T[], b: T[], eq: (x: T, y: T) => 
 function sameAttachment(a: Attachment, b: Attachment): boolean {
   if ((a.nodeFileRevision || b.nodeFileRevision) && !a.contentInVault && !b.contentInVault && a.content !== b.content) return false;
   const manual = a.extractedBy === 'manual' || b.extractedBy === 'manual';
-  if (manual && (a.extractedText !== b.extractedText || a.extractedBy !== b.extractedBy)) return false;
+  if (manual && (a.extractedText !== b.extractedText || a.extractedBy !== b.extractedBy || a.content !== b.content)) return false;
   const ao = a as unknown as Record<string, unknown>;
   const bo = b as unknown as Record<string, unknown>;
   for (const k of new Set([...Object.keys(ao), ...Object.keys(bo)])) {
@@ -90,16 +90,28 @@ function sameContent(a: ThoughtData, b: ThoughtData): boolean {
 
 const sameVersion = (a: ThoughtData, b: ThoughtData) => VERSION.every((k) => same(a[k], b[k]));
 
+function sameReadingSettings(a: ThoughtData, b: ThoughtData): boolean {
+  return a.questionHeightRatio === b.questionHeightRatio && a.detailLevel === b.detailLevel && a.fitContentHeight === b.fitContentHeight;
+}
+
+function restoreReadingSettings(live: ThoughtData, target: ThoughtData): ThoughtData {
+  if (sameReadingSettings(live, target)) return live;
+  return { ...live, questionHeightRatio: target.questionHeightRatio, detailLevel: target.detailLevel,
+    ...(live.fitContentHeight !== target.fitContentHeight ? {
+      fitContentHeight: target.fitContentHeight, lockAspectRatio: target.lockAspectRatio,
+      keepOverviewHeight: target.keepOverviewHeight, contentHeightIntent: target.contentHeightIntent,
+    } : {}) };
+}
+
 function sameNode(a: ThoughtNode, b: ThoughtNode): boolean {
   const ao = a as unknown as Record<string, unknown>;
   const bo = b as unknown as Record<string, unknown>;
   for (const k of new Set([...Object.keys(ao), ...Object.keys(bo)])) {
     if (!NODE_VIEW.has(k) && !same(ao[k], bo[k])) return false;
   }
-  // a stream in flight changes its text with every chunk; until it lands
-  // only the version it is writing and the person's reading split count.
+  // While text is streaming, compare the answer version and the person's reading settings.
   return a.data.isLoading || b.data.isLoading
-    ? a.data.questionHeightRatio === b.data.questionHeightRatio && sameVersion(a.data, b.data)
+    ? sameReadingSettings(a.data, b.data) && sameVersion(a.data, b.data)
     : sameContent(a.data, b.data);
 }
 
@@ -149,9 +161,15 @@ function restore(target: Snapshot, live: Snapshot): Snapshot {
   const nodes = target.nodes.map((n) => {
     const cur = liveNodes.get(n.id);
     if (cur === n) return n;
-    // A stream keeps its live content; only its reading split can be restored.
-    if (cur?.data.isLoading) return cur.data.questionHeightRatio === n.data.questionHeightRatio
-      ? cur : { ...cur, data: { ...cur.data, questionHeightRatio: n.data.questionHeightRatio } };
+    if (cur?.data.isLoading) {
+      const data = restoreReadingSettings(cur.data, n.data);
+      // The height mode is reversible even while an answer is being appended.
+      if (cur.data.fitContentHeight !== data.fitContentHeight) {
+        const style = cur.style?.height === n.style?.height ? cur.style : { ...cur.style, height: n.style?.height };
+        return { ...cur, width: n.width, height: n.height, style, data };
+      }
+      return data === cur.data ? cur : { ...cur, data };
+    }
     const data = restoreData(n.data, cur?.data);
     return { ...n, selected: cur?.selected ?? false, measured: cur?.measured ?? n.measured, data };
   });
@@ -226,7 +244,7 @@ export const createHistorySlice: StateCreator<StoreState, [], [], HistorySlice> 
     if (done && !pending(done.data)) {
       const inFlight = (n: ThoughtNode) => n.id === nodeId && pending(n.data);
       const next = history.map((s) => (s.nodes.some(inFlight)
-        ? { ...s, nodes: s.nodes.map((n) => (inFlight(n) ? { ...n, data: { ...done.data, questionHeightRatio: n.data.questionHeightRatio } } : n)) }
+        ? { ...s, nodes: s.nodes.map((n) => (inFlight(n) ? { ...n, data: restoreReadingSettings(done.data, n.data) } : n)) }
         : s));
       set({ history: next });
     }

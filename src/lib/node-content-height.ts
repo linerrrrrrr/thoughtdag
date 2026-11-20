@@ -76,14 +76,9 @@ function readConversationContentHeight(root: HTMLElement): number | undefined {
   // than an already oversized viewport. offsetHeight stays in canvas units.
   const questionHeight = Math.max(questionContent.offsetHeight, questionContent.scrollHeight);
   const answerHeight = Math.max(answerContent.offsetHeight, answerContent.scrollHeight);
-  const readingHeight = questionHeight + answerHeight + divider.offsetHeight;
+  const questionTools = split.querySelector<HTMLElement>('[data-split-question-tools]');
+  const readingHeight = questionHeight + answerHeight + divider.offsetHeight + (questionTools?.offsetHeight ?? 0);
   let chromeHeight = root.offsetHeight - split.offsetHeight;
-  // A fixed intake may leave a short reading column. Its outer scroller keeps
-  // controls reachable; include the offscreen chrome in explicit resize limits.
-  if (root.dataset.connectionLayout) {
-    const content = root.querySelector<HTMLElement>(':scope > .conversation-node-content');
-    if (content) chromeHeight += Math.max(0, content.scrollHeight - content.clientHeight);
-  }
   // Expanded highlights may shrink before the reading area. Restore their
   // normal bounded height when computing the surrounding fixed sections.
   const highlights = root.querySelector<HTMLElement>('[data-node-highlights]');

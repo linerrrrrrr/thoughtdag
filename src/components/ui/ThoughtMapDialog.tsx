@@ -159,7 +159,7 @@ function Artifact({ structure, positions, stats, title, subtitle, mapLang, paper
   );
   return (
     <div ref={artRef ?? selfRef} className={`tmap-art tmap-${paper} tmap-${tpl}`}
-      style={{ ['--tmt' as string]: tst, ['--tms' as string]: tss, ['--tmx' as string]: tsx }} data-tmap-art>
+      style={{ ['--tmt' as string]: tst, ['--tms' as string]: tss, ['--tmx' as string]: tsx }} data-type-surface="share-artwork" data-tmap-art>
       {tpl === 'scroll' ? (
         <>
           <div className="tmap-head">
@@ -397,7 +397,7 @@ export default function ThoughtMapDialog() {
   );
 
   return createPortal((
-    <div className="fixed inset-0 z-[85] bg-ink/25 flex items-center justify-center animate-fade-in" data-thought-map>
+    <div className="fixed inset-0 z-[85] bg-ink/25 flex items-center justify-center animate-fade-in" data-type-surface="portal" data-thought-map>
       <div ref={layerRef} role="dialog" aria-modal="true" aria-label={t('tmap.title')} tabIndex={-1} className="bg-surface rounded-panel shadow-lg border border-line w-[min(1128px,calc(96*var(--ui-vw)))] max-h-[calc(95*var(--ui-vh))] overflow-y-auto p-6" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-start justify-between mb-4">
           <div className="text-section font-semibold text-ink">{t('tmap.title')}{step === 'share' ? ` · ${t('tmap.shareStep')}` : ''}</div>
@@ -464,7 +464,7 @@ export default function ThoughtMapDialog() {
             {/* centre: the artifact, displayed at 1.2× (the design and the
                 export stay 460×575 underneath — the wrapper only magnifies) */}
             <div className="shrink-0 rounded-none overflow-hidden" style={{ width: 552, height: 690 }}>
-              <div style={{ transform: 'scale(1.2)', transformOrigin: 'top left', width: 460, height: 575 }}>
+              <div data-type-surface="artwork-preview" data-artwork-preview="full">
                 <Artifact structure={structure} positions={positions} stats={stats}
                   title={title} subtitle={subtitle} mapLang={mapLang} paper={paper} rot={rot} tst={tst} tss={tss} tsx={tsx}
                   showStats={showStats} timeInk={timeInk} dateText={dateText} sig={sig} sigPos={sigPos} artRef={artRef} />
@@ -473,7 +473,7 @@ export default function ThoughtMapDialog() {
             {/* right: the honesty check on top, the marks below, the exit at the bottom */}
             <div className="w-[198px] shrink-0 flex flex-col gap-2" style={{ height: 690 }}>
               <div className="rounded-none overflow-hidden self-center" style={{ width: 132, height: 165 }}>
-                <div style={{ transform: 'scale(0.28695)', transformOrigin: 'top left', width: 460, height: 575 }}>
+                <div data-type-surface="artwork-preview" data-artwork-preview="thumbnail">
                   <Artifact structure={structure} positions={positions} stats={stats}
                     title={title} subtitle={subtitle} mapLang={mapLang} paper={paper} rot={rot} tst={tst} tss={tss} tsx={tsx}
                     showStats={showStats} timeInk={timeInk} dateText={dateText} sig={sig} sigPos={sigPos} />
@@ -504,7 +504,7 @@ export default function ThoughtMapDialog() {
           <div className="flex gap-6 flex-wrap" data-tmap-share-step>
             <div className="shrink-0 flex flex-col gap-3" style={{ width: 184 }}>
               <div className="rounded-none overflow-hidden" style={{ width: 184, height: 230 }}>
-                <div style={{ transform: 'scale(0.4)', transformOrigin: 'top left', width: 460, height: 575 }}>
+                <div data-type-surface="artwork-preview" data-artwork-preview="share">
                   <Artifact structure={structure} positions={positions} stats={stats}
                     title={title} subtitle={subtitle} mapLang={mapLang} paper={paper} rot={rot} tst={tst} tss={tss} tsx={tsx}
                     showStats={showStats} timeInk={timeInk} dateText={dateText} sig={sig} sigPos={sigPos} artRef={artRef} />

@@ -120,8 +120,8 @@ const seed = async () => {
       excludedAttachmentIds: [], includedAttachmentIds: [], roleMode: 'inherit'});
     const nodes = [
       { id: 'resize-a', type: 'thought', dragHandle: '.drag-handle', position: { x: 80, y: 180 }, width: 420, selected: true, data: data('对话节点') },
-      { id: 'resize-b', type: 'thought', dragHandle: '.drag-handle', position: { x: 650, y: 180 }, width: 380, selected: false, data: data('材料节点', true) },
-      { id: 'resize-c', type: 'thought', dragHandle: '.drag-handle', position: { x: 80, y: 690 }, width: 400, height: 260, selected: false, data: data('连接目标') },
+      { id: 'resize-b', type: 'thought', dragHandle: '.drag-handle', position: { x: 940, y: 180 }, width: 380, selected: false, data: data('材料节点', true) },
+      { id: 'resize-c', type: 'thought', dragHandle: '.drag-handle', position: { x: 1110, y: 690 }, width: 400, height: 260, selected: false, data: data('连接目标') },
     ];
     window.__store.setState({ nodes, edges: [], history: [{ nodes, edges: [] }], historyIndex: 0, selectedNodeIds: ['resize-a'], selectedNodeId: 'resize-a' });
     window.__ui.getState().setPanelOpen(false);
@@ -235,9 +235,9 @@ try {
   await metadataTitle.fill('调整宽度时保留名称草稿');
   await metadataSummary.fill('名称与摘要展开时，临时自然高度不应覆盖已保存的固定高度。');
   assert.equal(await handle('a', 'width').isVisible(), true);
-  assert.equal(await handle('a', 'height').isVisible(), false);
-  assert.equal(await handle('a', 'both').isVisible(), false);
-  assert.ok((await node('a').boundingBox()).height > beforeMetadata.height, 'The metadata editor temporarily uses its natural height');
+  assert.equal(await handle('a', 'height').isVisible(), true);
+  assert.equal(await handle('a', 'both').isVisible(), true);
+  near((await node('a').boundingBox()).height, beforeMetadata.height, 'The metadata editor keeps the saved height');
   await drag(handle('a', 'width'), 40, 0);
   near((await read('a')).width, beforeMetadata.width + 40, 'Metadata editing still allows width adjustments');
   near((await read('a')).height, beforeMetadata.height, 'Width adjustments preserve the saved fixed height');
@@ -253,12 +253,12 @@ try {
   await page.locator('[data-node-format-lock]').check();
   await node('a').locator('[data-node-metadata-toggle]').click();
   assert.equal(await metadataTitle.inputValue(), '调整宽度时保留名称草稿', 'Reopening restores the retained metadata draft');
-  for (const direction of ['width', 'height', 'both']) assert.equal(await handle('a', direction).isVisible(), false, 'Locked cards pause all resizing while metadata uses natural height');
+  for (const direction of ['width', 'height', 'both']) assert.equal(await handle('a', direction).isVisible(), true, 'Locked cards retain proportional resizing while metadata is open');
   await node('a').locator('[data-node-metadata-cancel]').click();
   await settle();
   near((await node('a').boundingBox()).height, beforeMetadata.height, 'Cancel restores the fixed card size');
   assert.equal((await read('a')).data.displayName, beforeMetadata.data.displayName);
-  check('Metadata drafts survive width changes; temporary natural height never replaces fixed dimensions, and locked resizing pauses');
+  check('Metadata drafts survive width changes and the card retains its saved height when the editor opens');
 
   await seed();
   await select(['a', 'b']);
@@ -473,7 +473,7 @@ try {
   await materialParagraph.scrollIntoViewIfNeeded();
   await materialParagraph.dblclick();
   const noteEditor = node('b').locator('[data-note-editor]');
-  const editedNote = `${(await read('b')).data.question}\n\n${Array.from({ length: 12 }, (_, index) => `第 ${index + 1} 段：短材料的标题、正文和编辑操作始终在内部滚动；调大高度后，卡片提供更大的阅读空间。`).join('\n\n')}`;
+  const editedNote = `${(await read('b')).data.question}\n\n${Array.from({ length: 12 }, (_, index) => `第 ${index + 1} 段。滚动正文时，标题和编辑按钮保持原位。调大高度后，卡片提供更大的阅读空间。`).join('\n\n')}`;
   await noteEditor.locator('textarea').fill(editedNote);
   const saveNote = noteEditor.getByRole('button', { name: '保存', exact: true });
   await saveNote.scrollIntoViewIfNeeded();

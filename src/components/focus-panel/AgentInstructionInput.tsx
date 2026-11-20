@@ -53,7 +53,7 @@ export default function AgentInstructionInput({ nodeId, open, position, triggerR
   if (!open) return null;
 
   return createPortal(
-    <div ref={editorRef} className="agent-instruction" style={position} role="dialog" aria-label={t('agent.addInstructions')} data-agent-instruction>
+    <div ref={editorRef} className="agent-instruction" style={position} role="dialog" aria-label={t('agent.addInstructions')} data-type-surface="portal" data-agent-instruction>
       <div className="agent-instruction-title">{t('agent.addInstructions')}</div>
       <textarea
         autoFocus value={draft} rows={3} data-agent-instruction-input

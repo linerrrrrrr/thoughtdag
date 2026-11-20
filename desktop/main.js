@@ -170,7 +170,8 @@ async function boot() {
     w.hide();
   });
   w.on('closed', () => { if (win === w) win = null; });
-  win.loadFile(path.join(__dirname, 'splash.html'));
+  const statusPages = path.join(ROOT, 'runtime', 'status-pages');
+  win.loadFile(path.join(statusPages, 'splash.html'));
   // external links belong to the system browser, not this window
   win.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url);
@@ -187,7 +188,7 @@ async function boot() {
 
   const ready = await waitReady(port);
   if (!ready) {
-    win.loadURL(`data:text/html,<pre>ThoughtDAG server failed to start on port ${port}.\nCheck the terminal output.</pre>`);
+    win.loadFile(path.join(statusPages, 'startup-error.html'), { query: { port: String(port) } });
     return;
   }
   // ?dv= identifies the desktop build to the web layer; &su=1 tells it the
@@ -387,13 +388,14 @@ function setupAgentSessions() {
   // the command is assembled HERE against a runner whitelist.
   const PROGRAMS = {
     'claude-code': (id) => `claude --resume ${id}`,
-    codex: (id) => `codex resume ${id}`,
+    codex: (id) => `codex resume --cd . ${id}`,
     pi: (id) => `pi --session ${id}`,
   };
   ipcMain.handle('sessions:open-in-cli', async (_e, runner, cwd, sessionId) => {
     const buildProgram = PROGRAMS[runner];
     if (!buildProgram || !/^[\w.-]{4,}$/.test(String(sessionId))) return { opened: false, via: '', command: '' };
     const cwdOk = typeof cwd === 'string' && path.isAbsolute(cwd) && await dirExists(cwd);
+    if (!cwdOk && runner === 'codex') return { opened: false, via: '', command: '' };
     const dir = cwdOk ? cwd : os.homedir();
     const program = buildProgram(sessionId);
     const command = `cd ${shq(dir)} && ${program}`; // the clipboard form
@@ -547,6 +549,8 @@ function setupAgents() {
     return agent.steer(id, String(prompt ?? ''));
   });
   ipcMain.handle('agents:workspace', async (_e, canvasId) => workspaceFor(canvasId));
+  ipcMain.handle('agents:canvas-workspace', (_e, canvasId, namespace) =>
+    require(path.join(RUNTIME_DIR, 'managed-documents.cjs')).ensureCanvasWorkspace(agentWorkspaceRoot, namespace, canvasId));
   ipcMain.handle('agents:answer', async (_e, runId, requestId, response) => agentsRuntime(runOwners.get(String(runId))).answer(String(runId), String(requestId), response));
   ipcMain.handle('agents:guard-write', async (_e, cwd, config) => agentOps.writeGuard(cwd, config));
   // a folder the person picks as a canvas's working directory

@@ -57,13 +57,13 @@ const DIAGRAMS: Record<number, React.ReactNode> = {
       {/* map tier: plaques with corner seals → glyph tier: bare seals */}
       <Card x={12} y={14} w={40} h={15} />
       <rect x={9.5} y={11.5} width={9} height={9} rx={2} fill="#D64533" />
-      <text x={14} y={18.4} textAnchor="middle" fontSize={6} fontWeight={700} fill="white">✕</text>
+      <text x={14} y={18.4} textAnchor="middle" className="diagram-badge" fontWeight={700} fill="white">✕</text>
       <Card x={12} y={35} w={40} h={15} />
       <rect x={9.5} y={32.5} width={9} height={9} rx={2} fill={COLORS.accent} />
-      <text x={14} y={39.4} textAnchor="middle" fontSize={6} fontWeight={700} fill="white">⚖</text>
+      <text x={14} y={39.4} textAnchor="middle" className="diagram-badge" fontWeight={700} fill="white">⚖</text>
       <Card x={12} y={56} w={40} h={15} />
       <rect x={9.5} y={53.5} width={9} height={9} rx={2} fill="#C9A227" />
-      <text x={14} y={60.4} textAnchor="middle" fontSize={6} fontWeight={700} fill="white">?</text>
+      <text x={14} y={60.4} textAnchor="middle" className="diagram-badge" fontWeight={700} fill="white">?</text>
       <path d="M 62 42 L 74 42" stroke={COLORS.inkMuted} strokeWidth={1.2} />
       <path d="M 71.5 39.5 L 76 42 L 71.5 44.5 Z" fill={COLORS.inkMuted} />
       <rect x={86} y={14} width={13} height={13} rx={2} fill="#D64533" />
@@ -93,7 +93,7 @@ const DIAGRAMS: Record<number, React.ReactNode> = {
       <Card x={43} y={50} />
       <circle cx={75} cy={53} r={4} fill="#F59E0B" />
       <path d="M 73.5 53 a 1.5 1.5 0 1 1 3 0" stroke="white" strokeWidth={0.9} fill="none" />
-      <text x={60} y={80} textAnchor="middle" fontSize={7} fill={COLORS.inkMuted} fontFamily="JetBrains Mono Variable, monospace">v2/2 · replay</text>
+      <text x={60} y={80} textAnchor="middle" className="diagram-caption" fill={COLORS.inkMuted} fontFamily="JetBrains Mono Variable, monospace">v2/2 · replay</text>
     </svg>
   ),
   6: (
@@ -107,7 +107,7 @@ const DIAGRAMS: Record<number, React.ReactNode> = {
       <rect x={80} y={14} width={32} height={24} rx={2} fill="white" stroke={COLORS.line} strokeWidth={1} />
       <circle cx={88} cy={22} r={3} fill={COLORS.line} />
       <path d="M 82 34 L 92 26 L 100 32 L 108 24" stroke={COLORS.inkMuted} strokeWidth={1.2} fill="none" />
-      <text x={72} y={62} textAnchor="middle" fontSize={7} fill={COLORS.inkMuted} fontFamily="JetBrains Mono Variable, monospace">⌘V paste anything</text>
+      <text x={72} y={62} textAnchor="middle" className="diagram-caption" fill={COLORS.inkMuted} fontFamily="JetBrains Mono Variable, monospace">⌘V paste anything</text>
     </svg>
   ),
   8: (
@@ -125,21 +125,19 @@ const DIAGRAMS: Record<number, React.ReactNode> = {
   ),
   10: (
     <svg viewBox="0 0 120 84" className="w-full h-full">
-      {/* canvas → read-only link → viewer with an eye badge */}
+      {/* Canvas → portable canvas file. */}
       <Card x={10} y={18} w={30} h={17} tone="accent" />
       <line x1={25} y1={35} x2={25} y2={48} stroke={COLORS.accent} strokeWidth={1.5} />
       <path d="M 22.5 45.5 L 25 50 L 27.5 45.5 Z" fill={COLORS.accent} />
       <Card x={10} y={50} w={30} h={17} />
       <path d="M 46 42 L 60 42" stroke={COLORS.inkMuted} strokeWidth={1.2} />
       <path d="M 57.5 39.5 L 62 42 L 57.5 44.5 Z" fill={COLORS.inkMuted} />
-      <rect x={68} y={20} width={44} height={44} rx={2} fill="white" stroke={COLORS.line} strokeWidth={1} />
-      <Card x={74} y={30} w={20} h={11} tone="accent" />
-      <Card x={88} y={46} w={20} h={11} />
-      <rect x={76} y={14} width={28} height={11} rx={2} fill="#2B2A28" />
-      <circle cx={84} cy={19.5} r={2.6} fill="none" stroke="white" strokeWidth={1} />
-      <circle cx={84} cy={19.5} r={0.9} fill="white" />
-      <text x={90} y={22} fontSize={6} fill="white" fontFamily="JetBrains Mono Variable, monospace">view</text>
-      <text x={60} y={78} textAnchor="middle" fontSize={7} fill={COLORS.inkMuted} fontFamily="JetBrains Mono Variable, monospace">#view= · read-only</text>
+      <path d="M 72 16 H 98 L 110 28 V 64 H 72 Z" fill="white" stroke={COLORS.line} strokeWidth={1} />
+      <path d="M 98 16 V 28 H 110" fill="none" stroke={COLORS.line} strokeWidth={1} />
+      <line x1={78} y1={37} x2={103} y2={37} stroke={COLORS.accent} strokeWidth={1.4} />
+      <line x1={78} y1={44} x2={100} y2={44} stroke={COLORS.line} strokeWidth={1.2} />
+      <line x1={78} y1={51} x2={96} y2={51} stroke={COLORS.line} strokeWidth={1.2} />
+      <text x={60} y={78} textAnchor="middle" className="diagram-caption" fill={COLORS.inkMuted} fontFamily="JetBrains Mono Variable, monospace">.html / .json</text>
     </svg>
   ),
 };
@@ -204,7 +202,7 @@ export default function Tutorial() {
           <div className={`grid gap-4 ${slide.steps.length === 3 ? 'grid-cols-1 sm:grid-cols-3' : 'grid-cols-1 sm:grid-cols-2'}`}>
             {slide.steps.map((n) => (
               <div key={n} className="bg-surface border border-line/70 rounded-content p-4 flex flex-col animate-fade-in">
-                <div className="w-full aspect-[120/72] bg-card rounded-content border border-line/60 mb-3 overflow-hidden">
+                <div data-tutorial-diagram data-type-surface="tutorial-diagram" className="w-full aspect-[120/72] bg-card rounded-content border border-line/60 mb-3 overflow-hidden">
                   {GIF_STEPS[n]
                     ? <img src={`${import.meta.env.BASE_URL}tutorial/${GIF_STEPS[n]}-${lang}.gif`} loading="lazy" alt="" className="w-full h-full object-cover" />
                     : DIAGRAMS[n]}
@@ -221,7 +219,7 @@ export default function Tutorial() {
           <button
             onClick={() => setPage((p) => Math.max(p - 1, 0))}
             disabled={page === 0}
-            className="w-8 h-8 rounded-control border border-line text-ink-muted hover:bg-wash transition-colors flex items-center justify-center disabled:opacity-25 disabled:cursor-not-allowed"
+            className="w-8 h-8 rounded-control border border-line text-ink-muted hover:bg-wash transition-colors flex items-center justify-center disabled:opacity-25 when-unavailable"
           >
             <ChevronLeft size={16} strokeWidth={1.75} />
           </button>

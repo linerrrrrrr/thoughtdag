@@ -82,9 +82,20 @@ try {
   assert.equal(await canvasNode().locator('[data-document-edit], [data-document-copy-editor], [data-rich-document-editor]').count(), 0);
   const before = await page.evaluate(() => window.__rf.getViewport());
   const body = canvasNode().locator('[data-content-body]');
+  const chromePositions = () => canvasNode().evaluate(node => {
+    const rect = selector => {
+      const { top, bottom } = node.querySelector(selector).getBoundingClientRect();
+      return { top, bottom };
+    };
+    return { header: rect('[data-file-header]'), toolbar: rect('.pdf-document-toolbar'), viewport: rect('[data-content-body]') };
+  });
+  const positions = await chromePositions();
+  assert.ok(positions.header.bottom <= positions.viewport.top && positions.toolbar.bottom <= positions.viewport.top,
+    'The PDF scrollbar starts below the filename and annotation tools');
   await body.hover(); await page.waitForTimeout(100); await page.mouse.wheel(0, 420);
   await page.waitForFunction(() => document.querySelector('[data-content-body]').scrollTop > 100);
   assert.deepEqual(await page.evaluate(() => window.__rf.getViewport()), before);
+  assert.deepEqual(await chromePositions(), positions, 'Reading the next page leaves the file header and annotation tools in place');
   await body.evaluate(element => { element.scrollTop = 0; });
   check('PDF uses continuous immutable original pages inside the canvas without moving the viewport');
 
@@ -105,6 +116,51 @@ try {
   await page.evaluate(() => window.__store.getState().undo()); await waitCount(0);
   await page.evaluate(() => window.__store.getState().redo()); await waitCount(1);
   check('native text selection creates normalized highlights with one-step undo and redo');
+
+  const resize = (width, height) => page.evaluate(({ width, height }) => {
+    window.__store.setState(state => ({ nodes: state.nodes.map(node => node.id === 'pdf-original' ? { ...node, width, height } : node) }));
+  }, { width, height });
+  const setNames = (displayName, name) => page.evaluate(({ displayName, name }) => {
+    window.__store.setState(state => ({ nodes: state.nodes.map(node => node.id === 'pdf-original'
+      ? { ...node, data: { ...node.data, displayName, attachments: node.data.attachments.map(att => ({ ...att, name })) } }
+      : node) }));
+  }, { displayName, name });
+  await setNames('两行自定义材料节点名称用于确认原页工具和带引用的评论始终保留可阅读空间', '研究文档原始附件的长文件名用于验证标题换行和文档工具栏的布局.pdf');
+  const heights = [];
+  for (const height of [221, 240, 300, 420]) {
+    await resize(340, height);
+    const sizes = { height };
+    for (const mode of ['read', 'highlight', 'comment']) {
+      await canvasNode().locator(`[data-pdf-mode="${mode}"]`).click();
+      sizes[mode] = await body.evaluate(el => el.clientHeight);
+    }
+    await root().locator(`[data-pdf-comment-pin="${first.id}"]`).evaluate(el => el.click());
+    await comment().locator('blockquote').waitFor();
+    sizes.editor = await body.evaluate(el => el.clientHeight);
+    assert.equal(sizes.editor, sizes.comment, 'Opening a quoted comment preserves the PDF reading height');
+    assert.ok(await body.evaluate(el => {
+      const rect = el.getBoundingClientRect();
+      return el.contains(document.elementFromPoint(rect.left + 8, rect.top + rect.height / 2));
+    }), 'The page remains reachable beside the comment editor');
+    heights.push(sizes);
+    await comment().locator('textarea').press('Escape');
+  }
+  assert.ok(heights.every(row => ['read', 'highlight', 'comment', 'editor'].every(key => row[key] >= 20)), JSON.stringify(heights));
+  await setNames(undefined, fixture.data.attachments[0].name);
+  console.log('PDF page viewport heights:', heights);
+  await resize(340, 120);
+  const fileHeader = canvasNode().locator('[data-file-header]');
+  await fileHeader.locator('[data-pdf-mode="read"]').click();
+  await fileHeader.locator('[data-pdf-mode="comment"]').click();
+  const shortViewport = await body.boundingBox();
+  assert.ok(shortViewport && shortViewport.height > 8, 'Annotation mode leaves a usable PDF viewport at minimum node height');
+  await root().locator(`[data-pdf-comment-pin="${first.id}"]`).click();
+  await comment().locator('textarea').fill('short-card comment draft');
+  await comment().locator('textarea').press('Escape');
+  await comment().waitFor({ state: 'hidden' });
+  await resize(fixture.width, fixture.height);
+  await body.evaluate(element => { element.scrollTop = 0; });
+  check('minimum-height PDF keeps reading tools and the comment editor reachable');
 
   await root().locator('[data-pdf-mode="read"]').click();
   await root().locator(`[data-pdf-comment-pin="${first.id}"]`).click();
@@ -180,7 +236,7 @@ try {
   await root().locator(`[data-pdf-comment-pin="${first.id}"]`).click();
   await comment().locator('[data-pdf-delete-annotation]').click(); await waitCount(2);
   await canvasNode().locator('[data-pdf-save]').click();
-  await page.waitForFunction(() => document.querySelector('[data-pdf-save]').disabled && document.querySelector('[data-file-header]').textContent.includes('已保存'));
+  await page.waitForFunction(() => document.querySelector('[data-pdf-save]')?.disabled && document.querySelector('[data-file-header]').textContent.includes('已保存'));
   assert.equal((await savedAnnotations()).some(mark => mark.id === first.id), false);
   await page.evaluate(() => window.__store.getState().undo());
   await page.evaluate(() => window.__store.getState().undo()); await waitCount(3);
@@ -198,7 +254,7 @@ try {
   assert.equal(await page.locator('[data-reader-edit-toggle]').count(), 0);
   const readerPdf = page.locator('[data-reader-body] [data-pdf-document]');
   if (await readerPdf.locator('[data-pdf-save]').isEnabled()) await readerPdf.locator('[data-pdf-save]').click();
-  await page.waitForFunction(() => document.querySelector('[data-reader-body] [data-pdf-save]').disabled && document.querySelector('[data-reader-body]').textContent.includes('已保存'));
+  await page.waitForFunction(() => document.querySelector('[data-reader-body] [data-pdf-save]')?.disabled && document.querySelector('[data-reader-body]').textContent.includes('已保存'));
   assert.equal((await savedAnnotations()).length, 4);
   await readerPdf.locator('[data-pdf-mode="highlight"]').click();
   await readerPdf.locator(`[data-pdf-comment-pin="${first.id}"]`).click();

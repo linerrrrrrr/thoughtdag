@@ -1,6 +1,12 @@
 import { micromark } from 'micromark';
+import { gfm, gfmHtml } from 'micromark-extension-gfm';
+import type { Highlight, ThoughtData } from '../types';
 
-// Highlights are captured from the RENDERED answer but must be located in
+export function conversationHighlightTexts(highlights: Highlight[] | undefined, turn: 'question' | 'response'): Set<string> {
+  return new Set((highlights ?? []).filter(mark => !mark.attachmentId && (mark.source ?? 'response') === turn).map(mark => mark.text));
+}
+
+// Highlights are captured from the rendered passage but must be located in
 // the markdown SOURCE for context tagging and stale-highlight pruning. The
 // fuzzy pattern tolerates inline syntax, link destinations and common HTML
 // entities; the reading surface marks the rendered text separately.
@@ -56,26 +62,68 @@ export function withinOneCodeBlock(range: Range): boolean {
 
 // CommonMark may decode named or numeric entities and escapes that the source
 // matcher cannot represent. This fallback keeps such visible marks on edits.
-function renderedMarkdownText(source: string): string {
+export function renderedHighlightText(source: string) {
   const entities: Record<string, string> = { '&amp;': '&', '&lt;': '<', '&gt;': '>', '&quot;': '"', '&#39;': "'" };
-  return micromark(source, { allowDangerousHtml: true })
-    .replace(/<\/?(?:p|div|blockquote|li|pre|table|tr|td|th|h[1-6]|br)\b[^>]*>/gi, ' ')
-    .replace(/<[^>]*>/g, '')
-    .replace(/&(amp|lt|gt|quot|#39);/g, entity => entities[entity])
-    .replace(/\s+/g, ' ').trim();
+  const html = micromark(source, { allowDangerousHtml: true, extensions: [gfm()], htmlExtensions: [gfmHtml()] })
+    .replace(/<!--[\s\S]*?-->/g, '').replace(/<(script|style)\b[^>]*>[\s\S]*?<\/\1>/gi, '');
+  let text = '';
+  const codeBlocks: [number, number][] = [];
+  for (const part of html.split(/(<pre\b[^>]*>[\s\S]*?<\/pre>)/gi)) {
+    const visible = part.replace(/<\/?(?:p|div|blockquote|li|pre|table|tr|td|th|h[1-6]|br)\b[^>]*>/gi, ' ')
+      .replace(/<[^>]*>/g, '').replace(/&(amp|lt|gt|quot|#39);/g, entity => entities[entity])
+      .replace(/\s+/g, ' ').trim();
+    if (!visible) continue;
+    if (text) text += ' ';
+    const start = text.length;
+    text += visible;
+    if (/^<pre\b/i.test(part)) codeBlocks.push([start, text.length]);
+  }
+  return { text, codeBlocks };
+}
+
+/** Match only passages the Markdown highlighter can paint. */
+export function* proseOccurrences({ text, codeBlocks }: ReturnType<typeof renderedHighlightText>, needle: string) {
+  if (!needle) return;
+  for (let index = text.indexOf(needle); index !== -1; index = text.indexOf(needle, index + needle.length)) {
+    if (!codeBlocks.some(([start, end]) => start <= index && index + needle.length <= end)) yield index;
+  }
+}
+
+const attachmentCandidates = new WeakMap<ThoughtData, Highlight[]>();
+
+/** Legacy materials and attachment-only selections can have no file ID.
+ * On a conversation, a passage present in the answer belongs to that turn. */
+export function attachmentHighlights(data: ThoughtData, attachmentId: string): Highlight[] {
+  let candidates = attachmentCandidates.get(data);
+  if (!candidates) {
+    const material = ['file', 'note', 'link'].includes(data.stepKind ?? '');
+    let answer: ReturnType<typeof renderedHighlightText> | undefined;
+    candidates = (data.highlights ?? []).filter(mark => {
+      if (mark.source) return false;
+      if (mark.attachmentId || material || !data.response) return true;
+      answer ??= renderedHighlightText(data.response);
+      return proseOccurrences(answer, mark.text.replace(/\s+/g, ' ').trim()).next().done === true;
+    });
+    attachmentCandidates.set(data, candidates);
+  }
+  return candidates.filter(mark => !mark.attachmentId || mark.attachmentId === attachmentId);
 }
 
 export function highlightFoundIn(haystack: string, text: string): boolean {
   const re = fuzzyHighlightRegex(text);
   if (!re) return false;
-  return re.test(haystack) || renderedMarkdownText(haystack).includes(text.replace(/\s+/g, ' ').trim());
+  return re.test(haystack) || renderedHighlightText(haystack).text.includes(text.replace(/\s+/g, ' ').trim());
 }
 
-/** Drop highlights that no longer appear in the (new) response text —
-    called whenever a node's displayed answer changes (generation, version
-    switch, manual edit), so ghost highlights never outlive their text. */
-export function pruneHighlights<T extends { text: string }>(highlights: T[] | undefined, response: string): T[] {
+/** Revalidate marks only for the changed parts of a turn. An omitted part
+ * keeps its marks, as do attachments, which have separate source text. */
+export function pruneHighlights<T extends { text: string; source?: 'question'; attachmentId?: string }>(
+  highlights: T[] | undefined, response?: string, question?: string,
+): T[] {
   const list = highlights ?? [];
-  const kept = list.filter((h) => highlightFoundIn(response, h.text));
+  const kept = list.filter(mark => {
+    const source = mark.source === 'question' ? question : response;
+    return mark.attachmentId || source === undefined || highlightFoundIn(source, mark.text);
+  });
   return kept.length === list.length ? list : kept;
 }

@@ -21,7 +21,7 @@ export type ViewportRectGetter = () => ArrangeRect | undefined;
 const useArrangeReference = create<{ reference: ArrangeReference; setReference: (reference: ArrangeReference) => void }>((set) => ({
   reference: 'selection', setReference: (reference) => set({ reference }),
 }));
-const itemClass = 'w-full flex items-center gap-2.5 rounded-control px-3 py-2 text-left text-control text-ink hover:bg-wash focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent';
+const itemClass = 'w-full flex items-center gap-2.5 rounded-control px-3 py-2 text-left text-control text-ink hover:bg-wash focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-40 when-unavailable disabled:hover:bg-transparent';
 const actions: { action: ArrangeAction; label: MessageKey; icon: typeof Check }[] = [
   { action: 'left', label: 'arrange.left', icon: AlignHorizontalJustifyStart },
   { action: 'center', label: 'arrange.center', icon: AlignHorizontalJustifyCenter },
@@ -121,7 +121,7 @@ function SelectionActionPopover({ kind, label, icon: Icon, ids, getViewportRect,
       }}>
       <Icon size={14} strokeWidth={1.75} aria-hidden="true" />{label}<ChevronDown size={12} aria-hidden="true" />
     </button>
-    {open && position && createPortal(<div ref={menu} id={menuId} role="menu" data-selection-menu aria-label={label} onKeyDown={(event) => navigateActionMenu(event, close)}
+    {open && position && createPortal(<div ref={menu} id={menuId} role="menu" data-type-surface="portal" data-selection-menu aria-label={label} onKeyDown={(event) => navigateActionMenu(event, close)}
       className="fixed z-[70] w-[280px] max-w-[calc(100*var(--ui-vw)-16px)] rounded-overlay border border-line bg-card shadow-lg p-1 overflow-y-auto"
       style={position}>
       {kind === 'align' ? <ArrangeItems ids={ids} getViewportRect={getViewportRect} onClose={close} /> : <LayerItems ids={ids} onClose={close} />}
@@ -143,7 +143,7 @@ export default function SelectionArrangeMenu({ ids, getViewportRect }: { ids: st
       ids={ids} getViewportRect={getViewportRect} open={open === 'layers'} onOpenChange={value => setOpen(value ? 'layers' : null)} />
     <button type="button" data-create-selection-frame disabled={!selectedNodes.length || hasFrame}
       aria-label={t('frame.createFromSelection')}
-      className="h-8 px-2.5 rounded-control transition-colors flex items-center gap-1.5 text-control whitespace-nowrap shrink-0 bg-wash hover:bg-line text-ink-muted focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-40 disabled:cursor-not-allowed"
+      className="h-8 px-2.5 rounded-control transition-colors flex items-center gap-1.5 text-control whitespace-nowrap shrink-0 bg-wash hover:bg-line text-ink-muted focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-40 when-unavailable"
       onClick={() => { setOpen(null); useStore.getState().createFrameFromSelection(ids); }}>
       <Frame size={14} strokeWidth={1.75} aria-hidden="true" />{t('frame.create')}
     </button>

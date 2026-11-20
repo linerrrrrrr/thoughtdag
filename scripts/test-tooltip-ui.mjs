@@ -69,7 +69,7 @@ try {
 
   // Verify the real toolbar after its visible labels collapse to icons.
   let compactSeen = false;
-  let routingTipSeen = false;
+  let settingsTipSeen = false;
   for (const width of [1000, 760, 520, 360]) {
     await page.setViewportSize({ width, height: 1000 });
     await page.waitForTimeout(150);
@@ -79,15 +79,15 @@ try {
       assert.ok((await tip.innerText()).includes('排版'), 'icon-only layout control keeps its name');
       compactSeen = true;
     }
-    const routing = page.locator('[data-routing-entry]');
-    if (!routingTipSeen && ['compact', 'overflow'].includes(density) && await routing.isVisible()) {
-      await hover(routing);
-      assert.ok((await tip.innerText()).includes('连线'), 'icon-only connections control keeps its name');
-      routingTipSeen = true;
+    const settings = page.locator('[data-settings-entry]');
+    if (!settingsTipSeen && ['compact', 'overflow'].includes(density) && await settings.isVisible()) {
+      await hover(settings);
+      assert.ok((await tip.innerText()).includes('设置'), 'icon-only settings control keeps its name');
+      settingsTipSeen = true;
     }
   }
   assert.ok(compactSeen, 'responsive icon controls were exercised');
-  assert.ok(routingTipSeen, 'the responsive connections icon was exercised');
+  assert.ok(settingsTipSeen, 'the settings icon was exercised');
   await page.setViewportSize({ width: 1760, height: 1000 });
   await page.waitForTimeout(150);
 

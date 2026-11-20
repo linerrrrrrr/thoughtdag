@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
 import { chromium } from 'playwright-core';
-import { openModelConnection } from './fixtures/canvas-model-picker.mjs';
+import { assertSettingsModal, openModelConnection } from './fixtures/canvas-model-picker.mjs';
 
 const executablePath = process.env.CHROME_PATH ?? [
   'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe', '/usr/bin/chromium',
@@ -27,7 +27,6 @@ await page.addInitScript(() => {
   localStorage.setItem('thoughtdag.tutorialDone', '1');
 });
 const item = name => page.locator(`[data-${name}]`);
-const modelPicker = item('project-switcher').locator('[data-model-picker-trigger]');
 const geometry = () => page.evaluate(() => {
   const rect = selector => {
     const r = document.querySelector(selector).getBoundingClientRect();
@@ -51,13 +50,6 @@ const openDetail = async () => {
   if (await item('canvas-detail-trigger').isVisible()) await item('canvas-detail-trigger').click();
   else { await item('toolbar-more').click(); await item('menu-detail').click(); }
   await item('canvas-detail-panel').waitFor();
-};
-const leftDock = async name => {
-  const panel = await item(name).boundingBox();
-  const { header, left } = await geometry();
-  assert.ok(Math.abs(panel.x - left.x) <= 1, `${name} aligns with left toolbar`);
-  assert.ok(Math.abs(panel.y - header.bottom - inset) <= 1, `${name} opens below toolbar`);
-  assert.ok(panel.x + panel.width <= page.viewportSize().width - inset + 1, `${name} fits the viewport`);
 };
 const rightDock = async name => {
   const panel = await item(name).boundingBox();
@@ -104,6 +96,7 @@ try {
         await page.setViewportSize({ width, height: 1000 });
         await page.waitForTimeout(280);
         const g = await fits(`${lang}, viewport ${width}, reader ${panelWidth}`);
+        assert.equal(await item('settings-entry').isVisible(), true);
         densities.add(g.density);
         if (lang === 'zh' && panelWidth === 0 && [1760, 390].includes(width)) {
           await item('toolbar-more').click();
@@ -156,6 +149,20 @@ try {
   assert.equal(await item('focus-panel').isVisible(), true);
   console.log('PASS search opens independently and Escape preserves the reader');
 
+  await item('settings-entry').click();
+  const modal = await assertSettingsModal(page);
+  const modalBox = await modal.boundingBox();
+  const readerBox = await item('focus-panel').boundingBox();
+  assert.ok(modalBox.x + modalBox.width > readerBox.x, 'Settings cover the reading panel');
+  assert.ok(await modal.evaluate((el, reader) => {
+    const box = el.getBoundingClientRect();
+    const x = (Math.max(box.left, reader.x) + Math.min(box.right, reader.x + reader.width)) / 2;
+    return el.contains(document.elementFromPoint(x, box.top + box.height / 2));
+  }, readerBox), 'The reading panel stays behind Settings');
+  await page.keyboard.press('Escape');
+  await modal.waitFor({ state: 'detached' });
+  assert.equal(await item('focus-panel').isVisible(), true);
+
   await page.setViewportSize({ width: 390, height: 1000 });
   await page.waitForTimeout(300);
   await page.evaluate(() => window.__store.getState().setSelectedNodeIds(['a', 'b']));
@@ -188,6 +195,7 @@ try {
   await page.evaluate(async () => {
     (await window.__importLive('/src/i18n/index.ts')).useI18n.getState().setLang('zh');
     window.desktopAgents = { workspace: async () => 'E:/toolbar-test', capabilities: { nativePicker: false },
+      canvasWorkspace: async id => `E:/toolbar-test/${id}/external`,
       models: async runtime => runtime === 'codex'
         ? { installed: true, models: [{ provider: 'test', id: 'model', name: 'A long agent model name' }], default: 'test/model' }
         : { installed: false, models: [], default: null } };
@@ -206,10 +214,11 @@ try {
   await page.waitForTimeout(300);
   await openModelConnection(page, 'agents');
   await item('agent-connection-settings').waitFor();
-  await leftDock('model-connection-panel');
+  await assertSettingsModal(page);
   await item('agent-cwd').click();
   await item('agent-cwd-menu').waitFor();
-  await item('agent-cwd-input').fill('E:/session-draft');
+  const canvasDirectory = await item('agent-cwd-path').textContent();
+  assert.match(canvasDirectory, /^E:\/toolbar-test\/.+\/external$/);
   await page.screenshot({ path: `${output}/agent-directory-wide.png` });
   await item('agent-permission-chip').click();
   await item('agent-permission-menu').waitFor();
@@ -234,6 +243,8 @@ try {
     const { t } = await window.__importLive('/src/i18n/index.ts');
     return { agent: t('connection.agent'), api: t('connection.api') };
   });
+  await page.keyboard.press('Escape');
+  await item('settings-panel').waitFor({ state: 'detached' });
   await item('toolbar-more').click();
   for (const name of Object.values(labels)) {
     assert.equal(await item('toolbar-more-panel').getByRole('button', { name, exact: true }).count(), 0);
@@ -242,36 +253,35 @@ try {
   await openModelConnection(page, 'agents');
   await item('agent-cwd').click();
   await item('agent-cwd-menu').waitFor();
-  await leftDock('model-connection-panel');
-  assert.equal(await item('agent-cwd-input').inputValue(), 'E:/session-draft');
-  await item('agent-cwd-input').fill('');
+  await assertSettingsModal(page);
+  assert.equal(await item('agent-cwd-path').textContent(), canvasDirectory);
   await page.screenshot({ path: `${output}/agent-directory-narrow.png` });
   await page.keyboard.press('Escape');
   assert.equal(await item('agent-cwd').evaluate(el => el === document.activeElement), true);
   assert.equal(await item('agent-connection-page').isVisible(), true);
   await page.keyboard.press('Escape');
-  assert.equal(await modelPicker.evaluate(el => el === document.activeElement), true);
+  assert.equal(await item('settings-entry').evaluate(el => el === document.activeElement), true);
   await openModelConnection(page, 'agents');
   await item('agent-permission-chip').click();
   await item('agent-permission-menu').waitFor();
-  await leftDock('model-connection-panel');
+  await assertSettingsModal(page);
   await page.keyboard.press('Escape');
   assert.equal(await item('agent-permission-chip').evaluate(el => el === document.activeElement), true);
   await page.keyboard.press('Escape');
-  assert.equal(await modelPicker.evaluate(el => el === document.activeElement), true);
+  assert.equal(await item('settings-entry').evaluate(el => el === document.activeElement), true);
   await openModelConnection(page, 'agents');
   await item('agent-cwd').click();
   await item('agent-cwd-menu').waitFor();
-  assert.equal(await item('agent-cwd-input').inputValue(), '');
+  assert.equal(await item('agent-cwd-path').textContent(), canvasDirectory);
   await page.keyboard.press('Escape');
   await page.keyboard.press('Escape');
   await openModelConnection(page, 'api');
   assert.equal(await page.locator('[data-connection-page="api"]').isVisible(), true);
-  await leftDock('model-connection-panel');
+  await assertSettingsModal(page);
   assert.equal(await item('agent-connection-settings').count(), 0);
   await page.keyboard.press('Escape');
-  assert.equal(await modelPicker.evaluate(element => element === document.activeElement), true);
-  console.log('PASS narrow layouts reach both connections from model settings and return focus to the model picker');
+  assert.equal(await item('settings-entry').evaluate(element => element === document.activeElement), true);
+  console.log('PASS narrow layouts reach both connections from Settings and return focus to its toolbar button');
   await page.evaluate(async () => {
     const { useProjects } = await window.__importLive('/src/store/projects.ts');
     useProjects.setState(state => ({ projects: state.projects.map(project => ({ ...project, kind: 'paradigm' })) }));

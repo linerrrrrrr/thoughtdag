@@ -1,0 +1,9 @@
+/* These standalone documents can open before the app bundle is available. */
+[data-type-surface="desktop-startup"],
+[data-type-surface="authorization"],
+[data-type-surface="startup-error"] { font-size: 1rem; }
+[data-type-surface="desktop-startup"] h1 { font-size: 1.375rem; }
+[data-type-surface="desktop-startup"] p { font-size: .78125rem; }
+[data-type-surface="authorization"] h2 { font-size: 1.5rem; }
+[data-type-surface="authorization"] .status-icon { font-size: 2.5rem; }
+[data-type-surface="startup-error"] pre { font-size: 1em; }

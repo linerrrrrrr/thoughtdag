@@ -47,20 +47,20 @@ const wording = {
 type CopyKey = keyof typeof wording;
 type Translate = (key: CopyKey) => string;
 
-const typeRoles: { role: string; purpose: CopyPair; weight?: number }[] = [
-  { role: 'meta', purpose: ['时间、计数与补充信息', 'Timestamps, counts, supporting information'] },
-  { role: 'control', purpose: ['按钮、菜单与表单标签', 'Buttons, menus, field labels'] },
-  { role: 'body', purpose: ['问题、回答与长文', 'Questions, answers, and prose'] },
-  { role: 'title', purpose: ['面板与卡片标题', 'Panel and card titles'], weight: 600 },
-  { role: 'heading', purpose: ['正文小标题', 'Body subheadings'], weight: 600 },
-  { role: 'section', purpose: ['页面分区标题', 'Page section headings'], weight: 600 },
-  { role: 'page', purpose: ['页面标题', 'Page title'], weight: 600 },
+const typeRoles: { role: string; className: string; purpose: CopyPair; weight?: number }[] = [
+  { role: 'meta', className: 'text-meta', purpose: ['时间、计数与补充信息', 'Timestamps, counts, supporting information'] },
+  { role: 'control', className: 'text-control', purpose: ['按钮、菜单与表单标签', 'Buttons, menus, field labels'] },
+  { role: 'body', className: 'text-body', purpose: ['问题、回答与长文', 'Questions, answers, and prose'] },
+  { role: 'title', className: 'text-title', purpose: ['面板与卡片标题', 'Panel and card titles'], weight: 600 },
+  { role: 'heading', className: 'text-heading', purpose: ['正文小标题', 'Body subheadings'], weight: 600 },
+  { role: 'section', className: 'text-section', purpose: ['页面分区标题', 'Page section headings'], weight: 600 },
+  { role: 'page', className: 'text-page', purpose: ['页面标题', 'Page title'], weight: 600 },
 ];
 const colors = ['surface', 'card', 'wash', 'line', 'ink', 'ink-muted', 'ink-faint', 'accent', 'action', 'material-note', 'material-file-wash', 'danger'];
 const spaces = ['control-gap', 'related', 'toolbar-inset', 'section-gap', 'surface-inset', 'canvas-inset', 'control-size'];
 const radii = ['port', 'tag', 'control', 'content', 'node', 'overlay', 'panel', 'toolbar'];
-const plainAction = 'min-h-8 px-2.5 rounded-control text-control text-ink-muted hover:bg-wash flex items-center gap-2 text-left focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-40 disabled:cursor-not-allowed';
-const primaryAction = 'min-h-8 px-3 rounded-control text-control bg-action text-white hover:bg-action-strong focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:opacity-40 disabled:cursor-not-allowed';
+const plainAction = 'min-h-8 px-2.5 rounded-control text-control text-ink-muted hover:bg-wash flex items-center gap-2 text-left focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-40 when-unavailable';
+const primaryAction = 'min-h-8 px-3 rounded-control text-control bg-action text-white hover:bg-action-strong focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:opacity-40 when-unavailable';
 
 function Choice({ label, name, value, options, onChange }: { label: string; name: string; value: string; options: { value: string; label: string }[]; onChange: (value: string) => void }) {
   return <fieldset className="canvas-layout-field ds-choice" data-choice={name}>
@@ -143,7 +143,6 @@ function ConversationSpecimen({ t }: { t: Translate }) {
       <div className="node-header-main">
         <div className="node-header-identity">
           <span className="ds-node-icon"><ChevronDown aria-hidden="true" /></span>
-          <span className="text-meta font-mono text-ink-muted" data-node-number={7}>#7</span>
         </div>
         <div className="node-header-author">
           <span className="text-meta text-ink-muted shrink-0">{t('executionSource')}</span>
@@ -227,7 +226,7 @@ export function StyleGuide() {
       <Sample name="reader" title={t('reader')}><ReaderSpecimen t={t} /></Sample>
       <Sample name="editing" title={t('editing')}><EditingSpecimen t={t} /></Sample>
     </div></section>
-    <section className="ds-section" aria-labelledby="type-title"><h2 id="type-title">{t('typography')}</h2><p className="ds-section-note">{t('typographyNote')}</p><div className="ds-table-scroll"><table className="ds-type-table"><thead><tr><th scope="col">{t('token')}</th><th scope="col">{t('role')}</th><th scope="col">{t('specimen')}</th></tr></thead><tbody>{typeRoles.map(item => <tr key={item.role}><th scope="row"><code>--text-{item.role}</code></th><td>{item.purpose[language === 'zh' ? 0 : 1]}</td><td data-type-role={item.role} style={{ fontSize: `var(--text-${item.role})`, lineHeight: `var(--text-${item.role}--line-height)`, fontWeight: item.weight }}>{language === 'zh' ? '让思考清晰可见 Aa 0123' : 'Make thinking visible Aa 0123'}</td></tr>)}</tbody></table></div></section>
+    <section className="ds-section" aria-labelledby="type-title"><h2 id="type-title">{t('typography')}</h2><p className="ds-section-note">{t('typographyNote')}</p><div className="ds-table-scroll"><table className="ds-type-table"><thead><tr><th scope="col">{t('token')}</th><th scope="col">{t('role')}</th><th scope="col">{t('specimen')}</th></tr></thead><tbody>{typeRoles.map(item => <tr key={item.role}><th scope="row"><code>--text-{item.role}</code></th><td>{item.purpose[language === 'zh' ? 0 : 1]}</td><td data-type-role={item.role} className={item.className} style={{ fontWeight: item.weight }}>{language === 'zh' ? '让思考清晰可见 Aa 0123' : 'Make thinking visible Aa 0123'}</td></tr>)}</tbody></table></div></section>
     <section className="ds-section" aria-labelledby="colors-title"><h2 id="colors-title">{t('color')}</h2><p className="ds-section-note">{t('colorNote')}</p><div className="ds-token-grid">{colors.map(color => <figure className="ds-color-token" key={color}><div aria-hidden="true" style={{ background: `var(--color-${color})` }} /><figcaption><code>--color-{color}</code></figcaption></figure>)}</div></section>
     <section className="ds-section" aria-labelledby="geometry-title"><h2 id="geometry-title">{t('geometry')}</h2><p className="ds-section-note">{t('geometryNote')}</p><div className="ds-geometry"><div className="ds-space-list">{spaces.map(space => <figure className="ds-space-token" key={space}><span aria-hidden="true" style={{ width: `var(--spacing-${space})` }} /><figcaption><code>--spacing-{space}</code></figcaption></figure>)}</div><div className="ds-radius-grid">{radii.map(radius => <figure key={radius}><span aria-hidden="true" style={{ borderRadius: `var(--radius-${radius})` }} /><figcaption><code>--radius-{radius}</code></figcaption></figure>)}</div></div></section>
   </main>;

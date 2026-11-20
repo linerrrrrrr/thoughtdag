@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { chromium } from 'playwright-core';
+import { openSettingsSection } from './fixtures/canvas-model-picker.mjs';
 
 const appUrl = process.env.APP_URL ?? 'http://127.0.0.1:5187';
 const executablePath = process.env.CHROME_PATH ?? [
@@ -364,12 +365,12 @@ try {
   await panelFits(); await screenshot('desktop-single');
   await page.evaluate(async () => (await import('/src/lib/appearance.ts')).useAppearance.getState().setLighting('dark'));
   await screenshot('dark-single');
-  await page.locator('[data-toolbar-more]').click();
+  await openSettingsSection(page, 'general');
   await page.getByRole('button', { name: 'English', exact: true }).click();
   await page.keyboard.press('Escape');
   await select([]); await select(['f1']);
   await panelFits(); await screenshot('english-single');
-  await page.locator('[data-toolbar-more]').click();
+  await openSettingsSection(page, 'general');
   await page.getByRole('button', { name: '中文', exact: true }).click();
   await page.keyboard.press('Escape');
   await select([]); await select(['f1']);

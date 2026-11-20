@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef, useState, type RefObject } from 'react';
-import { Check, ChevronLeft, ChevronRight, ClipboardCopy, Trash2 } from 'lucide-react';
+import { Check, ChevronLeft, ChevronRight, Copy, Trash2 } from 'lucide-react';
 import { useT } from '../../i18n';
 import { copyText } from '../../lib/export';
 import { useDismissableLayer } from '../../lib/use-dismissable-layer';
@@ -8,10 +8,9 @@ import { useStore } from '../../store';
 
 const actionClass = 'inline-flex items-center justify-center rounded-control transition-colors hover:bg-wash hover:text-accent focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent';
 
-function ManualCopy({ text, trigger, onClose }: {
-  text: string; trigger: RefObject<HTMLButtonElement | null>; onClose: () => void;
+function ManualCopy({ text, instruction, trigger, onClose }: {
+  text: string; instruction: string; trigger: RefObject<HTMLButtonElement | null>; onClose: () => void;
 }) {
-  const t = useT();
   const label = useRef<HTMLLabelElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
   useDismissableLayer({ open: true, refs: [label, trigger], onDismiss: onClose,
@@ -22,13 +21,13 @@ function ManualCopy({ text, trigger, onClose }: {
   }, []);
   return <label ref={label} onClick={event => event.stopPropagation()}
     className="response-manual-copy nodrag nopan order-last grid min-w-0 basis-full gap-1 pt-1 text-control text-ink-muted">
-    {t('actions.manualCopy')}
+    {instruction}
     <textarea ref={input} readOnly rows={2} value={text}
       className="nowheel w-full min-w-0 resize-none select-text rounded-control border border-line bg-card px-2 py-1 text-body text-ink focus-visible:outline-2 focus-visible:outline-accent" />
   </label>;
 }
 
-export function ResponseCopyButton({ text }: { text: string }) {
+export function MessageCopyButton({ kind, text }: { kind: 'question' | 'response'; text: string }) {
   const t = useT();
   const trigger = useRef<HTMLButtonElement>(null);
   const attempt = useRef(0);
@@ -55,19 +54,18 @@ export function ResponseCopyButton({ text }: { text: string }) {
     timer.current = window.setTimeout(() => setFeedback(null), 1500);
   };
   const copied = feedback?.kind === 'copied';
-  const Icon = copied ? Check : ClipboardCopy;
+  const isQuestion = kind === 'question';
+  const label = t(isQuestion ? 'actions.copyQuestion' : 'actions.copyResponse');
+  const Icon = copied ? Check : Copy;
   return <>
     <button type="button" ref={trigger} onClick={event => { event.stopPropagation(); void copy(); }}
-      aria-label={t('actions.copyResponse')} data-tooltip={t('actions.copyResponse')}
-      className={`${actionClass} nodrag h-8 gap-1 px-1.5 text-control ${copied ? 'text-accent' : ''}`}>
+      aria-label={label} data-tooltip={label}
+      className={`${actionClass} nodrag ${isQuestion ? 'size-7' : 'size-8'} ${copied ? 'text-accent' : ''}`}>
       <Icon size={14} strokeWidth={1.75} aria-hidden="true" />
-      <span className="grid text-left" aria-hidden="true">
-        <span className={`col-start-1 row-start-1 ${copied ? 'invisible' : ''}`}>{t('actions.copy')}</span>
-        <span className={`col-start-1 row-start-1 ${copied ? '' : 'invisible'}`}>{t('ctx.copied')}</span>
-      </span>
     </button>
     <span role="status" className="sr-only">{copied ? t('ctx.copied') : ''}</span>
-    {feedback?.kind === 'manual' && <ManualCopy text={text} trigger={trigger} onClose={() => setFeedback(null)} />}
+    {feedback?.kind === 'manual' && <ManualCopy text={text} trigger={trigger}
+      instruction={t(isQuestion ? 'actions.manualCopyQuestion' : 'actions.manualCopy')} onClose={() => setFeedback(null)} />}
   </>;
 }
 

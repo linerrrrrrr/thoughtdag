@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
 import { chromium } from 'playwright-core';
+import { assertSettingsModal } from './fixtures/canvas-model-picker.mjs';
 
 const executablePath = process.env.CHROME_PATH ?? [
   'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe', '/usr/bin/chromium',
@@ -30,16 +31,16 @@ try {
   });
   const trigger = page.locator('[data-toolbar-more]');
   await trigger.click();
-  await page.locator('[data-wheel-pans]').waitFor();
+  await page.locator('[data-toolbar-more-panel]').waitFor();
   await page.keyboard.press('Escape');
-  await page.locator('[data-wheel-pans]').waitFor({ state: 'detached' });
+  await page.locator('[data-toolbar-more-panel]').waitFor({ state: 'detached' });
   assert.equal(await trigger.evaluate(el => el === document.activeElement), true);
   check('menu Escape restores its trigger even when the trigger is inside its boundary');
 
   await trigger.click();
-  await page.locator('[data-wheel-pans]').waitFor();
+  await page.locator('[data-toolbar-more-panel]').waitFor();
   await page.locator('[data-project-switcher] button').first().focus();
-  await page.locator('[data-wheel-pans]').waitFor({ state: 'detached' });
+  await page.locator('[data-toolbar-more-panel]').waitFor({ state: 'detached' });
   check('focus leaving a menu closes it without stealing the new focus');
 
   await trigger.focus();
@@ -71,19 +72,23 @@ try {
   await page.keyboard.press('Escape');
   check('map export form preserves its draft on outside dismissal and reopen');
 
-  await page.evaluate(() => window.__ui.getState().setApiKeyModalOpen(true));
-  const dialog = page.getByRole('dialog');
-  await dialog.waitFor();
+  await page.locator('[data-settings-entry]').click();
+  const dialog = await assertSettingsModal(page);
   await dialog.dispatchEvent('keydown', { key: 'Escape', isComposing: true, bubbles: true });
   assert.equal(await page.evaluate(() => window.__ui.getState().apiKeyModalOpen), true);
-  assert.equal(await dialog.getAttribute('aria-modal'), null);
   assert.ok(await dialog.evaluate(el => el.contains(document.activeElement)));
-  const configBox = await dialog.boundingBox();
-  const toolbarBox = await page.locator('[data-canvas-header]').boundingBox();
-  assert.equal(configBox.width, 320);
-  assert.ok(configBox.y >= toolbarBox.y + toolbarBox.height + 15);
+  const tabStops = dialog.locator('button:visible:enabled, select:visible:enabled');
+  await tabStops.last().focus();
+  await page.keyboard.press('Tab');
+  assert.ok(await tabStops.first().evaluate(el => document.activeElement === el), 'Tab wraps to the first control');
+  await page.keyboard.press('Shift+Tab');
+  assert.ok(await tabStops.last().evaluate(el => document.activeElement === el), 'Shift+Tab wraps to the last control');
+  await trigger.evaluate(el => el.focus());
+  assert.ok(await dialog.evaluate(el => el.contains(document.activeElement)), 'The background toolbar cannot take focus');
   await page.keyboard.press('Escape');
-  check('IME Escape is ignored and model configuration opens as a focused non-modal tool below the toolbar');
+  await dialog.waitFor({ state: 'detached' });
+  assert.ok(await page.locator('[data-settings-entry]').evaluate(el => document.activeElement === el));
+  check('Settings open centered, contain both directions of keyboard navigation, ignore IME Escape and restore focus');
 
   await page.evaluate(() => {
     window.__store.getState().setNodes([{ id: 'layer-reader', type: 'thought', position: { x: 0, y: 0 }, data: {

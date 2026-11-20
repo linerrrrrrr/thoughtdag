@@ -21,7 +21,6 @@
   padding: 3px 0;
   border-radius: var(--radius-tag);
   color: var(--conversation-muted, var(--color-ink-muted));
-  cursor: inherit;
   user-select: none;
 }
 .node-token-total {

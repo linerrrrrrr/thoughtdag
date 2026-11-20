@@ -1,0 +1,101 @@
+/* Native controls register by semantics. Keep these in the base layer so an
+   enabled drag grip, selectable text, or disabled action can specialize them. */
+@layer base {
+  input { cursor: auto; }
+  textarea, [contenteditable="true"], input:not([type]),
+  input:is([type="text"], [type="search"], [type="email"], [type="url"], [type="tel"], [type="password"], [type="number"]) { cursor: text; }
+  button, a[href], summary, select, [role="button"], [role="link"], [role="menuitem"],
+  input:is([type="checkbox"], [type="radio"], [type="button"], [type="submit"], [type="reset"]) { cursor: pointer; }
+  button:disabled, input:disabled, select:disabled, textarea:disabled, [aria-disabled="true"] { cursor: default; }
+}
+
+/* View-specific actions select a role directly. State-dependent controls
+   select a different role as their actual capabilities change. */
+[data-cursor="action"] { cursor: pointer; }
+[data-cursor="neutral"], .routing-preview-node { cursor: default; }
+[data-cursor="native"] { cursor: auto; }
+[data-cursor="inherit"] { cursor: inherit; }
+pre[tabindex], [data-cursor="text"] { cursor: text; }
+[data-cursor="crosshair"] { cursor: crosshair; }
+[data-cursor="draggable"] { cursor: grab; }
+[data-cursor="dragging"] { cursor: grabbing; }
+[data-cursor="resize-column"] { cursor: col-resize; }
+[data-cursor="resize-width"] { cursor: ew-resize; }
+[data-cursor="resize-height"] { cursor: ns-resize; }
+[data-cursor="zoom-in"] { cursor: zoom-in; }
+[data-cursor="unavailable"], .when-unavailable:disabled { cursor: not-allowed; }
+
+/* Canvas and the controls rendered by React Flow. Saved node geometry is
+   inert; only enabled handles indicate a drag. An active gesture keeps its
+   cursor even if selection exposes a resize grip beneath the pointer. */
+.react-flow .react-flow__node,
+.react-flow .react-flow__node.selectable,
+.react-flow .react-flow__node.draggable { cursor: default; }
+.react-flow__node.draggable .drag-handle,
+.react-flow .react-flow__pane.draggable,
+.react-flow .react-flow__nodesselection-rect { cursor: grab; }
+.react-flow__node .drag-handle :where(.nodrag:not(.react-flow__handle, .react-flow__resize-control)) { cursor: default; }
+.react-flow__node .drag-handle :is(button, a[href], select) { cursor: pointer; }
+.react-flow__node .drag-handle :is(input, textarea, [contenteditable="true"]) { cursor: text; }
+.react-flow__node .drag-handle :is(button:disabled, [aria-disabled="true"]) { cursor: default; }
+.react-flow .react-flow__pane.selection,
+.react-flow .react-flow__handle.connectionindicator { cursor: crosshair; }
+.react-flow .react-flow__pane.dragging { cursor: grabbing; }
+.react-flow__node.draggable.dragging,
+.react-flow__node.draggable.dragging * { cursor: grabbing !important; }
+.react-flow .react-flow__edge.selectable,
+.react-flow .react-flow__controls-button { cursor: pointer; }
+.react-flow .react-flow__controls-button:disabled { cursor: default; }
+.react-flow .react-flow__edgeupdater { cursor: move; }
+.canvas-pannable-minimap .react-flow__minimap-svg { cursor: grab; }
+body:has([data-palette-drag-preview]), body:has([data-palette-drag-preview]) *,
+body:has(.canvas-pannable-minimap .react-flow__minimap-svg:active),
+body:has(.canvas-pannable-minimap .react-flow__minimap-svg:active) * { cursor: grabbing !important; }
+
+.selection-move-surface, .type-demo-stage { cursor: grab; }
+.selection-move-surface.is-moving, .type-demo-stage:active,
+.react-flow:has(.react-flow__pane.dragging) .selection-move-surface { cursor: grabbing; }
+.react-flow__resize-control.left, .react-flow__resize-control.right,
+.node-resize-width, .selection-resize-width { cursor: ew-resize; }
+.react-flow__resize-control.top, .react-flow__resize-control.bottom,
+.node-resize-height, .selection-resize-height { cursor: ns-resize; }
+.react-flow__resize-control.top.left, .react-flow__resize-control.bottom.right,
+.node-resize-both, .selection-resize-both,
+.rich-document-surface [data-resize-handle="bottom-right"] { cursor: nwse-resize; }
+.react-flow__resize-control.top.right, .react-flow__resize-control.bottom.left,
+.rich-document-surface [data-resize-handle="bottom-left"] { cursor: nesw-resize; }
+.overview-ruler .react-flow__handle.overview-ruler-mark { cursor: pointer; }
+body.tdag-connecting .overview-ruler .overview-ruler-mark.connectingfrom { cursor: crosshair; }
+.node-token-usage { cursor: inherit; }
+
+/* Document chrome, selectable glyphs and adjustable reading panes. */
+.pdf-document-view, .docx-engine, .conversation-divider { cursor: default; }
+.document-rich-body { cursor: auto; }
+.tdag-textlayer span, .tdag-textlayer br, .material-file-path,
+.rich-document-surface .tiptap, .docx-engine .superdoc-page { cursor: text; }
+.rich-document-surface .tiptap.resize-cursor { cursor: col-resize; }
+.conversation-divider[data-adjustable] { cursor: row-resize; }
+.conversation-split--dragging, .conversation-split--dragging * { cursor: row-resize !important; }
+.pdf-document-region-layer { cursor: crosshair; }
+[data-highlighter-active], [data-highlighter-active] * { cursor: crosshair !important; }
+
+/* Specialized actions and their availability states. */
+.canvas-layout-choice input[data-connection-layout-choice], .canvas-layout-choice span,
+.conversation-file-link, .edge-inspector button, .edge-inspector-relation,
+.pdf-document-mark, .pdf-document-comment-pin, .pdf-document-thread-pin,
+.rich-document-tool, .rich-document-color input, .native-document-tool,
+.native-document-text-action, .native-document-color input, .cite-chip { cursor: pointer; }
+.conversation-link[aria-busy="true"] { cursor: progress; }
+.cite-chip.unknown, .cite-chip[data-node-cite=""] { cursor: help; }
+.node-metadata-action:disabled, .edge-inspector button:disabled,
+.edge-inspector-relation[data-disabled="true"], .agent-instruction-actions .agent-instruction-send:disabled,
+.pdf-document-tool:disabled, .rich-document-tool:disabled, .docx-document-actions button:disabled,
+.native-document-tool:disabled, .native-document-text-action:disabled, .native-document-select:disabled,
+.native-document-color:has(input:disabled), .codex-approval button:disabled,
+.material-document-actions button:disabled { cursor: default; }
+.canvas-layout-choice input:disabled + span, .agent-connection-action:disabled,
+.canvas-toolbar-button:disabled, .node-ask-send:disabled { cursor: not-allowed; }
+
+/* The exported viewer embeds this sheet; its camera owns the pan gesture. */
+[data-type-surface="offline-viewer"] #viewport.panning,
+[data-type-surface="offline-viewer"] #viewport.panning * { cursor: grabbing; }

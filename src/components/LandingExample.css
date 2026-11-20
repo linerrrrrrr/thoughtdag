@@ -1,0 +1,143 @@
+.landing-example {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  align-self: center;
+  container-type: inline-size;
+  overflow: hidden;
+  text-align: start;
+  color: var(--color-ink);
+  background: var(--color-card);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-panel);
+  transition: border-color 160ms;
+}
+
+.landing-example:hover { border-color: var(--color-accent); }
+.landing-example:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 4px; }
+
+.landing-example-sheet {
+  display: block;
+  padding: clamp(18px, 5cqi, 28px);
+  background-color: color-mix(in srgb, var(--color-accent) 5%, var(--color-surface));
+  background-image: radial-gradient(color-mix(in srgb, var(--color-accent) 23%, transparent) 1px, transparent 1px);
+  background-size: 16px 16px;
+  background-position: 7px 7px;
+}
+
+.landing-example-caption {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  color: var(--color-ink-muted);
+}
+.landing-example-caption svg { color: var(--color-accent); }
+
+.landing-example-map { display: block; margin-block: clamp(24px, 8cqi, 44px) clamp(18px, 6cqi, 30px); }
+.landing-example-node {
+  position: relative;
+  display: block;
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-node);
+  background: var(--color-card);
+  overflow-wrap: anywhere;
+}
+.landing-example-root {
+  width: 76%;
+  margin-inline-start: 2%;
+  padding: clamp(14px, 4cqi, 22px);
+  border-color: color-mix(in srgb, var(--color-accent) 60%, var(--color-line));
+}
+.landing-example-question {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 600;
+  text-wrap: pretty;
+}
+.landing-example-book {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-content);
+  background: color-mix(in srgb, var(--color-accent) 12%, var(--color-card));
+  color: var(--color-accent-strong);
+}
+.landing-example-answer {
+  display: block;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--color-line);
+  color: var(--color-ink-muted);
+  text-wrap: pretty;
+}
+.landing-example-root::after {
+  content: '';
+  position: absolute;
+  bottom: -4px;
+  left: 50%;
+  margin-left: -4px;
+  width: 8px;
+  height: 8px;
+  border: 2px solid var(--color-accent);
+  border-radius: 50%;
+  background: var(--color-card);
+  z-index: 1;
+}
+.landing-example-wires { display: block; width: 100%; height: clamp(40px, 13cqi, 64px); overflow: visible; }
+.landing-example-wires path { stroke: var(--color-accent); stroke-width: 1.7px; vector-effect: non-scaling-stroke; }
+.landing-example-leaves { display: grid; grid-template-columns: 47% 47%; justify-content: space-between; }
+.landing-example-leaf {
+  padding: clamp(12px, 3.2cqi, 18px);
+  font-weight: 600;
+  text-wrap: pretty;
+}
+.landing-example-leaf::before {
+  content: '';
+  position: absolute;
+  top: -9px;
+  left: calc(50% - 4px);
+  width: 8px;
+  height: 8px;
+  border-right: 2px solid var(--color-accent);
+  border-bottom: 2px solid var(--color-accent);
+  transform: rotate(45deg);
+}
+.landing-example-excerpt {
+  display: block;
+  margin-top: 7px;
+  color: var(--color-ink-muted);
+  font-weight: 400;
+}
+.landing-example-alternate {
+  background: color-mix(in srgb, var(--color-warm) 6%, var(--color-card));
+  border-color: color-mix(in srgb, var(--color-warm) 40%, var(--color-line));
+}
+.landing-example-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  padding: 14px clamp(18px, 5cqi, 28px);
+  border-top: 1px solid var(--color-line);
+}
+.landing-example-action { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; }
+.landing-example-open { color: var(--color-accent-strong); transition: transform 160ms; }
+.landing-example:hover .landing-example-open { transform: translate(2px, -2px); }
+.landing-example-offline { color: var(--color-ink-muted); }
+
+@container (max-width: 320px) {
+  .landing-example-sheet { padding: 14px; }
+  .landing-example-question { display: block; }
+  .landing-example-book { display: none; }
+  .landing-example-leaf { padding: 10px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .landing-example, .landing-example-open { transition: none; }
+  .landing-example:hover .landing-example-open { transform: none; }
+}

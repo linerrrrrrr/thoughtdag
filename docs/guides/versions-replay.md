@@ -12,17 +12,10 @@ Generated nodes record a fingerprint of their upstream context. Editing an ances
 
 <img src="../illus/versions-en.svg" alt="One node keeps several answer versions; upstream changes mark it stale without overwriting those versions" width="100%" loading="lazy"/>
 
-The **Upstream changed** mark only reports that the input changed. Review the changed source content and [canvas input connections](/guides/context-control#inspect-the-next-request) before choosing whether to replay.
+## Update a stale node {#replay-dependent-work}
 
-## Replay dependent work
+Review the changed source and the node’s [input connections](/guides/context-control#inspect-the-next-request). To update its answer, click **Upstream changed** on that node. The new answer is saved as another version.
 
-1. Review the stale nodes and estimated token cost.
-2. Start **Replay**.
-3. ThoughtDAG regenerates affected nodes in dependency order.
-4. Stop when the remaining updates are no longer useful.
+If you want to update two nodes on the same path, start with the upstream node. Wait for its answer to finish, then click **Upstream changed** on the downstream node so it uses the new answer.
 
-Dependency order prevents a downstream answer from regenerating before the upstream answer it needs has finished.
-
-**Replay** updates existing downstream nodes along the current structure. If you would rather test the same question with another context or model, create a new sibling from the same parent so both answers remain side by side. Use replay to refresh existing work, and a new node to compare answers or models.
-
-<img src="../illus/replay-en.svg" alt="After an upstream version changes, two stale nodes replay in dependency order while older answers remain as versions" width="100%" loading="lazy"/>
+<img src="../illus/replay-en.svg" alt="Updating two nodes individually, starting with the one the other depends on" width="100%" loading="lazy"/>

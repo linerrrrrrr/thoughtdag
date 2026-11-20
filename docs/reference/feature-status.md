@@ -7,7 +7,7 @@ title: Feature status
 | Capability | Status | Documentation boundary |
 |---|---|---|
 | Graph conversation and context wires | Current | Core product behavior |
-| Branch, merge, prune, regenerate, and replay | Current | Demonstrate with controlled before/after context |
+| Branch, merge, prune, and regenerate individual nodes | Current | Demonstrate with controlled before/after context |
 | PDF reading and extraction | Current | Preserve source and page provenance |
 | Local storage, backup, export, and sharing | Current | Do not promise unverified compatibility across every version |
 | Why layer CLI and read-only MCP | Published, experimental | Candidate explanations are not verified causes |

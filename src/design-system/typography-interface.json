@@ -1,0 +1,132 @@
+{
+  "boundaries": {
+    "design-system.html": {
+      "body": "screen"
+    },
+    "index.html": {
+      "body": "screen"
+    },
+    "src/App.tsx": {
+      ".viewer-error-symbol": "entry-display"
+    },
+    "src/components/CanvasDetailControl.tsx": {
+      "[data-canvas-detail-panel]": "portal"
+    },
+    "src/components/CanvasToolbarOverflowAction.tsx": {
+      "[data-overflow-menu-action]": "portal"
+    },
+    "src/components/ConversationLink.tsx": {
+      ".file-preview-backdrop": "portal",
+      "[data-file-menu]": "portal"
+    },
+    "src/components/DocumentEditPreview.tsx": {
+      ".docx-edit-preview-body": "native-document"
+    },
+    "src/components/DocumentRichBody.tsx": {
+      "[data-document-rich-body]": "native-document"
+    },
+    "src/components/HtmlMaterialView.tsx": {
+      "iframe": "native-document"
+    },
+    "src/components/LandingPage.tsx": {
+      ".welcome-title": "entry-display"
+    },
+    "src/components/Markdown.tsx": {
+      "[data-diagram]": "native-document"
+    },
+    "src/components/MaterialReader.tsx": {
+      "[data-material-reader]": "reading"
+    },
+    "src/components/NodeContextMenu.tsx": {
+      "[data-selection-menu]": "portal"
+    },
+    "src/components/NodeContextSources.tsx": {
+      "[data-context-sources-popover]": "portal"
+    },
+    "src/components/PdfDocumentView.tsx": {
+      "[data-pdf-save]": "portal",
+      ".pdf-document-toolbar": "portal",
+      "[data-pdf-save-status]": "portal",
+      ".tdag-textlayer": "native-document"
+    },
+    "src/components/QuestionAttachmentDialog.tsx": {
+      ".question-attachment-backdrop": "portal"
+    },
+    "src/components/RichDocumentEditor.tsx": {
+      ".rich-document-surface": "native-document"
+    },
+    "src/components/SelectionArrangeMenu.tsx": {
+      "[data-selection-menu]": "portal"
+    },
+    "src/components/SelectionRegion.tsx": {
+      "[data-selection-region]": "canvas-geometry"
+    },
+    "src/components/SelectionResizeControls.tsx": {
+      "[data-selection-resizer]": "canvas-geometry"
+    },
+    "src/components/SuperDocEditor.tsx": {
+      "[data-superdoc-toolbar]": "portal",
+      "[data-superdoc-save]": "portal",
+      "[data-superdoc-export]": "portal",
+      "[data-superdoc-save-status]": "portal",
+      ".docx-view-host": "docx-viewport"
+    },
+    "src/components/Tutorial.tsx": {
+      "[data-tutorial-diagram]": "tutorial-diagram"
+    },
+    "src/components/ZoomText.tsx": {
+      "[data-zoom-text]": "timeline-ladder"
+    },
+    "src/components/focus-panel/AgentInstructionInput.tsx": {
+      "[data-agent-instruction]": "portal"
+    },
+    "src/components/focus-panel/index.tsx": {
+      "[data-focus-panel]": "reading"
+    },
+    "src/components/ui/BackupDialog.tsx": {
+      "[data-backup-dialog]": "portal"
+    },
+    "src/components/ui/CondenseDialog.tsx": {
+      "[data-condense-dialog]": "portal"
+    },
+    "src/components/ui/GlobalTooltip.tsx": {
+      ".tdag-tooltip": "portal"
+    },
+    "src/components/ui/HighlightsOverviewModal.tsx": {
+      "[data-highlights-overview-dialog]": "portal"
+    },
+    "src/components/ui/MaterialsOverviewModal.tsx": {
+      "[data-materials-overview-dialog]": "portal"
+    },
+    "src/components/ui/MemoryManagerModal.tsx": {
+      "[data-memory-manager]": "portal"
+    },
+    "src/components/ui/ModelPicker.tsx": {
+      "[data-model-picker-panel]": "portal"
+    },
+    "src/components/ui/RecallChip.tsx": {
+      "[data-recall-menu]": "portal"
+    },
+    "src/components/ui/ShareDialog.tsx": {
+      "[data-share-dialog]": "portal"
+    },
+    "src/components/ui/ThoughtMapDialog.tsx": {
+      "[data-thought-map]": "portal",
+      "[data-artwork-preview]": "artwork-preview",
+      "[data-tmap-art]": "share-artwork"
+    },
+    "src/components/ui/TimelineOverviewModal.tsx": {
+      "[data-timeline-overview-dialog]": "portal",
+      "[data-timeline-fallback]": "timeline-ladder"
+    },
+    "src/components/ui/WorkspaceSettings.tsx": {
+      "[data-settings-backdrop]": "portal"
+    },
+    "src/lib/canvas-html.ts": {
+      "html": "offline-viewer"
+    },
+    "src/lib/html-material.ts": {
+      "html": "document-frame"
+    }
+  }
+}

@@ -252,7 +252,7 @@
 .agent-instruction-actions button:hover { background: var(--color-wash); }
 .agent-instruction-actions .agent-instruction-send { display: inline-flex; align-items: center; gap: 4px; background: var(--color-action); color: white; }
 .agent-instruction-actions .agent-instruction-send:hover { opacity: 0.85; }
-.agent-instruction-actions .agent-instruction-send:disabled { opacity: 0.4; cursor: default; }
+.agent-instruction-actions .agent-instruction-send:disabled { opacity: 0.4; }
 
 @container (max-width: 420px) {
   .focus-panel-header-actions [data-model-picker-trigger] { max-width: 88px; }

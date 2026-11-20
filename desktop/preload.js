@@ -47,6 +47,7 @@ contextBridge.exposeInMainWorld('desktopAgents', {
   abort: (runId) => ipcRenderer.invoke('agents:abort', runId),
   steer: (runId, prompt) => ipcRenderer.invoke('agents:steer', runId, prompt),
   workspace: (canvasId) => ipcRenderer.invoke('agents:workspace', canvasId),
+  canvasWorkspace: (canvasId, namespace) => ipcRenderer.invoke('agents:canvas-workspace', canvasId, namespace),
   answer: (runId, requestId, response) => ipcRenderer.invoke('agents:answer', runId, requestId, response),
   guardWrite: (cwd, config) => ipcRenderer.invoke('agents:guard-write', cwd, config),
   pickCwd: () => ipcRenderer.invoke('agents:pick-cwd'),

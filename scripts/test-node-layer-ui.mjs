@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { chromium } from 'playwright-core';
+import { openSettingsSection } from './fixtures/canvas-model-picker.mjs';
 
 const executablePath = process.env.CHROME_PATH ?? [
   'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',
@@ -173,7 +174,7 @@ try {
   check('explicit frame layers override automatic background stacking and persist after reload');
 
   await fixture();
-  await page.locator('[data-toolbar-more]').click();
+  await openSettingsSection(page, 'general');
   await page.getByRole('button', { name: 'English', exact: true }).click();
   await page.locator('[data-appearance-lighting]').getByRole('button', { name: 'Dark', exact: true }).click();
   await page.keyboard.press('Escape');
@@ -183,7 +184,7 @@ try {
   assert.equal(await page.getByRole('menuitem', { name: 'Bring forward', exact: true }).count(), 1);
   await page.screenshot({ path: `${output}/english-dark.png` });
   await page.keyboard.press('Escape');
-  await page.locator('[data-toolbar-more]').click();
+  await openSettingsSection(page, 'general');
   await page.getByRole('button', { name: '中文', exact: true }).click();
   await page.locator('[data-appearance-lighting]').getByRole('button', { name: '亮', exact: true }).click();
   await page.keyboard.press('Escape');

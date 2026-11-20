@@ -5,12 +5,16 @@ import { isImeComposing } from '../../utils';
 import { useT } from '../../i18n';
 import { isViewerMode } from '../../lib/viewer';
 import { toast, useUiStore } from '../../lib/ui-store';
+import { availableExecutionModels, useModels } from '../../lib/use-models';
 import SearchToggles from '../ui/SearchToggles';
 import NodeExecutionPicker from '../ui/NodeExecutionPicker';
 import { Markdown } from '../Markdown';
 import { useInlineEditDismiss } from '../../lib/use-inline-edit-dismiss';
 import { useSessionDraft } from '../../lib/use-session-draft';
 import { condenseGuard } from '../../lib/condense-guard';
+import { clipboardFilePaste } from '../../lib/clipboard-files';
+import { importNodeFiles, nodeFilesPending, useNodeFilesPending } from '../../lib/node-file-import';
+import QuestionAttachments, { QuestionFilePicker } from '../QuestionAttachments';
 
 const isConversationResizeTarget = (target: EventTarget | null) => target instanceof Element
   && !!target.closest('[data-conversation-divider]');
@@ -19,9 +23,12 @@ export default function QuestionSection({
   nodeId,
   question,
   displayQuestion,
+  highlights,
+  penActive,
   isEditing,
   isHuman,
   awaiting,
+  needsAgentModel,
   generationFailed,
   placeholder,
   base,
@@ -31,12 +38,15 @@ export default function QuestionSection({
   question: string;
   /** Reading only; the editor retains the complete canonical question. */
   displayQuestion?: string;
+  highlights: Set<string>;
+  penActive: boolean;
   isEditing: boolean;
   /** Paradigm human turn: edits record the question without generating. */
   isHuman?: boolean;
   /** Node accepts its own question: the box stays open before a successful answer
       (same rule as the canvas card) and click-away keeps the draft. */
   awaiting?: boolean;
+  needsAgentModel: boolean;
   /** A failed attempt may explicitly resend the same question. */
   generationFailed?: boolean;
   placeholder?: string;
@@ -45,6 +55,9 @@ export default function QuestionSection({
   const submitHumanTurn = useStore((s) => s.submitHumanTurn);
   const setEditing = useStore((s) => s.setEditing);
   const t = useT();
+  const filesPending = useNodeFilesPending(nodeId);
+  const models = useModels(needsAgentModel);
+  const agentUnavailable = needsAgentModel && !availableExecutionModels(models, 'codex').length;
 
   const draftKey = `question-edit:${nodeId}`;
   const [editValue, setEditValue] = useSessionDraft(draftKey, question);
@@ -78,7 +91,7 @@ export default function QuestionSection({
   };
 
   const handleEditSubmit = () => {
-    if (!editValue.trim() || condenseGuard()) return;
+    if (!editValue.trim() || agentUnavailable || nodeFilesPending(nodeId) || condenseGuard()) return;
     useUiStore.getState().setDraft(draftKey, '');
     // Only a failed attempt may resend an unchanged question.
     if (!generationFailed && editValue.trim() === question) { setEditing(nodeId, false); return; }
@@ -103,27 +116,37 @@ export default function QuestionSection({
       {showEditor ? (
         <div ref={editorRef} onBlur={dismiss.onBlur} className="focus-message-editor"
           onFocusCapture={() => { if (awaiting && !isEditing) setEditing(nodeId, true, 'panel'); }}>
-          {awaiting && !isHuman && <div className="mb-2"><NodeExecutionPicker nodeId={nodeId} /></div>}
-          <textarea
-            value={editValue}
-            onChange={(e) => setEditValue(e.target.value)}
-            onKeyDown={handleEditKeyDown}
-            onInput={(e) => autoGrowTa(e.currentTarget)}
-            ref={autoGrowTa}
-            placeholder={placeholder}
-            aria-label={t('panel.question')}
-            className="w-full bg-wash border border-accent rounded-control p-3 text-body text-ink resize-none focus:outline-none focus:ring-2 focus:ring-accent/20"
-            rows={3}
-            autoFocus={isEditing}
-          />
+          <div className="question-composer-content">
+            <QuestionAttachments nodeId={nodeId} />
+            <textarea
+              value={editValue}
+              onChange={(e) => setEditValue(e.target.value)}
+              onPaste={(event) => {
+                const { files, preventText } = clipboardFilePaste(event.clipboardData);
+                if (!files.length) return;
+                if (preventText) event.preventDefault();
+                void importNodeFiles(nodeId, files);
+              }}
+              onKeyDown={handleEditKeyDown}
+              onInput={(e) => autoGrowTa(e.currentTarget)}
+              ref={autoGrowTa}
+              placeholder={placeholder}
+              aria-label={t('panel.question')}
+              className="w-full bg-wash border border-accent rounded-control p-3 text-body text-ink resize-none focus:outline-none focus:ring-2 focus:ring-accent/20"
+              rows={3}
+              autoFocus={isEditing}
+            />
+          </div>
+          {awaiting && !isHuman && <div className="mt-2"><NodeExecutionPicker nodeId={nodeId} /></div>}
           {(awaiting || isHuman) && (
             <div className="flex items-center justify-end gap-2 mt-1.5">
               {awaiting && !isHuman && <div className="mr-auto flex items-center gap-1" data-ask-toggles>
+                <QuestionFilePicker onAttach={files => void importNodeFiles(nodeId, files)} />
                 <SearchToggles nodeId={generationFailed ? nodeId : undefined} executionNodeId={nodeId} size={15} />
               </div>}
               <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={handleEditSubmit}
-                disabled={!editValue.trim()} data-question-send
-                className="text-control bg-action hover:bg-action-strong disabled:opacity-30 disabled:cursor-not-allowed text-white px-3.5 py-1.5 rounded-control transition-colors flex items-center gap-1.5">
+                disabled={!editValue.trim() || filesPending || agentUnavailable} data-question-send
+                className="text-control bg-action hover:bg-action-strong disabled:opacity-30 when-unavailable text-white px-3.5 py-1.5 rounded-control transition-colors flex items-center gap-1.5">
                 {isHuman ? <Check size={12} strokeWidth={2.25} /> : <Send size={14} strokeWidth={1.75} />}
                 {t(isHuman ? 'common.confirm' : 'common.send')}
               </button>
@@ -146,8 +169,8 @@ export default function QuestionSection({
               <button
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={handleEditSubmit}
-                disabled={!editValue.trim()}
-                className="text-control bg-action hover:bg-action-strong disabled:opacity-30 disabled:cursor-not-allowed text-white px-3.5 py-1.5 rounded-control transition-colors flex items-center gap-1.5"
+                disabled={!editValue.trim() || filesPending}
+                className="text-control bg-action hover:bg-action-strong disabled:opacity-30 when-unavailable text-white px-3.5 py-1.5 rounded-control transition-colors flex items-center gap-1.5"
                 data-edit-submit
               >
                 <Check size={12} strokeWidth={2.25} /> {t('question.editSubmit')}
@@ -158,11 +181,12 @@ export default function QuestionSection({
       ) : (
         <div className="focus-user-turn">
         <div
-          onDoubleClick={handleDoubleClickQuestion}
-          className="focus-user-message question-md markdown-body text-body text-ink cursor-text"
+          onDoubleClick={penActive ? undefined : handleDoubleClickQuestion}
+          data-highlight-turn="question" data-highlighter-active={penActive || undefined}
+          data-cursor="text" className="focus-user-message question-md markdown-body text-body text-ink"
           data-conversation-user-message
         >
-          <Markdown base={base}>{(displayQuestion ?? question) || placeholder || ''}</Markdown>
+          <Markdown base={base} preserveListNumbers highlights={highlights}>{(displayQuestion ?? question) || placeholder || ''}</Markdown>
         </div>
         {!isViewerMode && <button type="button" onClick={handleDoubleClickQuestion}
           aria-label={t('actions.editQuestion')} data-edit-question

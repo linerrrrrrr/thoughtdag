@@ -10,7 +10,6 @@
   background: var(--color-card);
   font-size: var(--text-meta);
   font-family: var(--font-mono);
-  transform: scale(calc(1 / max(0.6, var(--tdag-zoom, 1))));
 }
 
 .tdag-context-order.is-active {

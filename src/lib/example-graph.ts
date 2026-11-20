@@ -143,10 +143,10 @@ const CONTENT: Record<Lang, { nodes: SeedNode[] }> = {
       {
         id: 'stale-demo',
         q: 'Condense everything above into a one-line takeaway',
-        a: '**Takeaway: saving is not the start of learning — processing is. Change "save it" into "write one line" and the loop turns around.**\n\n*This node demonstrates two things.*\n\n*① The amber **"Upstream changed"** badge in my header: my upstream was edited after this answer was written, so my answer may no longer follow from what\'s above. Click the badge to re-run me in place, or use the amber **Replay stale** chip in the toolbar to fix the whole canvas in dependency order (it asks first, with a token estimate).*\n\n*② The **v2/2 pager** under my answer: every re-run appends a VERSION (old ones kept for comparison; switch back and watch downstream badges react). Versions are alternate answers to the same question; a BRANCH (⋯ menu → "Regenerate as branch") is a parallel node that can grow its own downstream.*',
+        a: '**Takeaway: saving is not the start of learning — processing is. Change "save it" into "write one line" and the loop turns around.**\n\n*This node demonstrates two things.*\n\n*① The amber **"Upstream changed"** badge in my header: my upstream was edited after this answer was written, so my answer may no longer follow from what\'s above. Click the badge to update this answer using the current upstream context.*\n\n*② The **v2/2 pager** under my answer: every re-run appends a VERSION (old ones kept for comparison; switch back and watch downstream badges react). Versions are alternate answers to the same question; a BRANCH (⋯ menu → "Regenerate as branch") is a parallel node that can grow its own downstream.*',
         x: 1450, y: 1080,
         extra: {
-          responses: ['Either archive the library or process new saves on the spot.', '**Takeaway: saving is not the start of learning — processing is. Change "save it" into "write one line" and the loop turns around.**\n\n*This node demonstrates two things.*\n\n*① The amber **"Upstream changed"** badge in my header: my upstream was edited after this answer was written, so my answer may no longer follow from what\'s above. Click the badge to re-run me in place, or use the amber **Replay stale** chip in the toolbar to fix the whole canvas in dependency order (it asks first, with a token estimate).*\n\n*② The **v2/2 pager** under my answer: every re-run appends a VERSION (old ones kept for comparison; switch back and watch downstream badges react). Versions are alternate answers to the same question; a BRANCH (⋯ menu → "Regenerate as branch") is a parallel node that can grow its own downstream.*'],
+          responses: ['Either archive the library or process new saves on the spot.', '**Takeaway: saving is not the start of learning — processing is. Change "save it" into "write one line" and the loop turns around.**\n\n*This node demonstrates two things.*\n\n*① The amber **"Upstream changed"** badge in my header: my upstream was edited after this answer was written, so my answer may no longer follow from what\'s above. Click the badge to update this answer using the current upstream context.*\n\n*② The **v2/2 pager** under my answer: every re-run appends a VERSION (old ones kept for comparison; switch back and watch downstream badges react). Versions are alternate answers to the same question; a BRANCH (⋯ menu → "Regenerate as branch") is a parallel node that can grow its own downstream.*'],
           responseIndex: 1,
           summaries: [null, 'Pivot: from "save it" to "write one line", processing moves to the moment of capture'],
           summaryTypes: [null, 'pivot'],
@@ -203,10 +203,10 @@ const CONTENT: Record<Lang, { nodes: SeedNode[] }> = {
         },
       },
       // ── frames: the chapters ──
-      { id: 'frame-chain', q: '① The conversation: questions and reasoning', a: '', x: 0, y: 240, w: 1290, h: 1820, extra: { stepKind: 'frame', frameColor: 'violet' } },
-      { id: 'frame-material', q: '② Materials & wires', a: '', x: 1400, y: 0, w: 640, h: 1560, extra: { stepKind: 'frame', frameColor: 'amber' } },
-      { id: 'frame-prune', q: '③ ⚖️ Prune the context', a: '', x: 2160, y: 0, w: 640, h: 1240, extra: { stepKind: 'frame', frameColor: 'sky' } },
-      { id: 'frame-read', q: '④ The reading loop: paper → dialogue', a: '', x: 2920, y: 0, w: 1270, h: 1240, extra: { stepKind: 'frame', frameColor: 'green' } },
+      { id: 'frame-chain', q: '① The conversation: questions and reasoning', a: '', x: 0, y: 240, w: 1290, h: 2120, extra: { stepKind: 'frame', frameColor: 'violet' } },
+      { id: 'frame-material', q: '② Materials & wires', a: '', x: 1400, y: 0, w: 640, h: 1840, extra: { stepKind: 'frame', frameColor: 'amber' } },
+      { id: 'frame-prune', q: '③ ⚖️ Prune the context', a: '', x: 2160, y: 0, w: 640, h: 1640, extra: { stepKind: 'frame', frameColor: 'sky' } },
+      { id: 'frame-read', q: '④ The reading loop: paper → dialogue', a: '', x: 2920, y: 0, w: 1270, h: 1440, extra: { stepKind: 'frame', frameColor: 'green' } },
     ],
   },
   zh: {
@@ -277,10 +277,10 @@ const CONTENT: Record<Lang, { nodes: SeedNode[] }> = {
       {
         id: 'stale-demo',
         q: '把上面的一切浓缩成一句 takeaway',
-        a: '**Takeaway：收藏不是学习的开始，处理才是——把「存下来」改成「写一句」，环路才会掉头。**\n\n*这个节点演示两件事。*\n\n*① 我头部琥珀色的**「上游已变」徽章**：这个回答写成之后，上游被改过，所以我的回答可能已经接不上上文了。点徽章原地重放我；或者用顶部工具栏的琥珀色**「重放陈旧」**chip，按依赖顺序修复整张画布（会先确认，带 token 报价）。*\n\n*② 回答下方的 **v2/2 翻页**：每次重放都会**追加一个版本**（旧版保留可对比。切回旧版试试，下游的徽章会跟着反应）。版本=同一问题的备选回答；分支（⋯ 菜单 →「另开分支重答」）才是能各自发展下游的平行探索。*',
+        a: '**Takeaway：收藏不是学习的开始，处理才是——把「存下来」改成「写一句」，环路才会掉头。**\n\n*这个节点演示两件事。*\n\n*① 我头部琥珀色的**「上游已变」徽章**：这个回答写成之后，上游被改过，所以我的回答可能已经接不上上文了。点击徽章，就能用最新的上游内容重新生成这个回答。*\n\n*② 回答下方的 **v2/2 翻页**：每次重放都会**追加一个版本**（旧版保留可对比。切回旧版试试，下游的徽章会跟着反应）。版本=同一问题的备选回答；分支（⋯ 菜单 →「另开分支重答」）才是能各自发展下游的平行探索。*',
         x: 1450, y: 1080,
         extra: {
-          responses: ['收藏夹要么归档，要么当场处理。', '**Takeaway：收藏不是学习的开始，处理才是——把「存下来」改成「写一句」，环路才会掉头。**\n\n*这个节点演示两件事。*\n\n*① 我头部琥珀色的**「上游已变」徽章**：这个回答写成之后，上游被改过，所以我的回答可能已经接不上上文了。点徽章原地重放我；或者用顶部工具栏的琥珀色**「重放陈旧」**chip，按依赖顺序修复整张画布（会先确认，带 token 报价）。*\n\n*② 回答下方的 **v2/2 翻页**：每次重放都会**追加一个版本**（旧版保留可对比。切回旧版试试，下游的徽章会跟着反应）。版本=同一问题的备选回答；分支（⋯ 菜单 →「另开分支重答」）才是能各自发展下游的平行探索。*'],
+          responses: ['收藏夹要么归档，要么当场处理。', '**Takeaway：收藏不是学习的开始，处理才是——把「存下来」改成「写一句」，环路才会掉头。**\n\n*这个节点演示两件事。*\n\n*① 我头部琥珀色的**「上游已变」徽章**：这个回答写成之后，上游被改过，所以我的回答可能已经接不上上文了。点击徽章，就能用最新的上游内容重新生成这个回答。*\n\n*② 回答下方的 **v2/2 翻页**：每次重放都会**追加一个版本**（旧版保留可对比。切回旧版试试，下游的徽章会跟着反应）。版本=同一问题的备选回答；分支（⋯ 菜单 →「另开分支重答」）才是能各自发展下游的平行探索。*'],
           responseIndex: 1,
           summaries: [null, '转向：把「存下来」改成「写一句」，处理前置到收藏那一刻'],
           summaryTypes: [null, 'pivot'],
@@ -337,10 +337,10 @@ const CONTENT: Record<Lang, { nodes: SeedNode[] }> = {
         },
       },
       // ── 分区框：章节 ──
-      { id: 'frame-chain', q: '① 对话：提问与推理', a: '', x: 0, y: 240, w: 1290, h: 1820, extra: { stepKind: 'frame', frameColor: 'violet' } },
-      { id: 'frame-material', q: '② 材料与引用', a: '', x: 1400, y: 0, w: 640, h: 1560, extra: { stepKind: 'frame', frameColor: 'amber' } },
-      { id: 'frame-prune', q: '③ ⚖️ 修剪上下文', a: '', x: 2160, y: 0, w: 640, h: 1240, extra: { stepKind: 'frame', frameColor: 'sky' } },
-      { id: 'frame-read', q: '④ 阅读闭环：文献长成对话', a: '', x: 2920, y: 0, w: 1270, h: 1240, extra: { stepKind: 'frame', frameColor: 'green' } },
+      { id: 'frame-chain', q: '① 对话：提问与推理', a: '', x: 0, y: 240, w: 1290, h: 2120, extra: { stepKind: 'frame', frameColor: 'violet' } },
+      { id: 'frame-material', q: '② 材料与引用', a: '', x: 1400, y: 0, w: 640, h: 1840, extra: { stepKind: 'frame', frameColor: 'amber' } },
+      { id: 'frame-prune', q: '③ ⚖️ 修剪上下文', a: '', x: 2160, y: 0, w: 640, h: 1640, extra: { stepKind: 'frame', frameColor: 'sky' } },
+      { id: 'frame-read', q: '④ 阅读闭环：文献长成对话', a: '', x: 2920, y: 0, w: 1270, h: 1440, extra: { stepKind: 'frame', frameColor: 'green' } },
     ],
   },
 };

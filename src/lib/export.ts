@@ -45,10 +45,14 @@ export function activeProjectName(): string {
 }
 
 export async function exportActiveProjectHtml(): Promise<void> {
-  // Keep the graph and filename together even if the user switches canvases
-  // while the confirmation is open or a document is rendering.
   const { nodes, edges } = useStore.getState();
   const project = activeProject();
+  const projectId = useProjects.getState().activeId;
+  // Mounted controls and panels belong to the active canvas. A file must
+  // never combine one project's graph with another project's window.
+  let switched = false;
+  const unsubscribe = useProjects.subscribe(state => { if (state.activeId !== projectId) switched = true; });
+  const checkProject = () => { if (switched) throw new Error('The active canvas changed during HTML export'); };
   const name = project?.name ?? 'canvas';
   let progress: string | undefined;
   try {
@@ -56,13 +60,16 @@ export async function exportActiveProjectHtml(): Promise<void> {
     if (!await confirmIfSensitive(nodes)) return;
     progress = toast('info', t('richDocument.exporting'), 0);
     const { buildCanvasHtml } = await import('./canvas-html');
+    checkProject();
     const html = await buildCanvasHtml(name, nodes, edges, project?.kind);
+    checkProject();
     downloadFile(`${sanitizeFilename(name)}.html`, html, 'text/html;charset=utf-8');
     toast('success', fmt(t('toast.exported'), { name }));
   } catch (error) {
     console.error('[thoughtdag] HTML export failed', error);
     toast('error', t('richDocument.exportFailed'));
   } finally {
+    unsubscribe();
     if (progress) useUiStore.getState().dismissToast(progress);
   }
 }

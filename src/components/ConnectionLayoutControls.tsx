@@ -23,16 +23,14 @@ function LayoutSample({ layout }: { layout: ConnectionLayout }) {
   </svg>;
 }
 
-export default function ConnectionLayoutControls() {
+export default function ConnectionLayoutControls({ showDescriptions = true }: { showDescriptions?: boolean }) {
   const t = useT();
   const group = useId();
   const settings = useConnectionLayoutPreferences(state => state.settings);
   const setSettings = useConnectionLayoutPreferences(state => state.setSettings);
-  return <section className="grid min-w-0 gap-2" data-connection-layout-settings>
-    <CanvasSettingSwitch label={t('connectionLayout.enabled')} checked={settings.enabled}
-      aria-describedby={`${group}-hint`} data-connection-layout-enabled
+  return <section className="grid min-w-0" data-connection-layout-settings>
+    <CanvasSettingSwitch label={t('connectionLayout.enabled')} checked={settings.enabled} data-connection-layout-enabled
       onChange={() => setSettings({ enabled: !settings.enabled })} />
-    <p id={`${group}-hint`} className="text-control text-ink-muted">{t('connectionLayout.hint')}</p>
     {settings.enabled && <>
       <fieldset className="canvas-layout-field">
         <legend>{t('connectionLayout.structure')}</legend>
@@ -42,7 +40,7 @@ export default function ConnectionLayoutControls() {
               onChange={() => setSettings({ layout })} data-connection-layout-choice={layout} />
             <span><LayoutSample layout={layout} />
               <span className="connection-layout-option-copy"><span>{t(`connectionLayout.${layout}`)}</span>
-                <span className="connection-layout-option-hint">{t(`connectionLayout.${layout}Hint`)}</span>
+                {showDescriptions && <span className="connection-layout-option-hint">{t(`connectionLayout.${layout}Hint`)}</span>}
               </span>
             </span>
           </label>)}

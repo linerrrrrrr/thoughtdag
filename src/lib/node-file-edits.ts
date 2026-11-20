@@ -11,11 +11,15 @@ export { loadNodePdfFile } from './attachment-vault';
 
 export async function docxRevisionPatch(attachment: Attachment, blob: Blob): Promise<Partial<Attachment>> {
   const { extractRawText } = await import('mammoth');
-  const { value: text } = await extractRawText({ arrayBuffer: await blob.arrayBuffer() });
+  const { docxHighlights } = await import('./document-highlights');
+  const bytes = await blob.arrayBuffer();
+  const [{ value: text }, documentHighlights] = await Promise.all([
+    extractRawText({ arrayBuffer: bytes }), docxHighlights(bytes, attachment.documentHighlights),
+  ]);
   const revision = await saveDocumentRevision(attachment, blob);
   const hasRevision = attachment.editedDocxRevision || attachment.editedDocxContent !== undefined || attachment.editedDocxSavedAt;
   return {
-    ...revision, size: blob.size, editedText: text, editedHtml: undefined, digest: undefined, digestBy: undefined,
+    ...revision, size: blob.size, editedText: text, editedHtml: undefined, documentHighlights, digest: undefined, digestBy: undefined,
     ...(!hasRevision && {
       legacyDocumentHtml: attachment.legacyDocumentHtml ?? attachment.editedHtml,
       legacyDocumentText: attachment.legacyDocumentText ?? attachment.editedText,

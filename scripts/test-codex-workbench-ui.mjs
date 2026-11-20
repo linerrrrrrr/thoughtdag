@@ -26,6 +26,7 @@ await page.addInitScript(() => {
     models: async runtime => ({ installed: runtime === 'codex', default: 'codex/fixture', models: runtime === 'codex' ? [{ provider: 'codex', id: 'fixture', name: 'Fixture', vision: true, efforts: ['low', 'high'], defaultEffort: 'high' }] : [] }),
     available: async () => ({ codex: 'codex' }),
     workspace: async () => 'D:/fixture',
+    canvasWorkspace: async id => `D:/workspaces/${id}/external`,
     guardWrite: async (...args) => { window.__calls.push({ type: 'guard', args }); return true; },
     writeMaterials: async () => ({ dir: null, written: [] }),
     onEvent: callback => { window.__event = callback; },
@@ -48,7 +49,8 @@ await page.addInitScript(() => {
     abort: async runId => { window.__calls.push({ type: 'abort', runId }); return true; },
     answer: async (runId, id, answer) => { window.__calls.push({ type: 'answer', runId, id, answer }); return true; },
   };
-  window.desktopSessions = { roots: async () => [], list: async () => [], watchStart: async () => true, onSessionsChanged: () => {} };
+  window.desktopSessions = { roots: async () => [], list: async () => [], watchStart: async () => true, onSessionsChanged: () => {},
+    openInCli: async (runner, cwd, sessionId) => { window.__calls.push({ type: 'cli', runner, cwd, sessionId }); return { opened: true }; } };
   window.desktopLocal = { open: async path => ({ ok: true, path }), reveal: async () => ({ ok: true }), read: async path => ({ ok: true, path, text: 'export const enabled = true;\n'.repeat(30), truncated: false }) };
 });
 const check = name => { checks.push(name); console.log('PASS', name); };
@@ -91,6 +93,11 @@ try {
     window.__rf.setViewport({ x: 70, y: 110, zoom: 1 }, { duration: 0 });
   });
   await panel().waitFor();
+  assert.equal(await panel().locator('[data-agent-session-cwd]').getAttribute('data-agent-session-cwd'), 'D:/fixture');
+  assert.equal(await panel().locator('[data-agent-session-pin]').count(), 0);
+  await panel().getByRole('button', { name: '在终端打开这个会话' }).click();
+  await page.waitForFunction(() => window.__calls.some(call => call.type === 'cli'));
+  assert.equal((await calls('cli'))[0].cwd, 'D:/workspaces/workbench/external');
   for (const surface of [node('source'), panel()]) {
     assert.equal(await surface.locator('textarea, [data-inline-followup], [data-panel-composer], [data-agent-composer-bar]').count(), 0);
   }
@@ -135,9 +142,9 @@ try {
   await page.waitForFunction(() => window.__calls.some(call => call.type === 'run'));
   const request = (await calls('run'))[0].request;
   assert.equal(request.runtime, 'codex');
-  assert.equal(request.cwd, 'D:/fixture');
-  assert.equal(request.sessionPath, '00000000-1111-2222-3333-444444444444');
-  assert.equal(request.prompt, '请继续检查测试失败的原因。', 'Native continuation sends only the new question');
+  assert.equal(request.cwd, 'D:/workspaces/workbench/external');
+  assert.ok(!request.sessionPath, 'An imported session in another directory starts a fresh turn');
+  assert.match(request.prompt, /请继续检查测试失败的原因。/);
   assert.equal(await page.evaluate(() => window.__store.getState().nodes.length), 2, 'Sending fills the draft node rather than creating a third card');
   await node(childId).locator('[data-node-details]').click();
   await panel().locator('[data-activity-id="live-note"]').waitFor();
@@ -148,7 +155,7 @@ try {
   }, childId);
   assert.ok(geometry.childTop >= geometry.sourceBottom - 1, `Source and child cards do not overlap: ${JSON.stringify(geometry)}`);
   assert.equal(await panel().locator('textarea, [data-panel-composer], [data-agent-composer-bar]').count(), 0);
-  check('dragging a connection creates an empty child; explicit send preserves the source runtime, native session and working directory');
+  check('dragging a connection creates an empty child; explicit send uses the canvas workspace for an imported Codex source');
 
   await openInstruction();
   await instructionInput().fill('尚未发送的运行指令');
@@ -201,7 +208,7 @@ try {
     (await import('/src/lib/appearance.ts')).useAppearance.getState().setLighting('light');
     window.__ui.setState({ panelWidth: 380 });
   });
-  await page.waitForFunction(() => Math.abs(document.querySelector('[data-focus-panel]').getBoundingClientRect().width - 380) < 1);
+  await page.waitForFunction(() => document.querySelector('[data-focus-panel]').offsetWidth === 380);
   await page.waitForTimeout(350);
   await page.screenshot({ path: `${output}/light-panel-380.png` });
   assert.equal(await panel().evaluate(el => el.scrollWidth <= el.clientWidth + 1), true);

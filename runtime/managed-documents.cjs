@@ -8,23 +8,64 @@ const digest = (bytes) => createHash('sha256').update(bytes).digest('hex');
 const MAX_FILE = 192 * 1024 * 1024;
 const PREVIEW_LIMIT = 256 * 1024;
 const RESERVED = /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i;
+const NAMESPACE = /^[a-f\d]{8}-(?:[a-f\d]{4}-){3}[a-f\d]{12}$/i;
 
 function identifier(value) {
   if (typeof value !== 'string' || !value || value.length > 512) throw new Error('Invalid document identifier');
   return digest(value).slice(0, 32);
 }
 
+function canvasDirectoryName(canvasId, canvasHash) {
+  return /^[\w-][\w.-]{0,79}$/.test(canvasId) && !canvasId.endsWith('.') && !RESERVED.test(canvasId)
+    ? canvasId : 'canvas-' + canvasHash;
+}
+
+// A merged canvas keeps using its existing files. The unified index can give
+// two previously independent canvases different IDs without moving either folder.
+async function readCanvasFileOrigins(root, namespace) {
+  if (typeof namespace !== 'string' || !NAMESPACE.test(namespace)) throw new Error('Invalid workspace namespace');
+  const file = path.join(path.dirname(root), 'browser-storage', namespace, 'canvas-files.json');
+  let rows;
+  try { rows = JSON.parse(await fs.readFile(file, 'utf8')); }
+  catch (error) { if (error.code === 'ENOENT') return new Map(); throw error; }
+  if (!Array.isArray(rows)) throw new Error('Invalid canvas file locations');
+  const origins = new Map();
+  for (const row of rows) {
+    if (!row || typeof row.id !== 'string' || [row.external, row.documents].some(ref =>
+      ref !== undefined && (!ref || !NAMESPACE.test(ref.namespace) || typeof ref.canvasId !== 'string'))) throw new Error('Invalid canvas file location');
+    origins.set(row.id, row);
+  }
+  return origins;
+}
+
+function canvasFilePaths(root, namespace, canvasId) {
+  if (!path.isAbsolute(root) || typeof namespace !== 'string' || !NAMESPACE.test(namespace)) throw new Error('Invalid workspace location');
+  const hash = identifier(canvasId);
+  const name = canvasDirectoryName(canvasId, hash);
+  return {
+    external: path.join(root, namespace, name, 'external'),
+    documents: path.join(root, name, '.thoughtdag', 'documents', digest(namespace + '/' + hash).slice(0, 24)),
+  };
+}
+
+async function ensurePhysicalWorkspace(root, namespace, canvasId) {
+  const dir = canvasFilePaths(root, namespace, canvasId).external;
+  await checkParents(path.dirname(root), dir, true);
+  return dir;
+}
+
+async function ensureCanvasWorkspace(root, namespace, canvasId) {
+  const origin = (await readCanvasFileOrigins(root, namespace)).get(canvasId)?.external;
+  return ensurePhysicalWorkspace(root, origin?.namespace ?? namespace, origin?.canvasId ?? canvasId);
+}
+
 function location(root, scope, key) {
   const { canvasId, nodeId, attachmentId, name } = key;
-  const canvasHash = identifier(canvasId);
-  const canvas = /^[\w-][\w.-]{0,79}$/.test(canvasId) && !canvasId.endsWith('.') && !RESERVED.test(canvasId)
-    ? canvasId : 'canvas-' + canvasHash;
   if (typeof name !== 'string' || !name || name.length > 1024) throw new Error('Invalid document name');
   let filename = name.replace(/[\x00-\x1f<>:"/\\|?*]/g, '_').replace(/^[. ]+|[. ]+$/g, '') || 'document';
   if (RESERVED.test(filename)) filename = '_' + filename;
   if (filename.length > 120) filename = filename.slice(0, 96) + path.extname(filename).slice(0, 24);
-  const scopedCanvas = digest(scope + '/' + canvasHash).slice(0, 24);
-  const dir = path.join(root, canvas, '.thoughtdag', 'documents', scopedCanvas, identifier(nodeId), identifier(attachmentId));
+  const dir = path.join(canvasFilePaths(root, scope, canvasId).documents, identifier(nodeId), identifier(attachmentId));
   return { dir, file: path.join(dir, filename), preview: path.join(dir, '.preview.json') };
 }
 
@@ -183,9 +224,14 @@ function createManagedDocuments(workspaceRoot) {
 
   return async (request) => {
     const scope = request?.namespace;
-    if (!/^[a-f\d]{8}-(?:[a-f\d]{4}-){3}[a-f\d]{12}$/i.test(scope || '')) throw new Error('Invalid document namespace');
+    if (!NAMESPACE.test(scope || '')) throw new Error('Invalid document namespace');
+    const origins = await readCanvasFileOrigins(workspaceRoot, scope);
+    const locate = key => {
+      const origin = origins.get(key.canvasId)?.documents;
+      return origin ? location(workspaceRoot, origin.namespace, { ...key, canvasId: origin.canvasId }) : location(workspaceRoot, scope, key);
+    };
     if (request.op === 'deleteCanvas') {
-      const loc = location(workspaceRoot, scope, { canvasId: request.canvasId, nodeId: '_', attachmentId: '_', name: '_' });
+      const loc = locate({ canvasId: request.canvasId, nodeId: '_', attachmentId: '_', name: '_' });
       const canvasDir = path.dirname(path.dirname(loc.dir));
       await Promise.allSettled([...pending].filter(([file]) => file.startsWith(canvasDir + path.sep)).map(([, task]) => task));
       try { await checkParents(workspaceRoot, canvasDir, false); }
@@ -197,7 +243,7 @@ function createManagedDocuments(workspaceRoot) {
       if (!Array.isArray(request.items) || request.items.length > 256) throw new Error('Invalid document probe');
       const changes = [];
       for (const key of request.items) {
-        const loc = location(workspaceRoot, scope, key);
+        const loc = locate(key);
         try {
           await checkParents(workspaceRoot, loc.dir, false);
           const { revision } = await inspect(loc.file);
@@ -209,7 +255,7 @@ function createManagedDocuments(workspaceRoot) {
       return changes;
     }
     if (!['ensure', 'read', 'write', 'clearPreview'].includes(request.op)) throw new Error('Unknown document operation');
-    const loc = location(workspaceRoot, scope, request);
+    const loc = locate(request);
     try { await checkParents(workspaceRoot, loc.dir, request.op === 'ensure'); }
     catch (error) { if (error.code === 'ENOENT' && request.op === 'read') return { missing: true }; throw error; }
     const prior = pending.get(loc.file);
@@ -220,4 +266,4 @@ function createManagedDocuments(workspaceRoot) {
   };
 }
 
-module.exports = { createManagedDocuments, prepareManagedRun };
+module.exports = { createManagedDocuments, prepareManagedRun, ensureCanvasWorkspace, ensurePhysicalWorkspace, canvasFilePaths, readCanvasFileOrigins };

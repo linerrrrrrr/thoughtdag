@@ -158,7 +158,7 @@ function TipBox({ tip, id }: { tip: Tip; id: string }) {
       ref={ref}
       id={id}
       role="tooltip"
-      className="tdag-tooltip"
+      data-type-surface="portal" className="tdag-tooltip"
       style={{
         left: tip.x,
         top: tip.above ? tip.top - 8 : tip.bottom + 8,

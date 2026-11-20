@@ -13,7 +13,7 @@ import { toast } from './lib/ui-store'
 import { t } from './i18n'
 
 initAppearance()
-onDiskStorageError(() => toast('error', t('storage.writeFailed'), 0))
+onDiskStorageError(conflict => toast('error', t(conflict ? 'storage.canvasConflict' : 'storage.writeFailed'), 0))
 
 // Embedded hosts expose their own session bridge and update check.
 const dshApi = import.meta.env.VITE_DSH_BRIDGE as string | undefined

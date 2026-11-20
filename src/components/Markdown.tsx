@@ -7,7 +7,7 @@ import rehypeKatex from 'rehype-katex';
 import rehypeRaw from 'rehype-raw';
 import rehypeSanitize, { defaultSchema } from 'rehype-sanitize';
 import type { Schema } from 'hast-util-sanitize';
-import type { Element, ElementContent, Root, RootContent } from 'hast';
+import type { Element, ElementContent } from 'hast';
 import type { PluggableList } from 'unified';
 import { Check, Code2, ClipboardCopy, Workflow } from 'lucide-react';
 import { rehypeUserHighlights } from '../lib/rehype-user-highlights';
@@ -15,12 +15,15 @@ import { useT, fmt } from '../i18n';
 import { localPathOf, basenameOf } from '../lib/local-path';
 import { foldToolCalls } from '../lib/tool-markup';
 import { normalizeMath } from '../lib/markdown-math';
+import { renderMarkdownDiagram } from '../lib/markdown-diagram';
 import { useAppearance } from '../lib/appearance';
-import { localTargetOf, safeMarkdownUrl } from '../lib/local-target';
+import { rehypeLocalFiles, safeMarkdownUrl } from '../lib/local-target';
 import { ConversationLink } from './ConversationLink';
 import { remarkFileCitations } from '../lib/remark-file-citations';
+import { remarkSourceListNumbers } from '../lib/remark-source-list-numbers';
 
 const REMARK_PLUGINS = [remarkGfm, remarkMath, remarkFileCitations];
+const QUESTION_REMARK_PLUGINS = [...REMARK_PLUGINS, remarkSourceListNumbers];
 
 // Raw HTML in an answer is kept for what it is used for (details, sub/sup,
 // kbd, mark, tables, line breaks) and stripped of what can run or embed:
@@ -42,21 +45,6 @@ const SANITIZE_SCHEMA: Schema = {
     mark: [['className', 'highlight-mark', 'cite-chip'], 'dataNodeCite'],
   },
 };
-// Rewrite recognized local references before sanitization. This preserves drive
-// and file URLs without allowing arbitrary protocols through the sanitizer.
-function rehypeLocalFiles() {
-  return (tree: Root) => {
-    const walk = (node: Root | RootContent) => {
-      if (node.type === 'element' && (node.tagName === 'a' || node.tagName === 'img')) {
-        const key = node.tagName === 'a' ? 'href' : 'src';
-        const target = localTargetOf(typeof node.properties[key] === 'string' ? node.properties[key] as string : undefined);
-        if (target) node.properties[key] = `${/^[a-z]:/i.test(target.path) ? '/' : ''}${target.path}${target.line ? `:${target.line}${target.column ? `:${target.column}` : ''}` : ''}`;
-      }
-      if ('children' in node) node.children.forEach(walk);
-    };
-    walk(tree);
-  };
-}
 const REHYPE_PLUGINS: PluggableList = [rehypeRaw, rehypeLocalFiles, [rehypeSanitize, SANITIZE_SCHEMA], rehypeHighlight, rehypeKatex];
 
 // Code blocks get a hover copy button (no toast: too frequent an action —
@@ -67,7 +55,7 @@ function CodePre(props: React.HTMLAttributes<HTMLPreElement>) {
   const t = useT();
   return (
     <div className="relative group/pre">
-      <pre {...props} ref={ref} />
+      <pre {...props} data-cursor="text" ref={ref} />
       <button
         onClick={(e) => {
           e.stopPropagation();
@@ -100,11 +88,6 @@ function mermaidSource(pre: Element | undefined): string | null {
   return textOf(code);
 }
 
-// mermaid is large: fetched the first time a diagram is drawn, never on a canvas that has none
-let mermaidLoad: Promise<typeof import('mermaid').default> | null = null;
-const loadMermaid = () => (mermaidLoad ??= import('mermaid').then((m) => m.default));
-let mermaidSeq = 0;
-
 function MermaidBlock({ code, source }: { code: string; source: ReactNode }) {
   const t = useT();
   const theme = useAppearance((s) => s.resolved);
@@ -115,14 +98,8 @@ function MermaidBlock({ code, source }: { code: string; source: ReactNode }) {
     // a streaming answer re-renders on every chunk: draw once the text settles;
     // until it parses (a half-written block), the source shows
     const timer = setTimeout(() => {
-      void loadMermaid()
-        .then(async (mermaid) => {
-          // strict: labels are sanitized and the diagram carries no click handlers or scripts
-          mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', theme: theme === 'dark' ? 'dark' : 'neutral' });
-          if (!(await mermaid.parse(code, { suppressErrors: true }))) { if (live) setSvg(null); return; }
-          const out = await mermaid.render(`td-mermaid-${++mermaidSeq}`, code);
-          if (live) setSvg(out.svg);
-        })
+      void renderMarkdownDiagram(code, theme === 'dark')
+        .then(result => { if (live) setSvg(result ?? null); })
         .catch(() => { if (live) setSvg(null); });
     }, 250);
     return () => { live = false; clearTimeout(timer); };
@@ -140,7 +117,7 @@ function MermaidBlock({ code, source }: { code: string; source: ReactNode }) {
   return (
     <div className="relative group/diagram">
       {svg && !showSource
-        ? <div className="my-2 overflow-x-auto flex justify-center [&_svg]:max-w-full [&_svg]:h-auto" data-diagram dangerouslySetInnerHTML={{ __html: svg }} />
+        ? <div className="my-2 overflow-x-auto flex justify-center [&_svg]:max-w-full [&_svg]:h-auto" data-type-surface="native-document" data-diagram dangerouslySetInnerHTML={{ __html: svg }} />
         : source}
       {toggle}
     </div>
@@ -168,7 +145,7 @@ function Pre({ node, ...props }: React.HTMLAttributes<HTMLPreElement> & ExtraPro
 function Table(props: React.HTMLAttributes<HTMLTableElement>) {
   return (
     <div className="overflow-x-auto">
-      <table {...props} />
+      <table {...props} data-cursor="text" />
     </div>
   );
 }
@@ -200,11 +177,11 @@ function LocalImage({ path, alt }: { path: string; alt?: string }) {
     return () => { live = false; };
   }, [path]);
   if (src) {
-    return <ConversationLink href={path}><img src={src} alt={alt ?? basenameOf(path)}  className="cursor-zoom-in nopan" /></ConversationLink>;
+    return <ConversationLink href={path}><img src={src} alt={alt ?? basenameOf(path)}  data-cursor="zoom-in" className="nopan" /></ConversationLink>;
   }
   return (
     <ConversationLink href={path}
-      className={`inline-flex items-center gap-1 text-control border border-line rounded-tag px-1.5 py-0.5 font-mono nopan cursor-pointer ${failed ? 'text-ink-faint' : 'text-ink-muted'}`}
+      data-cursor="action" className={`inline-flex items-center gap-1 text-control border border-line rounded-tag px-1.5 py-0.5 font-mono nopan ${failed ? 'text-ink-faint' : 'text-ink-muted'}`}
       title={path}
       data-local-image={path}
     >
@@ -216,7 +193,7 @@ function LocalImage({ path, alt }: { path: string; alt?: string }) {
 function Img({ title, ...props }: React.ImgHTMLAttributes<HTMLImageElement>) {
   const local = localPathOf(props.src, useContext(BaseContext));
   if (local) return <LocalImage path={local} alt={props.alt} />;
-  return <img {...props} data-tooltip={title} />;
+  return <img {...props} data-cursor="native" data-tooltip={title} />;
 }
 
 const COMPONENTS = { pre: Pre, table: Table, a: Anchor, img: Img };
@@ -225,7 +202,9 @@ const COMPONENTS = { pre: Pre, table: Table, a: Anchor, img: Img };
 // memo: the unified parse + KaTeX layout is the most expensive render on a
 // card, and cards re-render far more often than their text changes (every
 // streamed chunk anywhere re-renders every card). Same string → skip.
-export const Markdown = memo(function Markdown({ children, base, diagrams = 'render', highlights }: { children: string; base?: string; diagrams?: DiagramMode; highlights?: Set<string> }) {
+export const Markdown = memo(function Markdown({ children, base, diagrams = 'render', highlights, preserveListNumbers }: {
+  children: string; base?: string; diagrams?: DiagramMode; highlights?: Set<string>; preserveListNumbers?: boolean;
+}) {
   const t = useT();
   const plugins = useMemo<PluggableList>(() => highlights?.size
     ? [...REHYPE_PLUGINS, [rehypeUserHighlights, [...highlights]]]
@@ -235,7 +214,7 @@ export const Markdown = memo(function Markdown({ children, base, diagrams = 'ren
   return (
     <BaseContext.Provider value={base}>
       <DiagramContext.Provider value={diagrams}>
-        <ReactMarkdown remarkPlugins={REMARK_PLUGINS} rehypePlugins={plugins} components={COMPONENTS} urlTransform={safeMarkdownUrl}>
+        <ReactMarkdown remarkPlugins={preserveListNumbers ? QUESTION_REMARK_PLUGINS : REMARK_PLUGINS} rehypePlugins={plugins} components={COMPONENTS} urlTransform={safeMarkdownUrl}>
           {text}
         </ReactMarkdown>
       </DiagramContext.Provider>

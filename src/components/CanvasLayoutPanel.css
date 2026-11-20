@@ -8,7 +8,6 @@
 .canvas-routing-switch[aria-checked="true"] .canvas-routing-switch-track { background: var(--color-accent); }
 .canvas-routing-switch[aria-checked="true"] .canvas-routing-switch-track > span { transform: translateX(16px); }
 .canvas-routing-value { display: grid; gap: 6px; min-width: 0; }
-.canvas-routing-value[data-disabled] { opacity: .4; }
 .canvas-routing-value > input[type="range"] { width: 100%; min-width: 0; min-height: 32px; accent-color: var(--color-accent); }
 .canvas-routing-number { display: flex; align-items: center; gap: 4px; border: 1px solid var(--color-line); border-radius: var(--radius-control); padding: 0 8px; color: var(--color-ink-muted); }
 .canvas-routing-number:focus-within { outline: 2px solid var(--color-accent); outline-offset: 1px; }
@@ -24,6 +23,24 @@
   padding: 12px 16px;
 }
 .canvas-layout-fields.canvas-routing-fields { gap: 16px; padding-block: 16px; }
+.canvas-routing-group {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+.canvas-routing-fields > section + section {
+  padding-top: 12px;
+  border-top: 1px solid var(--color-line);
+}
+.canvas-routing-preview { min-width: 0; margin: 0; }
+.canvas-routing-preview > svg { display: block; width: 100%; height: auto; }
+.routing-preview-node { fill: var(--color-wash); stroke: var(--color-line); vector-effect: non-scaling-stroke; }
+.routing-preview-path { stroke: var(--color-accent); stroke-width: 2; vector-effect: non-scaling-stroke; }
+.routing-preview-port { fill: var(--color-accent); }
+.routing-preview-guide, .routing-preview-guide line {
+  stroke: var(--color-ink-muted); stroke-dasharray: 3 3; vector-effect: non-scaling-stroke;
+}
+.routing-preview-control circle { fill: var(--color-card); stroke: var(--color-ink-muted); stroke-width: 1.25; vector-effect: non-scaling-stroke; }
 .canvas-layout-field { min-width: 0; margin: 0; padding: 0; border: 0; }
 .canvas-layout-field legend {
   margin-bottom: 6px;
@@ -54,7 +71,6 @@
   height: 100%;
   clip-path: none;
   opacity: 0;
-  cursor: pointer;
 }
 .canvas-layout-choice span {
   display: flex;
@@ -69,7 +85,6 @@
   text-align: center;
   overflow-wrap: anywhere;
   hyphens: auto;
-  cursor: pointer;
   transition: color .15s, background-color .15s;
 }
 .canvas-layout-choice:hover input:not(:checked):not(:disabled) + span { background: var(--color-wash); }
@@ -79,5 +94,5 @@
   font-weight: 500;
 }
 .canvas-layout-choice input:focus-visible + span { outline: 2px solid var(--color-accent); outline-offset: -2px; }
-.canvas-layout-choice input:disabled + span { opacity: .4; cursor: not-allowed; }
+.canvas-layout-choice input:disabled + span { opacity: .4; }
 .react-flow__node.edge-endpoint > div { outline: 2px solid var(--color-accent); outline-offset: 3px; }

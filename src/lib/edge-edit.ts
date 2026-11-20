@@ -1,4 +1,5 @@
 import type { ThoughtEdge, ThoughtNode } from '../types';
+import { rulerSourceHandle } from './edge-anchors';
 
 export interface EdgeEditSettings {
   relation: 'continue' | 'reference';
@@ -94,7 +95,7 @@ export function applyEdgeSettings(
     if (settings.relation === 'continue') {
       delete data.isCrossLink;
       result = {
-        ...result, sourceHandle: 'continue', targetHandle: 'top', animated: false,
+        ...result, sourceHandle: rulerSourceHandle(edge.sourceHandle) ?? 'continue', targetHandle: 'top', animated: false,
         style: { ...edge.style, strokeDasharray: undefined },
       };
     } else {

@@ -1,5 +1,5 @@
 import { appSettings } from './disk-storage';
-import { useEffect, useState } from 'react';
+import { useSyncExternalStore } from 'react';
 import { API_BASE } from './constants';
 import { storedProviders, pushProviders, refreshStoredProviders } from './runtime-providers';
 import { agentCatalog, AGENT_PROVIDER, AGENT_RUNTIMES, agentTarget, isAgentModel, runtimeOf, type RuntimeStatus } from './agents/agent-runtime';
@@ -34,8 +34,14 @@ export type ModelData = { models: ModelInfo[]; default: string | null; capabilit
 
 // Model list is fetched once per session and shared by every picker
 let cache: ModelData | null = null;
+let serverModelsLoaded = false;
 let inflight: Promise<ModelData | null> | null = null;
-const listeners = new Set<(d: ModelData) => void>();
+const listeners = new Set<() => void>();
+
+function publishModels(data: ModelData) {
+  cache = data;
+  for (const notify of listeners) notify();
+}
 
 async function fetchServerModels(): Promise<ModelData> {
   const response = await fetch(`${API_BASE}/api/models`);
@@ -46,7 +52,7 @@ async function fetchServerModels(): Promise<ModelData> {
 
 /** Imperative access to the same per-session model cache (e.g. picking an extraction model). */
 export function getModelsOnce(): Promise<ModelData | null> {
-  if (cache) return Promise.resolve(cache);
+  if (serverModelsLoaded) return Promise.resolve(cache);
   inflight ??= (async () => {
     // browser-stored providers re-register themselves before the first list
     // fetch (the proxy holds them in memory only, so restarts forget them)
@@ -58,13 +64,7 @@ export function getModelsOnce(): Promise<ModelData | null> {
     if (!base) {
       base = await fetchServerModels().catch(() => null);
     }
-    if (cache || !base) return cache;
-    // The API models show at once. The agent runtimes are NOT asked at
-    // launch: asking means starting their CLIs (a catalog process, an app
-    // server — seconds and a hundred megabytes each), which a launch that
-    // never touches an agent should not pay. Last launch's agent list stands
-    // in; the runtimes are asked the first time a picker opens (ensureAgentsFresh).
-    cache = withRemembered(base);
+    if (!serverModelsLoaded && base) setModelsCache(base);
     return cache;
   })().finally(() => { inflight = null; });
   return inflight;
@@ -158,32 +158,26 @@ function withRemembered(d: ModelData): ModelData {
   return { ...d, models: [...own, ...withResolvedNames(remembered.filter((m) => m && isRuntimeAgent(m)))], agentsPending: false };
 }
 
-let agentsAsked = false;
 let agentsRefreshing: Promise<void> | null = null;
 
-/** Ask the runtimes and replace the agent group when they answer. */
-async function refreshAgents(): Promise<void> {
-  if (!hasAgentsBridge() || !cache) return;
+/** Discover the bridge and its catalog independently of the API provider list. */
+export async function ensureAgentsFresh(force = false): Promise<void> {
   if (agentsRefreshing) return agentsRefreshing;
+  if (!force && availableExecutionModels(cache, 'codex').length && !cache?.runtimes?.codex?.error) return;
   agentsRefreshing = (async () => {
-    const before = cache!;
-    setModelsCache({ ...before, agentsPending: true });
+    const before = cache ?? { models: [], default: null };
+    publishModels({ ...before, agentsPending: true });
+    if (!await ensureAgentHost(canRetryAgentHost())) {
+      publishModels({ ...(cache ?? before), agentsPending: false });
+      return;
+    }
     const asked = await agentCatalog().catch(() => ({ models: [] as ModelInfo[], runtimes: {} as Partial<Record<AgentRuntime, RuntimeStatus>> }));
     const extra = asked.models;
     try { appSettings.setItem(AGENT_CACHE_KEY, JSON.stringify(extra)); } catch { /* ignore */ }
     const own = (cache ?? before).models.filter((m) => !isRuntimeAgent(m));
-    setModelsCache({ ...(cache ?? before), models: [...own, ...withResolvedNames(extra)], agentsPending: false, runtimes: asked.runtimes });
+    publishModels({ ...(cache ?? before), models: [...own, ...withResolvedNames(extra)], agentsPending: false, runtimes: asked.runtimes });
   })().finally(() => { agentsRefreshing = null; });
   return agentsRefreshing;
-}
-
-/** A picker can open while startup is still discovering the HTTP bridge. */
-export async function ensureAgentsFresh(force = false): Promise<void> {
-  if (!await ensureAgentHost(canRetryAgentHost())) return;
-  if (!await getModelsOnce()) return;
-  if (agentsAsked && !force) return agentsRefreshing ?? undefined;
-  agentsAsked = true;
-  return refreshAgents();
 }
 
 export function recheckAgents(): Promise<void> {
@@ -193,12 +187,13 @@ export function recheckAgents(): Promise<void> {
 let catalogRefresh: Promise<void> | null = null;
 export function refreshModelCatalog(): Promise<void> {
   catalogRefresh ??= (async () => {
-    try {
+    const refreshServer = async () => {
       const data = await refreshStoredProviders() ?? await fetchServerModels();
       setModelsCache(data);
-    } finally {
-      await (agentsRefreshing ?? recheckAgents());
-    }
+    };
+    const [server, agent] = await Promise.allSettled([refreshServer(), recheckAgents()]);
+    if (server.status === 'rejected') throw server.reason;
+    if (agent.status === 'rejected') throw agent.reason;
   })().finally(() => { catalogRefresh = null; });
   return catalogRefresh;
 }
@@ -214,7 +209,7 @@ export function noteAgentModelName(id: string, resolved: string): void {
   if (!cache) return;
   const own = cache.models.filter((m) => !isRuntimeAgent(m));
   const agents = cache.models.filter(isRuntimeAgent).map((m) => ({ ...m, name: m.name.split(' · ').slice(0, 2).join(' · ') }));
-  setModelsCache({ ...cache, models: [...own, ...withResolvedNames(agents)] });
+  publishModels({ ...cache, models: [...own, ...withResolvedNames(agents)] });
 }
 if (typeof window !== 'undefined') {
   window.addEventListener('td:agent-model-resolved', (ev) => {
@@ -225,27 +220,27 @@ if (typeof window !== 'undefined') {
 
 /** Replace the shared cache (after a runtime-key change) and notify every subscribed picker. */
 export function setModelsCache(d: ModelData): void {
-  cache = d;
-  for (const fn of listeners) fn(d);
-  // a list rebuilt from a runtime-key change carries no agent group yet:
-  // last launch's entries come back, and a fresh answer only if this
-  // launch already asked (the runtimes are then alive anyway)
-  if (d.agentsPending === undefined && hasAgentsBridge() && !d.models.some(isRuntimeAgent)) {
-    cache = withRemembered(d);
-    for (const fn of listeners) fn(cache);
-    if (agentsAsked) void refreshAgents();
+  serverModelsLoaded = true;
+  if (d.agentsPending !== undefined || d.runtimes) return publishModels(d);
+  // Either catalog can arrive first. An API refresh must preserve discovery
+  // in progress and the local models already confirmed by the bridge.
+  if (cache?.agentsPending || cache?.runtimes) {
+    return publishModels({ ...d, agentsPending: cache.agentsPending, runtimes: cache.runtimes,
+      models: [...d.models.filter(model => !isRuntimeAgent(model)), ...cache.models.filter(isRuntimeAgent)] });
   }
+  publishModels(withRemembered(d));
 }
 
-export function useModels(): ModelData | null {
-  const [data, setData] = useState<ModelData | null>(cache);
-  useEffect(() => {
-    const fn = (d: ModelData) => setData(d);
-    listeners.add(fn);
-    if (!cache) {
-      void getModelsOnce().then((d) => { if (listeners.has(fn) && d) setData(d); });
-    }
-    return () => { listeners.delete(fn); };
-  }, []);
-  return data;
+function subscribeModels(notify: () => void) {
+  listeners.add(notify);
+  if (!serverModelsLoaded) void getModelsOnce();
+  return () => { listeners.delete(notify); };
+}
+
+const skipSubscription = () => () => {};
+export const getCachedModels = () => cache;
+const noModels = () => null;
+
+export function useModels(enabled = true): ModelData | null {
+  return useSyncExternalStore(enabled ? subscribeModels : skipSubscription, enabled ? getCachedModels : noModels, noModels);
 }

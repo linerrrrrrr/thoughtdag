@@ -11,9 +11,9 @@ import { revealLocalPath } from '../lib/local-path';
 import { triggerParadigmCascade } from '../store/streaming';
 import { extractImage, fetchLinkIntoNode, ingestFiles } from '../lib/content';
 import { FILE_INPUT_ACCEPT } from '../lib/attachments';
-import { Markdown } from './Markdown';
+import { HighlightedMarkdown } from './Markdown';
 import NodeOverview from './NodeOverview';
-import NodeNumber from './NodeNumber';
+import OverviewRuler from './OverviewRuler';
 import NodeConnectionHandles from './NodeConnectionHandles';
 import NodeResizeControls from './NodeResizeControls';
 import FileAttachmentHeader from './FileAttachmentHeader';
@@ -40,6 +40,7 @@ import { pixelDimension } from '../lib/node-content-height';
 
 /** Where an unresized note stops growing: the answer box's cap. */
 const NOTE_BODY_MAX = 400;
+const DOCUMENT_BODY_MAX = 520;
 const isGeometryControl = (target: EventTarget | null) => target instanceof Element
   && !!target.closest('.react-flow__resize-control, .react-flow__controls');
 
@@ -64,15 +65,16 @@ function ExtractionEditor({ nodeId, attachment, onClose }: { nodeId: string; att
     discard();
   };
   return (
-    <div ref={editRef} onBlur={edit.onBlur} className="mt-2 space-y-2" onClick={event => event.stopPropagation()} data-extraction-editor>
+    <div ref={editRef} onBlur={edit.onBlur} className="material-editor mt-2" onClick={event => event.stopPropagation()} data-extraction-editor>
       <textarea
         value={draft}
+        aria-describedby={`extraction-hint-${attachment.id}`}
         onChange={event => { setDraft(event.target.value); useUiStore.getState().setDraft(draftKey, event.target.value, true); }}
         rows={7}
         autoFocus
-        className="w-full text-body text-ink bg-surface border border-line rounded-control px-3 py-2 focus:outline-none focus:ring-1 focus:ring-accent/40 resize-y nopan nowheel"
+        className="w-full min-h-0 text-body text-ink bg-surface border border-line rounded-control px-3 py-2 focus:outline-none focus:ring-1 focus:ring-accent/40 resize-y nopan nowheel"
       />
-      <div className="flex items-center gap-2 flex-wrap">
+      <div data-export-omit="edit" className="flex shrink-0 items-center gap-2 flex-wrap">
         <button onClick={() => { discard(); void extractImage(nodeId, attachment.id); }} className="text-control text-ink-muted hover:text-ink px-2 py-1.5 rounded-control flex items-center gap-1">
           <RefreshCw size={12} strokeWidth={1.75} /> {t('content.reExtractAgain')}
         </button>
@@ -80,7 +82,7 @@ function ExtractionEditor({ nodeId, attachment, onClose }: { nodeId: string; att
         <button onClick={discard} className="text-control text-ink-muted hover:bg-wash px-3 py-1.5 rounded-control">{t('common.cancel')}</button>
         <button onClick={save} className="text-control bg-accent text-white hover:bg-accent/90 px-3 py-1.5 rounded-control">{t('common.save')}</button>
       </div>
-      <p className="text-control text-ink-faint">{t('content.draftExitHint')}</p>
+      <p id={`extraction-hint-${attachment.id}`} className="material-edit-hint text-control text-ink-faint">{t('content.draftExitHint')}</p>
     </div>
   );
 }
@@ -150,11 +152,11 @@ export default function ContentNode({ id, data, selected }: NodeProps<ThoughtNod
   };
 
   const attachments = data.attachments || [];
-  const hasNativeDocuments = kind === 'file' && attachments.some(hasNativeDocxSource);
-  const singleNativeDocument = hasNativeDocuments && attachments.length === 1;
+  const singleNativeDocument = kind === 'file' && attachments.length === 1 && hasNativeDocxSource(attachments[0]);
   const fileTypes = [...new Set(attachments.map(att => fileIdentity(att.name).extension).filter(Boolean))];
   const materialLabel = t(kind === 'note' ? 'content.textMaterial' : kind === 'file' ? 'content.fileMaterial' : 'glyph.link');
   const linkLoading = kind === 'link' && !data.question && !data.linkTitle?.startsWith('⚠');
+  const linkFailed = data.linkTitle?.startsWith('⚠');
 
   // Clip provenance: an edge-less clip finds its source through anchor.attId
   const clipAnchor = data.anchor?.attId ? data.anchor : undefined;
@@ -187,20 +189,28 @@ export default function ContentNode({ id, data, selected }: NodeProps<ThoughtNod
   const nodeNameSource = getNodeNameSource(data, nodeName);
   const noteBody = kind === 'note' ? data.question.replace(/^\s*#+\s*[^\n]+\n?/, '') : '';
   // Keep active input, empty slots and retry controls in their working form.
-  const overviewAllowed = !editing && !openExtract && !activeNativeDocumentId && !commentingDocumentId;
+  const editingMaterial = !!(editing || openExtract || activeNativeDocumentId || commentingDocumentId);
+  const overviewAllowed = !editingMaterial;
   const showPlaque = zoomedOut && overviewAllowed && (kind === 'note'
     ? !editing && !!data.question
     : kind === 'file' ? attachments.length > 0 : !linkLoading && !data.linkTitle?.startsWith('⚠'));
   const overview = (glyphTier && overviewAllowed) || showPlaque;
+  const fitContentHeight = data.fitContentHeight === true && configuredHeight == null;
   const viewHeight = useStableNodeViewHeight(nodeRef, !overview && configuredHeight == null,
-    [id, data.question, data.stepKind, data.attachments, overview], customWidth,
-    !!(editing || openExtract || activeNativeDocumentId || commentingDocumentId));
+    [id, data.question, data.stepKind, data.attachments, overview, fitContentHeight], customWidth,
+    editingMaterial, fitContentHeight);
   const resized = configuredHeight != null || viewHeight.height != null;
+  const availableHeight = configuredHeight ?? (editingMaterial ? viewHeight.height : undefined) ?? Infinity;
+  // File identity and document tools need more vertical room than a note or link.
+  const shortCard = availableHeight <= (kind === 'file' ? 340 : 220);
+  const bodyLimit = kind === 'note' && !fitContentHeight ? NOTE_BODY_MAX : attachments.some(isEditableDocument) ? DOCUMENT_BODY_MAX : undefined;
+  const nameLabel = data.displayName && <div className="material-node-name text-title font-semibold text-ink"
+    data-tooltip={nodeNameSource} data-tooltip-overflow={nodeNameSource === nodeName || undefined} data-node-name>{nodeName}</div>;
 
   if (glyphTier && overviewAllowed) {
     // Stored dimensions belong to the complete material, not its overview.
     return (
-      <div data-node-detail-level="compact" data-node-detail-locked={data.detailLevel || undefined} className={`material-${kind} drag-handle w-full ${selected || selectedNodeId === id ? 'glyph-selected' : ''}`}
+      <div data-cursor="inherit" data-type-surface="canvas-geometry" data-node-detail-level="compact" data-node-detail-locked={data.detailLevel || undefined} className={`material-${kind} drag-handle w-full ${selected || selectedNodeId === id ? 'glyph-selected' : ''}`}
         data-node-overview-surface="compact" data-node-overview-kind={kind}
         onClick={(event) => { if (!event.ctrlKey && !event.metaKey && !event.shiftKey) setSelectedNodeId(id); }} data-glyph-node
         onDoubleClick={(e) => {
@@ -209,7 +219,8 @@ export default function ContentNode({ id, data, selected }: NodeProps<ThoughtNod
           if (kind === 'file' || kind === 'link' || fixedDetail) useUiStore.getState().setReaderNodeId(id);
           else rf.setCenter((nodePos?.x ?? 0) + 200, (nodePos?.y ?? 0) + 120, { zoom: 1, duration: 300 });
         }}>
-        <NodeOverview number={data.nodeNumber} name={nodeName} source={nodeNameSource} compact icon={headerIcon} variant={kind} fileTypes={kind === 'file' ? fileTypes : undefined} />
+        <NodeOverview name={nodeName} source={nodeNameSource} compact icon={headerIcon} variant={kind} fileTypes={kind === 'file' ? fileTypes : undefined} />
+        <OverviewRuler id={id} data={data} />
         <NodeConnectionHandles id={id} isTargetAllowed={false} muted large />
       </div>
     );
@@ -219,7 +230,7 @@ export default function ContentNode({ id, data, selected }: NodeProps<ThoughtNod
     return (
       <div
         className={`content-card material-${kind} w-full flex flex-col animate-fade-in ${selected || selectedNodeId === id ? 'node-selected' : ''}`}
-        data-node-overview-surface="summary" data-node-overview-kind={kind}
+        data-cursor="inherit" data-type-surface="canvas-geometry" data-node-overview-surface="summary" data-node-overview-kind={kind}
         onClick={(event) => { if (!event.ctrlKey && !event.metaKey && !event.shiftKey) setSelectedNodeId(id); }}
         onDoubleClick={(e) => {
           e.stopPropagation();
@@ -238,7 +249,6 @@ export default function ContentNode({ id, data, selected }: NodeProps<ThoughtNod
       >
         <div className="drag-handle overflow-hidden">
           <NodeOverview
-            number={data.nodeNumber}
             name={nodeName}
             source={nodeNameSource}
             preview={kind === 'note' ? noteBody : kind === 'link' ? data.question : undefined}
@@ -250,6 +260,7 @@ export default function ContentNode({ id, data, selected }: NodeProps<ThoughtNod
             meta={kind === 'link' ? linkDomain : kind === 'file' ? t('glyph.file') : undefined}
           />
         </div>
+        <OverviewRuler id={id} data={data} />
         <NodeConnectionHandles id={id} isTargetAllowed={false} muted large />
       </div>
     );
@@ -260,7 +271,9 @@ export default function ContentNode({ id, data, selected }: NodeProps<ThoughtNod
       ref={nodeRef}
       style={{ height: viewHeight.height }}
       className={`content-card material-${kind} w-full h-full min-w-[340px] flex flex-col rounded-node border animate-fade-in transition-colors duration-200 ${selected || selectedNodeId === id ? 'node-selected' : ''}`}
-      data-node-detail-level="full" data-node-detail-locked={data.detailLevel || undefined}
+      data-material-short={shortCard || undefined}
+      data-material-tight={availableHeight <= 160 || undefined}
+      data-cursor="inherit" data-type-surface="canvas-geometry" data-node-detail-level="full" data-node-detail-locked={data.detailLevel || undefined}
       onPointerDownCapture={viewHeight.capture}
       onKeyDownCapture={event => { if (event.key === 'Enter' || event.key === ' ') viewHeight.capture(); }}
       onClickCapture={viewHeight.capture}
@@ -281,11 +294,11 @@ export default function ContentNode({ id, data, selected }: NodeProps<ThoughtNod
       {/* Pure source: material feeds context, nothing flows INTO it — hence no target handle. */}
 
       {/* Header: drag handle, material identity and actions. */}
-      <div className="material-header flex items-center justify-between px-surface-inset py-section-gap border-b drag-handle shrink-0">
+      <div className="material-header flex items-center justify-between px-surface-inset py-section-gap border-b drag-handle shrink-0" data-type-surface="canvas-object">
         <div className="flex items-center gap-2 min-w-0">
           {headerIcon}
-          <NodeNumber number={data.nodeNumber} />
           <span className="text-control font-medium material-label">{materialLabel}</span>
+          {shortCard && nameLabel}
           {kind === 'link'
             ? <span className="text-control text-ink-muted truncate">{linkDomain}</span>
             : kind === 'note' && <span className="text-meta text-ink-faint font-mono">{data.tokenCount} tokens</span>}
@@ -293,7 +306,7 @@ export default function ContentNode({ id, data, selected }: NodeProps<ThoughtNod
             <button
               onClick={openClipSource}
               data-tooltip={t('content.clipSourceTitle')}
-              data-clip-source
+              data-clip-source data-open-export-reader={clipSourceId ?? undefined} data-export-page={clipAnchor?.page}
               className="nodrag nopan text-control font-mono text-warm bg-warm/10 hover:bg-warm/20 px-1.5 py-0.5 rounded-tag truncate max-w-[180px] transition-colors shrink"
             >
               {clipSourceName} &middot; p.{clipAnchor!.page}
@@ -305,7 +318,7 @@ export default function ContentNode({ id, data, selected }: NodeProps<ThoughtNod
           {kind === 'file' && attachments.length === 1 && !hasNativeDocxSource(attachments[0])
             && <DocumentOriginalButton attachment={attachments[0]} compact />}
           {kind === 'file' && !isViewerMode && attachments.length === 1 && hasNodeFileHost() && window.desktopLocal?.reveal &&
-            <button type="button" aria-label={t('local.reveal')} data-tooltip={t('local.reveal')}
+            <button type="button" data-export-omit="files" aria-label={t('local.reveal')} data-tooltip={t('local.reveal')}
               onClick={event => {
                 event.stopPropagation();
                 void openNodeFile(useProjects.getState().activeId ?? 'default', id, attachments[0])
@@ -326,7 +339,7 @@ export default function ContentNode({ id, data, selected }: NodeProps<ThoughtNod
           </button>}
           <button
             onClick={(e) => { e.stopPropagation(); useUiStore.getState().setReaderNodeId(id, kind === 'file' && attachments[0] ? { attachmentId: attachments[0].id } : undefined); }}
-            data-tooltip={t('reader.open')} aria-label={t('reader.open')}
+            data-open-export-reader={id} data-tooltip={t('reader.open')} aria-label={t('reader.open')}
             data-document-open={kind === 'file' && attachments[0] && isEditableDocument(attachments[0]) ? attachments[0].id : undefined}
             className="text-ink-faint hover:text-accent rounded-control w-6 h-6 flex items-center justify-center transition-colors"
           >
@@ -354,47 +367,49 @@ export default function ContentNode({ id, data, selected }: NodeProps<ThoughtNod
         </div>
       </div>
 
-
-      {/* Body: grows with content by default, a note up to the answer box's
-          height (a long note would otherwise cover the cards below it once
-          the canvas zooms in); when the card is resized the body becomes the
-          scroll region (wheel scrolls text, not zoom) */}
-      <div className="p-surface-inset nodrag flex-1 min-h-0 flex flex-col" style={!resized ? (kind === 'note' ? { maxHeight: NOTE_BODY_MAX } : singleNativeDocument ? { height: 520, maxHeight: 520, flex: '0 0 520px' } : attachments.some(isEditableDocument) ? { maxHeight: 520 } : undefined) : undefined}>
-      <div className={`flex-1 min-h-0 overscroll-contain nowheel nopan ${singleNativeDocument ? 'flex flex-col overflow-hidden' : 'overflow-y-auto'}`} data-content-body>
-        {data.displayName && <div className="mb-surface-inset text-title font-semibold text-ink" data-tooltip={nodeNameSource} data-tooltip-overflow={nodeNameSource === nodeName || undefined} data-node-name>{nodeName}</div>}
+      <div className="material-content p-surface-inset nodrag nopan flex-1 min-h-0 flex flex-col" data-type-surface="canvas-object"
+        style={resized ? undefined : {
+          maxHeight: bodyLimit,
+          height: singleNativeDocument ? DOCUMENT_BODY_MAX : undefined,
+          flex: singleNativeDocument ? `0 0 ${DOCUMENT_BODY_MAX}px` : undefined,
+        }}>
+        {!shortCard && nameLabel}
         {/* a quote from the why layer says where it came from, above its text */}
         {kind === 'note' && data.recallSource && (
-          <div className="text-meta text-ink-faint font-mono truncate mb-1.5" data-tooltip={data.recallSource.file} data-recall-source>
+          <div className="text-meta text-ink-faint font-mono truncate shrink-0 mb-1.5" data-tooltip={data.recallSource.file} data-recall-source>
             {fmt(t('node.recallSource'), { s: recallSourceLine(data.recallSource) })}
           </div>
         )}
         {kind === 'note' && (
           editing ? (
-            <div ref={editRef} onBlur={edit.onBlur} className="flex flex-col gap-2" data-note-editor>
+            <div ref={editRef} onBlur={edit.onBlur} className="material-editor" data-note-editor>
               <textarea
                 value={draft}
                 onChange={(e) => { setDraft(e.target.value); useUiStore.getState().setDraft(draftKey, e.target.value, true); }}
                 placeholder={t('content.notePlaceholder')}
+                aria-describedby={`note-edit-hint-${id}`}
                 rows={5}
                 autoFocus
-                className="w-full min-h-[7rem] bg-surface border border-line rounded-control px-3 py-2 text-body text-ink resize-y focus:outline-none focus:ring-1 focus:ring-accent/40 placeholder-ink-faint nopan nowheel"
+                data-content-body
+                className="w-full min-h-0 bg-surface border border-line rounded-control px-3 py-2 text-body text-ink resize-y focus:outline-none focus:ring-1 focus:ring-accent/40 placeholder-ink-faint nopan nowheel"
               />
-              <div className="flex justify-end gap-2">
+              <div data-export-omit="edit" className="flex shrink-0 items-center justify-end gap-2">
+                <p id={`note-edit-hint-${id}`} className="material-edit-hint mr-auto text-control text-ink-faint">{t(canContinueWorkflow ? 'content.materialSaveHint' : 'content.draftExitHint')}</p>
                 <button onClick={cancel} className="text-control text-ink-muted hover:bg-wash px-3 py-1.5 rounded-control">{t('common.cancel')}</button>
                 <button onClick={commit} className="text-control bg-accent text-white hover:bg-accent/90 px-3 py-1.5 rounded-control">{t('common.save')}</button>
               </div>
-              <p className="text-control text-ink-faint">{t(canContinueWorkflow ? 'content.materialSaveHint' : 'content.draftExitHint')}</p>
             </div>
           ) : (
-            <div
-              onDoubleClick={startEditing}
-              className="markdown-body text-body text-ink cursor-text nopan"
-            >
-              {data.question
-                ? <Markdown>{data.question}</Markdown>
-                : <span className="text-ink-faint italic text-body">{t('content.notePlaceholder')}</span>}
-              {retainedDraft !== undefined && <button onClick={startEditing} className="mt-2 block text-control text-accent hover:underline" data-resume-note-draft>{t('content.resumeDraft')}</button>}
-            </div>
+            <>
+              <div className="material-preview nowheel" data-content-body>
+                <div onDoubleClick={startEditing} data-cursor="text" className="markdown-body text-body text-ink nopan">
+                  {data.question
+                    ? <HighlightedMarkdown content={data.question} highlights={new Set(data.highlights?.filter(mark => !mark.attachmentId).map(mark => mark.text))} />
+                    : <span className="text-ink-faint italic text-body">{t('content.notePlaceholder')}</span>}
+                </div>
+              </div>
+              {retainedDraft !== undefined && <button onClick={startEditing} className="mt-2 self-start shrink-0 text-control text-accent hover:underline" data-resume-note-draft>{t('content.resumeDraft')}</button>}
+            </>
           )
         )}
 
@@ -404,25 +419,25 @@ export default function ContentNode({ id, data, selected }: NodeProps<ThoughtNod
               <Loader2 size={14} strokeWidth={1.75} className="animate-spin text-accent" /> {t('content.linkFetching')}
             </div>
           ) : (
-            <div className="space-y-1.5">
+            <div className="min-h-0 flex-auto flex flex-col gap-1.5">
               {data.linkTitle && (
-                <div className={`text-title font-semibold ${data.linkTitle.startsWith('⚠') ? 'text-red-600' : 'text-ink'}`}>{data.linkTitle}</div>
-              )}
-              {data.linkTitle?.startsWith('⚠') && data.linkUrl && (
-                <button
-                  onClick={(e) => { e.stopPropagation(); void fetchLinkIntoNode(id, data.linkUrl!); }}
-                  className="text-control bg-wash hover:bg-line text-ink-muted px-3 py-1.5 rounded-control transition-colors flex items-center gap-1.5"
-                >
-                  <RefreshCw size={13} strokeWidth={1.75} /> {t('common.retry')}
-                </button>
+                <div className="shrink-0 flex items-center justify-between gap-2">
+                  <div className={`material-link-title min-w-0 text-title font-semibold ${linkFailed ? 'text-red-600' : 'text-ink'}`} data-tooltip={data.linkTitle} data-tooltip-overflow>{data.linkTitle}</div>
+                  {linkFailed && data.linkUrl && (
+                    <button data-export-omit="run" onClick={(e) => { e.stopPropagation(); void fetchLinkIntoNode(id, data.linkUrl!); }}
+                      className="shrink-0 text-control bg-wash hover:bg-line text-ink-muted px-3 py-1.5 rounded-control transition-colors flex items-center gap-1.5">
+                      <RefreshCw size={13} strokeWidth={1.75} /> {t('common.retry')}
+                    </button>
+                  )}
+                </div>
               )}
               {data.question && (
-                <div className="text-body text-ink-muted max-h-[200px] overflow-y-auto nopan nowheel whitespace-pre-wrap cursor-text">
+                <div data-content-body data-cursor="text" className={`material-preview text-body text-ink-muted nowheel whitespace-pre-wrap ${resized || fitContentHeight ? '' : 'max-h-[200px]'}`}>
                   {data.question.slice(0, 1200)}{data.question.length > 1200 ? '…' : ''}
                 </div>
               )}
               {data.linkFetchedAt && (
-                <div className="text-meta text-ink-faint font-mono">
+                <div className="shrink-0 text-meta text-ink-faint font-mono">
                   {fmt(t('content.linkStamp'), { date: data.linkFetchedAt.slice(0, 10) })} · {data.tokenCount} tokens
                 </div>
               )}
@@ -431,51 +446,46 @@ export default function ContentNode({ id, data, selected }: NodeProps<ThoughtNod
         )}
 
         {kind === 'file' && (
-          <div className={`material-files ${singleNativeDocument ? 'flex-1 min-h-0' : ''}`}>
+          <div className="material-files min-h-0 flex-auto">
             {attachments.map((att) => (
               isEditableDocument(att) ? (
                 <DocumentAttachmentCard key={att.id} nodeId={id} attachment={att}
                   onNativeEditingChange={onNativeEditingChange}
                   actionsHost={documentActionsHost}
-                  fill={singleNativeDocument}
+                  fill={attachments.length === 1}
+                  short={shortCard}
                   onAnnotationEditingChange={active => setCommentingDocumentId(current => active ? att.id : current === att.id ? null : current)}
                   onRemove={() => removeAttachment(id, att.id)} />
               ) : att.type.startsWith('image/') ? (
                 // Pasted images live on the canvas as the image itself —
                 // resize the card (right edge) to scale it
-                <div key={att.id}>
-                  <FileAttachmentHeader attachment={att} onRemove={() => removeAttachment(id, att.id)} />
-                  <div className="relative group">
-                  <img
-                    src={`data:${att.type};base64,${att.content}`}
-                    alt={att.name}
-                    className="w-full rounded-content border border-line/60"
-                  />
-                  {att.isExtracting ? (
-                    <span className="absolute bottom-1.5 left-1.5 text-control bg-ink/60 text-white px-2 py-0.5 rounded-tag flex items-center gap-1">
-                      <Loader2 size={11} strokeWidth={1.75} className="animate-spin" /> {t('content.extracting')}
-                    </span>
-                  ) : att.extractedText !== undefined ? (
-                    <button
-                      onClick={(e) => { e.stopPropagation(); setOpenExtract(openExtract === att.id ? null : att.id); }}
-                      data-extract-toggle={att.id}
-
-                      className="absolute bottom-1.5 left-1.5 text-control bg-ink/60 hover:bg-ink/80 text-white px-2 py-0.5 rounded-tag transition-colors"
-                    >
-                      {useUiStore.getState().drafts[`extraction:${id}:${att.id}`] !== undefined
-                        ? t('content.resumeDraft')
-                        : <>{t('content.extracted')}{att.extractedBy ? ` · ${att.extractedBy}` : ''}</>} ▾
-                    </button>
-                  ) : (
-                    <button
-                      onClick={(e) => { e.stopPropagation(); void extractImage(id, att.id); }}
-
-                      className="absolute bottom-1.5 left-1.5 text-control bg-ink/60 hover:bg-ink/80 text-white px-2 py-0.5 rounded-tag opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1"
-                    >
-                      <RefreshCw size={11} strokeWidth={1.75} /> {t('content.reExtract')}
-                    </button>
+                <div key={att.id} className="flex-auto min-h-0 flex flex-col">
+                  <FileAttachmentHeader attachment={att} onRemove={() => removeAttachment(id, att.id)}>
+                    {!att.isExtracting && (att.extractedText !== undefined ? (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setOpenExtract(openExtract === att.id ? null : att.id); }}
+                        data-extract-toggle={att.id}
+                        aria-expanded={openExtract === att.id}
+                        className="text-control text-ink-muted hover:bg-wash px-2 py-1 rounded-control"
+                      >
+                        {useUiStore.getState().drafts[`extraction:${id}:${att.id}`] !== undefined
+                          ? t('content.resumeDraft')
+                          : <>{t('content.extracted')}{att.extractedBy ? ` · ${att.extractedBy}` : ''}</>} ▾
+                      </button>
+                    ) : (
+                      <button
+                        data-export-omit="run" onClick={(e) => { e.stopPropagation(); void extractImage(id, att.id); }}
+                        className="text-control text-ink-muted hover:bg-wash px-2 py-1 rounded-control flex items-center gap-1"
+                      >
+                        <RefreshCw size={11} strokeWidth={1.75} /> {t('content.reExtract')}
+                      </button>
+                    ))}
+                  </FileAttachmentHeader>
+                  {(!shortCard || openExtract !== att.id) && (
+                    <div className="material-preview nowheel" data-content-body>
+                      <img src={`data:${att.type};base64,${att.content}`} alt={att.name} className="w-full rounded-content border border-line/60" />
+                    </div>
                   )}
-                  </div>
                   {/* Extraction panel: SEE what the model read, fix it, or redo it —
                       this text is what downstream context receives as the image's index */}
                   {openExtract === att.id && (
@@ -483,9 +493,9 @@ export default function ContentNode({ id, data, selected }: NodeProps<ThoughtNod
                   )}
                 </div>
               ) : (
-                <div key={att.id}>
+                <div key={att.id} className="flex-auto min-h-0 flex flex-col">
                   <FileAttachmentHeader attachment={att} onRemove={() => removeAttachment(id, att.id)} />
-                  <FileTextPreview nodeId={id} attachment={att} />
+                  <FileTextPreview nodeId={id} attachment={att} fill={resized || fitContentHeight} />
                 </div>
               )
             ))}
@@ -495,7 +505,7 @@ export default function ContentNode({ id, data, selected }: NodeProps<ThoughtNod
             >
               {t('attach.upload')}
               <span className="block text-control mt-1">{t('content.oneFilePerNode')}</span>
-              <span className="block text-control mt-1">{t('attach.types')}</span>
+              <span className={availableHeight <= 160 ? 'sr-only' : 'block text-control mt-1'}>{t('attach.types')}</span>
             </button>}
             <input
               ref={fileRef}
@@ -509,10 +519,9 @@ export default function ContentNode({ id, data, selected }: NodeProps<ThoughtNod
         )}
       </div>
 
-      </div>
-
       {!isViewerMode && (selected || selectedNodeId === id) && !zoomedOut && <NodeResizeControls id={id} />}
 
+      <OverviewRuler id={id} data={data} textSurface={kind === 'note' ? 'note' : undefined} />
       <NodeConnectionHandles id={id} isTargetAllowed={false} muted />
     </div>
   );

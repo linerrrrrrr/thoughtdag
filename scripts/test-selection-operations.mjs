@@ -14,7 +14,7 @@ const stubs = {
   'condense-guard': 'export const condenseGuard = () => false;',
   'ui-store': 'export const toast = () => "";',
   i18n: 'export const t = (key) => key; export const fmt = (text) => text;',
-  'context-builder': 'export const referenceBlockContent = () => ""; export const upstreamFingerprint = () => ""; export const buildContext = () => ({messages: []});',
+  'context-builder': 'export const referenceBlockContent = () => ""; export const upstreamFingerprint = () => ""; export const buildContext = () => ({messages: []}); export const buildIncomingContext = () => ({messages: [], images: []});',
   streaming: 'export const activeAbortControllers = new Map();',
   canonical: 'export const unsubscribeOrphanedSessions = () => {};',
   'stale-judge': 'export const judgeStaleness = () => {};',
@@ -30,6 +30,8 @@ try {
   await build({
     stdin: { contents: `
       export * from './lib/frames';
+      export { overviewRulerMarks } from './lib/overview-ruler';
+      export { splitLegacyFileNodes } from './lib/single-file-nodes';
       import { create } from 'zustand';
       import { createNodeSlice } from './store/slices/nodes';
       import { createHistorySlice } from './store/slices/history';
@@ -42,7 +44,7 @@ try {
       builder.onLoad({ filter: /.*/, namespace: 'stub' }, (args) => ({ contents: stubs[args.path], loader: 'js' }));
     } }],
   });
-  const { makeStore, frameMembers, resolveCarriedNodeIds, nodeRect } = await import(pathToFileURL(bundle).href);
+  const { makeStore, frameMembers, resolveCarriedNodeIds, nodeRect, overviewRulerMarks, splitLegacyFileNodes } = await import(pathToFileURL(bundle).href);
   const node = (id, x = 0, y = 0) => ({ id, type: 'thought', position: { x, y }, width: 200, height: 100, data: {
     question: id, response: 'answer', responses: ['answer'], responseIndex: 0,
     isCollapsed: false, isLoading: false, isEditing: false, isEditingResponse: false,
@@ -109,6 +111,60 @@ try {
     assert.equal(state().edges.at(-1).target, copy.id, 'A single node duplicate retains its original parent relationship');
     assert.equal(state().nodes[0].data.canvasGroupId, 'retired');
     assert.equal(state().nodes[1].data.previousCanvasGroupId, 'older');
+  });
+  await test('version changes revalidate each mark against its own side of the active turn', () => {
+    for (const action of ['editResponse', 'navigateVersion', 'deleteVersion']) {
+      const store = start();
+      const turn = node('turn');
+      const questions = ['Old question', 'Next answer'];
+      const responses = ['Old answer', 'Old question'];
+      turn.data = { ...turn.data, question: questions[0], response: responses[0], questions, responses,
+        highlights: [{ id: 'question', source: 'question', text: 'Old question' },
+          { id: 'answer', text: 'Old answer' }, { id: 'attachment', attachmentId: 'file', text: 'File passage' }] };
+      store.setState({ nodes: [turn], edges: [] });
+      if (action === 'editResponse') store.getState().editResponse('turn', responses[1]);
+      else if (action === 'navigateVersion') store.getState().navigateVersion('turn', 'next');
+      else store.getState().deleteVersion('turn', 0);
+      const kept = store.getState().nodes[0].data.highlights.map(mark => mark.id);
+      assert.deepEqual(kept, action === 'editResponse' ? ['question', 'attachment'] : ['attachment'], action);
+    }
+  });
+  await test('ruler connections keep distinct origins through duplicate gestures, history and selection copying', () => {
+    const store = start(), state = () => store.getState();
+    const source = state().nodes[0];
+    store.setState({ nodes: [{ ...source, data: { ...source.data, stepKind: 'file',
+      highlights: [{ id: 'alpha', text: 'alpha', attachmentId: 'file' }, { id: 'beta', text: 'beta', attachmentId: 'file' }],
+      attachments: [{ id: 'file', name: 'file.txt', type: 'text/plain', content: 'alpha and beta' }],
+    } }, ...state().nodes.slice(1)] });
+    const marks = overviewRulerMarks(state().nodes[0].data);
+    assert.equal(marks.length, 2);
+    for (const mark of marks) {
+      state().addCrossLink('a', 'b', mark.id);
+      state().addCrossLink('a', 'b', mark.id);
+    }
+    assert.equal(state().edges.length, 3, 'The general wire coexists with both marks');
+    assert.deepEqual(state().edges.slice(1).map(edge => edge.sourceHandle), marks.map(mark => mark.id));
+    state().undo(); assert.equal(state().edges.length, 2);
+    state().redo(); assert.equal(state().edges.length, 3);
+    state().duplicateSelection(['a', 'b']);
+    const copy = state().nodes.at(-2);
+    const copyMarks = overviewRulerMarks(copy.data);
+    assert.equal(copyMarks.length, 2);
+    assert.notDeepEqual(copyMarks.map(mark => mark.id), marks.map(mark => mark.id));
+    assert.deepEqual(state().edges.filter(edge => edge.source === copy.id).slice(1).map(edge => edge.sourceHandle), copyMarks.map(mark => mark.id));
+    assert.equal(new Set(state().edges.map(edge => edge.id)).size, 6);
+  });
+  await test('splitting a multi-file import keeps each wire on its file and retains all material inputs', () => {
+    const file = node('old'), target = node('target');
+    file.data = { ...file.data, stepKind: 'file', highlights: [{ id: 'mark', text: 'second', attachmentId: 'f2' }],
+      attachments: ['first', 'second second', 'third'].map((content, i) => ({ id: `f${i + 1}`, name: `f${i}.txt`, type: 'text/plain', content })) };
+    const imported = overviewRulerMarks(file.data).map((mark, i) => ({ id: `wire${i}`, source: 'old', target: 'target', sourceHandle: mark.id }));
+    const graph = splitLegacyFileNodes({ nodes: [file, target], edges: imported });
+    const files = graph.nodes.filter(n => n.data.stepKind === 'file');
+    assert.deepEqual(files.map(n => graph.edges.filter(e => e.source === n.id).length), [1, 2, 1]);
+    const handles = overviewRulerMarks(files[1].data).map(mark => mark.id);
+    assert.deepEqual(imported.map(edge => graph.edges.find(e => e.id === edge.id)?.sourceHandle), handles);
+    assert.equal(new Set(graph.edges.map(edge => edge.id)).size, 4);
   });
   await test('legacy metadata does not block whole-canvas or selection layout and undo', async () => {
     for (const arrange of [state => state.relayout(), state => state.alignSelection(['a', 'b', 'c'])]) {

@@ -6,7 +6,7 @@ The desktop app puts the common connection routes inside **Connect a model**. No
 
 ## Connect inside the app
 
-1. Select **Connect a model** in the toolbar.
+1. Open **Settings → Answer model → API connection** in the upper-right toolbar.
 2. Choose a provider, coding plan, Ollama, or a custom connection.
 3. Follow the in-app authorization flow, or paste the key issued for that route.
 4. Select **Fetch models**, enable the models you want to see, and save.
@@ -83,7 +83,7 @@ A custom service must expose compatible model-list and generation interfaces. It
 
 The decision model ranks recalled excerpts, identifies decisions for map badges, checks whether upstream edits affect existing answers, and helps select what to remember. Turning it off uses built-in rules for these tasks.
 
-It speaks the System One contract (`POST /v1/systemone`: a state plus typed questions, probabilities back), which Jev-class models implement. In the top-left model picker, open **Settings** and select **Decision model** to configure the connection. Its switch is on by default.
+It speaks the System One contract (`POST /v1/systemone`: a state plus typed questions, probabilities back), which Jev-class models implement. Open **Settings → Decision model** in the upper-right toolbar to configure the connection. Its switch is on by default.
 
 | Route | What to enter | Notes |
 |---|---|---|

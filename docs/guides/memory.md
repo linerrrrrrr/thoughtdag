@@ -8,7 +8,7 @@ Open it from the ⋯ menu → **Memory**. The page has four parts.
 
 - **Recall past conversations when asking.** Before a question is sent, ThoughtDAG finds the dossiers and conversations that bear on it and brings them into the context. The switch on each node (the clock icon beside the send button) turns it off for that ask.
 - **Update memory from conversations.** After an answer, a decision decides whether something durable was said and writes it into *you* or into the project's dossier. Every write leaves a changelog line and a toast with undo.
-- **Decision model and amount.** Both live in the model-access dialog; see [Connect a decision model](/setup#decision-model).
+- **Decision model and amount.** Set up the decision model under **Settings → Decision model**. Use the recall control beside the question to choose how much context to bring in. See [Connect a decision model](/setup#decision-model).
 
 ## You
 
@@ -55,7 +55,7 @@ The panel's **Recall** section says in one line what came in, lists a card per i
 
 ## Amount
 
-Recall works within a ceiling on input tokens: **lean** 4k (a dossier and five to eight excerpts), **standard** 12k, **generous** 40k (everything the decision model finds relevant). A small context window caps at two fifths of itself. The select sits in the panel's *How it was chosen* fold and in the model-access dialog.
+Recall works within a ceiling on input tokens: **lean** 4k (a dossier and five to eight excerpts), **standard** 12k, **generous** 40k (everything the decision model finds relevant). A small context window caps at two fifths of itself. Choose the amount in the question’s recall menu.
 
 ## Where it lives
 

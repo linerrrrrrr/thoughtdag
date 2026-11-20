@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Archive, ArchiveRestore, Check, ChevronDown, Dna, FolderOpen, Loader2, Minimize2, Pencil, Plus, RefreshCw, Trash2, Upload } from 'lucide-react';
 import HarnessViewSwitch from './ui/HarnessViewSwitch';
-import { useProjects, switchProject, createProject, renameProject, deleteProject, setProjectArchived } from '../store/projects';
+import { useProjects, switchProject, createProject, renameProject, deleteProject, setProjectArchived, refreshProjectIndex } from '../store/projects';
 import { useI18n } from '../i18n';
-import { parseImportFile } from '../lib/export';
+import { copyText, parseImportFile } from '../lib/export';
 import ImportChatModal from './ImportChatModal';
 import type { ImportableConversation } from '../lib/import-chat';
 import { confirmDialog, toast } from '../lib/ui-store';
@@ -26,6 +26,25 @@ function relativeTime(ts: number): string {
   return new Date(ts).toLocaleDateString(useI18n.getState().lang === 'zh' ? 'zh-CN' : 'en-US');
 }
 
+function ProjectUuid({ id }: { id: string }) {
+  const t = useT();
+  const label = t('switcher.copyUuid');
+  return (
+    <button
+      type="button"
+      className="flex min-w-0 basis-full items-baseline gap-1 text-left text-meta text-ink-muted hover:text-accent focus-visible:text-accent"
+      data-tooltip={label} aria-label={`${label} ${id}`}
+      onClick={(event) => {
+        event.stopPropagation();
+        void copyText(id).catch(() => toast('error', t('local.copyFailed')));
+      }}
+    >
+      <span className="shrink-0">UUID</span>
+      <code className="min-w-0 select-all [overflow-wrap:anywhere]">{id}</code>
+    </button>
+  );
+}
+
 export default function ProjectSwitcher({ onSwitched, children }: { onSwitched: () => void; children?: ReactNode }) {
   const t = useT();
   const projects = useProjects((s) => s.projects);
@@ -34,6 +53,7 @@ export default function ProjectSwitcher({ onSwitched, children }: { onSwitched: 
   const activeIsParadigm = projects.find((p) => p.id === activeId)?.kind === 'paradigm';
   const [requestedOpen, setOpen] = useState(false);
   const open = useCanvasToolCard('projects', requestedOpen, () => setOpen(false));
+  useEffect(() => { if (open) void refreshProjectIndex().catch(() => undefined); }, [open]);
   const panelPosition = useCanvasPanelPosition(open, 'left');
   // Windows and Linux shells: keep running in the tray when the window
   // closes (#77); the tray menu speaks the page's language
@@ -115,7 +135,8 @@ export default function ProjectSwitcher({ onSwitched, children }: { onSwitched: 
             {sorted.map((p) => (
               <div
                 key={p.id}
-                className={`group flex items-center gap-1 px-3 py-2 hover:bg-wash cursor-pointer transition-colors ${p.id === activeId ? 'bg-accent/5' : ''}`}
+                data-cursor={renamingId === p.id || p.id === activeId ? 'neutral' : 'action'}
+                className={`group flex flex-wrap items-center gap-x-1 px-3 py-2 hover:bg-wash transition-colors ${p.id === activeId ? 'bg-accent/5' : ''}`}
                 onClick={() => { if (renamingId !== p.id && p.id !== activeId) void doSwitch(p.id); }}
               >
                 {renamingId === p.id ? (
@@ -131,7 +152,7 @@ export default function ProjectSwitcher({ onSwitched, children }: { onSwitched: 
                       }
                     }}
                     onBlur={renameEdit.onBlur}
-                    className="flex-1 text-control text-ink border border-accent/40 rounded-control px-2 py-1 bg-surface focus:outline-none"
+                    className="min-w-0 flex-1 text-control text-ink border border-accent/40 rounded-control px-2 py-1 bg-surface focus:outline-none"
                     data-project-name-editor
                   />
                 ) : (
@@ -168,6 +189,7 @@ export default function ProjectSwitcher({ onSwitched, children }: { onSwitched: 
                     </button>
                   </>
                 )}
+                <ProjectUuid id={p.id} />
               </div>
             ))}
             {archived.length > 0 && (
@@ -176,11 +198,12 @@ export default function ProjectSwitcher({ onSwitched, children }: { onSwitched: 
                   <Archive size={14} strokeWidth={1.75} /> {fmt(t('switcher.archivedCanvases'), { n: archived.length })}
                 </button>
                 {showArchived && archived.map((p) => (
-                  <div key={p.id} className="flex items-center gap-2 px-3 py-2 text-control text-ink-muted">
+                  <div key={p.id} className="flex flex-wrap items-center gap-x-2 px-3 py-2 text-control text-ink-muted">
                     <span className="flex-1 truncate">{p.name}</span>
                     <button type="button" aria-label={t('switcher.restoreCanvas')} data-restore-canvas className="p-1 rounded-control hover:bg-wash hover:text-ink" onClick={() => { void setProjectArchived(p.id, false).then(() => doSwitch(p.id)); }}>
                       <ArchiveRestore size={14} strokeWidth={1.75} />
                     </button>
+                    <ProjectUuid id={p.id} />
                   </div>
                 ))}
               </div>

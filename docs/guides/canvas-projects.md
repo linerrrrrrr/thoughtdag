@@ -4,10 +4,11 @@
 
 - Turn on **Pan canvas with the left mouse button** below the lock in the bottom-left controls. Left-drag empty space or a multi-selection to pan. Turn it off to box-select or move the selection again.
 - You can also pan by dragging with the middle or right mouse button, or by holding Space while you left-drag.
-- **Wheel or two-finger scroll** pans by default; scrolling inside node text still reads that text. The ⋯ menu can switch ordinary scrolling back to zoom.
+- **Wheel or two-finger scroll** pans by default; scrolling inside node text still reads that text. In **Settings → Appearance & controls**, turn off **Wheel pans the canvas** to zoom with the wheel.
 - **Ctrl/⌘ + scroll or pinch** zooms around the canvas viewport center, including when the pointer is inside a node or editor. On a Magic Mouse, Control + click opens the context menu.
 - With the pan button off, **left-drag empty space** to select nodes that fit inside the box. After release, you can switch to **Links** that cross the box or **Frames** that fit inside it. Ctrl / Cmd / Shift adds to the selection, and Ctrl / Cmd + A selects all objects of the current type.
 - **Drag a node** to change its position.
+- Right-click a node and choose **Copy node number** to paste a reference such as `#5` into a question on the same canvas.
 
 The minimap and zoom controls provide another way to move through a large graph.
 
@@ -15,11 +16,15 @@ The minimap and zoom controls provide another way to move through a large graph.
 
 ## Change reading distance
 
-Open the model menu at the upper left and choose **Settings → Canvas typography** to preview text at different zoom levels. By default, conversation text reaches 16px at 100%. As you zoom in further the card grows, while prose, disclosure labels, action icons and timestamps hold their sizes. You can set the body size and adjust how body text and summaries respond to zoom. **Apply** saves the preference across canvases on this device. **Restore defaults** resets these typography settings in one click.
+Open **Settings → Node display → Canvas typography** from the upper-right toolbar. Drag across the chart or select **Play zoom preview** to compare the same text in a full node and a summary node. The horizontal axis shows canvas zoom and the vertical axis shows the on-screen font size.
 
-With **Detail → Follow zoom**, zooming out changes a node from a full card to a named overview and then to a compact name. Its position and connections stay the same. Detail changes presentation only; it does not change model context or generate summaries.
+Drag the body point at 100% up or down to set the base font size. The body point at 50% controls how quickly the text shrinks as you zoom out. The summary point at 200% controls how much summary text scales with zoom. You can also focus a point and adjust it with the arrow keys. The dashed line shows compact names for comparison. **Apply** saves the curve across canvases on this device. **Restore defaults** restores the initial sizes.
 
-Use **Detail** in the toolbar to choose **Compact**, **Summary**, or **Full** for unlocked nodes, independently of zoom. Full keeps content available even in a distant overview. Select a node in the same panel, or right-click it, to lock that node to a level. **Follow canvas (unlock)** restores the global setting. Node locks are saved with the project and can be undone; the global preference is remembered in this browser. Editors and pending human-input controls stay expanded until the interaction ends. Use a locked node's reading action to read its content without changing its lock.
+Open **Detail** in the toolbar. The panel title indicates where the setting applies. Choose **Follow zoom**, **Compact**, **Summary**, or **Full**. With zero or one object selected, the setting applies globally and is remembered in this browser. When the global setting is **Follow zoom**, unlocked nodes change from full cards to summaries and then to compact names as you zoom out.
+
+With multiple objects selected, **Detail** applies only to the selected nodes. Choose **Compact**, **Summary**, or **Full** to lock those nodes to that level. Choose **Use default** to unlock them and restore the global setting. Selected connections, frames, and unselected nodes inside those frames keep their appearance. You can undo the whole change in one step. To set the level of a single node, right-click it and choose a level. Node locks are saved with the project.
+
+Changing detail levels preserves node positions, connections, and model context and uses existing node summaries. Editors and pending human-input controls stay expanded until the interaction ends. Use a locked node’s reading action to read its content while keeping its lock.
 
 At the map and glyph tiers, two actions appear at the bottom of the canvas: **Export thought map** and **Continue last thread**.
 
@@ -70,11 +75,13 @@ The recording cycles through **Search nodes → Frame navigator → Tidy layout*
 
 Open **Layout** in the upper-right toolbar and choose the scope, method, direction, and spacing. Preview the result if needed, then select **Apply layout**. The selection is the default scope when objects are selected; otherwise, the whole canvas is used. Closing the panel preserves unapplied settings drafts. Vertical layouts keep each conversation chain in a column, while horizontal layouts keep it in a row, following wire direction in both cases.
 
-Turn on **Fixed input area** in the model menu’s **Settings** tab or in the **Connections** panel. Choose **Source sidebar**, **Top source bar**, or **Input dock** to place the sources beside, above, or outside the conversation. Upstream turns and linked canvas files share one input port, and continuations use a separate output. **Show attachment sources** controls which source details appear on the card.
+Turn on **Fixed input area** under **Settings → Node display**. Choose **Source sidebar**, **Top source bar**, or **Input dock** to place the sources beside, above, or outside the conversation. Upstream turns and linked canvas files share one input port, and continuations use a separate output. **Show attachment sources** controls which source details appear on the card.
 
-Open **Connections** in the top-right toolbar to adjust **Avoid nodes**, **Clearance**, and **Curve bend**. On narrow screens, open it from **More actions**. These preferences take effect immediately across canvases on this device.
+Open **Settings → Connection routing** in the upper-right toolbar. Choose **Curve** or **Elbow** as the **Default path** for this device. Each connection uses its own saved path first, then its source node’s layout setting, then this default.
 
-Automatic layout applies to the selected nodes while unselected nodes stay in place. When a frame is included, its current contents join the layout and its bounds fit the result, including nested frames. Each applied layout is one undo step.
+Choosing **Curve** opens its preview and controls for bend and endpoint perpendicularity. At 100% perpendicularity, curves meet the node edges at right angles. Turn on **Avoid nodes** to see how the selected path goes around a node and adjust its clearance. Turning a setting off hides its controls and preserves its value.
+
+When a node marquee encloses a frame and all its contents, arranging the selection includes that frame. The frame moves and fits its contents, working from the innermost frame outward. When the marquee covers only part of a frame, selected cards stay within its existing bounds. Outside cards clear the frames, including empty ones. You can also select a frame directly to arrange its contents, or choose the whole canvas. Each applied layout is one undo step.
 
 **Align** and **Create frame** appear side by side in Selection properties. Align offers six edge or center alignments and horizontal or vertical distribution, relative to the selection or the visible canvas. Each selected node participates independently. Manual alignment and distribution allow offset chains, reversed spatial order, and overlapping nodes; distribution uses equal gaps even when the gaps are negative. Actions execute immediately, support undo, and preserve context wiring. Linked frames carry their contents using the existing membership rules.
 

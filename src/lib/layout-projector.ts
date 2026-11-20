@@ -24,9 +24,16 @@ export function projectLayout(shapes: LayoutShape[], links: LayoutLink[], option
   const structural = links.filter(e => e.structural && byId.has(e.source) && byId.has(e.target));
   const continuations = links.filter(e => e.continuation && byId.has(e.source) && byId.has(e.target));
   const children = new Map<string | undefined, LayoutShape[]>();
+  const containment: { frame: string; member: string }[] = [];
   for (const shape of shapes) {
-    const parent = shape.parent && byId.has(shape.parent) ? shape.parent : undefined;
-    children.set(parent, [...(children.get(parent) ?? []), shape]);
+    const parent = shape.parent ? byId.get(shape.parent) : undefined;
+    children.set(parent?.id, [...(children.get(parent?.id) ?? []), shape]);
+    if (parent) containment.push({ frame: parent.id, member: shape.id });
+    // A moving parent already keeps all its descendants inside shared
+    // boundaries. Additional fixed frames can overlap that parent.
+    for (const frame of shape.fixedContainers ?? []) {
+      if (!shape.fixed && !parent?.fixedContainers?.includes(frame)) containment.push({ frame, member: shape.id });
+    }
   }
   const frames = shapes.filter(s => s.frame && !s.fixed);
   const hasFixed = shapes.some(s => s.fixed);
@@ -52,7 +59,8 @@ export function projectLayout(shapes: LayoutShape[], links: LayoutLink[], option
       }
     }
     for (const [id, level] of rank) {
-      const key = `${componentRoot(id)}\0${byId.get(id)!.parent ?? ''}\0${level}`;
+      const shape = byId.get(id)!;
+      const key = JSON.stringify([componentRoot(id), shape.parent, shape.fixedContainers, level]);
       layerGroups.set(key, [...(layerGroups.get(key) ?? []), id]);
     }
   }
@@ -126,6 +134,9 @@ export function projectLayout(shapes: LayoutShape[], links: LayoutLink[], option
     for (let i = 0; i < sorted.length; i++) for (let j = i + 1; j < sorted.length; j++) {
       const a = sorted[i], b = sorted[j];
       if (a.fixed && b.fixed) continue;
+      // A fixed frame bounds its original members. Every other root must
+      // clear its footprint, including the footprint of an empty frame.
+      if (a.fixedContainers?.includes(b.id) || b.fixedContainers?.includes(a.id)) continue;
       if (sharesChain(a.id, b.id)) {
         const separation = order(a, b, primary);
         if (!separation) return { error: a.frame || b.frame ? 'frame-conflict' : 'boundary-conflict' };
@@ -174,12 +185,12 @@ export function projectLayout(shapes: LayoutShape[], links: LayoutLink[], option
           constraints.push(new Constraint(origin, variable(shape.id, 'start'), shape[axis], true));
           rules.push({ a: shape.id, b: shape.id, kind: 'anchor' });
         }
-        if (shape.parent && byId.has(shape.parent)) {
-          const before = axis === 'x' ? options.framePadding.left : options.framePadding.top;
-          const after = axis === 'x' ? options.framePadding.right : options.framePadding.bottom;
-          add(shape.parent, 'start', shape.id, 'start', before, false, 'containment');
-          add(shape.id, 'end', shape.parent, 'end', after, false, 'containment');
-        }
+      }
+      const before = axis === 'x' ? options.framePadding.left : options.framePadding.top;
+      const after = axis === 'x' ? options.framePadding.right : options.framePadding.bottom;
+      for (const { frame, member } of containment) {
+        add(frame, 'start', member, 'start', before, false, 'containment');
+        add(member, 'end', frame, 'end', after, false, 'containment');
       }
       if (axis === cross) for (const edge of continuations) add(edge.source, 'start', edge.target, 'start', 0, true, 'chain');
       if (axis === primary) for (const edge of structural) add(edge.source, 'end', edge.target, 'start', options.gap, false, 'flow');
@@ -258,6 +269,9 @@ export function projectLayout(shapes: LayoutShape[], links: LayoutLink[], option
       }
     }
     if (!expand) return { shapes: shapes.map(shape => shape.fixed ? shape : projected.result.get(shape.id)!) };
+  }
+  if (lastConflicts.some(rule => rule.kind === 'containment' || byId.get(rule.a)?.frame || byId.get(rule.b)?.frame)) {
+    return { error: 'frame-conflict' };
   }
   const fixedConflict = lastConflicts.some(rule => byId.get(rule.a)?.fixed || byId.get(rule.b)?.fixed);
   return { error: fixedConflict || hasFixed && !frames.length ? 'boundary-conflict' : frames.length ? 'frame-conflict' : 'obstacle-conflict' };

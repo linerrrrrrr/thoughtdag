@@ -1,4 +1,5 @@
 import { API_BASE } from '../constants';
+import { diskStorageNamespace } from '../disk-storage';
 import { installDshSessionsBridge } from './harness-bridge';
 
 const harnessApi = import.meta.env.VITE_DSH_BRIDGE as string | undefined;
@@ -19,6 +20,11 @@ export function ensureAgentHost(retry = false): Promise<boolean> {
   probe = import('./http-bridge').then(async ({ installAgentsHttpBridge }) => {
     const ready = await installAgentsHttpBridge(api);
     if (ready && !harnessApi && !window.desktopSessions) installDshSessionsBridge(api);
+    if (ready && diskStorageNamespace() === 'browser' && !window.location.hash.startsWith('#view=')) {
+      // The host can come online after the project index is already hydrated.
+      const { prepareCanvasFolders } = await import('../../store/projects');
+      await prepareCanvasFolders();
+    }
     return ready;
   }).catch(() => false).finally(() => {
     checked = true;

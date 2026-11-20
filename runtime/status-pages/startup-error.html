@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>ThoughtDAG</title>
+  <link rel="stylesheet" href="typography.css">
+  <link rel="stylesheet" href="../design-system/cursors.css">
+</head>
+<body data-type-surface="startup-error">
+<pre>ThoughtDAG server failed to start on port <span id="port"></span>.
+Check the terminal output.</pre>
+<script>
+  document.getElementById('port').textContent = new URLSearchParams(location.search).get('port');
+</script>
+</body>
+</html>

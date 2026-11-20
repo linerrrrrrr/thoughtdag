@@ -6,6 +6,7 @@ import { useConnectionLayoutPreferences } from '../lib/connection-layout-prefere
 import { useContextInspection } from '../lib/context-inspection';
 import { getNodeNameSource } from '../lib/node-display-name';
 import { changedInputFiles, inputGraph } from '../lib/node-input-sources';
+import { inheritedAttachments } from '../lib/graph';
 import { isContentKind } from '../lib/content';
 import { useUiStore } from '../lib/ui-store';
 import { isViewerMode } from '../lib/viewer';
@@ -26,7 +27,7 @@ function SourceGroup({ label, count, compact, children }: {
   label: string; count: number; compact: boolean; children: ReactNode;
 }) {
   const [expanded, setExpanded] = useState(true);
-  const heading = <><span>{label}</span><span className="input-source-count">{count}</span></>;
+  const heading = <><span className="node-input-label" data-tooltip={label} data-tooltip-overflow>{label}</span><span className="input-source-count">{count}</span></>;
   if (compact || !count) return <div className="input-source-heading">{heading}</div>;
   return <section className="input-source-group">
     <button type="button" className="input-source-toggle input-source-heading" aria-expanded={expanded}
@@ -43,14 +44,14 @@ function endTrace(nodeId: string, edgeId?: string) {
 }
 
 /** Intake contents only. React Flow measures the separate, permanent port. */
-export default function NodeInputRegion({ nodeId, compact = false, readOnly = false }: {
+export default function NodeInputRegion({ nodeId, compact = false, readOnly = false, snapshot }: {
   nodeId: string; compact?: boolean; readOnly?: boolean;
+  snapshot?: { graph: ReturnType<typeof inputGraph>; showAttachments: boolean };
 }) {
   const t = useT();
-  const graph = useStore(inputGraph);
-  const settings = useConnectionLayoutPreferences(s => s.settings);
+  const graph = useStore(state => snapshot?.graph ?? inputGraph(state));
+  const showAttachments = useConnectionLayoutPreferences(s => snapshot?.showAttachments ?? s.settings.showAttachments);
   const editable = !isViewerMode && !readOnly;
-  const getInherited = useStore(s => s.getInheritedAttachments);
   const sources = useMemo(() => {
     const target = graph.byId.get(nodeId);
     const turns: SourceRow[] = [], materials: SourceRow[] = [], direct = new Set<string>(), files = new Set<string>();
@@ -60,16 +61,16 @@ export default function NodeInputRegion({ nodeId, compact = false, readOnly = fa
         if (!owner || owner.data.stepKind === 'frame') continue;
         if (isContentKind(owner.data.stepKind)) {
           direct.add(owner.id);
-          if (settings.showAttachments) {
+          if (showAttachments) {
             const attachment = owner.data.stepKind === 'file' ? owner.data.attachments?.[0] : undefined;
             materials.push({ kind: 'material', owner, edge, attachment });
             if (attachment) files.add(owner.id);
           }
         } else turns.push({ kind: 'conversation', owner, edge });
       }
-      if (settings.showAttachments) {
+      if (showAttachments) {
         for (const attachment of target.data.attachments ?? []) materials.push({ kind: 'local', owner: target, attachment });
-        for (const inherited of getInherited(nodeId)) {
+        for (const inherited of inheritedAttachments(nodeId, graph.nodes, graph.edges)) {
           const owner = graph.byId.get(inherited.sourceNodeId);
           if (!owner || direct.has(owner.id)) continue;
           materials.push({ kind: 'inherited', owner, attachment: inherited.attachment, ancestorExcluded: inherited.excludedByAncestor });
@@ -79,7 +80,7 @@ export default function NodeInputRegion({ nodeId, compact = false, readOnly = fa
     }
     const changed = target && !compact ? changedInputFiles(target, files, graph) : new Set<string>();
     return { target, turns, materials, changed };
-  }, [graph, nodeId, compact, settings.showAttachments, getInherited]);
+  }, [graph, nodeId, compact, showAttachments]);
   useEffect(() => () => endTrace(nodeId), [nodeId]);
   if (!sources.target) return null;
   const data = sources.target.data;
@@ -134,20 +135,24 @@ export default function NodeInputRegion({ nodeId, compact = false, readOnly = fa
       {sources.changed.has(owner.id) && <small className="input-source-change" data-input-file-changed>{t('inputRegion.fileChanged')}</small>}
     </li>;
   };
+  const intakeLabel = t('inputRegion.intake');
   return <div className="node-input-region nodrag nopan nowheel" data-node-input-region={nodeId}
     data-input-compact={compact || undefined}
     onClick={e => e.stopPropagation()} onDoubleClick={e => e.stopPropagation()}>
-    <div className="node-input-heading"><ArrowDownToLine size={14} strokeWidth={1.6} aria-hidden="true" />
-      <span>{t('inputRegion.intake')}</span><span className="node-input-total">{sources.turns.length + sources.materials.length}</span>
-      {!compact && <NodeContextSources nodeId={nodeId} compact />}
-    </div>
-    <div className="node-input-groups">
-    <SourceGroup label={t('inputRegion.upstream')} count={sources.turns.length} compact={compact}>
-      {!compact && sources.turns.map(renderRow)}
-    </SourceGroup>
-    {settings.showAttachments && <SourceGroup label={t('inputRegion.materials')} count={sources.materials.length} compact={compact}>
-      {!compact && sources.materials.map(renderRow)}
-    </SourceGroup>}
+    <div className="node-input-content" data-type-surface="node-input">
+      <div className="node-input-heading"><ArrowDownToLine size={14} strokeWidth={1.6} aria-hidden="true" />
+        <span className="node-input-label" data-tooltip={intakeLabel} data-tooltip-overflow>{intakeLabel}</span>
+        <span className="node-input-total">{sources.turns.length + sources.materials.length}</span>
+        {!compact && !snapshot && <NodeContextSources nodeId={nodeId} compact />}
+      </div>
+      <div className="node-input-groups">
+        <SourceGroup label={t('inputRegion.upstream')} count={sources.turns.length} compact={compact}>
+          {!compact && sources.turns.map(renderRow)}
+        </SourceGroup>
+        {showAttachments && <SourceGroup label={t('inputRegion.materials')} count={sources.materials.length} compact={compact}>
+          {!compact && sources.materials.map(renderRow)}
+        </SourceGroup>}
+      </div>
     </div>
   </div>;
 }

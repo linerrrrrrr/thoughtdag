@@ -4,6 +4,8 @@
 // reader's original view. Heavy converters load lazily — non-HTML users
 // never pay for them (same pattern as mammoth for .docx).
 
+import documentTypography from '../design-system/typography-document.css?raw';
+
 export interface HtmlExtraction {
   markdown: string;
   numPages?: number;
@@ -233,7 +235,7 @@ function shellWrap(el: Element, inner: string): string {
 function pageDoc(styles: string, bodyHtml: string, bodyClass?: string | null, bodyStyle?: string | null): string {
   const cls = bodyClass ? ` class="${escapeAttr(bodyClass)}"` : '';
   const bst = bodyStyle ? ` style="${escapeAttr(bodyStyle)}"` : '';
-  return `<!doctype html><html><head><meta charset="utf-8">${styles}<style>${BASE_CSS}</style></head><body${cls}${bst}>${bodyHtml}</body></html>`;
+  return `<!doctype html><html data-type-surface="document-frame"><head><meta charset="utf-8">${styles}<style>${BASE_CSS}\n${documentTypography}</style></head><body${cls}${bst}>${bodyHtml}</body></html>`;
 }
 
 export async function buildReaderPages(source: string, opts?: HtmlSourceOptions): Promise<ReaderPage[]> {

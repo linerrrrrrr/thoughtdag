@@ -6,12 +6,15 @@ import { t, type MessageKey } from '../i18n';
 import type { ThoughtEdge, ThoughtNode } from '../types';
 import type { CanvasLayoutOptions } from './canvas-layout';
 import { useCanvasEditing } from './canvas-editing';
-import { frameContentIds, isFrameNode, type Rect } from './frames';
+import { frameContentIds, isFrameNode, nodesRect, type Rect } from './frames';
+import { layoutSelectionIds } from './canvas-selection';
 import { nodeHeight } from './layout';
 import { NODE_CSS_WIDTH } from './constants';
 import { toast } from './ui-store';
 import { canvasToolViewport } from './use-canvas-panel-position';
 import { useProjects } from '../store/projects';
+import { resolveEdgeRoute } from './edge-path';
+import { useEdgeRoutingPreferences } from './edge-routing-preferences';
 
 const KEY = 'thoughtdag.canvasLayout';
 let pendingFit = 0;
@@ -31,7 +34,7 @@ export function readCanvasLayoutOptions(selectedIds?: string[]): CanvasLayoutOpt
     method: ['manual', 'chains', 'layers'].includes(stored.method ?? '') ? stored.method! : 'chains',
     direction: first?.data.layoutDirection ?? (stored.direction === 'horizontal' ? 'horizontal' : 'vertical'),
     density: ['compact', 'standard', 'relaxed'].includes(stored.density ?? '') ? stored.density! : 'standard',
-    route: (first?.data.edgeRouteDefault ?? stored.route) === 'orthogonal' ? 'orthogonal' : 'curve',
+    route: resolveEdgeRoute(first?.data.edgeRouteDefault, stored.route, useEdgeRoutingPreferences.getState().settings.defaultRoute),
   };
 }
 
@@ -50,20 +53,36 @@ export function canvasLayoutErrorKey(error?: string): MessageKey {
 
 /** One explicit request owns the busy state. Changing its scope or canvas
  * invalidates it even if the user later returns to the original selection. */
-export function beginCanvasLayoutTask() {
+export function beginCanvasLayoutTask(options: CanvasLayoutOptions, selectedIds?: string[]) {
   const editing = useCanvasEditing.getState();
   if (editing.layoutBusy) return undefined;
+  const graph = useStore.getState();
+  const watchMarquee = selectedIds !== undefined && options.method !== 'manual';
+  const region = editing.selectionRegion;
+  const ids = watchMarquee ? layoutSelectionIds(graph.nodes, selectedIds, editing.selectionTarget, region) : selectedIds;
   const request = editing.beginLayout();
   const project = useProjects.getState().activeId;
-  const selection = [...useStore.getState().selectedNodeIds].sort().join('\0');
+  const selection = [...graph.selectedNodeIds].sort().join('\0');
   const isCurrent = () => useCanvasEditing.getState().layoutRequest === request;
   const cancel = () => { if (isCurrent()) useCanvasEditing.getState().cancelLayout(); };
   const stopSelection = useStore.subscribe((state) => {
     if ([...state.selectedNodeIds].sort().join('\0') !== selection) cancel();
   });
   const stopProject = useProjects.subscribe((state) => { if (state.activeId !== project) cancel(); });
-  return { request, isCurrent, cancel, finish: () => {
-    stopSelection(); stopProject(); useCanvasEditing.getState().finishLayout(request);
+  const stopRegion = useCanvasEditing.subscribe((state) => {
+    if (watchMarquee && (state.selectionRegion !== region || state.selectionTarget !== editing.selectionTarget)) cancel();
+  });
+  const onCommit = (nodes: ThoughtNode[]) => {
+    stopRegion();
+    if (!region || ids === selectedIds) return;
+    // Update the retained marquee in the same turn as its objects, so the
+    // geometry change cannot clear the frame hits before the next layout.
+    const spatial = new Set([...region.nodeIds, ...region.frameIds]);
+    const rect = nodesRect(nodes.filter(node => spatial.has(node.id)));
+    if (rect) editing.setSelectionRegion({ ...region, rect });
+  };
+  return { ids, isCurrent, cancel, apply: () => graph.applyCanvasLayout(options, ids, isCurrent, onCommit), finish: () => {
+    stopRegion(); stopSelection(); stopProject(); useCanvasEditing.getState().finishLayout(request);
   } };
 }
 
@@ -81,20 +100,20 @@ export function canvasLayoutBounds(nodes: ThoughtNode[]): Rect | undefined {
 }
 
 export async function quickCanvasLayout(flow?: ReactFlowInstance<ThoughtNode, ThoughtEdge> | null, selectedIds?: string[]) {
-  const task = beginCanvasLayoutTask();
-  if (!task) return;
   const state = useStore.getState();
   const ids = selectedIds ?? (state.selectedNodeIds.length ? state.selectedNodeIds : undefined);
   const saved = readCanvasLayoutOptions(ids);
   const options = { ...saved, method: saved.method === 'manual' ? 'chains' as const : saved.method };
+  const task = beginCanvasLayoutTask(options, ids);
+  if (!task) return;
   let applied;
-  try { applied = await state.applyCanvasLayout(options, ids, task.isCurrent); }
+  try { applied = await task.apply(); }
   catch { if (task.isCurrent()) toast('info', t('canvasLayout.failed')); return; }
   finally { task.finish(); }
   if (!task.isCurrent()) return;
   if (!applied.ok) { toast('info', t(canvasLayoutErrorKey(applied.error))); return; }
   useCanvasEditing.getState().setLayoutOpen(false);
-  fitCanvasLayout(flow, ids);
+  fitCanvasLayout(flow, task.ids);
 }
 
 /** Reused after quick layout and an explicit settings-panel application. */

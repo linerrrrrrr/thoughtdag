@@ -1,29 +1,7 @@
 @import "tailwindcss";
-
-/* Click actions opt out of inherited canvas/text cursors. Keep these defaults
-   in the base layer so resize, move, and other explicit tools can override. */
-@layer base {
-  button, a[href], summary, select, [role="button"], [role="menuitem"],
-  input:is([type="checkbox"], [type="radio"]) { cursor: pointer; }
-  button:disabled, input:disabled, select:disabled, [aria-disabled="true"] { cursor: default; }
-}
-
-/* A grab cursor promises movement from this exact hit target. React Flow's
-   node-wide grab/pointer defaults do not respect our header-only drag handles. */
-.react-flow .react-flow__node,
-.react-flow .react-flow__node.selectable,
-.react-flow .react-flow__node.draggable { cursor: default; }
-.react-flow__node.draggable .drag-handle { cursor: grab; }
-.react-flow__node .drag-handle :where(.nodrag:not(.react-flow__handle, .react-flow__resize-control)) { cursor: default; }
-.react-flow__node .drag-handle :is(button, a[href], select) { cursor: pointer; }
-.react-flow__node .drag-handle :is(button:disabled, [aria-disabled="true"]) { cursor: default; }
-.react-flow__node .drag-handle :is(input, textarea, [contenteditable="true"]) { cursor: text; }
-.react-flow .react-flow__pane.selection { cursor: crosshair; }
-.react-flow .react-flow__pane.dragging { cursor: grabbing; }
-/* Selecting on drag can reveal a resize grip under the pointer. The active
-   gesture still owns the cursor until release, regardless of that new target. */
-.react-flow__node.draggable.dragging,
-.react-flow__node.draggable.dragging * { cursor: grabbing !important; }
+@import "./components/CanvasReading.css";
+@import "./design-system/typography-surfaces.css";
+@import "../runtime/design-system/cursors.css";
 
 /* Multi-selection has one screen-space drag surface and resize boundary;
    the library's outline must not create a competing pointer target. */
@@ -64,7 +42,7 @@
 .activity-meta { display: flex; flex-wrap: wrap; gap: 6px 12px; margin-block: 5px; font-size: var(--text-meta); line-height: var(--text-meta--line-height); color: var(--color-ink-faint); overflow-wrap: anywhere; }
 .activity-meta code { min-width: 0; overflow-wrap: anywhere; }
 .activity-details { margin-top: 8px; color: var(--color-ink-faint); }
-.activity-details summary { cursor: pointer; width: fit-content; }
+.activity-details summary { width: fit-content; }
 .activity-details pre { max-height: 300px; overflow: auto; background: var(--color-surface); color: var(--color-ink-muted); margin-top: 5px; }
 .activity-between { display: flex; gap: 7px; align-items: center; padding: 8px 0; color: var(--color-ink-faint); }
 .activity-follow { display: flex; align-items: center; justify-content: center; gap: 5px; width: 100%; padding: 6px; background: var(--color-wash); color: var(--color-accent-strong); }
@@ -74,7 +52,7 @@
 .activity-plan li > span:nth-child(2) { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .activity-plan svg { flex-shrink: 0; align-self: center; }
 .activity-plan-pending { width: 11px; height: 11px; border: 1px solid var(--color-line-strong); flex-shrink: 0; }
-.activity-files summary { cursor: pointer; overflow-wrap: anywhere; margin-block: 6px; }
+.activity-files summary { overflow-wrap: anywhere; margin-block: 6px; }
 .activity-diff { max-height: 260px; overflow: auto; padding: 8px; font-size: var(--text-control); line-height: var(--text-control--line-height); white-space: pre-wrap; overflow-wrap: anywhere; background: var(--color-surface); }
 .activity-diff-add { color: var(--color-green-700); }
 .activity-diff-remove { color: var(--color-red-700); }
@@ -249,15 +227,6 @@
 }
 
 /* code highlighting flips with the theme (github.css is light-only) */
-:root[data-theme='dark'] .hljs { color: #D4CEC2; background: transparent; }
-:root[data-theme='dark'] .hljs-comment, :root[data-theme='dark'] .hljs-quote { color: #8A8170; }
-:root[data-theme='dark'] .hljs-keyword, :root[data-theme='dark'] .hljs-selector-tag, :root[data-theme='dark'] .hljs-subst { color: #C9A1F0; }
-:root[data-theme='dark'] .hljs-string, :root[data-theme='dark'] .hljs-regexp, :root[data-theme='dark'] .hljs-addition { color: #9FD0A5; }
-:root[data-theme='dark'] .hljs-number, :root[data-theme='dark'] .hljs-literal { color: #E3A45E; }
-:root[data-theme='dark'] .hljs-title, :root[data-theme='dark'] .hljs-name { color: #A7C7F2; }
-:root[data-theme='dark'] .hljs-attr, :root[data-theme='dark'] .hljs-attribute, :root[data-theme='dark'] .hljs-variable, :root[data-theme='dark'] .hljs-template-variable { color: #E0B070; }
-:root[data-theme='dark'] .hljs-built_in, :root[data-theme='dark'] .hljs-type { color: #7FBFB2; }
-:root[data-theme='dark'] .hljs-deletion { color: #E0796F; }
 
 /* ── thought map: the structure-only share artifact. A self-contained
    print design (its own light/dark), independent of the app theme —
@@ -279,35 +248,35 @@
 .tmap-art .tmap-head { flex-shrink: 0; }
 .tmap-art .tmap-graph { flex: 1; min-height: 0; }
 .tmap-art .tmap-footrow { display: flex; justify-content: space-between; align-items: flex-end; padding: 0 26px 18px; flex-shrink: 0; margin-top: auto; }
-.tmap-art .tmap-k { font-family: var(--tm-mono); font-size: 11px; letter-spacing: .16em; color: var(--tm-faint); text-transform: uppercase; }
-.tmap-art .tmap-date { font-family: var(--tm-mono); font-size: calc(10.5px * var(--tmx)); letter-spacing: .08em; color: var(--tm-faint); margin-top: 5px; }
-.tmap-art .tmap-t { font-size: min(calc(34px * var(--tmt)), 48px); line-height: 1.22; font-weight: 600; margin-top: 10px; letter-spacing: .01em;
+.tmap-art .tmap-k { font-family: var(--tm-mono); letter-spacing: .16em; color: var(--tm-faint); text-transform: uppercase; }
+.tmap-art .tmap-date { font-family: var(--tm-mono); letter-spacing: .08em; color: var(--tm-faint); margin-top: 5px; }
+.tmap-art .tmap-t { line-height: 1.22; font-weight: 600; margin-top: 10px; letter-spacing: .01em;
                     display: -webkit-box; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
-.tmap-art.tmap-scroll .tmap-t { -webkit-line-clamp: 5; font-size: min(calc(28px * var(--tmt)), 40px); }
+.tmap-art.tmap-scroll .tmap-t { -webkit-line-clamp: 5; }
 .tmap-art.tmap-scroll .tmap-s { -webkit-line-clamp: 3; }
 .tmap-art.tmap-cover .tmap-t { -webkit-line-clamp: 2; }
-.tmap-art .tmap-s { font-size: min(calc(15px * var(--tms)), 20px); color: var(--tm-mut); margin-top: 9px; line-height: 1.55;
+.tmap-art .tmap-s { color: var(--tm-mut); margin-top: 9px; line-height: 1.55;
                     display: -webkit-box; -webkit-box-orient: vertical; overflow: hidden; -webkit-line-clamp: 2; }
-.tmap-art .tmap-sig-byline { font-style: italic; font-size: min(calc(13px * var(--tms)), 17px); color: var(--tm-mut); margin-top: 9px; }
-.tmap-art .tmap-sig-corner { position: absolute; right: 20px; bottom: 16px; z-index: 2; font-style: italic; font-size: 13.5px; color: var(--tm-mut); }
+.tmap-art .tmap-sig-byline { font-style: italic; color: var(--tm-mut); margin-top: 9px; }
+.tmap-art .tmap-sig-corner { position: absolute; right: 20px; bottom: 16px; z-index: 2; font-style: italic; color: var(--tm-mut); }
 /* cover: the brand rides the kicker line at top right, a letterhead —
    the bottom-right corner stays reserved for the signature */
 .tmap-art.tmap-cover .tmap-brand { position: absolute; top: 24px; right: 26px; z-index: 2; }
 .tmap-art .tmap-rule { width: 30px; height: 2.5px; background: var(--tm-ink); margin: 16px 0 13px; }
-.tmap-art .tmap-stats { font-size: calc(14px * var(--tmx)); color: var(--tm-mut); line-height: 2.0; }
-.tmap-art .tmap-stats b { color: var(--tm-ink); font-weight: 600; font-family: var(--tm-mono); font-size: calc(16px * var(--tmx)); margin-right: 2px; }
-.tmap-art .tmap-statline { font-size: calc(14px * var(--tmx)); color: var(--tm-mut); }
+.tmap-art .tmap-stats { color: var(--tm-mut); line-height: 2.0; }
+.tmap-art .tmap-stats b { color: var(--tm-ink); font-weight: 600; font-family: var(--tm-mono); margin-right: 2px; }
+.tmap-art .tmap-statline { color: var(--tm-mut); }
 .tmap-art .tmap-sg { display: inline-block; width: calc(9px * var(--tmx)); height: calc(9px * var(--tmx)); margin-right: 5px; vertical-align: calc(0.4px * var(--tmx)); }
 .tmap-art .tmap-sg-ink { fill: var(--tm-ink); }
 .tmap-art .tmap-sg-red { fill: var(--tm-red); }
 .tmap-art .tmap-sg-dia { fill: none; stroke: var(--tm-ink); stroke-width: 1.2; }
 .tmap-art .tmap-si { white-space: nowrap; }
-.tmap-art .tmap-statline b { color: var(--tm-ink); font-family: var(--tm-mono); font-size: calc(16px * var(--tmx)); font-weight: 600; }
+.tmap-art .tmap-statline b { color: var(--tm-ink); font-family: var(--tm-mono); font-weight: 600; }
 .tmap-art .tmap-spacer { flex: 1; }
 .tmap-art .tmap-brand { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
 .tmap-art .tmap-brand svg { width: auto; height: 21px; flex-shrink: 0; }
-.tmap-art .tmap-brand .tmap-bt { font-family: var(--tm-mono); font-size: 10px; letter-spacing: .06em; color: var(--tm-faint); line-height: 1.55; }
-.tmap-art .tmap-brand .tmap-bt b { color: var(--tm-mut); font-weight: 600; letter-spacing: .09em; font-size: 12px; }
+.tmap-art .tmap-brand .tmap-bt { font-family: var(--tm-mono); letter-spacing: .06em; color: var(--tm-faint); line-height: 1.55; }
+.tmap-art .tmap-brand .tmap-bt b { color: var(--tm-mut); font-weight: 600; letter-spacing: .09em; }
 
 html, body, #root {
   width: 100%;
@@ -321,23 +290,6 @@ html, body, #root {
 
 code, pre {
   font-family: var(--font-mono);
-}
-
-/* Scale the complete interface, including body portals, as one composition.
-   React Flow owns physical pointer coordinates: cancel UI zoom at its root,
-   then restore it only for screen-space controls inside that root. */
-body { zoom: var(--ui-scale); }
-.react-flow {
-  zoom: calc(1 / var(--ui-scale));
-  --ui-vw: 1vw;
-  --ui-vh: 1vh;
-  --ui-dvh: 1dvh;
-}
-.react-flow :is(.react-flow__controls, .canvas-map-dock, .canvas-timeline, [data-selection-target-control]) {
-  zoom: var(--ui-scale);
-  --ui-vw: calc(1vw / var(--ui-scale));
-  --ui-vh: calc(1vh / var(--ui-scale));
-  --ui-dvh: calc(1dvh / var(--ui-scale));
 }
 
 /* ReactFlow overrides */
@@ -423,7 +375,7 @@ body { zoom: var(--ui-scale); }
 .canvas-toolbar-button:is([aria-expanded="true"], [aria-pressed="true"], [data-active="true"]),
 .canvas-toolbar-button:is([aria-expanded="true"], [aria-pressed="true"], [data-active="true"]):hover:not(:disabled) { background: color-mix(in srgb, var(--color-accent) 9%, transparent); color: var(--color-accent); }
 .canvas-toolbar-button:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
-.canvas-toolbar-button:disabled { opacity: 0.3; cursor: not-allowed; }
+.canvas-toolbar-button:disabled { opacity: 0.3; }
 .canvas-toolbar-button.canvas-toolbar-icon { width: auto; padding-inline: 8px; }
 .canvas-toolbar-button.canvas-project-button { width: auto; padding-inline: 12px; gap: var(--spacing-related); color: var(--color-ink); font-size: var(--text-control); }
 .canvas-toolbar-button.canvas-session-button { width: auto; padding-inline: 8px; gap: var(--spacing-control-gap); color: var(--color-ink-faint); }
@@ -729,7 +681,7 @@ textarea[class*='outline-none']:focus-visible { outline: none; }
   transition: background-color 0.16s ease, color 0.16s ease;
 }
 .node-ask-send:hover:not(:disabled) { background: var(--color-action-strong); }
-.node-ask-send:disabled { background: var(--color-line); color: var(--color-ink-faint); cursor: not-allowed; }
+.node-ask-send:disabled { background: var(--color-line); color: var(--color-ink-faint); }
 .node-ask-send:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
 
 /* Preserve custom dimensions in the graph while reduced cards use their
@@ -739,34 +691,24 @@ textarea[class*='outline-none']:focus-visible { outline: none; }
   height: auto !important;
 }
 
-.content-card { border-radius: var(--radius-node); box-shadow: none; }
-.content-card:hover { border-color: var(--color-line-strong); }
-.content-card.material-note { background: var(--color-material-note); border-color: var(--color-material-note-line); }
-.content-card.material-file { background: var(--color-card); border-color: var(--color-material-file-line); }
-.content-card.material-link { background: var(--color-card); border-color: var(--color-line); }
-.material-header { border-color: var(--color-line); }
-.material-note .material-header { border-color: var(--color-material-note-line); }
-.material-note .material-label { color: var(--color-material-note-ink); }
-.material-file .material-label { color: var(--color-material-file-ink); }
-.material-note .markdown-body > :first-child { margin-top: 0; }
-.material-files { display: flex; flex-direction: column; gap: 10px; }
-.material-file-row { display: flex; align-items: center; gap: 14px; padding: 12px 0; }
-.material-file-row + .material-file-row { border-top: 1px solid var(--color-line); }
-.material-file-header { align-items: center; flex-shrink: 0; border-bottom: 1px solid var(--color-line); margin-bottom: var(--spacing-related); padding-top: 0; padding-bottom: var(--spacing-related); }
-.material-file-path { margin-top: 2px; overflow-wrap: anywhere; user-select: text; cursor: text; }
-.material-file-header .material-file-meta { margin-top: 3px; }
-.material-document-actions { display: flex; align-items: center; gap: 4px; }
-.material-document-actions button { display: flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: var(--radius-control); color: var(--color-ink-faint); }
-.material-document-actions button:hover:not(:disabled) { color: var(--color-accent); }
-.material-document-actions button:disabled { opacity: .4; cursor: default; }
-.material-document-actions button:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
-.file-identity { flex: 0 0 58px; min-height: 64px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px; border: 1px solid var(--color-material-file-line); border-radius: var(--radius-control); color: var(--color-material-file-ink); background: var(--color-material-file-wash); }
-.file-identity span { font-family: var(--font-mono); font-size: var(--text-meta); line-height: var(--text-meta--line-height); }
-.file-identity[data-file-kind='table'] { color: var(--color-green-700); background: color-mix(in srgb, var(--color-green-600) 7%, var(--color-card)); border-color: color-mix(in srgb, var(--color-green-600) 30%, var(--color-line)); }
-.file-identity[data-file-kind='notebook'], .file-identity[data-file-kind='code'] { color: var(--color-accent-strong); background: color-mix(in srgb, var(--color-accent) 7%, var(--color-card)); border-color: color-mix(in srgb, var(--color-accent) 30%, var(--color-line)); }
-.material-file-name { font-size: var(--text-title); font-weight: 600; line-height: var(--text-title--line-height); overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-.material-file-meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 5px; color: var(--color-ink-faint); font-size: var(--text-meta); line-height: var(--text-meta--line-height); }
-.material-upload { margin-top: 4px; }
+
+/* Short saved cards share a header row with the name so a reading line and
+   its actions still fit at the minimum node height. */
+[data-material-short] .material-header { padding-block: 2px; }
+[data-material-short] .material-header .material-node-name { display: block; flex-shrink: 1; white-space: nowrap; text-overflow: ellipsis; }
+[data-material-short] .material-label { flex-shrink: 0; }
+[data-material-short] .material-content { padding-top: 4px; }
+[data-material-short] .material-file-header { gap: 6px; margin-bottom: 4px; padding-bottom: 4px; }
+[data-material-short] .file-identity { flex-basis: 32px; min-height: 28px; }
+[data-material-short] .file-identity > span { display: none; }
+[data-material-short] :is(.material-file-name, .material-link-title) { -webkit-line-clamp: 1; }
+[data-material-short] .material-editor { gap: 4px; }
+[data-material-short] .material-upload { margin-top: 0; padding-block: 4px; }
+[data-material-tight] .material-file-details { display: flex; align-items: center; gap: 4px; }
+[data-material-tight] .material-file-meta { margin-top: 0; }
+[data-material-tight] .material-edit-hint { display: none; }
+[data-material-tight] .material-file-header button { padding-block: 0; }
+[data-material-tight] .material-editor textarea { padding-block: 2px; }
 .node-start-label { font-size: var(--text-meta); line-height: var(--text-meta--line-height); font-weight: 500; color: var(--color-accent-strong); }
 .node-selected, .thought-node.node-selected, .content-card.node-selected {
   border-color: var(--color-accent);
@@ -847,10 +789,6 @@ textarea[class*='outline-none']:focus-visible { outline: none; }
   outline: 2px solid var(--color-accent);
   outline-offset: 2px;
 }
-[data-highlighter-active],
-[data-highlighter-active] * {
-  cursor: crosshair !important;
-}
 /* The pen selects link text instead of dragging or opening the link. */
 [data-highlighter-active] a {
   pointer-events: none;
@@ -860,141 +798,6 @@ textarea[class*='outline-none']:focus-visible { outline: none; }
   color: inherit;
 }
 
-.markdown-body h1, .markdown-body h2, .markdown-body h3,
-.markdown-body h4, .markdown-body h5, .markdown-body h6 {
-  color: var(--color-ink);
-  font-weight: 600;
-  line-height: var(--text-title--line-height);
-  margin-top: 1em;
-  margin-bottom: 0.5em;
-}
-
-.markdown-body h1 { font-size: var(--text-page); line-height: var(--text-page--line-height); }
-.markdown-body h2 { font-size: var(--text-section); line-height: var(--text-section--line-height); }
-.markdown-body h3 { font-size: var(--text-heading); line-height: var(--text-heading--line-height); }
-.markdown-body h4, .markdown-body h5, .markdown-body h6 { font-size: var(--text-title); }
-
-.markdown-body p {
-  margin-bottom: 0.75em;
-}
-
-/* Ask-the-canvas citations: a number the reader clicks to locate the node;
-   a number the canvas does not have is red, so an invented one shows. */
-.cite-chip {
-  display: inline-flex; align-items: center; vertical-align: baseline;
-  margin: 0 1px; padding: 0 5px; border-radius: var(--radius-tag); line-height: 1.5;
-  font-family: var(--font-mono); font-size: var(--text-meta); font-weight: 600;
-  color: var(--color-accent); background: color-mix(in srgb, var(--color-accent) 12%, transparent);
-  border: 1px solid color-mix(in srgb, var(--color-accent) 35%, transparent); cursor: pointer;
-}
-.cite-chip:hover { background: color-mix(in srgb, var(--color-accent) 22%, transparent); }
-.cite-chip.unknown, .cite-chip[data-node-cite=""] { color: #C73E2E; background: rgba(199, 62, 46, 0.08); border-color: rgba(199, 62, 46, 0.4); cursor: help; }
-[data-canvas-chat] .markdown-body p { margin-bottom: 0.5em; }
-
-/* Questions share answer typography, with compact paragraph spacing. */
-.question-md.markdown-body { line-height: var(--text-body--line-height); }
-.question-md.markdown-body p { margin-bottom: 0.35em; }
-.question-md.markdown-body ul, .question-md.markdown-body ol { margin-bottom: 0.35em; }
-.question-md.markdown-body li { margin-bottom: 0.1em; }
-.question-md.markdown-body h1, .question-md.markdown-body h2, .question-md.markdown-body h3 { margin-top: 0.4em; margin-bottom: 0.25em; }
-.question-md.markdown-body pre { margin: 0.35em 0; font-weight: 400; }
-.question-md.markdown-body > :first-child { margin-top: 0; }
-.question-md.markdown-body > :last-child { margin-bottom: 0; }
-
-.markdown-body p:last-child {
-  margin-bottom: 0;
-}
-
-.markdown-body ul, .markdown-body ol {
-  padding-left: 1.5em;
-  margin-bottom: 0.75em;
-}
-
-/* Tailwind preflight strips list markers globally; restore them here */
-.markdown-body ul { list-style: disc; }
-.markdown-body ol { list-style: decimal; }
-
-.markdown-body li {
-  margin-bottom: 0.25em;
-}
-
-.markdown-body strong {
-  color: var(--color-ink);
-  font-weight: 600;
-}
-
-.markdown-body em {
-  color: var(--color-ink-muted);
-}
-
-.markdown-body a {
-  color: var(--color-accent);
-  text-decoration: underline;
-  text-underline-offset: 2px;
-}
-
-.markdown-body a:hover {
-  color: var(--color-accent-strong);
-}
-
-.markdown-body code {
-  background: var(--color-wash);
-  color: var(--color-ink);
-  padding: 0.15em 0.4em;
-  border-radius: var(--radius-tag);
-  font-size: var(--text-control);
-  border: 1px solid var(--color-line);
-}
-
-.markdown-body pre {
-  background: var(--color-wash) !important;
-  border: 1px solid var(--color-line);
-  border-radius: var(--radius-content);
-  padding: 0.75em 1em;
-  margin: 0.75em 0;
-  overflow-x: auto;
-}
-
-.markdown-body pre code {
-  background: transparent;
-  padding: 0;
-  font-size: var(--text-control);
-  line-height: var(--text-control--line-height);
-  border: none;
-}
-
-.markdown-body blockquote {
-  border-left: 1px solid var(--color-line-strong);
-  padding-left: 1em;
-  color: var(--color-ink-muted);
-  margin: 0.75em 0;
-}
-
-.markdown-body table {
-  width: 100%;
-  border-collapse: collapse;
-  margin: 0.75em 0;
-  font-size: var(--text-control);
-  line-height: var(--text-control--line-height);
-}
-
-.markdown-body th, .markdown-body td {
-  border: 1px solid var(--color-line);
-  padding: 0.4em 0.6em;
-  text-align: left;
-}
-
-.markdown-body th {
-  background: var(--color-wash);
-  color: var(--color-ink);
-  font-weight: 600;
-}
-
-.markdown-body hr {
-  border: none;
-  border-top: 1px solid var(--color-line);
-  margin: 1em 0;
-}
 
 /* Line clamp utility */
 .line-clamp-3 {
@@ -1030,7 +833,6 @@ body.tdag-connecting, body.tdag-connecting * {
   position: absolute;
   color: transparent;
   white-space: pre;
-  cursor: text;
   transform-origin: 0 0;
 }
 .tdag-textlayer ::selection {
@@ -1076,13 +878,6 @@ body.tdag-connecting, body.tdag-connecting * {
 .glyph-selected > div > span {
   outline: 3px solid var(--color-accent, #6b5ce7);
   outline-offset: 3px;
-}
-/* Glyph seals keep a FIXED SCREEN SIZE (POI style, like map pins): the
-   scale cancels the viewport zoom below the glyph threshold (0.32), so
-   zooming further out tightens the map instead of shrinking the seals.
-   At zoom = 0.32 the factor is exactly 1 — the tier transition is seamless. */
-[data-zoom-tier='glyph'] [data-glyph-node] > span {
-  transform: scale(calc(0.32 / var(--tdag-zoom, 0.32)));
 }
 
 /* Unbroken long tokens (URLs, DOIs, hashes) must wrap instead of escaping

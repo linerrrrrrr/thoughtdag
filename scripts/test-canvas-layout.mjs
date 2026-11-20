@@ -66,6 +66,10 @@ const assertContains = (frame, member) => {
     && frame.position.x + frame.width >= member.position.x + member.width
     && frame.position.y + frame.height >= member.position.y + member.height, `${frame.id} does not contain ${member.id}`);
 };
+const assertDisjoint = (a, b) => {
+  assert.ok(a.position.x + a.width <= b.position.x || b.position.x + b.width <= a.position.x
+    || a.position.y + a.height <= b.position.y || b.position.y + b.height <= a.position.y, `${a.id} overlaps ${b.id}`);
+};
 try {
   const compile = (entry, outfile) => buildSync({ entryPoints: [entry], bundle: true, platform: 'node', format: 'esm', outfile,
     define: { 'import.meta.env': '{}' }, logLevel: 'silent' });
@@ -97,8 +101,7 @@ try {
   const plan = async (nodes, edges, options = {}, ids) => {
     const result = await planCanvasLayout(nodes, edges, { ...defaults, ...options }, ids);
     if (!result.error && options.method !== 'manual') {
-      const scope = ids && new Set(ids);
-      for (const frame of nodes.filter((n) => n.data.stepKind === 'frame' && (!scope || scope.has(n.id)))) {
+      for (const frame of nodes.filter((n) => n.data.stepKind === 'frame')) {
         const before = frameMembers(frame, nodes).map((n) => n.id).sort();
         const after = frameMembers(get(result.nodes, frame.id), result.nodes).map((n) => n.id).sort();
         assert.deepEqual(after, before, `${frame.id}: automatic layout changed region membership`);
@@ -298,12 +301,50 @@ try {
   });
   await test('a materials-only selection can be arranged', async () => {
     const nodes = [node('file', 0, 800, 400, 500, { stepKind: 'file' }), node('note', 0, -400, 600, 250, { stepKind: 'note' }),
-      node('link', 0, 0, 300, 200, { stepKind: 'link' }), node('frame', 0, 0, 2000, 2000, { stepKind: 'frame' })];
+      node('link', 0, 0, 300, 200, { stepKind: 'link' }), node('frame', -100, -600, 2200, 2500, { stepKind: 'frame' })];
     const edges = [edge('file', 'note'), edge('note', 'link')];
     const result = (await plan(nodes, edges, {}, ['file', 'note', 'link']));
     assert.equal(result.error, undefined); assertClear(result.nodes); assertOrder(result.nodes, edges, 'vertical');
     assert.equal(result.nodes[3], nodes[3]);
   });
+  for (const direction of ['vertical', 'horizontal']) {
+    const along = (id, start, side, depth = 200, span = 200, data = {}) => direction === 'vertical'
+      ? node(id, side, start, span, depth, data) : node(id, start, side, depth, span, data);
+    const region = { stepKind: 'frame' };
+    for (const method of ['chains', 'layers']) {
+      const options = { direction, method };
+      await test(`${direction} ${method} keeps a selected turn in both of its fixed enclosing regions`, async () => {
+        const nodes = [along('upstream', 0, 300), along('outer', 800, 0, 2200, 1600, region),
+          along('inner', 1100, 100, 1200, 900, region), along('member', 1600, 550)];
+        const edges = [edge('upstream', 'member')];
+        const result = await plan(nodes, edges, options, ['member']);
+        assert.equal(result.error, undefined);
+        for (const fixed of nodes.slice(0, 3)) assert.equal(get(result.nodes, fixed.id), fixed);
+        const member = get(result.nodes, 'member');
+        assertContains(get(result.nodes, 'inner'), member);
+        assert.equal(member.position[direction === 'vertical' ? 'x' : 'y'], 300);
+        assertOrder(result.nodes, edges, direction);
+      });
+      await test(`${direction} ${method} routes a selected turn past an unselected empty region`, async () => {
+        const nodes = [along('before', 0, 100), along('empty', 260, 0, 440, 600, region),
+          along('moving', 400, 1300), along('after', 1300, 100)];
+        const edges = [edge('before', 'moving'), edge('moving', 'after')];
+        const result = await plan(nodes, edges, options, ['moving']);
+        assert.equal(result.error, undefined);
+        for (const id of ['before', 'empty', 'after']) assert.equal(get(result.nodes, id), get(nodes, id));
+        const moved = get(result.nodes, 'moving');
+        assertDisjoint(moved, get(result.nodes, 'empty'));
+        assert.equal(moved.position[direction === 'vertical' ? 'x' : 'y'], 100);
+        assertOrder(result.nodes, edges, direction);
+      });
+      await test(`${direction} ${method} leaves an impossible layout inside a fixed region untouched`, async () => {
+        const nodes = [along('frame', 0, 0, 400, 800, region), along('a', 100, 150), along('b', 100, 450)];
+        const result = await plan(nodes, [edge('a', 'b')], options, ['a', 'b']);
+        assert.equal(result.error, 'frame-conflict', 'two 200px turns plus spacing cannot fit in 400px');
+        assert.equal(result.nodes, nodes, 'failed constraints must leave all geometry untouched');
+      });
+    }
+  }
   await test('a selected region arranges its contents without moving outside cards', async () => {
     const nodes = [node('frame', 0, 0, 2200, 2200, { stepKind: 'frame' }),
       node('a', 1500, 1500, 200, 120, {}),
@@ -318,6 +359,66 @@ try {
       assert.deepEqual(frameMembers(get(result.nodes, 'frame'), result.nodes).map(n => n.id).sort(), ['a', 'c']);
       const again = (await plan(result.nodes, edges, { direction, method }, ['frame']));
       assert.equal(again.error, undefined); assert.deepEqual(again.nodes, result.nodes);
+    }
+  });
+  await test('card selections arrange each chain inside its original fixed region and keep outsiders clear', async () => {
+    const nodes = [node('left', 0, 0, 1600, 1500, { stepKind: 'frame' }),
+      node('right', 2600, 0, 1600, 1500, { stepKind: 'frame' }),
+      node('a', 900, 900), node('aa', 240, 180), node('b', 3500, 900), node('bb', 2800, 180),
+      node('outside', 1820, 300), node('fixed', 4700, 600)];
+    const ids = ['a', 'aa', 'b', 'bb', 'outside'], edges = [edge('a', 'aa'), edge('b', 'bb')];
+    for (const direction of ['vertical', 'horizontal']) for (const method of ['chains', 'layers']) {
+      const options = { direction, method };
+      const result = await plan(nodes, edges, options, ids);
+      assert.equal(result.error, undefined);
+      assertOrder(result.nodes, edges, direction); assertClear(result.nodes);
+      for (const id of ['left', 'right', 'fixed']) assert.equal(get(result.nodes, id), get(nodes, id));
+      for (const [frame, first, second] of [['left', 'a', 'aa'], ['right', 'b', 'bb']]) {
+        const cross = direction === 'vertical' ? 'x' : 'y';
+        assert.equal(get(result.nodes, first).position[cross], get(result.nodes, second).position[cross]);
+        assertDisjoint(get(result.nodes, frame), get(result.nodes, 'outside'));
+      }
+      const again = await plan(result.nodes, edges, options, ids);
+      assert.equal(again.error, undefined); assert.deepEqual(again.nodes, result.nodes, `${direction} ${method} drifted`);
+    }
+  });
+  await test('a branch layout stays put after clearing a partially overlapping unselected empty region', async () => {
+    const nodes = [node('a', 0, 0, 200, 140), node('b', 1200, 600, 200, 140), node('c', 1000, 800, 200, 140),
+      node('frame', 56, -100, 460, 300, { stepKind: 'frame' })];
+    const ids = ['a', 'b', 'c'], edges = [edge('a', 'b'), edge('a', 'c')];
+    const result = await plan(nodes, edges, {}, ids);
+    assert.equal(result.error, undefined); assertOrder(result.nodes, edges, 'vertical');
+    assert.equal(get(result.nodes, 'frame'), get(nodes, 'frame'));
+    for (const id of ids) assertDisjoint(get(result.nodes, 'frame'), get(result.nodes, id));
+    const repeat = await plan(result.nodes, edges, {}, ids);
+    assert.equal(repeat.error, undefined); assert.deepEqual(repeat.nodes, result.nodes);
+  });
+  await test('arranging only an inner region fits it inside its fixed outer region', async () => {
+    const nodes = [node('outer', 0, 0, 3000, 2800, { stepKind: 'frame' }),
+      node('inner', 400, 400, 1700, 1600, { stepKind: 'frame' }),
+      node('a', 1500, 1300), node('b', 550, 600), node('neighbor', 2300, 1500)];
+    const edges = [edge('a', 'b')];
+    for (const direction of ['vertical', 'horizontal']) {
+      const result = await plan(nodes, edges, { direction }, ['inner']);
+      assert.equal(result.error, undefined); assertOrder(result.nodes, edges, direction);
+      assertTightFrame(result.nodes, 'inner');
+      for (const id of ['outer', 'neighbor']) assert.equal(get(result.nodes, id), get(nodes, id));
+      assertContains(get(result.nodes, 'outer'), get(result.nodes, 'inner'));
+      assertDisjoint(get(result.nodes, 'inner'), get(result.nodes, 'neighbor'));
+      const again = await plan(result.nodes, edges, { direction }, ['inner']);
+      assert.equal(again.error, undefined); assert.deepEqual(again.nodes, result.nodes);
+    }
+  });
+  await test('a shared card in overlapping fixed regions leaves an unrelated selection free to arrange', async () => {
+    const nodes = [node('left', 0, 0, 1400, 1200, { stepKind: 'frame' }),
+      node('right', 900, 0, 1500, 1400, { stepKind: 'frame' }), node('shared', 1050, 600),
+      node('root', 3600, 1100), node('next', 2600, 200)];
+    const edges = [edge('root', 'next')];
+    for (const direction of ['vertical', 'horizontal']) {
+      const result = await plan(nodes, edges, { direction }, ['root', 'next']);
+      assert.equal(result.error, undefined); assertOrder(result.nodes, edges, direction);
+      for (const fixed of nodes.slice(0, 3)) assert.equal(get(result.nodes, fixed.id), fixed);
+      for (const frame of result.nodes.slice(0, 2)) for (const id of ['root', 'next']) assertDisjoint(frame, get(result.nodes, id));
     }
   });
   await test('selecting a frame arranges its current contents and fits its new bounds', async () => {
@@ -430,6 +531,18 @@ try {
       }
       const again = await plan(result.nodes, [], { direction, method });
       assert.equal(again.error, undefined); assert.deepEqual(again.nodes, result.nodes);
+    }
+  });
+  await test('a canvas containing just empty regions separates their footprints and retains their sizes', async () => {
+    const nodes = [node('a', 0, 0, 500, 320, { stepKind: 'frame' }), node('b', 200, 100, 400, 480, { stepKind: 'frame' })];
+    for (const direction of ['vertical', 'horizontal']) {
+      const result = await plan(nodes, [], { direction });
+      assert.equal(result.error, undefined);
+      assertDisjoint(result.nodes[0], result.nodes[1]);
+      assert.deepEqual(result.nodes.map(n => [n.width, n.height]), [[500, 320], [400, 480]]);
+      const repeat = await plan(result.nodes, [], { direction });
+      assert.equal(repeat.error, undefined);
+      assert.deepEqual(repeat.nodes, result.nodes);
     }
   });
   await test('nested empty regions move with the selected outer region without acquiring members', async () => {

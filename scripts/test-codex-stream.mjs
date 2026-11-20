@@ -130,6 +130,7 @@ const transportEvents = [];
 let client;
 let requestedSummary;
 let requestedThread, requestedSandbox;
+let directoryScans = 0;
 const existingRoot = path.join(fixtureDir, 'external-project');
 const internalRoot = path.join(fixtureDir, 'internal-document');
 const notify = (method, params) => client.stdout.emit('data', Buffer.from(JSON.stringify({ method, params: { threadId: 'transport-thread', turnId: 'transport-turn', ...params } }) + '\n'));
@@ -170,19 +171,30 @@ vm.runInNewContext(readFileSync(runtimePath, 'utf8'), {
   module: loaded, exports: loaded.exports, Buffer, process, setTimeout, clearTimeout, setInterval, clearInterval,
   require(name) {
     if (name === 'node:child_process') return { spawn };
+    if (name === './fs-diff.cjs') return { snapshotDir: async () => { directoryScans++; return null; } };
     if (name === './codex-launch.cjs') return { createCodexLaunchResolver: () => async () => ({ path: path.join(fixtureDir, 'codex.exe'), command: path.join(fixtureDir, 'codex.exe'), args: ['app-server'], env: {}, searched: [], failures: [] }) };
     return runtimeRequire(name);
   },
 }, { filename: runtimePath });
 const runtime = loaded.exports.createCodexRuntime();
-try {
+async function runWithMode(mode) {
+  const captured = [];
   await new Promise((resolve, reject) => {
     const timeout = setTimeout(() => reject(new Error('mock runtime did not complete')), 3000);
-    runtime.run({ cwd: fixtureDir, prompt: 'transport test', nativePermissions: true, managedFileDirs: [internalRoot], model: { id: 'fixture-model' } }, ({ event }) => {
-      transportEvents.push(event);
+    runtime.run({ cwd: fixtureDir, prompt: 'transport test', codexWorkspace: { permissionMode: mode }, managedFileDirs: [internalRoot], model: { id: 'fixture-model' } }, ({ event }) => {
+      captured.push(event);
       if (event.type === 'run_end') { clearTimeout(timeout); resolve(); }
     }).catch(reject);
   });
+  return captured;
+}
+try {
+  await runWithMode('auto');
+  assert.equal(requestedThread.approvalPolicy, 'on-request');
+  assert.equal(requestedThread.approvalsReviewer, 'auto_review');
+  assert.equal(requestedThread.sandbox, 'workspace-write');
+  transportEvents.push(...await runWithMode('native'));
+  assert.equal(directoryScans, 0, 'files changed outside the canvas are never scanned for attachments');
 } finally {
   runtime.shutdown();
 }

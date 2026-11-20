@@ -59,9 +59,9 @@ export default function SelectionRegion({ hasNodeSurface }: { hasNodeSurface: bo
   });
   if (!region || !renderer) return null;
   // Multi-node geometry controls draw this same rectangle and own its movement.
-  return createPortal(<><div ref={ref} data-selection-region data-selection-region-target={target}
+  return createPortal(<><div ref={ref} data-type-surface="canvas-geometry" data-selection-region data-selection-region-target={target}
     data-selection-region-surface={!hasNodeSurface || undefined}
-    className="selection-region nodrag"
+    data-cursor="neutral" className="selection-region nodrag"
     style={{ left: x + region.rect.x * zoom, top: y + region.rect.y * zoom, width: region.rect.width * zoom, height: region.rect.height * zoom }}
     role="group" aria-label={t('selection.region')}
     onPointerDown={event => { if (event.button === 0) event.stopPropagation(); }}

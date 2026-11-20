@@ -27,7 +27,7 @@ export default function BackupDialog() {
     : t('backup.lastNever');
 
   return createPortal((
-    <div className="fixed inset-0 z-[80] bg-ink/25 flex items-center justify-center animate-fade-in" data-backup-dialog>
+    <div className="fixed inset-0 z-[80] bg-ink/25 flex items-center justify-center animate-fade-in" data-type-surface="portal" data-backup-dialog>
       <div ref={layerRef} role="dialog" aria-modal="true" aria-label={t('backup.dialogTitle')} tabIndex={-1} className="bg-surface rounded-panel shadow-lg border border-line w-[min(440px,calc(92*var(--ui-vw)))] p-5" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-start justify-between mb-1">
           <div className="text-title font-semibold text-ink flex items-center gap-2">

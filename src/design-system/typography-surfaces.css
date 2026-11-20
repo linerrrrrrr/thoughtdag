@@ -1,0 +1,65 @@
+@import './typography-interface.css';
+
+/* React Flow measures in physical canvas coordinates. Its floating tools
+   recover the interface density exactly once inside that coordinate system. */
+[data-type-surface='canvas-viewport'] {
+  zoom: calc(1 / var(--ui-scale));
+  --ui-vw: 1vw;
+  --ui-vh: 1vh;
+  --ui-dvh: 1dvh;
+}
+[data-type-surface='canvas-viewport'] [data-type-surface='canvas-screen-tools'],
+[data-type-surface='canvas-controls'] > .react-flow__controls {
+  zoom: var(--ui-scale);
+  --ui-vw: calc(1vw / var(--ui-scale));
+  --ui-vh: calc(1vh / var(--ui-scale));
+  --ui-dvh: calc(1dvh / var(--ui-scale));
+}
+
+/* Saved node bounds, hit targets and ports remain in canvas coordinates.
+   Summary and compact geometry expose their compensation to the interiors. */
+[data-type-surface='canvas-geometry'][data-node-overview-surface='summary'] {
+  --overview-zoom: calc(var(--ui-scale, 1) * var(--canvas-summary-compensation, 1));
+}
+[data-type-surface='canvas-geometry'][data-node-overview-surface='compact'] {
+  --overview-zoom: calc(var(--ui-scale, 1) * var(--canvas-compact-compensation, 1));
+}
+[data-type-surface='canvas-object'] { zoom: 1; }
+/* Content-height measurements are saved in unscaled canvas units. */
+[data-type-surface='canvas-geometry'][data-measure-content-height] { --canvas-conversation-scale: 1; }
+[data-node-detail-level='full'] > [data-type-surface='conversation'] {
+  zoom: var(--canvas-conversation-scale, 1);
+}
+[data-type-surface='node-input'],
+[data-type-surface='node-badge'] {
+  zoom: var(--overview-zoom, var(--canvas-conversation-scale, 1));
+}
+[data-node-overview-surface] [data-type-surface='overview'] { zoom: var(--overview-zoom, 1); }
+[data-node-overview-surface='summary'] [data-type-surface='overview'] :is(.node-overview-name, .node-summary-name) {
+  font-size: calc(var(--text-title) * var(--canvas-summary-type-scale, 1));
+}
+[data-node-overview-surface='summary'] [data-type-surface='overview'] :is(.node-overview-preview, .node-summary-text) {
+  font-size: calc(var(--text-control) * var(--canvas-summary-type-scale, 1));
+}
+
+/* Edge labels and frame headers use transforms: their measured canvas
+   anchor remains fixed while their text and controls change screen size. */
+[data-type-surface='edge-order'] { transform: scale(calc(1 / max(.6, var(--tdag-zoom, 1)))); }
+[data-type-surface='edge-label'] { transform: scale(calc(1 / var(--tdag-zoom, 1))); }
+[data-type-surface='frame-label'] {
+  transform: scale(var(--frame-label-scale, 1));
+  transform-origin: top left;
+}
+
+/* The sample has its own camera inside screen-density settings. Use the
+   same scale factors as real nodes, with the preview's draft settings. */
+[data-type-surface='type-preview-camera'] {
+  transform: translate(calc(-50% + var(--preview-pan-x)), calc(-50% + var(--preview-pan-y))) scale(var(--preview-scale));
+}
+[data-type-surface='type-preview'][data-canvas-typography-node='full'] {
+  font-size: calc(var(--text-body) * var(--canvas-conversation-scale) / var(--ui-scale));
+}
+[data-type-surface='type-preview'][data-canvas-typography-node='summary'] {
+  font-size: calc(var(--text-control) * var(--canvas-summary-compensation) * var(--canvas-summary-type-scale));
+}
+[data-type-surface='type-preview'] .type-demo-node-level { font-size: .75em; }

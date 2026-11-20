@@ -1,5 +1,5 @@
 import { useDismissableLayer } from '../../lib/use-dismissable-layer';
-import { useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
 import { History, ImageDown, Sparkles, X } from 'lucide-react';
 import { useStore } from '../../store';
@@ -62,7 +62,6 @@ export default function TimelineOverviewModal({ onLocate }: { onLocate: (nodeId:
     const y = uiRect(row).top - uiRect(list).top;
     list.scrollTop += y - a.y;
   }, [detail]);
-  const fontPx = 13 + detail * 0.9;
   // The journey paragraph: session-cached per (graph fingerprint, interface
   // language) — reopening is free until the map changes, and switching the
   // language toggle narrates in the other language.
@@ -95,7 +94,7 @@ export default function TimelineOverviewModal({ onLocate }: { onLocate: (nodeId:
     iso ? new Date(iso).toLocaleTimeString(dateLocale, { hour: '2-digit', minute: '2-digit' }) : '—';
 
   return createPortal((
-    <div className="fixed inset-0 z-[60] bg-ink/30 flex items-center justify-center p-6">
+    <div data-timeline-overview-dialog data-type-surface="portal" className="fixed inset-0 z-[60] bg-ink/30 flex items-center justify-center p-6">
       <div ref={layerRef} role="dialog" aria-modal="true" aria-label={t('tlov.title')} tabIndex={-1} className="bg-card rounded-panel shadow-lg border border-line w-[640px] h-[calc(80*var(--ui-vh))] flex flex-col" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center gap-2 px-5 py-3 border-b border-line shrink-0">
           <History size={15} strokeWidth={1.75} className="text-accent" />
@@ -154,7 +153,7 @@ export default function TimelineOverviewModal({ onLocate }: { onLocate: (nodeId:
           )}
         </div>
 
-        <div ref={listRef} className="flex-1 min-h-0 overflow-y-auto px-5 py-3" data-timeline-overview>
+        <div ref={listRef} className="flex-1 min-h-0 overflow-y-auto px-5 py-3" style={{ '--timeline-detail': detail } as CSSProperties} data-timeline-overview>
           {entries.length === 0 && <p className="text-control text-ink-faint italic py-2">{t('tlov.empty')}</p>}
           {entries.map((e, i) => {
             const prevDay = i > 0 ? dayOf(entries[i - 1].createdAt) : undefined;
@@ -176,10 +175,10 @@ export default function TimelineOverviewModal({ onLocate }: { onLocate: (nodeId:
                   <div className="flex-1 min-w-0">
                     {e.ladder ? (
                       // the level whole, morphing word by word as the slider crosses a half-step; the shorter level's words keep full ink
-                      <div className={e.archived ? 'opacity-50 line-through' : ''}><LadderMorph ladder={e.ladder} level={level} fontSize={fontPx} weight={e.badged ? 'font-semibold' : 'font-medium'} className="whitespace-pre-wrap break-words" /></div>
+                      <div className={e.archived ? 'opacity-50 line-through' : ''}><LadderMorph ladder={e.ladder} level={level} detail={detail} weight={e.badged ? 'font-semibold' : 'font-medium'} className="whitespace-pre-wrap break-words" /></div>
                     ) : (
                       // no ladder (a short answer): the takeaway, or the topic at the lowest level
-                      <p className={`leading-snug whitespace-pre-wrap break-words ${e.archived ? 'text-ink-faint line-through' : e.badged ? 'text-ink' : 'text-ink-muted'}`} style={{ fontSize: fontPx, transition: 'font-size 160ms ease-out' }}>
+                      <p className={`leading-snug whitespace-pre-wrap break-words ${e.archived ? 'text-ink-faint line-through' : e.badged ? 'text-ink' : 'text-ink-muted'}`} data-timeline-fallback data-type-surface="timeline-ladder">
                         {level === 0 ? (e.topic || e.label || '…') : <>{e.topic && <span className="font-medium text-accent">{e.topic} · </span>}{e.label || '…'}</>}
                       </p>
                     )}

@@ -4,6 +4,7 @@ import { useStore } from '../store';
 import { autoLayout } from './layout';
 import { activeSummary, countTokens, generateId } from '../utils';
 import type { ThoughtNode, ThoughtEdge, ThoughtData, Highlight } from '../types';
+import { rulerSourceHandle } from './edge-anchors';
 
 // Condense v4: the COPY-TREE model.
 //
@@ -269,10 +270,13 @@ export function buildCondensedCopy(segments: CondenseSegment[], distillates: str
   for (const e of edges) {
     const s = idMap.get(e.source), t2 = idMap.get(e.target);
     if (!s || !t2 || s === t2) continue;
-    const key = `${s}→${t2}`;
+    const mark = rulerSourceHandle(e.sourceHandle);
+    const preservedMark = segOf.has(e.source) ? undefined : mark;
+    const key = JSON.stringify([s, t2, preservedMark]);
     if (seen.has(key)) continue;
     seen.add(key);
-    newEdges.push({ ...e, id: `e-${generateId()}`, source: s, target: t2, selected: false });
+    newEdges.push({ ...e, id: `e-${generateId()}`, source: s, target: t2, selected: false,
+      sourceHandle: mark && !preservedMark ? 'continue' : e.sourceHandle });
   }
 
   st.pushHistory();

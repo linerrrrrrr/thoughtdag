@@ -25,6 +25,7 @@ import { toast, useUiStore } from '../ui-store';
 import { useStore } from '../../store';
 import { isAgentActivity } from '../agent-activity';
 import type { AppServerThread } from '../adapters/codex-appserver';
+import { ensureCanvasWorkspace } from '../canvas-workspace';
 import { t } from '../../i18n';
 import { agentFileContext, finishAgentFileEdits, showAgentFilePreview, type AgentFileContext } from './node-file-context';
 import { groupNodeFileEdits } from '../node-files';
@@ -120,56 +121,18 @@ const normalizedHostPath = (value: string): string => {
 };
 const sameHostPath = (left: string, right: string): boolean => normalizedHostPath(left) === normalizedHostPath(right);
 
-export type CwdChoice = { cwd: string; kind: 'chosen' | 'source' | 'session' | 'workspace' };
-
-/** The working directory the active canvas's agent turns run in: the one
- *  the person chose for this canvas, else the project its source nodes
- *  came from, else the canvas's own workspace. */
-export async function resolveAgentCwd(forHarness = false, previewOnly = false): Promise<CwdChoice | null> {
-  if (!window.desktopAgents) return null;
-  try {
-    const { useStore } = await import('../../store');
-    const { useProjects } = await import('../../store/projects');
-    const { projects, activeId } = useProjects.getState();
-    const meta = projects.find((p) => p.id === activeId);
-    if (meta?.agentCwd) return { cwd: meta.agentCwd, kind: 'chosen' };
-    const counts = new Map<string, number>();
-    for (const n of useStore.getState().nodes) {
-      const c = n.data.importSource?.cwd;
-      if (c) counts.set(c, (counts.get(c) ?? 0) + 1);
-    }
-    let best: string | null = null; let bestN = 0;
-    for (const [c, n] of counts) if (n > bestN) { best = c; bestN = n; }
-    if (best) return { cwd: best, kind: 'source' };
-    // a Harness Agent turn without a choice of its own follows the session
-    // the chat shows, not the canvas's workspace folder
-    if (forHarness) {
-      const { currentDshSession } = await import('./harness-bridge');
-      const session = currentDshSession()?.cwd;
-      if (session) return { cwd: session, kind: 'session' };
-    }
-    if (previewOnly) return null;
-    return { cwd: await window.desktopAgents.workspace(activeId ?? 'default'), kind: 'workspace' };
-  } catch {
-    return null;
+function commonSourceDirectory(nodes: ThoughtNode[]): string | undefined {
+  const counts = new Map<string, number>();
+  for (const node of nodes) {
+    const cwd = node.data.importSource?.cwd;
+    if (cwd) counts.set(cwd, (counts.get(cwd) ?? 0) + 1);
   }
-}
-
-/** The source project directory of the active canvas, if any. */
-export async function sourceCwd(): Promise<string | null> {
-  try {
-    const { useStore } = await import('../../store');
-    const { useProjects } = await import('../../store/projects');
-    const workspace = window.desktopAgents ? await window.desktopAgents.workspace(useProjects.getState().activeId ?? 'default') : null;
-    const counts = new Map<string, number>();
-    for (const n of useStore.getState().nodes) {
-      const c = n.data.importSource?.cwd;
-      if (c) counts.set(c, (counts.get(c) ?? 0) + 1);
-    }
-    let best: string | null = null; let bestN = 0;
-    for (const [c, n] of counts) if (n > bestN) { best = c; bestN = n; }
-    return best && best !== workspace ? best : null;
-  } catch { return null; }
+  let mostCommon: string | undefined;
+  let highestCount = 0;
+  for (const [cwd, count] of counts) {
+    if (count > highestCount) { mostCommon = cwd; highestCount = count; }
+  }
+  return mostCommon;
 }
 
 /** The session file for a session id: the tail node's own record, else the
@@ -208,8 +171,7 @@ export async function agentOutbound(model: string | undefined, nodeId?: string):
     nodeId ? nodes.find((n) => n.id === nodeId) : undefined);
 }
 
-/** Read-only composer preview. Unlike dispatch it never creates a workspace
- * directory merely because the reader opened a node. */
+/** Inspect the same session and directory that dispatch would use. */
 export async function previewAgentFollowup(nodeId: string, model: string | undefined, options?: {
   hasContextChanges?: boolean; hasAttachments?: boolean; recall?: boolean; hasReferences?: boolean; excludeAttachments?: boolean;
 }): Promise<AgentRoute | undefined> {
@@ -227,9 +189,11 @@ async function routeForParent(model: string | undefined, parentId?: string, chil
   const { nodes, edges } = useStore.getState();
   const tail = nodes.find((n) => n.id === parentId);
   const sessionCwd = tail?.data.agentSession?.cwd ?? tail?.data.importSource?.cwd;
-  // A branch follows its own source directory, not the majority directory
-  // of a canvas that may contain several projects.
-  const cwd = meta?.agentCwd ?? sessionCwd ?? (await resolveAgentCwd(false, previewOnly))?.cwd;
+  // Only legacy runtimes follow a branch back to its source directory.
+  const cwd = runtime === 'codex'
+    ? activeId && await ensureCanvasWorkspace(activeId).catch(() => null)
+    : meta?.agentCwd ?? sessionCwd ?? commonSourceDirectory(nodes)
+      ?? (previewOnly ? null : await window.desktopAgents.workspace(activeId ?? 'default').catch(() => null));
   if (!cwd) return undefined;
   const fresh = { cwd };
   if (!tail) return fresh;
@@ -239,7 +203,7 @@ async function routeForParent(model: string | undefined, parentId?: string, chil
   const ownTail = own?.runtime === runtime && own.sessionId
     && !nodes.some((n) => n.id !== tail.id && (n.data.agentSession?.sessionId ?? n.data.importSource?.sessionId) === own.sessionId
       && edges.some((e) => e.source === tail.id && e.target === n.id));
-  if (!ownTail || !own?.sessionId || (sessionCwd && !sameHostPath(sessionCwd, cwd))) return fresh;
+  if (!ownTail || !own?.sessionId || (runtime === 'codex' && !sessionCwd) || (sessionCwd && !sameHostPath(sessionCwd, cwd))) return fresh;
   const d = child?.data;
   if (d?.instruction
     || d?.attachments?.some((a) => !a.op) || d?.recall || d?.recallItems?.length
@@ -288,7 +252,7 @@ export function compileForAgent(messages: ContextMessage[]): { question: string;
 
 type AgentEvent = { runId: string; event: Record<string, unknown> & { type: string } };
 const handlers = new Map<string, (event: AgentEvent['event']) => void>();
-const nodeRuns = new Map<string, { runId: string; runtime: AgentRuntime; stop: () => void; files: AgentFileContext }>();
+const nodeRuns = new Map<string, { runId: string; runtime: AgentRuntime; canvasId: string | null; cwd: string; stop: () => void; files: AgentFileContext }>();
 
 /** Retryable native stop, independent of an already-aborted browser signal. */
 export function requestAgentStop(nodeId: string): boolean {
@@ -394,6 +358,8 @@ export async function agentCallStream(
   if (!bridge) throw new Error('agent runtimes need the desktop app');
   const target = agentTarget(modelId);
   if (!target) throw new Error('not an agent model: ' + modelId);
+  const { useProjects } = await import('../../store/projects');
+  const canvasId = useProjects.getState().activeId;
   if (target.id === 'default') {
     const catalog = await bridge.models(target.runtime);
     signal?.throwIfAborted();
@@ -404,13 +370,17 @@ export async function agentCallStream(
     target.id = selected.id;
     callbacks?.onRerouted?.(modelId, `${AGENT_RUNTIMES[target.runtime].prefix}${target.provider}/${target.id}`);
   }
-  const cwd = route?.cwd ?? (await agentOutbound(modelId))?.cwd;
-  if (!cwd) throw new Error('no working directory for this canvas');
+  // Resolve Codex's directory at dispatch too: historical sessions and
+  // callers supplying an old route cannot redirect a turn off this canvas.
+  const cwd = target.runtime === 'codex'
+    ? canvasId && await ensureCanvasWorkspace(canvasId)
+    : route?.cwd ?? (await agentOutbound(modelId))?.cwd;
+  if (!cwd) throw new Error('No working directory is available for this canvas.');
   signal?.throwIfAborted();
   const native = target.runtime === 'codex' ? await compileCodexHistory(messages, useStore.getState().nodes, nodeId, images) : undefined;
   const { question, context } = native ? { question: native.question, context: '' } : compileForAgent(messages);
   const guard = await guardConfig();
-  if (guard.mode !== 'native') await writeGuard(cwd, true, guard);
+  if (target.runtime !== 'codex' && guard.mode !== 'native') await writeGuard(cwd, true, guard);
   signal?.throwIfAborted();
   const continuing = !native && !!route?.continue && !!route?.sessionPath;
   const materialIds = new Set([...messages.flatMap((m) => m.canvasSource?.attachmentIds ?? (m.canvasSource?.attachmentId ? [m.canvasSource.attachmentId] : [])),
@@ -432,6 +402,10 @@ export async function agentCallStream(
   const effort = useUiStore.getState().agentEffort || undefined;
   const permissionRoute = native ? (native.history.base ? { cwd, continue: true, sessionId: native.history.base.threadId } : { cwd }) : route;
   const allowRules = sessionAllowRules(target.runtime, permissionRoute, useStore.getState().nodes);
+  signal?.throwIfAborted();
+  if (target.runtime === 'codex' && (useProjects.getState().switching || useProjects.getState().activeId !== canvasId)) {
+    throw new DOMException('Canvas switched', 'AbortError');
+  }
   subscribe();
 
   let full = '';
@@ -445,6 +419,7 @@ export async function agentCallStream(
     void bridge.run({
       runtime: target.runtime, cwd, prompt,
       nativePermissions: guard.mode === 'native',
+      ...(target.runtime === 'codex' && { codexWorkspace: { permissionMode: guard.mode } }),
       ...(files.targets.length && { managedFileDirs: [...new Set(files.targets.map(f => f.path.replace(/[\\/][^\\/]+$/, '')))] }),
       ...(native ? { codexHistory: native.history, instructions: native.instructions } : {
         ...(route?.sessionPath ? { sessionPath: route.sessionPath } : {}),
@@ -476,7 +451,7 @@ export async function agentCallStream(
         }).finally(() => { stopPending = false; });
       };
       signal?.addEventListener('abort', stop, { once: true });
-      if (nodeId) nodeRuns.set(nodeId, { runId, runtime: target.runtime, stop, files });
+      if (nodeId) nodeRuns.set(nodeId, { runId, runtime: target.runtime, canvasId, cwd, stop, files });
       handlers.set(runId, (event) => {
         switch (event.type) {
           case 'session': {
@@ -546,6 +521,7 @@ export async function agentCallStream(
             });
             break;
           case 'fs_changes':
+            if (target.runtime === 'codex') break;
             callbacks?.onAgentChanges?.({ changed: (event.changed as string[]) ?? [], added: (event.added as string[]) ?? [], removed: (event.removed as string[]) ?? [], truncated: !!event.truncated });
             break;
           case 'run_end':
@@ -675,18 +651,20 @@ export async function guardConfig(): Promise<{ mode: AgentPermissionMode; allow:
   } catch { return { mode: 'native', allow: [] }; }
 }
 
-/** Write the guard file for a working directory (the run's, or the
- *  canvas's current one when omitted). */
-export async function writeGuard(cwd?: string, required = false, config?: Awaited<ReturnType<typeof guardConfig>>): Promise<void> {
+/** Pi and Claude Code consume the explicit override from their run directory. */
+async function writeGuard(cwd: string, required = false, config?: Awaited<ReturnType<typeof guardConfig>>): Promise<void> {
   if (!window.desktopAgents) return;
-  const dir = cwd ?? (await resolveAgentCwd())?.cwd;
-  if (!dir) return;
   try {
     const { mode, allow } = config ?? await guardConfig();
     if (mode === 'native') return;
-    const ok = await window.desktopAgents.guardWrite(dir, { mode, allow });
+    const ok = await window.desktopAgents.guardWrite(cwd, { mode, allow });
     if (!ok && required) throw new Error('The working directory permissions could not be saved. The agent was not started.');
   } catch (error) { if (required) throw error; }
+}
+
+async function updateRunningPiGuards(canvasId: string): Promise<void> {
+  const dirs = new Set([...nodeRuns.values()].filter(run => run.runtime === 'pi' && run.canvasId === canvasId).map(run => run.cwd));
+  await Promise.all([...dirs].map(dir => writeGuard(dir)));
 }
 
 /** Switch the active canvas's permission mode: Pi's guard reads it on the
@@ -697,7 +675,7 @@ export async function setGuardMode(mode: AgentPermissionMode): Promise<void> {
   if (!activeId) return;
   const g = projects.find((p) => p.id === activeId)?.agentGuard;
   await setProjectAgentGuard(activeId, { mode, allow: g?.allow ?? [] });
-  await writeGuard();
+  await updateRunningPiGuards(activeId);
 }
 
 /** Let a directory through from now on for the active canvas (and the
@@ -709,7 +687,7 @@ export async function allowLocation(dir: string, remove = false): Promise<void> 
   const g = projects.find((p) => p.id === activeId)?.agentGuard;
   const allow = remove ? (g?.allow ?? []).filter((a) => a !== dir) : [...new Set([...(g?.allow ?? []), dir])];
   await setProjectAgentGuard(activeId, { mode: g?.mode ?? 'ask', allow });
-  await writeGuard();
+  await updateRunningPiGuards(activeId);
 }
 
 /** One attachment naming the files the file system saw change during the

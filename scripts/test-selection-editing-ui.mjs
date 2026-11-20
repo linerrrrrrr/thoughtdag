@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { chromium } from 'playwright-core';
+import { openSettingsSection } from './fixtures/canvas-model-picker.mjs';
 
 const executablePath = process.env.CHROME_PATH ?? ['C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe', 'C:/Program Files/Google/Chrome/Application/chrome.exe', '/usr/bin/chromium'].find(existsSync);
 const browser = await chromium.launch({ executablePath, headless: true });
@@ -224,7 +225,7 @@ try {
   check('switching a confirmed scope restores its node candidates and clears the opposite object type');
 
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.locator('[data-toolbar-more]').click();
+  await openSettingsSection(page, 'general');
   await page.getByRole('button', { name: 'English', exact: true }).click();
   await page.keyboard.press('Escape');
   await page.locator('[data-selection-target="nodes"]').click();

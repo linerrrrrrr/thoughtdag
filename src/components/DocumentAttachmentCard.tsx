@@ -8,8 +8,8 @@ import DocumentRichBody from './DocumentRichBody';
 const SuperDocEditor = lazy(() => import('./SuperDocEditor'));
 const PdfDocumentView = lazy(() => import('./PdfDocumentView'));
 
-export default function DocumentAttachmentCard({ nodeId, attachment, fill, onRemove, onAnnotationEditingChange, onNativeEditingChange, actionsHost }: {
-  nodeId: string; attachment: Attachment; fill?: boolean;
+export default function DocumentAttachmentCard({ nodeId, attachment, fill, short, onRemove, onAnnotationEditingChange, onNativeEditingChange, actionsHost }: {
+  nodeId: string; attachment: Attachment; fill?: boolean; short?: boolean;
   onRemove: () => void;
   onAnnotationEditingChange?: (active: boolean) => void;
   onNativeEditingChange?: (attachmentId: string, active: boolean) => void;
@@ -18,6 +18,7 @@ export default function DocumentAttachmentCard({ nodeId, attachment, fill, onRem
   const t = useT();
   const cardRef = useRef<HTMLElement>(null);
   const [statusHost, setStatusHost] = useState<HTMLSpanElement | null>(null);
+  const [toolsHost, setToolsHost] = useState<HTMLDivElement | null>(null);
   useEffect(() => {
     const card = cardRef.current;
     if (!card) return;
@@ -31,19 +32,23 @@ export default function DocumentAttachmentCard({ nodeId, attachment, fill, onRem
   const isDocx = isDocxDocument(attachment);
   const nativeDocx = hasNativeDocxSource(attachment);
   return <section ref={cardRef} data-document-card={attachment.id} data-document-fill={fill || undefined}
-    className={`min-w-0 ${fill ? 'flex-1 min-h-0 flex flex-col overflow-hidden' : ''}`}
+    className={`flex min-w-0 min-h-0 flex-col ${fill ? 'flex-auto' : ''}`}
     onDoubleClick={event => event.stopPropagation()}>
-    <FileAttachmentHeader attachment={attachment} onRemove={onRemove} statusRef={setStatusHost} />
+    <FileAttachmentHeader attachment={attachment} onRemove={onRemove} statusRef={setStatusHost}>
+      {short && !isViewerMode && attachment.type === 'application/pdf' && <div className="shrink-0 empty:hidden" ref={setToolsHost} />}
+    </FileAttachmentHeader>
     <Suspense fallback={<p className="text-control text-ink-faint">{t('reader.loading')}</p>}>
       {attachment.type === 'application/pdf'
-        ? <PdfDocumentView nodeId={nodeId} attachment={attachment} compact onEditingChange={onAnnotationEditingChange} actionsHost={actionsHost} statusHost={statusHost} />
+        ? <PdfDocumentView nodeId={nodeId} attachment={attachment} compact onEditingChange={onAnnotationEditingChange} actionsHost={actionsHost} statusHost={statusHost} toolsHost={toolsHost} />
         : nativeDocx
           ? <SuperDocEditor nodeId={nodeId} attachment={attachment} compact readOnly={isViewerMode}
             onEditingChange={onNativeEditingChange} actionsHost={actionsHost} statusHost={statusHost} />
-          : <div data-document-body={attachment.id}>
-            {!isViewerMode && isDocx && <p className="text-control text-ink-faint mb-3">{t('document.legacySource')}</p>}
-            <DocumentRichBody attachment={attachment} />
-          </div>}
+          : <>
+            {!isViewerMode && isDocx && <p className={`shrink-0 text-control text-ink-faint ${short ? 'truncate' : 'mb-3'}`}>{t('document.legacySource')}</p>}
+            <div data-content-body data-document-body={attachment.id} className="min-h-0 flex-auto overflow-auto overscroll-contain nowheel nopan">
+              <DocumentRichBody attachment={attachment} />
+            </div>
+          </>}
     </Suspense>
   </section>;
 }

@@ -159,7 +159,7 @@ export default function CanvasChat({ open, onClose, onLocate }: { open: boolean;
           <div key={turn.id} className="flex flex-col items-start gap-1" data-chat-turn="assistant">
             {turn.error
               ? <div className="max-w-[92%] text-control text-red-500 bg-red-50 rounded-content px-3 py-2 break-words">{turn.error}</div>
-              : <div className="max-w-[92%] bg-wash text-ink rounded-content px-3 py-2 markdown-body text-body break-words" onClick={onAnswerClick} onMouseOver={onAnswerOver} onMouseOut={onAnswerOut} data-chat-answer>
+              : <div className="max-w-[92%] bg-wash text-ink rounded-content px-3 py-2 markdown-body text-body break-words" data-cursor="text" onClick={onAnswerClick} onMouseOver={onAnswerOver} onMouseOut={onAnswerOut} data-chat-answer>
                   <Markdown>{answerForCanvas(turn.text, mapOf(turn), nodes, lang, 'alias')}</Markdown>
                 </div>}
             {!turn.error && (

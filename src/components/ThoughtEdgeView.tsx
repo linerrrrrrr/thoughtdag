@@ -1,7 +1,7 @@
-import { useContext, useMemo } from 'react';
+import { useContext, useMemo, type ReactNode } from 'react';
 import { BaseEdge, EdgeLabelRenderer, useStore as useFlowStore, type EdgeProps } from '@xyflow/react';
 import { routeEdge } from '../lib/edge-path';
-import { CanvasConnectionLayout, CanvasEdgeRouting } from '../lib/edge-routing-context';
+import { CanvasConnectionLayout, CanvasEdgeRouting, StaticEdgeLabels } from '../lib/edge-routing-context';
 import { useCanvasEditing } from '../lib/canvas-editing';
 import { isViewerMode } from '../lib/viewer';
 import { useT } from '../i18n';
@@ -10,6 +10,12 @@ import { useStore } from '../store';
 import { useContextInspection } from '../lib/context-inspection';
 import { edgeAdornments } from '../lib/edge-adornments';
 import './ThoughtEdgeView.css';
+
+function LabelLayer({ children }: { children: ReactNode }) {
+  const isStatic = useContext(StaticEdgeLabels);
+  return isStatic ? <foreignObject className="static-edge-label" data-type-surface="edge-label">{children}</foreignObject>
+    : <EdgeLabelRenderer>{children}</EdgeLabelRenderer>;
+}
 
 /**
  * Custom edge registered under the 'smoothstep' type name (overrides the
@@ -35,7 +41,7 @@ export default function ThoughtEdgeView({
   const inspecting = inspectedTarget === target;
   const active = inspecting && activeEdgeId === id;
   const isRef = !!data?.isCrossLink;
-  const routeMode = data?.route ?? visibleNodes.find((node) => node.id === source)?.data.edgeRouteDefault ?? 'auto';
+  const routeMode = data?.route;
   const label = data?.label?.trim();
   const annotationClass = 'max-w-[240px] rounded-tag border border-line bg-card px-2 py-1 text-control text-ink break-words';
   const { path, labelX, labelY } = useMemo(
@@ -91,7 +97,7 @@ export default function ThoughtEdgeView({
         fill={stroke} opacity={edgeStyle?.opacity ?? 1} pointerEvents="none" aria-hidden="true"
       />}
       {inspecting && mergeIndex >= 0 && (
-        <EdgeLabelRenderer>
+        <LabelLayer>
           <div
             className="nodrag nopan"
             style={{
@@ -102,11 +108,11 @@ export default function ThoughtEdgeView({
             data-merge-order={mergeIndex + 1}
             data-context-edge-id={id}
           >
-            <div className={`tdag-context-order${active ? ' is-active' : ''}`} style={{ color: stroke }}>
+            <div className={`tdag-context-order${active ? ' is-active' : ''}`} data-type-surface="edge-order" style={{ color: stroke }}>
               {mergeIndex + 1}
             </div>
           </div>
-        </EdgeLabelRenderer>
+        </LabelLayer>
       )}
       {data?.focusRole === 'path' && (
         // Context Focus feed line: bright dots gliding INSIDE the solid
@@ -115,7 +121,7 @@ export default function ThoughtEdgeView({
         <path d={path} className="tdag-flow-ov" fill="none" />
       )}
       {label && (
-        <EdgeLabelRenderer>
+        <LabelLayer>
           <div
             className="nodrag nopan"
             style={{
@@ -124,7 +130,7 @@ export default function ThoughtEdgeView({
               transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`,
             }}
           >
-            <div className="flex flex-col items-center gap-1" style={{ transform: 'scale(calc(1 / var(--tdag-zoom, 1)))', transformOrigin: 'center' }}>
+            <div className="edge-label-content flex flex-col items-center gap-1" data-type-surface="edge-label">
               {label && (isViewerMode
                 ? <span className={annotationClass} data-edge-annotation>{label}</span>
                 : <button type="button" onClick={(event) => {
@@ -139,7 +145,7 @@ export default function ThoughtEdgeView({
                   className={annotationClass} data-tooltip={t('edgeEditor.title')} data-edge-annotation>{label}</button>)}
             </div>
           </div>
-        </EdgeLabelRenderer>
+        </LabelLayer>
       )}
     </g>
   );

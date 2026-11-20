@@ -34,7 +34,7 @@ export default function HarnessViewSwitch() {
       </CanvasToolbarOverflowAction>
       <button
         type="button"
-        className="h-full px-3 rounded-tag text-control font-semibold bg-ink text-card whitespace-nowrap cursor-default"
+        data-cursor="neutral" className="h-full px-3 rounded-tag text-control font-semibold bg-ink text-card whitespace-nowrap"
         data-view="map"
         aria-pressed={true}
       >

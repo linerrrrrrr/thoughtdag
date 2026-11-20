@@ -1,3 +1,21 @@
+import type { Root, RootContent } from 'hast';
+
+// Rewrite recognized local references before sanitization. This preserves drive
+// and file URLs without allowing arbitrary protocols through the sanitizer.
+export function rehypeLocalFiles() {
+  return (tree: Root) => {
+    const walk = (node: Root | RootContent) => {
+      if (node.type === 'element' && (node.tagName === 'a' || node.tagName === 'img')) {
+        const key = node.tagName === 'a' ? 'href' : 'src';
+        const target = localTargetOf(typeof node.properties[key] === 'string' ? node.properties[key] as string : undefined);
+        if (target) node.properties[key] = `${/^[a-z]:/i.test(target.path) ? '/' : ''}${target.path}${target.line ? `:${target.line}${target.column ? `:${target.column}` : ''}` : ''}`;
+      }
+      if ('children' in node) node.children.forEach(walk);
+    };
+    walk(tree);
+  };
+}
+
 export interface LocalTarget { path: string; line?: number; column?: number }
 
 const decode = (s: string): string => { try { return decodeURIComponent(s); } catch { return s; } };

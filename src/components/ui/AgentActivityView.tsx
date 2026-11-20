@@ -8,8 +8,9 @@ import './AgentActivityView.css';
 
 // The ordered runtime transcript is a reading surface, separate from the
 // answer used as context. Finished runs keep their process behind a disclosure.
-export function AgentActivityView({ entries, running = false, compact = false, base, failed: runFailed = false }: {
+export function AgentActivityView({ entries, running = false, compact = false, base, failed: runFailed = false, questionHighlights, penActive }: {
   entries: AgentActivityEntry[]; running?: boolean; compact?: boolean; base?: string; failed?: boolean;
+  questionHighlights?: Set<string>; penActive?: boolean;
 }) {
   const t = useT();
   const [expanded, setExpanded] = useState<boolean | null>(null);
@@ -50,7 +51,8 @@ export function AgentActivityView({ entries, running = false, compact = false, b
       </button>
       {!open && running && latestNote?.text && <p className="activity-preview">{preview(latestNote.text)}</p>}
       {!open && instructions.length > 0 && <ol className="activity-list" role="log" aria-live="off" data-activity-user-summary>
-        {instructions.map(entry => <ActivityRow key={entry.id} entry={entry} compact={compact} base={base} />)}
+        {instructions.map(entry => <ActivityRow key={entry.id} entry={entry} compact={compact} base={base}
+          questionHighlights={questionHighlights} penActive={penActive} />)}
       </ol>}
       {open && <div ref={scrollRef} className={`activity-scroll ${compact ? 'activity-scroll-compact' : ''}`}
         onScroll={() => {
@@ -61,7 +63,8 @@ export function AgentActivityView({ entries, running = false, compact = false, b
           setFollowing(atBottom);
         }}>
         <ol className="activity-list" role="log" aria-live="off">
-          {shown.map((entry) => <ActivityRow key={entry.id} entry={entry} compact={compact} base={base} />)}
+          {shown.map((entry) => <ActivityRow key={entry.id} entry={entry} compact={compact} base={base}
+            questionHighlights={entry.kind === 'user' ? questionHighlights : undefined} penActive={entry.kind === 'user' && penActive} />)}
         </ol>
         {running && !current && <div className="activity-between" role="status"><Loader2 size={12} className="activity-spinner" />{t('activity.thinking')}</div>}
       </div>}
@@ -84,10 +87,13 @@ function formatDetails(value: unknown): string {
   try { return JSON.stringify(value, null, 2) ?? ''; } catch { return String(value); }
 }
 
-const ActivityRow = memo(function ActivityRow({ entry, compact, base }: { entry: AgentActivityEntry; compact: boolean; base?: string }) {
+const ActivityRow = memo(function ActivityRow({ entry, compact, base, questionHighlights, penActive }: {
+  entry: AgentActivityEntry; compact: boolean; base?: string; questionHighlights?: Set<string>; penActive?: boolean;
+}) {
   const t = useT();
   const [expanded, setExpanded] = useState<boolean | null>(null);
   const isRunning = entry.status === 'running';
+  const isInstruction = entry.kind === 'user' && entry.status === 'completed';
   const isText = entry.kind === 'commentary' || entry.kind === 'message' || entry.kind === 'user';
   const open = expanded ?? (isRunning && entry.kind !== 'reasoning');
   const Icon = entry.kind === 'command' ? SquareTerminal : entry.kind === 'reasoning' ? Brain : entry.kind === 'plan' ? ListTodo : entry.kind === 'file' ? FileDiff : entry.kind === 'commentary' || entry.kind === 'message' ? MessageSquare : entry.kind === 'tool' ? Wrench : Activity;
@@ -100,8 +106,11 @@ const ActivityRow = memo(function ActivityRow({ entry, compact, base }: { entry:
     <li className={`activity-row activity-${entry.kind}`} data-activity-id={entry.id} data-activity-kind={entry.kind} data-activity-status={entry.status}>
       <div className="activity-marker"><Icon size={14} strokeWidth={1.75} /></div>
       <div className="min-w-0 flex-1">
-        {isText ? <div className={`markdown-body ${entry.kind === 'user' ? 'activity-user-message' : entry.kind === 'message' ? 'activity-answer' : 'activity-commentary'}`}>
-          <Markdown base={base} diagrams={compact ? 'placeholder' : undefined}>{entry.text || (isRunning ? t('activity.working') : '')}</Markdown>
+        {isText ? <div className={`markdown-body ${entry.kind === 'user' ? 'activity-user-message' : entry.kind === 'message' ? 'activity-answer' : 'activity-commentary'}`}
+          data-highlight-turn={isInstruction ? 'question' : undefined} data-highlighter-active={(isInstruction && penActive) || undefined}>
+          <Markdown base={base} diagrams={compact ? 'placeholder' : undefined} highlights={isInstruction ? questionHighlights : undefined}>
+            {entry.text || (isRunning ? t('activity.working') : '')}
+          </Markdown>
         </div> : <>
           <button type="button" className="activity-item-heading" aria-expanded={open} disabled={!hasBody} onClick={(event) => { event.stopPropagation(); setExpanded(!open); }}>
             <span className="activity-item-title">{title}</span>

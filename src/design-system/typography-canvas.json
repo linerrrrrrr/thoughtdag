@@ -1,0 +1,57 @@
+{
+  "boundaries": {
+    "src/App.tsx": {
+      "ReactFlow": "canvas-viewport",
+      "[data-map-dock]": "canvas-screen-tools"
+    },
+    "src/components/CanvasControls.tsx": {
+      "[data-canvas-controls]": "canvas-controls"
+    },
+    "src/components/ContentNode.tsx": {
+      "[data-node-detail-level]": "canvas-geometry",
+      ".material-header": "canvas-object",
+      ".material-content": "canvas-object"
+    },
+    "src/components/FrameNode.tsx": {
+      "[data-frame-node]": "canvas-geometry",
+      "[data-frame-label-measure]": "canvas-object",
+      "[data-frame-header]": "frame-label"
+    },
+    "src/components/NodeInputRegion.tsx": {
+      ".node-input-content": "node-input"
+    },
+    "src/components/NodeMetadataEditor.tsx": {
+      ".node-metadata-overview": "overview"
+    },
+    "src/components/NodeOverview.tsx": {
+      "[data-node-overview]": "overview"
+    },
+    "src/components/ParadigmNode.tsx": {
+      "[data-node-paradigm]": "canvas-geometry",
+      ".paradigm-header": "canvas-object",
+      ".paradigm-content": "canvas-object"
+    },
+    "src/components/SelectionTargetControl.tsx": {
+      "[data-selection-target-control]": "canvas-screen-tools"
+    },
+    "src/components/ThoughtEdgeView.tsx": {
+      ".static-edge-label": "edge-label",
+      ".tdag-context-order": "edge-order",
+      ".edge-label-content": "edge-label"
+    },
+    "src/components/ThoughtNode.tsx": {
+      "[data-node-detail-level]": "canvas-geometry",
+      ".conversation-node-content": "conversation",
+      ".thought-node-header": "overview",
+      "[data-focus-down]": "node-badge",
+      "[data-stale-dot]": "node-badge"
+    },
+    "src/components/ui/CanvasTypographyPreview.tsx": {
+      ".type-demo-world": "type-preview-camera",
+      "[data-canvas-typography-node]": "type-preview"
+    },
+    "src/components/ui/TimelineBar.tsx": {
+      ".canvas-timeline": "canvas-screen-tools"
+    }
+  }
+}

@@ -109,17 +109,17 @@ export default function CondenseDialog({ onFocusSegment }: { onFocusSegment?: (n
       ref={winRef}
       className="fixed z-[70] bg-surface border border-line rounded-panel shadow-lg w-[400px] max-h-[calc(72*var(--ui-vh))] flex flex-col p-4 animate-fade-in"
       style={pos ? { left: pos.x, top: pos.y } : { left: 80, bottom: 16 }}
-      data-condense-dialog
+      data-type-surface="portal" data-condense-dialog
       onClick={(e) => e.stopPropagation()}
     >
-      <div className={`flex items-start justify-between mb-1 shrink-0 select-none ${dragging ? 'cursor-grabbing' : 'cursor-grab'}`}
+      <div data-cursor={dragging ? 'dragging' : 'draggable'} className="flex items-start justify-between mb-1 shrink-0 select-none"
         data-condense-drag-handle style={{ touchAction: 'none' }}
         onPointerDown={startDrag} onPointerMove={moveDrag} onPointerUp={finishDrag} onPointerCancel={finishDrag} onLostPointerCapture={finishDrag}>
         <div className="text-title font-semibold text-ink flex items-center gap-2">
           <Minimize2 size={15} strokeWidth={1.75} className="text-accent" /> {t('condense.title')}
         </div>
         <button onClick={close}  aria-label={t('common.close')}
-          className="cursor-pointer text-ink-faint hover:text-ink rounded-control w-7 h-7 flex items-center justify-center hover:bg-wash transition-colors"><X size={15} /></button>
+          className="text-ink-faint hover:text-ink rounded-control w-7 h-7 flex items-center justify-center hover:bg-wash transition-colors"><X size={15} /></button>
       </div>
 
       {run.status === 'idle' && (
@@ -158,7 +158,7 @@ export default function CondenseDialog({ onFocusSegment }: { onFocusSegment?: (n
                     <div
                       key={k}
                       data-condense-item
-                      className={`border rounded-content p-3 transition-colors cursor-pointer ${on ? 'border-accent/60 bg-accent/5' : 'border-line opacity-60'}`}
+                      data-cursor="action" className={`border rounded-content p-3 transition-colors ${on ? 'border-accent/60 bg-accent/5' : 'border-line opacity-60'}`}
                       onClick={() => {
                         useUiStore.getState().setCondenseHighlightIds(seg.nodeIds);
                         onFocusSegment?.(seg.nodeIds);

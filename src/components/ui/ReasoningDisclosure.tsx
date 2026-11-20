@@ -20,7 +20,7 @@ export default function ReasoningDisclosure({ text }: { text: string }) {
         <span>💭 {t('node.reasoning')}</span>
       </button>
       {open && (
-        <div className="mt-1.5 px-3 py-2 bg-wash/70 rounded-content text-body text-ink-faint italic whitespace-pre-wrap break-words max-h-[240px] overflow-y-auto nowheel nodrag cursor-text" data-reasoning-body>
+        <div data-cursor="text" className="mt-1.5 px-3 py-2 bg-wash/70 rounded-content text-body text-ink-faint italic whitespace-pre-wrap break-words max-h-[240px] overflow-y-auto nowheel nodrag" data-reasoning-body>
           {text}
         </div>
       )}

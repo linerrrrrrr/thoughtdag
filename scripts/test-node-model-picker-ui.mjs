@@ -166,14 +166,14 @@ try {
   assert.ok(await panel().evaluate(el => el.scrollTop) > 0, 'Wheel should scroll the menu.');
   assert.equal(await page.evaluate(() => window.__rf.getViewport().zoom), zoomBefore);
   await lastLong.scrollIntoViewIfNeeded();
+  const previousEffort = await page.evaluate(() => window.__ui.getState().agentEffort);
   await lastLong.click();
   assert.equal((await nodeData()).model, 'codex/codex/test-model-24');
   assert.equal((await nodeData()).isEditing, true);
-  await panel().locator('[data-agent-effort-select]').selectOption('high');
-  await panel().locator('[data-agent-effort-ok]').click();
   assert.equal(await panel().count(), 0);
+  assert.equal(await page.evaluate(() => window.__ui.getState().agentEffort), previousEffort);
   assert.equal(await card().locator('[data-canvas-question-editor]').inputValue(), 'Unsent draft');
-  check('Long lists scroll independently and the nested effort step remains usable.');
+  check('Long lists scroll independently and a node model selection preserves the default thinking effort.');
 
   await page.setViewportSize({ width: 1500, height: 1000 });
   await page.evaluate(id => {

@@ -1,0 +1,74 @@
+.canvas-type-curve {
+  margin: 0;
+  display: grid;
+  grid-template-rows: auto minmax(160px, 1fr) auto;
+  min-width: 0;
+  gap: var(--spacing-related);
+  --curve-body: var(--color-accent-strong);
+  --curve-summary: color-mix(in srgb, var(--color-warm) 80%, var(--color-ink));
+  --curve-compact: var(--color-ink-muted);
+}
+.canvas-type-curve-legend {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--spacing-related);
+  padding-block-start: var(--spacing-related);
+  border-block-start: 1px solid var(--color-line);
+}
+.canvas-type-curve-legend > div {
+  display: grid;
+  grid-template-rows: subgrid;
+  grid-row: span 2;
+  row-gap: var(--spacing-control-gap);
+}
+.canvas-type-curve [data-series='body'] { --series-color: var(--curve-body); }
+.canvas-type-curve [data-series='summary'] { --series-color: var(--curve-summary); }
+.canvas-type-curve [data-series='compact'] { --series-color: var(--curve-compact); }
+.canvas-type-curve-legend dt {
+  display: flex;
+  align-items: baseline;
+  gap: var(--spacing-control-gap);
+  color: var(--color-ink-muted);
+  font-size: var(--text-meta);
+  line-height: var(--text-meta--line-height);
+  overflow-wrap: anywhere;
+}
+.canvas-type-curve-legend i {
+  flex: 0 0 .875rem;
+  transform: translateY(-.25em);
+  border-top: 2px solid var(--series-color);
+}
+.canvas-type-curve-legend [data-series='compact'] i { border-top: 1px dashed var(--series-color); }
+.canvas-type-curve-legend dd {
+  font-size: var(--text-control);
+  line-height: var(--text-control--line-height);
+  font-variant-numeric: tabular-nums;
+  color: var(--color-ink);
+}
+.canvas-type-curve-legend b { font-weight: 500; }
+.canvas-type-curve svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  contain: size;
+  user-select: none;
+  touch-action: none;
+}
+.canvas-type-curve .curve-grid line { stroke: var(--color-line); stroke-width: .8; }
+.canvas-type-curve .curve-grid text { fill: var(--color-ink-muted); font-size: var(--text-meta); font-variant-numeric: tabular-nums; }
+.canvas-type-curve .curve-grid, .canvas-type-curve .curve-data { pointer-events: none; }
+.canvas-type-curve .curve-data polyline { fill: none; stroke: var(--series-color); stroke-width: 2.5; stroke-linejoin: round; }
+.canvas-type-curve .curve-data [data-series='compact'] { stroke-width: 1; stroke-dasharray: 3 4; }
+.canvas-type-curve .curve-guide { stroke: var(--color-line-strong); stroke-dasharray: 3 3; }
+.canvas-type-curve .curve-data circle { fill: var(--series-color); }
+.canvas-type-curve .curve-scrubber { fill: transparent; }
+.canvas-type-curve .curve-scrubber:focus { outline: none; }
+.canvas-type-curve .curve-scrubber:focus-visible { stroke: var(--color-accent); stroke-width: 1.5; }
+.canvas-type-curve .curve-handle { outline: none; }
+.canvas-type-curve .curve-anchor { fill: var(--color-card); stroke: var(--series-color); stroke-width: 2.5; }
+.canvas-type-curve .curve-focus-ring { fill: none; stroke: transparent; stroke-width: 1.5; }
+.canvas-type-curve .curve-handle:is(:focus-visible, :hover) .curve-focus-ring { stroke: var(--series-color); }
+.canvas-type-curve .curve-value { pointer-events: none; }
+.canvas-type-curve .curve-value rect { fill: var(--color-card); stroke: var(--color-line); }
+.canvas-type-curve .curve-value text { fill: var(--color-ink); font-size: var(--text-meta); font-variant-numeric: tabular-nums; }

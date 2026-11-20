@@ -9,5 +9,6 @@ export function attachmentFingerprint(att: Attachment): string {
  * Keep this exact key internal; exported fingerprints remain compact source IDs. */
 export function attachmentContextKey(att: Attachment): string {
   return JSON.stringify([attachmentFingerprint(att), att.editedText ?? null, att.editedHtml ?? null,
-    att.editedDocxRevision ?? null]);
+    att.editedDocxRevision ?? null,
+    att.extractedBy === 'manual' ? att.extractedText ?? att.content : null]);
 }

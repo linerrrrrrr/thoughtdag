@@ -1,15 +1,15 @@
 'use strict';
 
 // A same-origin, loopback-only persistence endpoint for a locally hosted canvas.
-// The browser owns the logical keys and migration; this module only commits
-// opaque UTF-8 records beneath the explicitly configured data directory.
+// A data directory owns one canvas library across local hostnames and ports.
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const crypto = require('node:crypto');
+const { storageLibrary, validId, failure, readOptional } = require('./storage-library.cjs');
+const { withStorageLock } = require('./storage-lock.cjs');
 
 const PREFIX = '/__thoughtdag_storage';
 const MAX_REQUEST_BYTES = 256 * 1024 * 1024;
-const NAMESPACE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const LOOPBACK = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
 
 function permitted(req) {
@@ -40,7 +40,7 @@ async function bodyJson(req) {
 }
 
 function recordPath(base, key) {
-  if (typeof key !== 'string' || Buffer.byteLength(key) > 4096) throw new Error('Invalid key');
+  if (typeof key !== 'string' || Buffer.byteLength(key) > 4096) throw failure(400, 'Invalid key');
   const encoded = Buffer.from(key, 'utf8').toString('base64url') || '_';
   const chunks = encoded.match(/.{1,80}/g);
   const parts = chunks.map((part) => `k-${part}`);
@@ -87,89 +87,84 @@ async function listKeys(dir, prefixes = []) {
 function createBrowserStorage({ dataRoot }) {
   if (!dataRoot || !path.isAbsolute(dataRoot)) throw new Error('An absolute data root is required');
   const root = path.join(dataRoot, 'browser-storage');
-  const documentFile = require('./managed-documents.cjs').createManagedDocuments(path.join(dataRoot, 'workspaces'));
+  const workspaceRoot = path.join(dataRoot, 'workspaces');
+  const { createManagedDocuments, ensureCanvasWorkspace } = require('./managed-documents.cjs');
+  const documentFile = createManagedDocuments(workspaceRoot);
+  const library = storageLibrary({ root, workspaceRoot, recordPath, listKeys, atomicWrite });
+  const revision = raw => raw === null ? null : crypto.createHash('sha256').update(raw).digest('hex');
+
+  async function operate(body, host) {
+    const { op, namespace, space, key, value, origin } = body;
+    const imports = ['beginImport', 'stageSet', 'stageGet', 'finishImport'];
+    if (origin !== undefined || ['connect', 'open', 'canvasWorkspace', 'document', ...imports].includes(op)) {
+      if (origin !== 'http://' + host && origin !== 'https://' + host) throw failure(403, 'Access denied');
+    }
+    if (op === 'connect') {
+      const state = await library.connect();
+      const alreadyMigrated = library.migrated(state, body);
+      const confirmBrowserImport = !alreadyMigrated && !body.previousNamespace && (body.projectIds?.length > 0 || body.legacyGraph === true)
+        && state.sources.some(source => source.origin === origin && !source.browserImport);
+      return { namespace: state.namespace, alreadyMigrated, ...(confirmBrowserImport && { confirmBrowserImport: true }) };
+    }
+    if (['create', 'finish', 'list'].includes(op)) throw failure(409, 'Refresh to use the shared project storage');
+    if (!imports.includes(op) && !validId(namespace)) throw failure(400, 'Invalid namespace');
+    const state = await library.active();
+    if (imports.includes(op)) return library.importing(state, body);
+    if (namespace !== state.namespace) throw failure(409, 'Reconnect to the shared project storage');
+    if (op === 'open') return { ok: true };
+    if (op === 'canvasWorkspace') return { dir: await ensureCanvasWorkspace(workspaceRoot, namespace, body.canvasId) };
+    if (op === 'document') {
+      if (!['read', 'probe'].includes(body.request?.op) && body.protocol !== 3) throw failure(409, 'Refresh before modifying canvas documents');
+      return documentFile({ ...body.request, namespace });
+    }
+    if (!['kv', 'settings'].includes(space)) throw failure(400, 'Invalid space');
+    const base = path.join(root, namespace, space);
+    if (op === 'keys') return { keys: await listKeys(base) };
+    const file = recordPath(base, key);
+    if (op === 'get') {
+      const raw = await readOptional(file);
+      return raw === null ? { found: false } : { found: true, value: raw,
+        ...(space === 'kv' && key.startsWith('thoughtdag:project:') && { revision: revision(raw) }) };
+    }
+    if (op === 'compareSet' && typeof value === 'string') {
+      const current = await readOptional(file);
+      if (body.expectedRevision !== undefined) {
+        const currentRevision = revision(current);
+        if (value === current) return { applied: true, revision: currentRevision };
+        if (body.expectedRevision !== currentRevision) return { applied: false, revision: currentRevision };
+        await atomicWrite(file, value);
+        return { applied: true, revision: revision(value) };
+      }
+      if (body.expected !== current) return { applied: false, value: current };
+      await atomicWrite(file, value);
+      return { applied: true };
+    }
+    if (op === 'set' || op === 'delete') {
+      if (body.protocol !== 3) throw failure(409, 'Refresh before writing to shared project storage');
+      if (op === 'delete') await fs.rm(file, { force: true });
+      else if (typeof value === 'string') await atomicWrite(file, value);
+      else throw failure(400, 'Invalid value');
+      return { ok: true };
+    }
+    throw failure(400, 'Invalid operation');
+  }
   return async (req, res, next) => {
     const url = new URL(req.url || '/', 'http://localhost');
     if (url.pathname !== PREFIX) return next();
     if (!permitted(req)) return send(res, 403, { error: 'Access denied' });
-    if (req.method === 'GET') return send(res, 200, { service: 'thoughtdag-local-storage', version: 2 });
+    if (req.method === 'GET') return send(res, 200, { service: 'thoughtdag-local-storage', version: 3 });
     if (req.method !== 'POST' || !String(req.headers['content-type'] || '').startsWith('application/json')) {
       return send(res, 405, { error: 'Unsupported request' });
     }
     try {
       const body = await bodyJson(req);
-      const { op, namespace, space, key, value, origin } = body;
-      if (op === 'list') {
-        if (![ `http://${req.headers.host}`, `https://${req.headers.host}` ].includes(origin)) return send(res, 403, { error: 'Access denied' });
-        let entries;
-        try { entries = await fs.readdir(root, { withFileTypes: true }); }
-        catch (err) { if (err.code === 'ENOENT') return send(res, 200, { namespaces: [] }); throw err; }
-        const namespaces = [];
-        for (const entry of entries) {
-          if (!entry.isDirectory() || !NAMESPACE.test(entry.name)) continue;
-          try {
-            const manifest = JSON.parse(await fs.readFile(path.join(root, entry.name, 'manifest.json'), 'utf8'));
-            if (manifest.version === 1 && manifest.ready === true && manifest.origin === origin) {
-              namespaces.push({ namespace: entry.name, createdAt: manifest.createdAt });
-            }
-          } catch { /* Incomplete migrations are not recovery candidates. */ }
-        }
-        return send(res, 200, { namespaces });
-      }
-      if (!NAMESPACE.test(namespace || '')) return send(res, 400, { error: 'Invalid namespace' });
-      const session = path.join(root, namespace);
-      if (op === 'document') {
-        const manifest = JSON.parse(await fs.readFile(path.join(session, 'manifest.json'), 'utf8'));
-        if (!manifest.ready || manifest.origin !== origin || ![`http://${req.headers.host}`, `https://${req.headers.host}`].includes(origin)) {
-          return send(res, 403, { error: 'Access denied' });
-        }
-        return send(res, 200, await documentFile({ ...body.request, namespace }));
-      }
-      if (op === 'create') {
-        if (![ `http://${req.headers.host}`, `https://${req.headers.host}` ].includes(origin)) return send(res, 403, { error: 'Access denied' });
-        await fs.mkdir(root, { recursive: true, mode: 0o700 });
-        await fs.mkdir(session, { mode: 0o700 });
-        await atomicWrite(path.join(session, 'manifest.json'), JSON.stringify({ version: 1, origin, ready: false, createdAt: new Date().toISOString() }));
-        return send(res, 200, { ok: true });
-      }
-      if (op === 'finish') {
-        const file = path.join(session, 'manifest.json');
-        const manifest = JSON.parse(await fs.readFile(file, 'utf8'));
-        if (manifest.version !== 1 || manifest.origin !== origin) return send(res, 403, { error: 'Access denied' });
-        await atomicWrite(file, JSON.stringify({ ...manifest, ready: true }));
-        return send(res, 200, { ok: true });
-      }
-      if (op === 'open') {
-        try {
-          const manifest = JSON.parse(await fs.readFile(path.join(session, 'manifest.json'), 'utf8'));
-          const requestOrigin = origin || `http://${req.headers.host}`;
-          if (manifest.version !== 1 || manifest.ready === false || manifest.origin !== requestOrigin) throw new Error('Storage is unavailable');
-          return send(res, 200, { ok: true });
-        } catch {
-          return send(res, 404, { error: 'Storage namespace is unavailable' });
-        }
-      }
-      try { await fs.access(path.join(session, 'manifest.json')); }
-      catch { return send(res, 404, { error: 'Storage namespace is unavailable' }); }
-      if (!['kv', 'settings'].includes(space)) return send(res, 400, { error: 'Invalid space' });
-      const base = path.join(session, space);
-      if (op === 'keys') return send(res, 200, { keys: await listKeys(base) });
-      const file = recordPath(base, key);
-      if (op === 'get') {
-        try { return send(res, 200, { found: true, value: await fs.readFile(file, 'utf8') }); }
-        catch (err) { if (err.code === 'ENOENT') return send(res, 200, { found: false }); throw err; }
-      }
-      if (op === 'set' && typeof value === 'string') {
-        await atomicWrite(file, value);
-        return send(res, 200, { ok: true });
-      }
-      if (op === 'delete') {
-        await fs.rm(file, { force: true });
-        return send(res, 200, { ok: true });
-      }
-      return send(res, 400, { error: 'Invalid operation' });
-    } catch {
-      return send(res, 500, { error: 'Local storage operation failed' });
+      if (!body || typeof body !== 'object' || Array.isArray(body)) throw failure(400, 'Invalid request');
+      if (req.headers.origin && body.origin !== undefined && body.origin !== req.headers.origin) throw failure(403, 'Access denied');
+      const result = await withStorageLock(root, () => operate(body, req.headers.host));
+      return send(res, 200, result);
+    } catch (error) {
+      if (!error.status) console.error('[thoughtdag] local storage operation failed:', error.message);
+      return send(res, error.status ?? 500, { error: error.status ? error.message : 'Local storage operation failed' });
     }
   };
 }

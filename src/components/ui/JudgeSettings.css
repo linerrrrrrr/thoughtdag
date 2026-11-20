@@ -1,0 +1,11 @@
+.judge-fields > .settings-field-row {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+/* Providers include model names. Give the selector and credentials one
+   shared width, and stack them when the two columns would crowd the value. */
+@container settings-fields (min-width: 38rem) {
+  .judge-fields > .settings-field-row {
+    grid-template-columns: minmax(0, 1fr) minmax(0, min(55%, 27rem));
+  }
+}

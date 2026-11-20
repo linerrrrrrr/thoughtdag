@@ -72,7 +72,7 @@ export function TimelineBar() {
     // own centerline (x≈41px). pointer-events pass through except the rows
     // and the button themselves.
     <div
-      className="canvas-timeline absolute w-[100px] z-10 tdag-timeline pointer-events-none flex flex-col items-stretch"
+      className="canvas-timeline absolute w-[100px] z-10 tdag-timeline pointer-events-none flex flex-col items-stretch" data-type-surface="canvas-screen-tools"
       data-timeline-bar
       role="navigation"
       aria-label={t('timeline.label')}
@@ -120,7 +120,7 @@ export function TimelineBar() {
                   setSelectedNodeId(e.id);
                   rf.setCenter(e.x + 260 + panelShift(e.id) / 2, e.y + 110, { zoom: 1, duration: 350 });
                 }}
-                className="relative flex items-center w-full h-[14px] shrink-0 pl-[17px] cursor-pointer"
+                className="relative flex items-center w-full h-[14px] shrink-0 pl-[17px]"
                 aria-label={e.label}
               >
                 <span

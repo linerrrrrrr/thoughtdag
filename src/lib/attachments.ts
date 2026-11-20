@@ -6,7 +6,7 @@ import { PDF_VISION_PAGE_THRESHOLD } from './constants';
 import { internAttachment } from './attachment-vault';
 import { NOTEBOOK_EXTENSION, NOTEBOOK_FIGURE_THRESHOLD, NOTEBOOK_TYPE, isNotebook, notebookMaterial, parseNotebook } from './notebook';
 import { toast } from './ui-store';
-import { t } from '../i18n';
+import { fmt, t } from '../i18n';
 import { DOCX_MIME_TYPE } from './document-copy';
 
 // last-resort readable copy when the HTML extraction pipeline itself fails
@@ -40,9 +40,8 @@ export { attachmentFingerprint } from './attachment-fingerprint';
 
 // Read a File into an Attachment (no server round-trip). Returns null for
 // unsupported types. PDF content is raw base64; extraction happens in processFile.
-export function readFileToAttachment(file: File): Promise<Attachment | null> {
-  return new Promise((resolve) => {
-    const id = generateId();
+export function readFileToAttachment(file: File, id = generateId()): Promise<Attachment | null> {
+  return new Promise((resolve, reject) => {
     const addedAt = new Date().toISOString();
     const isImage = file.type.startsWith('image/');
     const isPDF = file.type === 'application/pdf' || file.name.endsWith('.pdf');
@@ -53,6 +52,8 @@ export function readFileToAttachment(file: File): Promise<Attachment | null> {
 
     if (isImage) {
       const reader = new FileReader();
+      reader.onerror = () => reject(reader.error);
+      reader.onabort = () => reject(new Error('File read aborted'));
       reader.onload = () => {
         const base64 = (reader.result as string).split(',')[1];
         resolve({
@@ -63,6 +64,8 @@ export function readFileToAttachment(file: File): Promise<Attachment | null> {
       reader.readAsDataURL(file);
     } else if (isPDF) {
       const reader = new FileReader();
+      reader.onerror = () => reject(reader.error);
+      reader.onabort = () => reject(new Error('File read aborted'));
       reader.onload = () => {
         const base64 = (reader.result as string).split(',')[1];
         resolve({ id, name: file.name, type: 'application/pdf', size: file.size, addedAt, content: base64 });
@@ -76,6 +79,7 @@ export function readFileToAttachment(file: File): Promise<Attachment | null> {
           const mammoth = await import('mammoth');
           const { documentHtmlToMarkdown, sanitizeDocumentHtml } = await import('./html-material');
           const { restoreDocxImageSizes } = await import('./docx-image-sizes');
+          const { docxHighlights } = await import('./document-highlights');
           const r = await mammoth.convertToHtml({ arrayBuffer: buf });
           const documentHtml = await sanitizeDocumentHtml(await restoreDocxImageSizes(buf, r.value));
           const extractedText = await documentHtmlToMarkdown(documentHtml);
@@ -85,7 +89,7 @@ export function readFileToAttachment(file: File): Promise<Attachment | null> {
             binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
           }
           resolve({ id, name: file.name, type: DOCX_MIME_TYPE, size: file.size, addedAt,
-            content: btoa(binary), extractedText, documentHtml });
+            content: btoa(binary), extractedText, documentHtml, documentHighlights: await docxHighlights(buf) });
         } catch {
           resolve(null);
         }
@@ -95,17 +99,17 @@ export function readFileToAttachment(file: File): Promise<Attachment | null> {
       // Markdown (extractedText) is produced async in processFile
       file.text().then((text) => {
         resolve({ id, name: file.name, type: 'text/html', size: file.size, addedAt, content: text });
-      });
+      }).catch(reject);
     } else if (isNotebookFile) {
       // raw JSON serves the reader's original view; processFile writes the
       // model channel (extractedText) and the figures
       file.text().then((text) => {
         resolve({ id, name: file.name, type: NOTEBOOK_TYPE, size: file.size, addedAt, content: text });
-      });
+      }).catch(reject);
     } else if (isText) {
       file.text().then((text) => {
         resolve({ id, name: file.name, type: file.type || 'text/plain', size: file.size, addedAt, content: text });
-      });
+      }).catch(reject);
     } else {
       resolve(null);
     }
@@ -154,8 +158,8 @@ export async function renderPdfPages(doc: PDFDocumentProxy): Promise<string[]> {
 }
 
 export interface ProcessFileCallbacks {
-  /** Called once with the initial attachment (PDFs arrive with isExtracting: true). */
-  add: (att: Attachment) => void;
+  /** Returning false discards a removed file before its extraction starts. */
+  add: (att: Attachment) => void | false;
   /** Called after async PDF extraction with the fields to merge in. */
   update: (attachmentId: string, patch: Partial<Attachment>) => void;
 }
@@ -165,16 +169,25 @@ export interface ProcessFileCallbacks {
  * FocusPanel attachments section: read the file, hand it to `add`, and for
  * PDFs run server-side extraction and deliver the result via `update`.
  */
-export async function processFile(file: File, cb: ProcessFileCallbacks): Promise<void> {
+export async function processFile(file: File, cb: ProcessFileCallbacks, id?: string): Promise<void> {
   if (OFFICE_EXPORT_HINT.test(file.name)) {
     toast('info', `${file.name}: ${t('content.officeExportHint')}`);
     return;
   }
-  const att = await readFileToAttachment(file);
-  if (!att) return;
+  let att: Attachment | null;
+  try {
+    att = await readFileToAttachment(file, id);
+  } catch {
+    toast('error', `${file.name}: ${t('attach.readFailed')}`);
+    return;
+  }
+  if (!att) {
+    toast('info', fmt(t('toast.unsupportedFile'), { name: file.name }));
+    return;
+  }
 
   if (att.type === 'text/html') {
-    cb.add({ ...att, isExtracting: true });
+    if (cb.add({ ...att, isExtracting: true }) === false) return;
     try {
       const { extractHtmlMaterial } = await import('./html-material');
       const r = await extractHtmlMaterial(att.content);
@@ -196,7 +209,7 @@ export async function processFile(file: File, cb: ProcessFileCallbacks): Promise
       return;
     }
     const light = await internAttachment(att);
-    cb.add({ ...light, isExtracting: true });
+    if (cb.add({ ...light, isExtracting: true }) === false) return;
     const n = material.figures.length;
     cb.update(att.id, {
       extractedText: material.text,
@@ -216,7 +229,7 @@ export async function processFile(file: File, cb: ProcessFileCallbacks): Promise
   // sees the lightened attachment. Extraction below keeps using the local
   // `att.content` closure value.
   const light = await internAttachment(att);
-  cb.add({ ...light, isExtracting: true });
+  if (cb.add({ ...light, isExtracting: true }) === false) return;
   try {
     const data = await extractPdf(att.content);
     // A proxy whose pdfjs is broken answers 200 with an all-empty result

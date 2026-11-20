@@ -190,7 +190,7 @@ try {
   await page.evaluate(async id => {
     window.__agentSends = [];
     window.desktopAgents = {
-      workspace: async () => 'D:/fixture',
+      canvasWorkspace: async () => 'D:/fixture/external',
       guardWrite: async () => true,
       writeMaterials: async () => ({ dir: null, written: [] }),
       onEvent: callback => { window.__agentEvent = callback; },

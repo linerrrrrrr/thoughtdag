@@ -223,7 +223,11 @@ function DossierDrawer({ topicId, name, onClose, onChanged, onOpened }: { topicI
   );
 }
 
-export default function MemoryPage({ query, onOpened }: { query: string; onOpened: () => void }) {
+export default function MemoryPage({ query, onOpened, onConfigureJudge }: {
+  query: string;
+  onOpened: () => void;
+  onConfigureJudge: () => void;
+}) {
   const t = useT();
   const recallEnabled = useUiStore((s) => s.recallEnabled);
   const setRecallEnabled = useUiStore((s) => s.setRecallEnabled);
@@ -281,7 +285,15 @@ export default function MemoryPage({ query, onOpened }: { query: string; onOpene
             <div className="border-t border-line">
               <div className="flex items-center gap-4 py-2.5 border-b border-line"><div className="flex-1 min-w-0"><div className="text-control text-ink font-medium">{t('mp.recallOn')}</div><div className="text-control text-ink-faint">{t('mp.recallOnHint')}</div></div><Toggle on={recallEnabled} onChange={setRecallEnabled} testId="recall" /></div>
               <div className="flex items-center gap-4 py-2.5 border-b border-line"><div className="flex-1 min-w-0"><div className="text-control text-ink font-medium">{t('mp.memoryOn')}</div><div className="text-control text-ink-faint">{t('mp.memoryOnHint')}</div></div><Toggle on={memoryEnabled} onChange={setMemoryEnabled} testId="memory" /></div>
-              <div className="flex items-center gap-4 py-2.5 border-b border-line"><div className="flex-1 min-w-0"><div className="text-control text-ink font-medium">{t('mp.judgeRow')}</div><div className="text-control text-ink-faint">{t('mp.judgeRowHint')}</div></div><button onClick={() => useUiStore.getState().setApiKeyModalOpen(true, 'judge')} className="text-control text-accent hover:underline" data-judge-configure>{t('mp.open')}</button></div>
+              <div className="flex items-center gap-4 py-2.5 border-b border-line">
+                <div className="flex-1 min-w-0">
+                  <div className="text-control text-ink font-medium">{t('settings.judge')}</div>
+                  <div className="text-control text-ink-faint">{t('mp.judgeRowHint')}</div>
+                </div>
+                <button type="button" onClick={onConfigureJudge} className="text-control text-accent hover:underline" data-judge-configure>
+                  {t('mp.open')}
+                </button>
+              </div>
             </div>
           </section>
 

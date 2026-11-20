@@ -1,4 +1,4 @@
-import { get as idbGet, set as idbSet, del as idbDel } from './disk-storage';
+import { getCanvasForEditing, saveEditedCanvas, del as idbDel } from './disk-storage';
 import type { PersistStorage, StorageValue } from 'zustand/middleware';
 
 // Debounced object storage: IndexedDB by default, or the configured local
@@ -9,31 +9,28 @@ const WRITE_DELAY_MS = 1000;
 
 let pending: { name: string; value: unknown } | null = null;
 let timer: ReturnType<typeof setTimeout> | null = null;
+let lastSave: Promise<void> = Promise.resolve();
 
-function flush() {
+export function flushPendingWrites(): Promise<void> {
   if (timer) {
     clearTimeout(timer);
     timer = null;
   }
   if (pending) {
-    const { name, value } = pending;
+    const snapshot = pending;
     pending = null;
-    void idbSet(name, value).catch((error) => console.error('[thoughtdag] canvas save failed:', error));
+    const write = saveEditedCanvas(snapshot.name, snapshot.value);
+    lastSave = write;
+    void write.catch(() => {
+      // A later flush retries a failed save. Never replace a newer edit.
+      if (!pending && lastSave === write) pending = snapshot;
+    });
   }
+  return lastSave;
 }
 
-// Awaitable flush — used before switching projects so the outgoing
-// project's debounced write lands under its own key.
-export async function flushPendingWrites(): Promise<void> {
-  if (timer) {
-    clearTimeout(timer);
-    timer = null;
-  }
-  if (pending) {
-    const { name, value } = pending;
-    pending = null;
-    await idbSet(name, value);
-  }
+function flush() {
+  void flushPendingWrites().catch((error) => console.error('[thoughtdag] canvas save failed:', error));
 }
 
 if (typeof window !== 'undefined') {
@@ -47,7 +44,7 @@ if (typeof window !== 'undefined') {
 export function createIdbObjectStorage<S>(): PersistStorage<S> {
   return {
     getItem: async (name) => {
-      const v = await idbGet(name);
+      const v = await getCanvasForEditing(name);
       if (v == null) return null;
       // Back-compat: earlier builds stored the JSON string createJSONStorage wrote
       if (typeof v === 'string') {

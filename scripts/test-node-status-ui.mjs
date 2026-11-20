@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { chromium } from 'playwright-core';
+import { openSettingsSection } from './fixtures/canvas-model-picker.mjs';
 
 const output = 'local-tests/node-status';
 await mkdir(output, { recursive: true });
@@ -68,9 +69,9 @@ const lighting = value => page.evaluate(async value => (await import('/src/lib/a
 const language = async value => {
   // Drive the actual UI store; a bare dynamic import can create a second
   // module instance when Vite has timestamped the live i18n module for HMR.
-  await page.locator('[data-toolbar-more]').click();
-  await page.locator('[data-toolbar-more-panel]').getByRole('button', { name: value === 'en' ? 'English' : '中文', exact: true }).click();
-  if (await page.locator('[data-toolbar-more-panel]').count()) await page.keyboard.press('Escape');
+  await openSettingsSection(page, 'general');
+  await page.locator('[data-menu-language]').getByRole('button', { name: value === 'en' ? 'English' : '中文', exact: true }).click();
+  await page.keyboard.press('Escape');
   await settle();
 };
 const reset = async () => {
@@ -254,7 +255,7 @@ try {
       assert.equal(await bar().isVisible(), false);
       assert.equal(await header.locator('[data-tool-marks]').isVisible(), false);
       const model = header.getByText('long-model-name-for-header-overflow-checks', { exact: true });
-      const fields = [header.locator('[data-node-number]'), header.locator('[data-node-execution-kind]'), model, header.locator('[data-node-details]')];
+      const fields = [header.locator('.node-header-identity button'), header.locator('[data-node-execution-kind]'), model, header.locator('[data-node-details]')];
       let previous;
       for (const field of fields) {
         await within(field, header, 'Node identity, source, model and details stay inside the header');

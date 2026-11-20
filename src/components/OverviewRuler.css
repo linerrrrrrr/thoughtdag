@@ -1,0 +1,49 @@
+.overview-ruler {
+  position: absolute;
+  pointer-events: none;
+  z-index: 5;
+}
+/* The canvas reads port bounds immediately after zoom, resize or a lane change. */
+.overview-ruler,
+.overview-ruler .overview-ruler-mark {
+  transition-property: none;
+}
+.overview-ruler::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 50%;
+  width: calc(2px * var(--ruler-scale));
+  transform: translateX(-50%);
+  background: var(--color-line-strong);
+  border-radius: var(--radius-port);
+}
+.overview-ruler .react-flow__handle.overview-ruler-mark {
+  height: calc(5px * var(--ruler-scale));
+  min-height: 0;
+  right: auto;
+  transform: translateY(-50%);
+  border: 1px solid color-mix(in srgb, var(--color-ink) 28%, transparent);
+  border-radius: var(--radius-port);
+  background: var(--color-amber-300);
+  pointer-events: auto;
+}
+.overview-ruler .overview-ruler-mark::after {
+  content: '';
+  position: absolute;
+  inset: calc(-5px * var(--ruler-scale)) calc(-4px * var(--ruler-scale));
+}
+.overview-ruler-mark:is(:hover, :focus-visible, .connectingfrom) {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+}
+body.tdag-connecting .overview-ruler .overview-ruler-mark { pointer-events: none; }
+
+::highlight(ruler-destination) {
+  background-color: color-mix(in srgb, var(--color-accent) 26%, var(--color-card));
+  text-decoration: underline solid var(--color-accent) 2px;
+}
+[data-ruler-destination] {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+body.tdag-connecting .overview-ruler .overview-ruler-mark.connectingfrom { pointer-events: auto; }

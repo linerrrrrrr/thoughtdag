@@ -3,12 +3,21 @@
   flex-direction: column;
 }
 
-.agent-connection-overview { padding: var(--spacing-section-gap) var(--spacing-surface-inset); }
-
 .agent-connection-runtime {
-  display: flex;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  gap: var(--spacing-related);
+  gap: var(--spacing-section-gap);
+}
+
+.agent-connection-runtime-icon {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-control);
+  color: var(--color-ink-muted);
+  background: var(--color-wash);
 }
 
 .agent-connection-action {
@@ -17,46 +26,53 @@
   justify-content: center;
   gap: var(--spacing-related);
   min-height: var(--spacing-control-size);
-  margin-left: auto;
-  padding: 0 var(--spacing-related);
+  padding: var(--spacing-control-gap) var(--spacing-section-gap);
+  border: 1px solid var(--color-line);
   border-radius: var(--radius-control);
-  color: var(--color-ink-muted);
+  color: var(--color-ink);
   font-size: var(--text-control);
   line-height: var(--text-control--line-height);
 }
 
-.agent-connection-action-icon {
-  width: var(--spacing-control-size);
-  flex-shrink: 0;
-  padding: 0;
-}
-
 .agent-connection-action:hover:not(:disabled) { background: var(--color-wash); color: var(--color-ink); }
-.agent-connection-action:disabled { opacity: 0.4; cursor: not-allowed; }
+.agent-connection-action:disabled { opacity: 0.4; }
 
 .agent-connection-status {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--spacing-related);
-  margin-top: var(--spacing-control-gap);
+  gap: var(--spacing-control-gap) var(--spacing-related);
+  margin-block-start: var(--settings-space-hint);
   color: var(--color-ink-muted);
 }
 
-.agent-connection-status > svg { flex-shrink: 0; }
-.agent-connection-status[data-agent-connection-status="connected"] > svg { color: var(--color-accent); }
-.agent-connection-model-count { margin-left: auto; color: var(--color-ink-faint); }
-.agent-connection-message { margin-top: var(--spacing-related); overflow-wrap: anywhere; }
-
-.agent-connection-settings {
-  border-top: 1px solid var(--color-line);
-}
+.agent-connection-state { display: inline-flex; align-items: center; gap: var(--spacing-control-gap); }
+.agent-connection-state > svg { flex-shrink: 0; }
+.agent-connection-status[data-agent-connection-status="connected"] svg { color: var(--color-accent); }
+.agent-connection-model-count { padding-inline-start: var(--spacing-related); border-inline-start: 1px solid var(--color-line); }
+.agent-connection-message { margin-block-start: var(--settings-space-hint); overflow-wrap: anywhere; }
 
 /* Reuse the node's metadata disclosure and inline fields, including its
    geometry and neutral states. Only the current setting needs extra layout. */
+.agent-connection-settings > .node-metadata { padding-inline: 0; }
 .agent-connection-settings > .node-metadata:last-child { border-bottom: 0; }
+.agent-connection-settings .node-metadata-toggle {
+  gap: var(--spacing-related);
+  padding-block: var(--spacing-section-gap);
+  color: var(--color-ink);
+}
 .agent-connection-settings .node-metadata-toggle > :is(svg, span:first-of-type) { flex-shrink: 0; }
-.agent-connection-setting-value { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: right; color: var(--color-ink-faint); }
+.agent-connection-settings .node-metadata-toggle > .agent-connection-setting-value:last-child {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: end;
+  color: var(--color-ink-muted);
+  font-size: var(--text-control);
+  line-height: var(--text-control--line-height);
+}
 .agent-connection-setting-menu > button { border-radius: var(--radius-control); overflow-wrap: anywhere; }
 .agent-connection button:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
 

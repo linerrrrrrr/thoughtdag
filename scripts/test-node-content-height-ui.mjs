@@ -22,6 +22,7 @@ page.on('pageerror', error => errors.push(error.message));
 await context.routeWebSocket('**', socket => socket.close());
 await context.route('**/*', route => {
   const request = route.request(), url = new URL(request.url());
+  if (url.pathname === '/__thoughtdag_storage') return route.abort();
   if (url.pathname.startsWith('/api/') || url.origin !== appUrl.origin) {
     if (!['GET', 'HEAD', 'OPTIONS'].includes(request.method())) writes.push({ method: request.method(), url: url.href });
     return route.abort('blockedbyclient');
@@ -130,8 +131,8 @@ const growToLimit = async label => {
 };
 
 try {
-  await page.goto(appUrl.href, { waitUntil: 'networkidle' });
-  await page.waitForFunction(() => window.__store?.persist.hasHydrated() && window.__rf);
+  await page.goto(appUrl.href, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => window.__store?.persist.hasHydrated() && window.__rf, undefined, { timeout: 30000 });
   await page.evaluate(async () => {
     window.__importLive = path => import([...performance.getEntriesByType('resource')].reverse().find(entry => new URL(entry.name).pathname === path)?.name ?? path);
     window.__ui = (await window.__importLive('/src/lib/ui-store.ts')).useUiStore;
@@ -252,6 +253,88 @@ try {
   near((await read()).width, beforeCorner.width, 'Vertical corner resizing preserves unlocked width');
   await fullyVisible('corner height');
   check('Corner resizing follows the same content limit as the height edge');
+
+  await seed(q, a);
+  await frame(1);
+  const fixed = await read();
+  const initialViewport = await page.evaluate(() => window.__rf.getViewport());
+  await handle('height').dblclick();
+  await settle();
+  const fitted = await read();
+  assert.equal(fitted.data.fitContentHeight, true);
+  assert.equal(fitted.height, undefined);
+  assert.equal(fitted.width, fixed.width);
+  assert.deepEqual(fitted.position, fixed.position);
+  assert.deepEqual(await page.evaluate(() => window.__rf.getViewport()), initialViewport);
+  const originalFit = await fullyVisible('height handle double-click');
+  assert.ok(originalFit.outer > fixed.height + 50);
+  await page.mouse.move(10, 100);
+  await page.screenshot({ path: `${output}/fit-after-double-click.png` });
+  await page.evaluate(() => window.__store.getState().undo());
+  await settle();
+  assert.equal((await read()).height, fixed.height, 'One undo restores the fixed height');
+  await page.evaluate(() => window.__store.getState().redo());
+  await settle();
+  assert.equal((await read()).data.fitContentHeight, true);
+  check('A real double-click fits both panes without moving the card or viewport and supports undo/redo');
+
+  await drag('width', -160, 0);
+  const narrowFit = await fullyVisible('narrower fitted card');
+  assert.ok(narrowFit.outer > originalFit.outer + 40, 'Narrowing a fitted card adds wrapped lines');
+  assert.equal((await read()).data.fitContentHeight, true);
+  await drag('width', 160, 0);
+  near((await read()).width, fixed.width, 'Width drag restores the original width');
+  near((await fullyVisible('restored fitted width')).outer, originalFit.outer, 'Height follows the restored width');
+  check('Width-only dragging reflows the question and answer while keeping the fitted height mode');
+
+  const longer = [a, a, a].join('\n\n');
+  await page.evaluate(({ id, longer }) => window.__store.getState().editResponse(id, longer), { id, longer });
+  await settle();
+  const grown = await fullyVisible('longer answer');
+  assert.ok(grown.outer > originalFit.outer + 200);
+  await page.evaluate(({ id, a }) => window.__store.getState().editResponse(id, a), { id, a });
+  await settle();
+  near((await fullyVisible('shortened answer')).outer, originalFit.outer, 'Fit shrinks after editing');
+  await page.evaluate(async () => (await window.__importLive('/src/lib/persistence.ts')).flushPendingWrites());
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(id => window.__store?.persist.hasHydrated() && window.__rf
+    && window.__store.getState().nodes.some(item => item.id === id), id);
+  await page.evaluate(id => window.__store.getState().setSelectedNodeIds([id]), id);
+  await frame(1);
+  assert.equal((await read()).data.fitContentHeight, true);
+  near((await fullyVisible('restored fit')).outer, originalFit.outer, 'Fit survives reload');
+  check('Fitted height follows answer growth and shrinkage and survives reopening the canvas');
+
+  const restoredOuter = (await inspect()).outer;
+  await drag('height', 0, -60);
+  const dragged = await read();
+  assert.ok(!dragged.data.fitContentHeight);
+  near(dragged.height, restoredOuter - 60, 'Manual height adjustment starts at the fitted edge');
+  await patch({ response: longer, responses: [longer] });
+  await settle();
+  near((await inspect()).outer, dragged.height, 'The manually sized card stays fixed when content grows');
+  check('Dragging the height handle returns to a fixed reading height');
+
+  await patch({ question: Array(12).fill(q).join('\n\n'), response: '', responses: [''] });
+  await format({ height: 280 });
+  await handle('height').dblclick();
+  await settle();
+  const question = await node().locator('.conversation-user-message').evaluate(element => ({
+    client: element.clientHeight, scroll: element.scrollHeight,
+  }));
+  assert.ok(question.client > 280 && question.scroll <= question.client + 1,
+    `The pending question is fully visible: ${JSON.stringify(question)}`);
+  await patch({ isLoading: true, response: a, responses: [a] });
+  await settle();
+  const streaming = await fullyVisible('streaming begins');
+  await patch({ response: longer, responses: [longer] });
+  await settle();
+  assert.equal(await node().locator('[data-conversation-answer]').textContent(), longer);
+  assert.ok((await fullyVisible('streaming grows')).outer > streaming.outer + 100);
+  await patch({ isLoading: false });
+  await settle();
+  await fullyVisible('stream completed');
+  check('A pending question fits on its own and the card keeps fitting the entire streaming answer');
 
   assert.deepEqual(writes, [], 'Resizing never sends mutating API requests');
   assert.deepEqual(errors, [], 'No browser runtime errors');

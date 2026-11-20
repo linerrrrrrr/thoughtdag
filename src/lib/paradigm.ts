@@ -102,6 +102,7 @@ export function instantiateParadigm(pNodes: ThoughtNode[], pEdges: ThoughtEdge[]
       data.stepKind = kind;
       data.question = pn.data.question || '';
       data.attachments = pn.data.attachments ?? [];
+      data.highlights = pn.data.highlights ?? [];
       data.tokenCount = pn.data.tokenCount ?? 0;
       data.linkUrl = pn.data.linkUrl;
       data.linkTitle = pn.data.linkTitle;
@@ -119,7 +120,7 @@ export function instantiateParadigm(pNodes: ThoughtNode[], pEdges: ThoughtEdge[]
       const target = idMap.get(e.target)!;
       return {
         ...e,
-        id: `edge-${source}-${target}`,
+        id: `edge-${generateId()}`,
         source,
         target,
       };

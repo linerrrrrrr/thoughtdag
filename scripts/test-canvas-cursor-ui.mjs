@@ -16,6 +16,7 @@ const browser = await chromium.launch({ executablePath, headless: true });
 const context = await browser.newContext({ viewport: { width: 1600, height: 1100 }, locale: 'zh-CN', reducedMotion: 'reduce' });
 await context.routeWebSocket(/.*/, socket => socket.close());
 const checks = [], failures = [], errors = [], writes = [];
+await context.route('**/__thoughtdag_storage**', route => route.fulfill({ status: 404, body: '' }));
 await context.route('**/api/**', route => {
   const request = route.request(), url = new URL(request.url());
   if (!['GET', 'HEAD', 'OPTIONS'].includes(request.method())) writes.push(`${request.method()} ${url.pathname}`);
@@ -267,6 +268,16 @@ try {
     const responseEditor = node('thought').locator('[data-canvas-response-editor]');
     const value = 'Editable text keeps its native selection behavior.';
     const selectInEditor = async editor => {
+      await editor.scrollIntoViewIfNeeded();
+      const at = await editor.evaluate(element => {
+        const rect = element.getBoundingClientRect();
+        for (const fy of [.1, .3, .5, .7, .9]) {
+          const p = { x: rect.left + 12, y: rect.top + rect.height * fy };
+          if (document.elementFromPoint(p.x, p.y) === element) return p;
+        }
+      });
+      assert.ok(at, 'A visible part of the editor accepts text input');
+      await cursorAt(at, 'text', 'Text editor', 'input, textarea');
       await editor.fill(value);
       await editor.evaluate(element => { element.focus(); element.setSelectionRange(0, 0); });
       await editor.click({ position: { x: 130, y: 20 }, modifiers: ['Shift'] });
@@ -296,6 +307,122 @@ try {
     await node('note').locator('.drag-handle').hover();
     const port = node('note').locator('[data-connection-role="source"][data-connection-side="bottom"]');
     await cursorAt(await point(port), 'crosshair', 'Compact material source port', '.react-flow__handle');
+    await page.evaluate(() => window.__store.setState(state => ({
+      nodes: state.nodes.map(node => node.id === 'note' ? { ...node, connectable: false } : node),
+    })));
+    await page.waitForFunction(() => document.querySelector('[data-id="note"] [data-connection-role="source"]')
+      ?.classList.contains('tdag-port-disabled'));
+    const disabled = await port.evaluate(el => {
+      const rect = el.getBoundingClientRect();
+      const hit = document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2);
+      return { pointerEvents: getComputedStyle(el).pointerEvents, hitsPort: !!hit?.closest('.react-flow__handle') };
+    });
+    assert.deepEqual(disabled, { pointerEvents: 'none', hitsPort: false }, 'The unavailable port yields to the underlying canvas or card');
+  });
+
+  await probe('Clicking a selectable wire selects that edge under the pointer cursor', async () => {
+    await fixture();
+    const path = page.locator('.react-flow__edge[data-id="note-thought"] .react-flow__edge-interaction');
+    const at = await path.evaluate(edge => {
+      const p = edge.getPointAtLength(edge.getTotalLength() / 2).matrixTransform(edge.getScreenCTM());
+      return { x: p.x, y: p.y };
+    });
+    await cursorAt(at, 'pointer', 'Selectable wire', '.react-flow__edge');
+    await page.mouse.click(at.x, at.y);
+    await page.waitForFunction(() => window.__store.getState().edges.some(edge => edge.id === 'note-thought' && edge.selected));
+  });
+
+  await probe('Disabled history and minimum-zoom controls stop advertising active actions', async () => {
+    await fixture();
+    const undo = page.locator('.canvas-toolbar-history button').first();
+    assert.ok(await undo.isDisabled(), 'The fixture has no change to undo');
+    await cursorAt(await point(undo), 'not-allowed', 'Disabled history action', 'button:disabled');
+    const out = page.locator('.react-flow__controls-zoomout');
+    await cursorAt(await point(out), 'pointer', 'Enabled zoom out', 'button');
+    await page.evaluate(() => window.__rf.zoomTo(.04, { duration: 0 }));
+    await page.waitForFunction(() => document.querySelector('.react-flow__controls-zoomout')?.disabled);
+    const at = await point(out);
+    await page.mouse.move(at.x, at.y);
+    const actual = await page.evaluate(({ x, y }) => getComputedStyle(document.elementFromPoint(x, y)).cursor, at);
+    assert.ok(['auto', 'default', 'not-allowed'].includes(actual), 'Disabled zoom out hit cursor: ' + actual);
+    await page.mouse.click(at.x, at.y);
+    assert.equal((await viewport()).zoom, .04);
+  });
+
+  await probe('Single-node width, height and corner resize handles keep their directional cursors', async () => {
+    await fixture();
+    await page.evaluate(() => window.__store.getState().setSelectedNodeIds(['thought']));
+    for (const [name, cursor] of [['width', 'ew-resize'], ['height', 'ns-resize'], ['both', 'nwse-resize']]) {
+      const grip = node('thought').locator('[data-node-resize="' + name + '"]');
+      await cursorAt(await point(grip), cursor, name + ' handle', '[data-node-resize]');
+    }
+  });
+
+  await probe('Minimap dragging pans the camera and restores its open-hand cursor on release', async () => {
+    await fixture();
+    const minimap = page.locator('.react-flow__minimap-svg');
+    await minimap.hover();
+    const at = await point(minimap, .4, .55);
+    const before = await viewport();
+    await cursorAt(at, 'grab', 'Pannable minimap', '.react-flow__minimap-svg');
+    await page.mouse.down();
+    await cursorAt({ x: at.x + 18, y: at.y + 10 }, 'grabbing', 'Dragging minimap', '.react-flow__minimap-svg');
+    const after = await viewport();
+    assert.ok(Math.abs(after.x - before.x) > 2 && Math.abs(after.y - before.y) > 2, 'Minimap changed the real canvas viewport');
+    const outside = { x: (await minimap.boundingBox()).x - 30, y: at.y };
+    await page.mouse.move(outside.x, outside.y, { steps: 4 });
+    await settle();
+    assert.notDeepEqual(await viewport(), after, 'The camera keeps panning outside the minimap');
+    await cursorAt(outside, 'grabbing', 'Continuing the same minimap drag outside its bounds');
+    await page.mouse.up();
+    await cursorAt(outside, 'crosshair', 'Canvas marquee restored on release', '.react-flow__pane');
+    await cursorAt(await point(minimap, .4, .55), 'grab', 'Released minimap', '.react-flow__minimap-svg');
+  });
+
+  await probe('Material palette tools show the drag threshold and create only on a completed drop', async () => {
+    const palette = page.locator('[data-content-palette]');
+    const preview = page.locator('[data-palette-drag-preview]');
+    const drop = { x: 1450, y: 820 };
+    for (const [kind, label] of [['note', /^新建便笺/], ['file', /^新建文件节点/], ['frame', /^新建分区框/]]) {
+      await fixture();
+      const tool = palette.getByRole('button', { name: label });
+      const center = await point(tool);
+      const start = { x: Math.round(center.x), y: Math.round(center.y) };
+      const original = await positions();
+      await cursorAt(start, 'grab', kind + ' palette tool', 'button');
+      await page.mouse.down();
+      await cursorAt({ x: start.x + 6, y: start.y }, 'grab', kind + ' armed tool', 'button');
+      assert.equal(await preview.count(), 0, 'A 6px move still belongs to the click');
+      await page.mouse.move(start.x + 7, start.y);
+      await preview.waitFor({ state: 'visible' });
+      await cursorAt(drop, 'grabbing', kind + ' drag outside the toolbar', '.react-flow__pane');
+      assert.deepEqual(await positions(), original, 'The preview alone leaves the graph untouched');
+      await page.mouse.up();
+      await preview.waitFor({ state: 'detached' });
+      const created = await page.evaluate(ids => window.__store.getState().nodes.filter(node => !ids.includes(node.id))
+        .map(node => node.data.stepKind), original.map(node => node.id));
+      assert.deepEqual(created, [kind], 'One drop creates exactly one matching material');
+      await cursorAt(start, 'grab', kind + ' tool after release', 'button');
+    }
+    // Use a native touch cancellation to end an actual pointer stream.
+    await fixture();
+    const start = await point(palette.getByRole('button', { name: /^新建便笺/ }));
+    const original = await positions();
+    const cdp = await context.newCDPSession(page);
+    try {
+      await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: true });
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [start] });
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: start.x + 8, y: start.y }] });
+      await preview.waitFor({ state: 'visible' });
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchCancel', touchPoints: [] });
+      await preview.waitFor({ state: 'detached' });
+    } finally {
+      await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: false });
+      await cdp.detach();
+    }
+    await page.mouse.click(drop.x, drop.y);
+    assert.deepEqual(await positions(), original, 'Cancellation and a subsequent click create nothing');
+    await cursorAt(start, 'grab', 'Palette tool after cancellation', 'button');
   });
 
   await probe('Multi-selection owns dragging and resize cursors across the entire selected region', async () => {
@@ -307,7 +434,9 @@ try {
     const before = await positions();
     await drag(at, 48, 24, at => cursorAt(at, 'grabbing', 'Moving multi-selection'));
     moved(before, await positions(), ['note', 'thought'], 48, 24, .65);
-    await cursorAt(await point(page.locator('[data-selection-resize="both"]')), 'nwse-resize', 'Multi-selection resize');
+    for (const [name, cursor] of [['width', 'ew-resize'], ['height', 'ns-resize'], ['both', 'nwse-resize']]) {
+      await cursorAt(await point(page.locator('[data-selection-resize="' + name + '"]')), cursor, 'Multi-selection ' + name);
+    }
 
     const pan = page.locator('.react-flow__controls-pan');
     await pan.click();

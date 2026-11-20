@@ -106,6 +106,8 @@ try {
   await node().locator('[data-edit-response]').click();
   const canvasResponse = node().locator('[data-canvas-response-editor]');
   await canvasResponse.waitFor({ state: 'visible' });
+  assert.equal(await node().getByRole('button', { name: '保存', exact: true }).evaluate(
+    el => !!el.closest('[data-conversation-split-answer]')), false, 'Save stays outside the answer scroller');
   assert.equal(await canvasResponse.inputValue(), originalResponse);
   await page.waitForTimeout(180);
   assert.ok(await canvasResponse.evaluate(el => el === document.activeElement));
@@ -144,6 +146,8 @@ try {
   await node().locator('[data-edit-question]').click();
   const canvasQuestion = node().locator('[data-canvas-question-editor]');
   await canvasQuestion.waitFor({ state: 'visible' });
+  assert.equal(await node().locator('[data-edit-submit]').evaluate(
+    el => !!el.closest('[data-conversation-split-question]')), false, 'Question revision controls stay outside the question scroller');
   await page.waitForTimeout(180);
   assert.ok(await canvasQuestion.evaluate(el => el === document.activeElement));
   await canvasQuestion.press('End');

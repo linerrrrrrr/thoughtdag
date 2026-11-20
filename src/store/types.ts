@@ -46,14 +46,15 @@ export interface NodeSlice {
   setEditing: (nodeId: string, editing: boolean, surface?: 'canvas' | 'panel') => void;
   setEditingResponse: (nodeId: string, editing: boolean, surface?: 'canvas' | 'panel') => void;
   duplicateNode: (nodeId: string) => void;
-  addCrossLink: (sourceId: string, targetId: string) => void;
+  addCrossLink: (sourceId: string, targetId: string, sourceHandle?: string | null) => void;
   /** Convert between continuation (effective upstream, materials included)
    *  and single-node reference (source turn only). Cycle-guarded. */
   setEdgeStructural: (edgeId: string, structural: boolean) => void;
   updateEdgeSettings: (edgeId: string, settings: import('../lib/edge-edit').EdgeEditSettings) => { ok: boolean; error?: string };
   /** Live text edits can manage their own baseline and closing history snapshots. */
   updateSelectedEdges: (edgeIds: string[], patch: Partial<import('../lib/edge-edit').EdgeEditSettings>, options?: { recordHistory?: boolean }) => { ok: boolean; error?: string };
-  applyCanvasLayout: (options: import('../lib/canvas-layout').CanvasLayoutOptions, selectedIds?: string[], isCurrent?: () => boolean) => Promise<{ ok: boolean; error?: string }>;
+  applyCanvasLayout: (options: import('../lib/canvas-layout').CanvasLayoutOptions, selectedIds?: string[], isCurrent?: () => boolean,
+    onCommit?: (nodes: ThoughtNode[]) => void) => Promise<{ ok: boolean; error?: string }>;
   navigateVersion: (nodeId: string, direction: 'prev' | 'next') => void;
   deleteVersion: (nodeId: string, versionIndex: number) => void;
   batchDelete: (nodeIds: string[], edgeIds?: string[]) => void;
@@ -96,6 +97,8 @@ export interface NodeSlice {
 
 export interface AddQuestionOptions {
   parentId?: string;
+  /** The execution choice for this question takes precedence over inherited settings. */
+  execution?: { executionKind: 'api' | 'codex'; model?: string };
   initialAttachments?: Attachment[];
   excludeAllInheritedAttachments?: boolean;
   /** @-mentioned node ids: any not already in the new node's context get a
@@ -132,8 +135,6 @@ export interface HighlightSlice {
 export interface ReplaySlice {
   /** Regenerate a node in place from its incoming edges, appending a version. */
   rerunNode: (nodeId: string) => Promise<void>;
-  /** Replay every currently-stale node in dependency order (confirm first — N generations). */
-  replayStale: () => Promise<void>;
 }
 
 export interface AttachmentSlice {

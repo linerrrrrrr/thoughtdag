@@ -47,7 +47,7 @@ export default function CanvasControls({ children, leftDragPans, onTogglePan }: 
       attributes: true, attributeFilter: ['title', 'aria-label', 'aria-labelledby'] });
     return () => observer.disconnect();
   }, []);
-  return <div ref={boundary} className="contents">
+  return <div ref={boundary} className="contents" data-canvas-controls data-type-surface="canvas-controls">
     <Controls position="bottom-left">
       <ControlButton className="react-flow__controls-pan" aria-label={panLabel} data-tooltip={panLabel}
         aria-pressed={leftDragPans} onClick={onTogglePan}>

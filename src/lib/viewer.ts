@@ -4,14 +4,19 @@ import { DOCX_MIME_TYPE } from './document-copy';
 import { normalizeConversationGraph } from './normalize-graph';
 import { splitLegacyFileNodes } from './single-file-nodes';
 
-// Read-only viewer: the link IS the canvas. Graph data travels in the URL
-// hash (#view=<deflate+base64url>), so nothing touches a server and the
-// viewer is just this same static app with every write path closed:
+// Legacy local read-only viewer: graph data travels in the URL hash
+// (#view=<deflate+base64url>). Remote deployments do not open these links.
+// The local viewer is the same app with every write path closed:
 // persistence is a no-op (a visitor's clicks can't overwrite their own
 // canvases), generation actions early-return, and the mutating UI hides.
 
+export function isLocalViewerOrigin(location: Pick<Location, 'protocol' | 'hostname'>): boolean {
+  return location.protocol === 'file:' || ['localhost', '127.0.0.1', '[::1]', '::1'].includes(location.hostname);
+}
+
 export const isViewerMode =
   typeof window !== 'undefined' && window.location.hash.startsWith('#view=');
+export const isViewerUnavailable = isViewerMode && !isLocalViewerOrigin(window.location);
 
 const b64url = {
   encode(bytes: Uint8Array): string {
@@ -37,8 +42,9 @@ export interface ViewerPayload {
   edges: ThoughtEdge[];
 }
 
-/** Serialize a graph into a shareable read-only URL (current origin + path). */
+/** Build a local viewer URL for legacy compatibility and viewer fixtures. */
 export async function buildViewerLink(nodes: ThoughtNode[], edges: ThoughtEdge[]): Promise<string> {
+  if (!isLocalViewerOrigin(window.location)) throw new Error('Read-only viewer links are only available locally.');
   const clean: ViewerPayload = {
     nodes: nodes.map((n) => ({
       ...n,
@@ -50,8 +56,7 @@ export async function buildViewerLink(nodes: ThoughtNode[], edges: ThoughtEdge[]
         // images, a notebook's JSON and figures, and full-size image
         // originals would blow the URL past what address bars and share
         // intents carry (and sharing a paper's file is not ours to do).
-        // Extracted text, digests and thumbnails travel, so the visitor
-        // still reads everything.
+        // Extracted text, digests and thumbnails may still travel.
         attachments: (n.data.attachments ?? []).map((a) => ({
           ...a,
           nodeFileRevision: undefined,
@@ -74,10 +79,9 @@ export async function buildViewerLink(nodes: ThoughtNode[], edges: ThoughtEdge[]
   };
   const bytes = new TextEncoder().encode(JSON.stringify(normalizeConversationGraph(clean)));
   const packed = await pipe(bytes, new CompressionStream('deflate-raw'));
-  // Always the PUBLIC viewer origin: a link minted on the desktop app or a
-  // dev server would otherwise point at localhost and open for nobody. The
-  // payload is self-contained, so any deployment of the app can render it.
-  return `https://app.thoughtdag.workers.dev/#view=${b64url.encode(packed)}`;
+  const url = new URL(window.location.href);
+  url.hash = `view=${b64url.encode(packed)}`;
+  return url.href;
 }
 
 export async function decodeViewerHash(hash: string): Promise<ViewerPayload> {
@@ -89,6 +93,7 @@ export async function decodeViewerHash(hash: string): Promise<ViewerPayload> {
 /** Boot path for viewer mode: silence persistence, then load the graph from
     the hash straight into the in-memory store. Replaces bootProjects(). */
 export async function bootViewer(): Promise<void> {
+  if (isViewerUnavailable) return;
   // (persistence is already a no-op: store/index.ts picks the storage by
   // isViewerMode at creation time, so no early set() can race this boot)
   const { useStore } = await import('../store');

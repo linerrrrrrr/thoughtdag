@@ -83,9 +83,8 @@ export type OAuthResult =
   | { status: 'failed'; error: string }
   | null;
 
-/** Park the minted key for the ApiKeyModal and open it: the modal's pickup
-    effect selects the OpenRouter preset, fills the key and probes the
-    catalog with the recommended set pre-checked — the user saves. */
+/** Open answer-model settings with the minted key and the recommended
+    models checked. Registration waits for the user's explicit save. */
 export function handMintedKeyToModal(key: string): void {
   useUiStore.getState().setOauthMintedKey(key);
   useUiStore.getState().setApiKeyModalOpen(true);
@@ -106,7 +105,7 @@ export async function consumeOpenRouterCallback(): Promise<OAuthResult> {
   return exchangeAndConnect(code, verifier);
 }
 
-/** code + verifier → minted key. The key is handed to the ApiKeyModal for
+/** code + verifier → minted key. The key is handed to the answer-model settings page for
     the user's model confirmation — the exchange itself saves nothing. */
 async function exchangeAndConnect(code: string, verifier: string): Promise<Exclude<OAuthResult, null>> {
   try {

@@ -121,6 +121,12 @@ try {
   const excludedTool = await compileCodexHistory(ownMessages(tooled).filter((m) => m.canvasSource?.part !== 'attachment'), [tooled], 'D');
   assert.equal(nativeCalls(excludedTool).length, 0, 'excluding a still-present tool record also prevents native replay');
 
+  const missingCwd = copy(afterRestart);
+  delete missingCwd.data.agentSession.cwd;
+  const compiled = await compileCodexHistory(messages, [missingCwd], 'D');
+  await selectCodexBase(compiled.history, '', [missingCwd], 'D:/test');
+  assert.equal(compiled.history.base, undefined, 'older sessions without a known directory cannot redirect or break a new run');
+
   for (const empty of [null, undefined]) {
     const emptyVersion = copy(afterRestart);
     emptyVersion.data.codexHistories = [empty];

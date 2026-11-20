@@ -126,7 +126,7 @@ export function semanticSnapshot(nodes: ThoughtNode[], edges: ThoughtEdge[]): un
       highlightMode: n.data.highlightMode !== 'off' ? n.data.highlightMode : undefined,
       // Reading-only marks cannot change context identity or invalidate downstream work.
       highlights: (n.data.highlightMode === 'tag' || n.data.highlightMode === 'filter') && n.data.highlights?.length
-        ? n.data.highlights.map((h) => h.text) : undefined,
+        ? n.data.highlights.map((h) => h.source === 'question' ? { source: h.source, text: h.text } : h.text) : undefined,
       linkUrl: n.data.linkUrl,
       linkFetchedAt: n.data.linkFetchedAt,
       excludedAttachmentIds: (n.data.excludedAttachmentIds as string[] | undefined)?.length

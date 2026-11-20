@@ -2,6 +2,7 @@ import type { PDFDocumentProxy } from 'pdfjs-dist';
 import { PDFArray, PDFDict, PDFDocument, PDFHexString, PDFName, PDFNumber, PDFString, fill, rectangle, setFillingRgbColor, setGraphicsState } from 'pdf-lib';
 import type { PdfAnnotation } from '../types';
 import { DocumentSourceError } from './document-errors';
+import { isPdfPointNote } from './pdf-mark';
 
 function bounds(points: number[][]) {
   const xs = points.map(p => p[0]), ys = points.map(p => p[1]);
@@ -98,9 +99,7 @@ export async function annotatedPdf(original: PDFDocumentProxy, annotations: PdfA
       const rect = bounds(quads.flat());
       const hex = /^#[\da-f]{6}$/i.test(annotation.color) ? annotation.color.slice(1) : 'f4cc48';
       const rgb = [0, 2, 4].map(index => parseInt(hex.slice(index, index + 2), 16) / 255);
-      const first = annotation.rects[0];
-      const note = annotation.kind === 'note' || (annotation.kind === undefined && annotation.comment !== undefined
-        && !annotation.text && first[2] === .025 && first[3] === .018);
+      const note = isPdfPointNote(annotation);
       const dict = context.obj({
         Type: 'Annot', Subtype: note ? 'Text' : 'Highlight', P: page.ref, Rect: rect, F: 4, C: rgb,
         NM: PDFHexString.fromText(annotation.id), Contents: PDFHexString.fromText(annotation.comment ?? annotation.text ?? ''),

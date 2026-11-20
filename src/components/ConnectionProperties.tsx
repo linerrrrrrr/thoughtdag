@@ -11,6 +11,8 @@ import { useT, fmt, type MessageKey } from '../i18n';
 import { isImeComposing } from '../utils';
 import { handleCanvasPanelKeyDown } from '../lib/canvas-shortcuts';
 import { EdgeRelationOptions, EdgeRouteOptions } from './EdgeInspectorControls';
+import { resolveEdgeRoute } from '../lib/edge-path';
+import { useEdgeRoutingPreferences } from '../lib/edge-routing-preferences';
 import './EdgeInspector.css';
 
 type ConnectionPropertiesProps = { selected: ThoughtEdge[]; onLocateNode: (nodeId: string) => void };
@@ -28,6 +30,7 @@ function ConnectionForm({ selected, onLocateNode }: ConnectionPropertiesProps) {
   const t = useT();
   const nodes = useStore(state => state.nodes);
   const edges = useStore(state => state.edges);
+  const defaultRoute = useEdgeRoutingPreferences(state => state.settings.defaultRoute);
   const [error, setError] = useState<string | null>(null);
   const labelEditor = useRef<HTMLDivElement>(null);
   const labelHistory = useRef(false);
@@ -75,11 +78,8 @@ function ConnectionForm({ selected, onLocateNode }: ConnectionPropertiesProps) {
     const values = selected.map(edge => readEdgeSettings(edge)[key]);
     return values.every(item => item === values[0]) ? values[0] : '';
   };
-  const routes = selected.map(edge => {
-    const route = readEdgeSettings(edge).route;
-    const effective = route === 'inherit' ? nodes.find(node => node.id === edge.source)?.data.edgeRouteDefault : route;
-    return effective === 'orthogonal' ? 'orthogonal' : 'curve';
-  });
+  const routes = selected.map(edge => resolveEdgeRoute(edge.data?.route,
+    nodes.find(node => node.id === edge.source)?.data.edgeRouteDefault, defaultRoute));
   const routeValue = routes.every(route => route === routes[0]) ? routes[0] : '';
   const relationValue = value('relation');
   const mixedLabels = selected.some(edge => readEdgeSettings(edge).label !== readEdgeSettings(selected[0]).label);

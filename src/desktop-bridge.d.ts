@@ -72,6 +72,8 @@ interface DesktopAgentModel {
 interface DesktopAgentRunRequest {
   /** Inherit the installed runtime's permissions unless the canvas selects an override. */
   nativePermissions?: boolean;
+  /** Canvas Codex runs pass their permission mode directly, leaving their external folder unmanaged. */
+  codexWorkspace?: { permissionMode: import('./types').AgentPermissionMode };
   /** Per-attachment directories; the host validates them under its own managed storage root. */
   managedFileDirs?: string[];
   /** which runtime runs the turn (default: pi) */
@@ -107,6 +109,7 @@ interface DesktopAgentsBridge {
   steer?(runId: string, prompt: string): Promise<boolean>;
   /** the shell-managed working directory of a canvas, created on demand */
   workspace(canvasId: string): Promise<string>;
+  canvasWorkspace?(canvasId: string, namespace: string): Promise<string>;
   /** the person's answer to a runtime's question during a run */
   answer(runId: string, requestId: string, response: { confirmed: boolean; scope?: 'session' } | { value: string } | { answers: { id: string; selected: string[]; custom?: string }[] } | { cancelled: true }): Promise<boolean>;
   /** a folder picked in the system dialog, or null */

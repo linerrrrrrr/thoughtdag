@@ -55,7 +55,8 @@ export default function SelectionResizeControls({ leftDragPans, onNodeContextMen
         if (!original) return node;
         return drag.direction === 'move' ? { ...node, position: original.position }
           : { ...node, width: original.width, height: original.height,
-            data: { ...node.data, keepOverviewHeight: original.data.keepOverviewHeight, contentHeightIntent: original.data.contentHeightIntent } };
+            data: { ...node.data, keepOverviewHeight: original.data.keepOverviewHeight, contentHeightIntent: original.data.contentHeightIntent,
+              fitContentHeight: original.data.fitContentHeight } };
       }) }));
     } else useStore.getState().pushHistory();
   };
@@ -133,7 +134,7 @@ export default function SelectionResizeControls({ leftDragPans, onNodeContextMen
     }
   };
   // Stay in screen coordinates, inside the native wheel/pan event boundary.
-  return createPortal(<div ref={ref} data-selection-resizer data-selection-gesture={active || undefined} className="selection-resizer nodrag"
+  return createPortal(<div ref={ref} data-type-surface="canvas-geometry" data-selection-resizer data-selection-gesture={active || undefined} className="selection-resizer nodrag"
     style={{ left: x + bounds.x * zoom, top: y + bounds.y * zoom, width: bounds.width * zoom, height: bounds.height * zoom }}>
     <button type="button" data-selection-move className={`selection-move-surface nodrag${active === 'move' ? ' is-moving' : ''}`}
       aria-label={t('selection.move')} onPointerDown={event => start(event, 'move')} onPointerMove={move}

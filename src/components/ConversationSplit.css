@@ -28,13 +28,10 @@
   justify-content: center;
   flex: 0 0 12px;
   width: 100%;
-  cursor: default;
   touch-action: none;
   user-select: none;
   outline: none;
 }
-
-.conversation-divider[data-adjustable] { cursor: row-resize; }
 
 .conversation-divider::before {
   content: '';
@@ -68,6 +65,5 @@
 
 .conversation-split--dragging,
 .conversation-split--dragging * {
-  cursor: row-resize !important;
   user-select: none !important;
 }

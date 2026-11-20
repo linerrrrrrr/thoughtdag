@@ -22,6 +22,7 @@ import { execSync, execFileSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import { createRequire } from 'node:module';
+import { fileURLToPath } from 'node:url';
 
 // ─── Environment ────────────────────────────────────────────────
 // Minimal .env loader (avoids dotenv dependency and Node --env-file version quirks)
@@ -1306,13 +1307,13 @@ app.post('/api/stream', async (req, res) => {
 // server, and the app polls the code out. One-time read, loopback only —
 // the PKCE verifier and the minted key never pass through this file.
 let orOauthCode = null;
+const statusPages = fileURLToPath(new URL('./runtime/status-pages/', import.meta.url));
+const cursorStylesheet = fileURLToPath(new URL('./runtime/design-system/cursors.css', import.meta.url));
+app.get('/design-system/cursors.css', (_req, res) => res.sendFile(cursorStylesheet));
+app.get('/oauth/typography.css', (_req, res) => res.sendFile('typography.css', { root: statusPages }));
 app.get('/oauth/openrouter', (req, res) => {
   orOauthCode = typeof req.query.code === 'string' ? req.query.code : null;
-  res.type('html').send(`<!doctype html><meta charset="utf-8"><title>ThoughtDAG</title>
-<body style="font-family:system-ui;display:grid;place-items:center;height:100vh;margin:0;background:#FAF9F7;color:#1f1d1a">
-<div style="text-align:center;line-height:1.7"><div style="font-size:40px">✓</div>
-<h2 style="margin:8px 0 4px">授权完成 · Authorized</h2>
-<p style="color:#6b6558">回到 ThoughtDAG 应用即可，本页可以关闭。<br/>Return to the ThoughtDAG app; this tab can be closed.</p></div>`);
+  res.sendFile('authorized.html', { root: statusPages });
 });
 app.get('/oauth/openrouter/code', (_req, res) => {
   res.json({ code: orOauthCode });

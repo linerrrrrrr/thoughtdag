@@ -3,6 +3,7 @@ import { DEFAULT_CANVAS_TYPOGRAPHY, normalizeCanvasTypography, type CanvasTypogr
 import { appSettings } from './disk-storage';
 
 const KEY = 'thoughtdag.canvasTypography';
+export const canvasTypographyDraftKey = 'canvas-typography-settings';
 
 function readSettings(): CanvasTypography {
   try { return normalizeCanvasTypography(JSON.parse(appSettings.getItem(KEY) ?? '{}')); }

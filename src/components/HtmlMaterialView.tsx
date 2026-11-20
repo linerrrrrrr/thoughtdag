@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import type { Attachment } from '../types';
 import { buildReaderPages, type ReaderPage } from '../lib/html-material';
@@ -84,15 +84,41 @@ function PageFrame({ srcdoc, page, onSelect, clipMode, onClipped, clipFailedText
   const [band, setBand] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
   const [clipping, setClipping] = useState(false);
 
+  const fitToColumn = useCallback((frame: HTMLIFrameElement) => {
+    const idoc = frame.contentDocument;
+    if (!idoc?.body || !frame.clientWidth) return;
+    // Measure the authored width without the fit from the previous column.
+    delete idoc.body.dataset.fitToColumn;
+    const documentWidth = idoc.body.scrollWidth || idoc.documentElement.scrollWidth;
+    const columnWidth = frame.clientWidth;
+    if (documentWidth > columnWidth + 2) {
+      idoc.body.style.setProperty('--document-fit-zoom', String(columnWidth / documentWidth));
+      idoc.body.dataset.fitToColumn = '';
+    }
+    // Body scroll height is in unscaled document pixels. Reading the document
+    // root here would include the old iframe height and prevent shrink-to-fit.
+    const zoom = parseFloat(idoc.defaultView!.getComputedStyle(idoc.body).zoom) || 1;
+    setHeight(Math.max(40, Math.ceil(idoc.body.scrollHeight * zoom) + 2));
+  }, []);
+
+  useEffect(() => {
+    const frame = ref.current;
+    if (!frame) return;
+    let lastWidth = frame.clientWidth;
+    const observer = new ResizeObserver(() => {
+      if (lastWidth === frame.clientWidth) return;
+      lastWidth = frame.clientWidth;
+      fitToColumn(frame);
+    });
+    observer.observe(frame);
+    return () => observer.disconnect();
+  }, [fitToColumn]);
+
   const handleLoad = () => {
     const frame = ref.current;
     const idoc = frame?.contentDocument;
     if (!frame || !idoc?.body) return;
-    // fixed-width decks (1280px stages) shrink to the column; measure after
-    const bw = idoc.body.scrollWidth || idoc.documentElement.scrollWidth;
-    const cw = frame.clientWidth;
-    if (bw > cw + 2) (idoc.body.style as CSSStyleDeclaration & { zoom: string }).zoom = String(cw / bw);
-    setHeight(Math.max(40, idoc.documentElement.scrollHeight + 2));
+    fitToColumn(frame);
 
     idoc.addEventListener('mouseup', () => {
       const sel = frame.contentWindow?.getSelection();
@@ -146,7 +172,7 @@ function PageFrame({ srcdoc, page, onSelect, clipMode, onClipped, clipFailedText
     <div ref={holderRef} className="relative">
       <iframe
         ref={ref}
-        sandbox="allow-same-origin"
+        data-type-surface="native-document" sandbox="allow-same-origin"
         srcDoc={srcdoc}
         onLoad={handleLoad}
         style={{ height }}
@@ -157,7 +183,7 @@ function PageFrame({ srcdoc, page, onSelect, clipMode, onClipped, clipFailedText
       />
       {clipMode && (
         <div
-          className="absolute inset-0 cursor-crosshair"
+          data-cursor="crosshair" className="absolute inset-0"
           style={{ zIndex: 6 }}
           data-clip-overlay={page ?? 1}
           onMouseDown={(e) => { e.preventDefault(); const p = frac(e); setBand({ x0: p.x, y0: p.y, x1: p.x, y1: p.y }); }}

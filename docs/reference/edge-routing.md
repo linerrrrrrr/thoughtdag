@@ -1,8 +1,9 @@
 # Edge routing contract and references
 
 Connections preserve their endpoint direction and remain readable as nodes move.
-Facing, aligned ports connect straight. Facing ports with a transverse offset use
-one continuous S-shaped cubic Bézier when the route is unobstructed. Curved mode
+Facing, aligned ports connect straight. At the default endpoint perpendicularity,
+facing ports with a transverse offset use one continuous S-shaped cubic Bézier
+when the route is unobstructed. Curved mode
 does not add a decorative bow to an already aligned connection.
 
 This is the geometry contract for the local React Flow edge renderer. It does not
@@ -45,9 +46,14 @@ with cubic commands whose controls are collinear, then rounding only their
 corners, still produces a rounded orthogonal route. The presence of `C` commands
 in the SVG is not sufficient evidence of curved routing.
 
-For cubic endpoints `P0` and `P3`, with outward port normals `ns` and `nt`, the
-controls have the form `C1 = P0 + hs * ns` and `C2 = P3 + ht * nt`. Thus the
+For cubic endpoints `P0` and `P3`, let `ns` and `nt` be their outward port normals.
+At 100% endpoint perpendicularity (the default), the controls have the form
+`C1 = P0 + hs * ns` and `C2 = P3 + ht * nt`. Thus the
 departure direction is `C1 - P0`, while the arrival direction is `P3 - C2`.
+At 0%, each endpoint follows the direction toward the adjacent waypoint or, on a
+direct connection, the opposite port. The direction stays on the outward side
+of the node. Intermediate percentages interpolate the angle to the port normal,
+so 50% halves the angular deviation at each end.
 Control distances follow the available span; a fixed small cap must not flatten
 the middle of a long, offset connection. A routed spline must be collision-tested
 after interpolation because smoothing safe waypoints can cut inside an obstacle.
@@ -108,10 +114,11 @@ diagramming framework is not required by this design.
 
 ## Acceptance cases
 
-- A forward, aligned pair remains straight in curved mode without an artificial
-  bump; a long, offset pair forms a continuous natural S curve.
-- Source and target tangents follow their port normals, including reverse and
-  vertical connections.
+- A forward, aligned pair stays straight. At the default settings a long, offset
+  pair forms a continuous natural S curve.
+- At 100% endpoint perpendicularity, source and target tangents follow their
+  port normals, including on reverse and vertical connections. On an unobstructed
+  offset curve, lowering this value lets both ends meet their node edges at a slant.
 - Obstructed curved routes remain continuous curves; elbow routes remain
   orthogonal apart from rounded corners. Neither crosses node interiors.
 - Tight gaps and changing node dimensions produce finite, visible paths with no

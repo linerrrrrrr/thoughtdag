@@ -10,7 +10,7 @@
   overflow: clip;
 }
 
-.conversation-node:not([data-thought-resized]) .conversation-node-split-body {
+.conversation-node:not([data-thought-resized], [data-fit-content-height]) .conversation-node-split-body {
   max-height: calc(420px + 2 * var(--node-reading-inset));
 }
 
@@ -25,7 +25,7 @@
 }
 
 /* Clipboard denial opens a selectable field above the dock, including on short cards. */
-.conversation-node .conversation-node-split-body:has(.response-manual-copy) {
+.conversation-node .conversation-node-split-body:has([data-node-response-footer] .response-manual-copy) {
   overflow: visible;
 }
 
@@ -53,8 +53,45 @@
   contain: size;
 }
 
-.conversation-node .conversation-split-question .conversation-question {
-  margin-bottom: 0;
+/* Match the question pane's right edge while keeping its actions above the divider. */
+[data-split-question-tools] > .conversation-question-actions {
+  overflow: hidden;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+}
+
+/* At the end of a short scroll pane its last visible pixels should show the icons. */
+.conversation-split-question .conversation-question-actions > button {
+  align-items: flex-end;
+}
+
+.conversation-question-body > .conversation-question-actions {
+  margin-bottom: var(--spacing-surface-inset);
+}
+
+/* Unanswered and human turns have a single reading or writing area. Keep
+   their source link, edit/send controls and waiting status in the card. */
+.conversation-node[data-thought-resized] .conversation-question-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  overflow: clip;
+}
+.conversation-question-body > :is(.conversation-question, .conversation-question-editor, .node-question-composer) {
+  min-height: 0;
+}
+.conversation-question-body > button { flex: none; }
+.conversation-question-body > button { align-self: flex-start; }
+.conversation-question-body .conversation-question-editor {
+  display: flex;
+  flex-direction: column;
+}
+.conversation-node[data-thought-resized] .conversation-question-body .node-question-composer {
+  flex: 1 1 auto;
+}
+.conversation-question-body :is(.conversation-user-message, [data-canvas-question-editor]) {
+  min-height: 0;
+  overscroll-behavior: contain;
 }
 
 /* A wrapping footer leaves room for prose even at the minimum canvas size. */

@@ -20,7 +20,7 @@ export default function HighlighterButton({ active, onClick, buttonRef, classNam
       aria-pressed={active}
 
       onClick={event => { event.stopPropagation(); onClick(); }}
-      className={`highlighter-toggle nodrag nopan rounded-control flex items-center justify-center transition-colors disabled:opacity-40 disabled:cursor-default ${className}`}
+      className={`highlighter-toggle nodrag nopan rounded-control flex items-center justify-center transition-colors disabled:opacity-40 ${className}`}
     >
       <Highlighter size={15} strokeWidth={1.75} />
     </button>

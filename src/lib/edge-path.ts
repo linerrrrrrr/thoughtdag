@@ -2,7 +2,7 @@ import { getBezierPath, type Position } from '@xyflow/react';
 import type { ThoughtEdge, ThoughtNode } from '../types';
 import { nodeHeight } from './layout';
 import { NODE_CSS_WIDTH } from './constants';
-import { handleSide, resolveEdgeAnchors, sideAnchorOffset, type AnchorSide } from './edge-anchors';
+import { handleSide, resolveEdgeAnchors, rulerSourceHandle, sideAnchorOffset, type AnchorSide } from './edge-anchors';
 
 interface Pt { x: number; y: number }
 interface Box { x1: number; y1: number; x2: number; y2: number }
@@ -17,26 +17,43 @@ const EPSILON = 0.001;
 export type EdgeRouteMode = 'auto' | 'curve' | 'orthogonal';
 
 export interface EdgeRoutingSettings {
+  defaultRoute: Exclude<EdgeRouteMode, 'auto'>;
   avoidObstacles: boolean;
   obstacleClearance: number;
   curvature: number;
+  /** 1 aligns both endpoint tangents with their port normals. */
+  endpointPerpendicularity: number;
 }
 
 export const DEFAULT_EDGE_ROUTING_SETTINGS: Readonly<EdgeRoutingSettings> = {
+  defaultRoute: 'curve',
   avoidObstacles: true,
   obstacleClearance: CLEARANCE,
   curvature: 0.25,
+  endpointPerpendicularity: 1,
 };
 
 /** Keep restored preferences and one-off route calls finite and bounded. */
 export function normalizeEdgeRoutingSettings(settings: Partial<EdgeRoutingSettings> = {}): EdgeRoutingSettings {
   return {
+    defaultRoute: settings.defaultRoute === 'orthogonal' ? 'orthogonal' : 'curve',
     avoidObstacles: settings.avoidObstacles !== false,
     obstacleClearance: typeof settings.obstacleClearance === 'number' && Number.isFinite(settings.obstacleClearance)
       ? Math.max(8, Math.min(64, settings.obstacleClearance)) : CLEARANCE,
     curvature: typeof settings.curvature === 'number' && Number.isFinite(settings.curvature)
       ? Math.max(0, Math.min(1, settings.curvature)) : 0.25,
+    endpointPerpendicularity: typeof settings.endpointPerpendicularity === 'number' && Number.isFinite(settings.endpointPerpendicularity)
+      ? Math.max(0, Math.min(1, settings.endpointPerpendicularity)) : DEFAULT_EDGE_ROUTING_SETTINGS.endpointPerpendicularity,
   };
+}
+
+/** Saved edge and layout choices take precedence over the local default.
+ * Legacy "auto" values inherit in the same order as missing choices. */
+export function resolveEdgeRoute(edgeRoute: EdgeRouteMode | undefined, sourceRoute: EdgeRouteMode | undefined,
+  defaultRoute: EdgeRoutingSettings['defaultRoute']): EdgeRoutingSettings['defaultRoute'] {
+  if (edgeRoute === 'curve' || edgeRoute === 'orthogonal') return edgeRoute;
+  if (sourceRoute === 'curve' || sourceRoute === 'orthogonal') return sourceRoute;
+  return defaultRoute;
 }
 
 export interface RoutedPath {
@@ -45,7 +62,7 @@ export interface RoutedPath {
   labelY: number;
 }
 
-interface EdgeLane { sourceOffset: number; targetOffset: number; sourceStep: number; targetStep: number; obstacleOffset: number }
+interface EdgeLane { sourceOffset: number; targetOffset: number; sourceStep: number; targetStep: number; obstacleOffset: number; rulerSource?: boolean }
 export interface EdgeRoutingContext {
   readonly cards: readonly Card[];
   readonly lanes: ReadonlyMap<string, EdgeLane>;
@@ -83,13 +100,15 @@ export function createEdgeRoutingContext(nodes: readonly ThoughtNode[], edges: r
   };
   for (const edge of edges) {
     if (edge.hidden || !visible.has(edge.source) || !visible.has(edge.target)) continue;
-    const fallback = (!handleSide(edge.sourceHandle) || !handleSide(edge.targetHandle)) ? resolveEdgeAnchors(edge, nodeById) : null;
-    const sourceSide = handleSide(edge.sourceHandle) ?? fallback?.sourceSide ?? 'bottom';
+    const markId = rulerSourceHandle(edge.sourceHandle);
+    const fallback = (markId || !handleSide(edge.sourceHandle) || !handleSide(edge.targetHandle)) ? resolveEdgeAnchors(edge, nodeById) : null;
+    const sourceSide = (markId ? fallback?.sourceSide : handleSide(edge.sourceHandle)) ?? fallback?.sourceSide ?? 'bottom';
     const targetSide = handleSide(edge.targetHandle) ?? fallback?.targetSide ?? 'top';
-    const source = anchor(edge.source, sourceSide), target = anchor(edge.target, targetSide);
-    lanes.set(edge.id, { sourceOffset: 0, targetOffset: 0, sourceStep: 0, targetStep: 0, obstacleOffset: 0 });
+    const source = markId && fallback ? fallback.sourceAnchor : anchor(edge.source, sourceSide), target = anchor(edge.target, targetSide);
+    const rulerSource = !!markId && !!rulerSourceHandle(fallback?.sourceHandle);
+    lanes.set(edge.id, { sourceOffset: 0, targetOffset: 0, sourceStep: 0, targetStep: 0, obstacleOffset: 0, ...(rulerSource && { rulerSource }) });
     for (const [key, side, opposite] of [
-      [`source:${edge.source}:${sourceSide}`, sourceSide, target],
+      [`source:${edge.source}:${markId ?? sourceSide}`, sourceSide, target],
       [`target:${edge.target}:${targetSide}`, targetSide, source],
     ] as const) {
       const group = groups.get(key) ?? [];
@@ -288,12 +307,13 @@ function cubicPath(curves: Cubic[]): RoutedPath {
   return { path, labelX: first.x, labelY: first.y };
 }
 
-/** Default controls retain the established path. A positive floor keeps the
- * handle normals defined even at the least-curved setting. */
+/** Default controls retain the established bend. A positive floor keeps
+ * endpoint tangents defined even at the least-curved setting. */
 const curvatureScale = (curvature: number): number => curvature <= 0.25
   ? 0.05 + curvature * 3.8 : 1 + (curvature - 0.25) / 0.75;
 
-function nativeBezier(start: Pt, end: Pt, sourcePosition: Position, targetPosition: Position, curvature: number): { route: RoutedPath; curve: Cubic } {
+export function nativeBezier(start: Pt, end: Pt, sourcePosition: Position, targetPosition: Position,
+  { curvature, endpointPerpendicularity }: EdgeRoutingSettings): { route: RoutedPath; curve: Cubic } {
   // Use xyflow's MIT-licensed implementation, including its distance-scaled
   // controls and reverse-facing handles. No short port fans or artificial bow.
   // https://github.com/xyflow/xyflow/blob/main/packages/system/src/utils/edges/bezier-edge.ts
@@ -301,12 +321,20 @@ function nativeBezier(start: Pt, end: Pt, sourcePosition: Position, targetPositi
     targetX: end.x, targetY: end.y, targetPosition });
   const coordinates = path.match(/-?\d+(?:\.\d+)?(?:e[-+]?\d+)?/gi)!.map(Number);
   const curve: Cubic = [start, { x: coordinates[2], y: coordinates[3] }, { x: coordinates[4], y: coordinates[5] }, end];
-  if (curvature === 0.25) return { route: { path, labelX, labelY }, curve };
+  const sourceLength = distance(start, curve[1]), targetLength = distance(end, curve[2]);
+  if (curvature === 0.25 && endpointPerpendicularity === 1 && sourceLength > 0 && targetLength > 0) {
+    return { route: { path, labelX, labelY }, curve };
+  }
   // xyflow's curvature option only affects reverse-facing handles. Scale the
   // control arms as well so ordinary forward S curves respond continuously.
   const scale = curvatureScale(curvature), minimum = Math.min(1, distance(start, end) * 0.005);
-  curve[1] = extend(start, sourcePosition, Math.max(minimum, distance(start, curve[1]) * scale));
-  curve[2] = extend(end, targetPosition, Math.max(minimum, distance(end, curve[2]) * scale));
+  const control = (port: Pt, toward: Pt, side: Position, length: number): Pt => {
+    const direction = endpointDirection(port, toward, side, endpointPerpendicularity);
+    const arm = curvature === 0.25 && length > 0 ? length : Math.max(minimum, length * scale);
+    return { x: port.x + direction.x * arm, y: port.y + direction.y * arm };
+  };
+  curve[1] = control(start, end, sourcePosition, sourceLength);
+  curve[2] = control(end, start, targetPosition, targetLength);
   return { route: cubicPath([curve]), curve };
 }
 
@@ -317,6 +345,18 @@ const unit = (point: Pt): Pt => {
   return length ? { x: point.x / length, y: point.y / length } : { x: 0, y: 0 };
 };
 const normal = (side: Position): Pt => extend({ x: 0, y: 0 }, side, 1);
+
+/** Rotate from the outward normal toward the next waypoint. A waypoint
+ * behind the port can turn the tangent along the boundary, but never inward. */
+function endpointDirection(port: Pt, toward: Pt, side: Position, perpendicularity: number): Pt {
+  const outward = normal(side);
+  if (perpendicularity === 1) return outward;
+  const delta = subtract(toward, port);
+  const lateral = outward.x * delta.y - outward.y * delta.x;
+  const angle = (1 - perpendicularity) * Math.atan2(lateral, Math.max(0, dot(outward, delta)));
+  const cos = Math.cos(angle), sin = Math.sin(angle);
+  return { x: outward.x * cos - outward.y * sin, y: outward.y * cos + outward.x * sin };
+}
 
 /** Segment/rectangle clipping, including diagonals and arbitrarily thin cards. */
 function lineHits(a: Pt, b: Pt, box: Box): boolean {
@@ -391,18 +431,21 @@ function normalRoom(port: Pt, side: Position, cards: readonly Card[], ownId: str
   return room;
 }
 
-/** Cubic Hermite interpolation with shared interior tangents and prescribed
- * endpoint normals. This independently implemented connector follows the
+/** Cubic Hermite interpolation with shared interior tangents and adjustable
+ * endpoint directions. This independently implemented connector follows the
  * tangent-constraint approach documented by JointJS curve, not its source:
  * https://docs.jointjs.com/api/connectors/#curve
  */
 function connectFreeRoute(points: Pt[], sourceSide: Position, targetSide: Position,
-  cards: readonly Card[], sourceId: string, targetId: string, curvature: number): RoutedPath | null {
+  cards: readonly Card[], sourceId: string, targetId: string, { curvature, endpointPerpendicularity }: EdgeRoutingSettings): RoutedPath | null {
   const simple = points.filter((point, index) => !index || distance(point, points[index - 1]) > EPSILON);
   if (simple.length < 2) return null;
   const directions = simple.map((point, index) => {
-    if (!index) return normal(sourceSide);
-    if (index === simple.length - 1) { const n = normal(targetSide); return { x: -n.x, y: -n.y }; }
+    if (!index) return endpointDirection(point, simple[1], sourceSide, endpointPerpendicularity);
+    if (index === simple.length - 1) {
+      const outward = endpointDirection(point, simple[index - 1], targetSide, endpointPerpendicularity);
+      return { x: -outward.x, y: -outward.y };
+    }
     const before = unit(subtract(point, simple[index - 1])), after = unit(subtract(simple[index + 1], point));
     return unit({ x: before.x + after.x, y: before.y + after.y });
   });
@@ -473,12 +516,13 @@ function routeSingleEdge(
   cards: readonly Card[] = visibleCards(nodes),
   obstacleOffset = 0,
   preferredClearance = CLEARANCE,
-  curvature = 0.25,
+  settings = DEFAULT_EDGE_ROUTING_SETTINGS,
 ): RoutedPath {
   sourcePosition ??= 'bottom' as Position;
   targetPosition ??= 'top' as Position;
   const start = { x: sourceX, y: sourceY }, end = { x: targetX, y: targetY };
-  const native = nativeBezier(start, end, sourcePosition, targetPosition, routeMode === 'orthogonal' ? 0.25 : curvature);
+  const native = nativeBezier(start, end, sourcePosition, targetPosition,
+    routeMode === 'orthogonal' ? DEFAULT_EDGE_ROUTING_SETTINGS : settings);
   const natural = native.route;
   // Tight hand-placed gaps may need less breathing room, rather than a
   // fallback that cuts through the card because its padded box blocks a port.
@@ -513,8 +557,8 @@ function routeSingleEdge(
         if (routeMode === 'orthogonal') return roundedPath([start, ...detour, end], clearance);
         // Endpoint guides constrain routing, but are not forced short SVG
         // segments: the connector can span the entire free corridor.
-        const connected = connectFreeRoute([start, ...detour.slice(1, -1), end], sourcePosition, targetPosition, cards, sourceId, targetId, curvature)
-          ?? connectFreeRoute([start, ...detour, end], sourcePosition, targetPosition, cards, sourceId, targetId, curvature);
+        const connected = connectFreeRoute([start, ...detour.slice(1, -1), end], sourcePosition, targetPosition, cards, sourceId, targetId, settings)
+          ?? connectFreeRoute([start, ...detour, end], sourcePosition, targetPosition, cards, sourceId, targetId, settings);
         if (connected) return connected;
         break;
       }
@@ -564,21 +608,32 @@ export function routeEdge(
 ): RoutedPath {
   const context = options.context ?? (options.edges ? createEdgeRoutingContext(nodes, options.edges, options.settings) : undefined);
   const settings = context?.settings ?? normalizeEdgeRoutingSettings(options.settings);
+  if (routeMode === 'auto') {
+    const sourceRoute = nodes.find(node => node.id === sourceId)?.data.edgeRouteDefault;
+    routeMode = resolveEdgeRoute(routeMode, sourceRoute, settings.defaultRoute);
+  }
   const visible = context?.cards ?? visibleCards(nodes);
   // Endpoint cards still constrain their own ports when other obstacles are
   // ignored. Keep the context's full card list for stable shared-port lanes.
-  const cards = settings.avoidObstacles ? visible : visible.filter((card) => card.id === sourceId || card.id === targetId);
+  let cards = settings.avoidObstacles ? visible : visible.filter((card) => card.id === sourceId || card.id === targetId);
   const clearance = settings.avoidObstacles ? settings.obstacleClearance : CLEARANCE;
   const lane = options.edgeId ? context?.lanes.get(options.edgeId) : undefined;
   sourcePosition ??= 'bottom' as Position;
   targetPosition ??= 'top' as Position;
   const sourceCard = cards.find((card) => card.id === sourceId), targetCard = cards.find((card) => card.id === targetId);
-  const sourcePort = coherentPort({ x: sourceX, y: sourceY }, sourcePosition, sourceCard);
+  // Ruler ticks deliberately extend beyond the ordinary card boundary and
+  // can occupy several columns. React Flow measures their actual wire tips.
+  const sourcePort = lane?.rulerSource ? { x: sourceX, y: sourceY } : coherentPort({ x: sourceX, y: sourceY }, sourcePosition, sourceCard);
+  if (lane?.rulerSource && sourceCard && sourceX > sourceCard.x2) {
+    // Include the ruler in this wire's source outline so a backward wire
+    // has space to turn around the tick and route past its own card.
+    cards = cards.map(card => card === sourceCard ? { ...card, x2: sourceX } : card);
+  }
   const targetPort = coherentPort({ x: targetX, y: targetY }, targetPosition, targetCard);
   sourceX = sourcePort.x; sourceY = sourcePort.y;
   targetX = targetPort.x; targetY = targetPort.y;
   // Legacy side handles can still be restored before the display mapper runs.
-  if (!options.fixedPorts && sourcePosition === 'right' && targetPosition === 'left' && sourceCard && targetCard
+  if (!options.fixedPorts && !lane?.rulerSource && sourcePosition === 'right' && targetPosition === 'left' && sourceCard && targetCard
     && targetCard.x1 + targetCard.x2 < sourceCard.x1 + sourceCard.x2) {
     sourceX = sourceCard.x1 + sourceCard.x2 - sourceX;
     targetX = targetCard.x1 + targetCard.x2 - targetX;
@@ -586,7 +641,7 @@ export function routeEdge(
     targetPosition = 'right' as Position;
   }
   if (routeMode !== 'orthogonal' || !lane || (!lane.sourceOffset && !lane.targetOffset)) {
-    return routeSingleEdge(sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition, sourceId, targetId, nodes, routeMode, cards, lane?.obstacleOffset, clearance, settings.curvature);
+    return routeSingleEdge(sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition, sourceId, targetId, nodes, routeMode, cards, lane?.obstacleOffset, clearance, settings);
   }
   const start = { x: sourceX, y: sourceY }, end = { x: targetX, y: targetY };
   const sourceGap = dot(subtract(end, start), normal(sourcePosition));
@@ -600,12 +655,12 @@ export function routeEdge(
     const to = portFan(end, targetPosition, lane.targetOffset * scale, Math.min(reach + lane.targetStep, gap * 0.4) * scale);
     if (!safe(from, sourceId) || !safe(to, targetId)) continue;
     const middle = routeSingleEdge(from.point.x, from.point.y, sourcePosition, to.point.x, to.point.y, targetPosition,
-      sourceId, targetId, nodes, routeMode, cards, lane.obstacleOffset * scale, clearance, settings.curvature);
+      sourceId, targetId, nodes, routeMode, cards, lane.obstacleOffset * scale, clearance, settings);
     const first = roundedPath(from.points, CLEARANCE);
     const last = roundedPath([...to.points].reverse(), CLEARANCE);
     const continuation = (path: string) => path.replace(/^M\s+\S+\s+\S+/, '');
     return { ...middle, path: first.path + continuation(middle.path) + continuation(last.path) };
   }
   // A blocked port has no safe fan-out; keep the shortest valid route visible.
-  return routeSingleEdge(sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition, sourceId, targetId, nodes, routeMode, cards, 0, clearance, settings.curvature);
+  return routeSingleEdge(sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition, sourceId, targetId, nodes, routeMode, cards, 0, clearance, settings);
 }

@@ -1,6 +1,5 @@
 import type { StateCreator } from 'zustand';
 import type { ThoughtNode, ThoughtEdge } from '../../types';
-import { documentCopyText, isEditableDocument } from '../../lib/document-copy';
 import { generateId } from '../../utils';
 import { placeNewNodes } from '../../lib/layout';
 import { getContextPath, getDescendantIds, selectionSinks } from '../../lib/graph';
@@ -14,10 +13,10 @@ import { shownStaleIds } from '../../lib/stale-judge';
 import { t, fmt } from '../../i18n';
 import type { StoreState, LlmSlice, AddQuestionOptions } from '../types';
 import { condenseGuard } from '../../lib/condense-guard';
-import { isNotebook, notebookContext } from '../../lib/notebook';
 import { requestAgentStop } from '../../lib/agents/agent-runtime';
 import { inheritedNodeExecution } from '../../lib/node-execution';
 import { resolveNodeNumberReferences } from '../../lib/node-numbers';
+import { pruneHighlights } from '../../lib/highlight-match';
 
 /** A picker mention or typed number adds the same visible reference wire. */
 function withMentionEdges(targetId: string, question: string, nodes: ThoughtNode[], edges: ThoughtEdge[], picked: string[] = []): ThoughtEdge[] {
@@ -48,9 +47,8 @@ export const createLlmSlice: StateCreator<StoreState, [], [], LlmSlice> = (set, 
     const { parentId, initialAttachments, excludeAllInheritedAttachments, mentions } = opts;
     const id = generateId();
     get().logEvent('ask', id, { chars: question.length, ...(parentId ? {} : { root: true }) });
-    // Children preserve their parent's execution type and compatible model.
-    // Roots snapshot the global choice; later toolbar changes cannot cross lanes.
-    const inheritedExecution = inheritedNodeExecution(parentId ? get().nodes.find((n) => n.id === parentId)?.data : undefined, useUiStore.getState().selectedModel);
+    const parent = parentId ? get().nodes.find(n => n.id === parentId) : undefined;
+    const execution = inheritedNodeExecution(opts.execution ?? parent?.data, useUiStore.getState().selectedModel);
     const newNode: ThoughtNode = {
       id,
       type: 'thought',
@@ -60,7 +58,7 @@ export const createLlmSlice: StateCreator<StoreState, [], [], LlmSlice> = (set, 
         question,
         createdAt: new Date().toISOString(),
         askedAt: new Date().toISOString(),
-        ...inheritedExecution,
+        ...execution,
         response: '',
         responses: [],
         responseIndex: -1,
@@ -107,46 +105,14 @@ export const createLlmSlice: StateCreator<StoreState, [], [], LlmSlice> = (set, 
     const newNodes = placeNewNodes([...updatedNodes, newNode], newEdges, [id]);
     set({ nodes: newNodes, edges: newEdges, selectedNodeId: id });
 
-    // Compile the new node's incoming edges, including references attached
-    // by @-mentions. Compiling only the parent would omit those new wires.
-    const selfNode = get().nodes.find((n) => n.id === id);
-    const ctx = buildIncomingContext(id, get().nodes, get().edges,
-      selfNode?.data.excludedAttachmentIds, selfNode?.data.includedAttachmentIds, shownStaleIds(get()));
-    const contextMessages = ctx.messages;
-    const contextImages = ctx.images;
-
-    // Collect this node's own attachments (skip if same file already from ancestors)
-    const selfAttachments = selfNode?.data.attachments || [];
-    for (const att of selfAttachments) {
-      const alreadyInContext = contextMessages.some(m => m.content.includes(`[PDF: ${att.name}]`) || m.content.includes(`[File: ${att.name}]`) || m.content.startsWith(`[Notebook: ${att.name} — `));
-      if (alreadyInContext) continue;
-      if (att.type.startsWith('image/')) {
-        contextImages.push({ data: att.content, mimeType: att.type });
-      } else if (isEditableDocument(att)) {
-        // text channel only — page images trip provider image-count limits
-        const body = documentCopyText(att);
-        if (body || att.editedText !== undefined) {
-          contextMessages.push({ role: 'user', content: `[${att.type === 'application/pdf' ? 'PDF' : 'File'}: ${att.name}]\n${body}` });
-        }
-      } else if (att.type === 'text/html') {
-        // extracted Markdown only — raw HTML source never reaches a model
-        if (att.extractedText?.trim()) {
-          contextMessages.push({ role: 'user', content: `[File: ${att.name}]\n${att.extractedText}` });
-        }
-      } else if (isNotebook(att)) {
-        // converted cells only — the raw JSON (base64 figures and all) never reaches a model
-        if (att.extractedText?.trim()) contextMessages.push({ role: 'user', content: notebookContext(att) });
-        if (att.renderMode !== 'text-only') {
-          for (const f of att.figures ?? []) contextImages.push({ data: f.data, mimeType: f.mimeType, hasCompanion: true });
-        }
-      } else if (att.content) {
-        contextMessages.push({ role: 'user', content: `[File: ${att.name}]\n${att.content}` });
-      }
-    }
-
-    contextMessages.push({ role: 'user', content: question });
-
-    await runNodeGeneration(set, get, id, { question, messages: contextMessages, images: contextImages, sources: ctx.sources });
+    // The new turn already contains its saved files and question. Compile it
+    // through the same path as existing turns, including per-file provenance.
+    const ctx = buildContext(id, get().nodes, get().edges,
+      newNode.data.excludedAttachmentIds, newNode.data.includedAttachmentIds, shownStaleIds(get()));
+    // The public store action also accepts an empty question. Keep its final
+    // user turn even though the graph compiler skips empty node fields.
+    if (!question) ctx.messages.push({ role: 'user', content: question });
+    await runNodeGeneration(set, get, id, { question, messages: ctx.messages, images: ctx.images, sources: ctx.sources });
   },
 
   submitHumanTurn: (nodeId: string, question: string) => {
@@ -155,9 +121,7 @@ export const createLlmSlice: StateCreator<StoreState, [], [], LlmSlice> = (set, 
     if (!q) return;
     get().pushHistory();
     get().logEvent('ask', nodeId, { chars: q.length, human: true });
-    // Second run of a paradigm: changing the input makes every answered
-    // step downstream stale — the replay chip is the "re-run experiment"
-    // button. Surface the blast radius, same as editQuestion.
+    // Report how many downstream answers used the previous paradigm input.
     const prevQuestion = get().nodes.find((n) => n.id === nodeId)?.data.question;
     if (prevQuestion && prevQuestion !== q) {
       const staleCount = getDescendantIds(nodeId, get().edges)
@@ -167,7 +131,8 @@ export const createLlmSlice: StateCreator<StoreState, [], [], LlmSlice> = (set, 
     set((state) => ({
       edges: withMentionEdges(nodeId, q, state.nodes, state.edges),
       nodes: state.nodes.map((n) =>
-        n.id === nodeId ? { ...n, data: { ...n.data, question: q, askedAt: new Date().toISOString(), isEditing: false } } : n
+        n.id === nodeId ? { ...n, data: { ...n.data, question: q, askedAt: new Date().toISOString(), isEditing: false,
+          highlights: pruneHighlights(n.data.highlights, undefined, q) } } : n
       ),
     }));
     get().pushHistory();
@@ -206,6 +171,7 @@ export const createLlmSlice: StateCreator<StoreState, [], [], LlmSlice> = (set, 
             : {}),
           ...firstAsk,
           question, askedAt: new Date().toISOString(), isEditing: false, isLoading: true,
+          highlights: pruneHighlights(n.data.highlights, undefined, question),
         } } : n
       ),
     }));

@@ -24,6 +24,7 @@ try {
         if (args.importer.endsWith('agent-runtime.ts')) {
           if (args.path === '../../store') contents = storeStub;
           if (args.path === '../../store/projects') contents = projectsStub;
+          if (args.path === '../canvas-workspace') contents = 'export const ensureCanvasWorkspace=id=>globalThis.canvasWorkspace(id);';
           if (args.path === '../ui-store') contents = `export const useUiStore={getState:()=>globalThis.ui}; export const toast=(...args)=>globalThis.notices.push(args);`;
           if (args.path === '../../i18n') contents = 'export const t=x=>x;';
           if (args.path === '../adapters') contents = `export const anyRunnerSessionConversation=async()=>globalThis.conversation;`;
@@ -68,12 +69,13 @@ try {
   const sid = '11111111-1111-4111-8111-111111111111';
   const source = (id, cwd = 'D:\\source') => ({ id, data: { question: `q-${id}`, response: `a-${id}`, responses: [`a-${id}`], responseIndex: 0,
     importSource: { runner: 'codex', sessionId: sid, itemIds: [id], cwd }, source: { question: `q-${id}`, response: `a-${id}` }, isLoading: false } });
-  let workspaceCalls = 0;
+  const workspace = 'D:\\canvas\\external';
+  globalThis.canvasWorkspace = async id => id === 'canvas' ? workspace : id === 'another' ? 'D:\\another\\external' : null;
   let deliver;
   const sent = [], aborted = [], steered = [];
   window.desktopAgents = {
     models: async () => ({ installed: true, models: [{ provider: 'codex', id: 'native-model', name: 'native' }], default: 'codex/native-model' }),
-    workspace: async () => { workspaceCalls++; return 'D:\\canvas'; },
+    workspace: async () => { throw new Error('Codex must not use a legacy agent folder'); },
     guardWrite: async () => true,
     writeMaterials: async () => ({ dir: null, written: [] }),
     onEvent: cb => { deliver = cb; },
@@ -83,6 +85,7 @@ try {
       sent.push(req);
       const runId = `run-${sent.length}`;
       deliver({ runId, event: { type: 'session', sessionId: sid, sessionFile: null, cwd: req.cwd } });
+      deliver({ runId, event: { type: 'fs_changes', added: ['external.txt'] } });
       if (!req.prompt.endsWith('wait')) deliver({ runId, event: { type: 'run_end', how: 'end', text: 'completed' } });
       return runId;
     },
@@ -116,7 +119,9 @@ try {
   assert.equal(historyWrites, 2); assert.equal(generated.length, 0); assert.equal(sent.length, 0);
   assert.equal((await agentOutbound(draft.data.model, draftId)).continue, undefined, 'legacy imported provenance alone does not resume a session');
   parent.data.agentSession = { runtime: 'codex', sessionId: sid, sessionFile: null, cwd: 'D:\\source' };
-  assert.deepEqual(await agentOutbound(draft.data.model, draftId), { cwd: 'D:\\source', sessionId: sid, sessionPath: sid, continue: true });
+  assert.deepEqual(await agentOutbound(draft.data.model, draftId), { cwd: workspace }, 'imported sessions cannot redirect Codex to the source directory');
+  parent.data.agentSession.cwd = workspace;
+  assert.deepEqual(await agentOutbound(draft.data.model, draftId), { cwd: workspace, sessionId: sid, sessionPath: sid, continue: true });
   parent.data.isLoading = true;
   assert.equal((await agentOutbound(draft.data.model, draftId)).continue, undefined, 'an active source turn is not resumed');
   parent.data.isLoading = false;
@@ -144,20 +149,23 @@ try {
   graph.nodes = [parent, source('other', 'C:\\elsewhere'), child];
   graph.edges = [{ source: 'parent', target: 'child' }];
   const resumed = await agentOutbound('codex/codex/default', 'child');
-  assert.deepEqual(resumed, { cwd: 'D:\\source', sessionId: sid, sessionPath: sid, continue: true });
+  assert.deepEqual(resumed, { cwd: workspace, sessionId: sid, sessionPath: sid, continue: true });
   Object.assign(parent.data, { rolePrompt: 'Retired upstream role', roleMode: 'set-next' });
   Object.assign(child.data, { rolePrompt: 'Retired child role', roleMode: 'reset', roleSourceNodeId: 'parent' });
   assert.deepEqual(await agentOutbound('codex/codex/default', 'child'), resumed, 'legacy roles cannot force a compiled branch');
   delete parent.data.rolePrompt; delete parent.data.roleMode;
   delete child.data.rolePrompt; delete child.data.roleMode; delete child.data.roleSourceNodeId;
-  assert.equal(workspaceCalls, 0, 'opening a source-backed composer must not create a workspace');
   assert.deepEqual(await previewAgentFollowup('parent', 'codex/codex/default'), resumed);
   assert.equal((await previewAgentFollowup('parent', 'codex/codex/default', { hasAttachments: true })).continue, undefined);
   assert.equal((await previewAgentFollowup('parent', 'codex/codex/default', { hasReferences: true })).continue, undefined);
-  projects.projects[0].agentCwd = 'd:/SOURCE/';
+  parent.data.agentSession.cwd = 'd:/CANVAS/EXTERNAL/';
   assert.equal((await agentOutbound('codex/native-model', 'child')).continue, true, 'Windows separators/case do not break native resume');
   projects.projects[0].agentCwd = 'D:\\different';
-  assert.equal((await agentOutbound('codex/native-model', 'child')).continue, undefined, 'changing the working directory starts compiled context');
+  assert.deepEqual(await agentOutbound('codex/native-model', 'child'), resumed, 'previously selected paths do not override the canvas folder');
+  assert.equal((await agentOutbound('pi/native-model', 'child')).cwd, 'D:\\different', 'other runtimes keep their configured path');
+  projects.activeId = 'another';
+  assert.deepEqual(await agentOutbound('codex/native-model', 'child'), { cwd: 'D:\\another\\external' }, 'another canvas cannot resume this workspace session');
+  projects.activeId = 'canvas';
   delete projects.projects[0].agentCwd;
   assert.equal((await previewAgentFollowup('parent', 'codex/codex/default', { hasContextChanges: true })).continue, undefined, 'changed context starts a fresh compiled request');
   parent.data.response = 'edited answer';
@@ -171,7 +179,7 @@ try {
   const callbackModels = [];
   const messages = [{ role: 'assistant', content: 'history should stay native' }, { role: 'user', content: 'next' }];
   assert.equal(await agentCallStream(messages, () => {}, undefined, undefined,
-    { onRerouted: (_from, to) => callbackModels.push(to) }, 'codex/codex/default', resumed, 'child'), 'completed');
+    { onRerouted: (_from, to) => callbackModels.push(to), onAgentChanges: () => assert.fail('Legacy host directory scans must not attach external files') }, 'codex/codex/default', resumed, 'child'), 'completed');
   assert.equal(sent[0].prompt, 'next');
   assert.equal(sent[0].sessionPath, undefined, 'legacy route alone cannot prove a native history prefix');
   assert.equal(sent[0].codexHistory.items[0].role, 'assistant');
@@ -180,6 +188,7 @@ try {
   assert.deepEqual(callbackModels, ['codex/codex/native-model'], 'provenance records the actual configured model');
   await agentCallStream(messages, () => {}, undefined, undefined, undefined, 'codex/native-model', { cwd: 'D:\\source' }, 'child');
   assert.equal(sent[1].prompt, 'next', 'native current input never concatenates previous messages');
+  assert.equal(sent[1].cwd, workspace, 'even a stale explicit route cannot change the dispatched Codex directory');
   assert.deepEqual(sent[1].codexHistory.items, sent[0].codexHistory.items);
   assert.equal(sent[1].sessionPath, undefined);
 
@@ -188,11 +197,16 @@ try {
   await assert.rejects(agentCallStream(messages, () => {}, preCancelled.signal, undefined, undefined, 'codex/native-model', resumed, 'child'), e => e.name === 'AbortError');
   assert.equal(sent.length, beforeCancel, 'an already stopped request never dispatches');
   assert.equal(sent[0].nativePermissions, true, 'a canvas without a permission override uses the native runtime settings');
+  assert.equal(sent[0].codexWorkspace.permissionMode, 'native');
   projects.projects[0].agentGuard = { mode: 'ask', allow: [] };
-  window.desktopAgents.guardWrite = async () => false;
-  await assert.rejects(agentCallStream(messages, () => {}, undefined, undefined, undefined, 'codex/native-model', resumed, 'child'), /permissions could not be saved/);
-  assert.equal(sent.length, beforeCancel, 'a stale guard file cannot silently authorize a run');
-  window.desktopAgents.guardWrite = async () => true;
+  window.desktopAgents.guardWrite = async () => { throw new Error('Codex must not write canvas configuration into its working directory'); };
+  for (const id of [null, 'unavailable']) {
+    projects.activeId = id;
+    assert.equal(await agentOutbound('codex/native-model', 'child'), undefined);
+    await assert.rejects(agentCallStream(messages, () => {}, undefined, undefined, undefined, 'codex/native-model', resumed, 'child'), /No working directory/);
+    assert.equal(sent.length, beforeCancel, 'a missing canvas folder blocks the run even when a route is supplied');
+  }
+  projects.activeId = 'canvas';
 
   const controller = new AbortController();
   const waitUntil = async (ready) => { const deadline = Date.now() + 2000; while (!ready() && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 5)); };
@@ -201,6 +215,7 @@ try {
     { onApproval: request => approvalRequests.push(request) }, 'codex/native-model', resumed, 'child');
   await waitUntil(() => canSteerAgentNode('child'));
   assert.equal(canSteerAgentNode('child'), true);
+  assert.equal(sent.at(-1).codexWorkspace.permissionMode, 'ask', 'canvas approval settings go directly to the native runtime');
   deliver({ runId: 'run-3', event: { type: 'question', id: 'approval-fixture', kind: 'confirm', title: 'command needs approval', message: 'npm test', reason: 'Need to run the tests.', rule: 'codex:cmd:npm test' } });
   assert.equal(approvalRequests[0].toolName, 'codex');
   assert.equal(approvalRequests[0].query, 'npm test');
@@ -239,7 +254,7 @@ try {
   window.desktopSessions.codexThreadRead = async id => { assert.equal(id, sid); return { id: sid, turns: [] }; };
   assert.equal(await adoptAgentTurn('child', { runtime: 'codex', sessionId: sid, sessionFile: null, cwd: 'D:\\source' }, 'follow\n\nfocus on tests'), true, 'a native thread without a rollout uses thread/read');
   graph.nodes = [{ ...source('fresh'), data: { ...source('fresh').data, importSource: undefined, source: undefined,
-    agentSession: { runtime: 'codex', sessionId: sid, sessionFile: null, cwd: 'D:\\source' } } }];
+    agentSession: { runtime: 'codex', sessionId: sid, sessionFile: null, cwd: workspace } } }];
   graph.edges = [];
   assert.equal((await previewAgentFollowup('fresh', 'codex/codex/default')).continue, true, 'acknowledged sessions remain usable before a rollout is available');
 

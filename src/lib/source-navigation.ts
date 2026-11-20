@@ -1,7 +1,23 @@
 import { toast, useUiStore } from './ui-store';
 import { t } from '../i18n';
+import { ensureCanvasWorkspace } from './canvas-workspace';
 
 type SourceSession = { runner?: string; session?: string; cwd?: string | null };
+
+/** Open the recorded session while keeping Codex in the active canvas folder. */
+export async function openCanvasSession(runner: string, historicalCwd: string | null, sessionId: string): Promise<boolean> {
+  if (!window.desktopSessions) return false;
+  let cwd = historicalCwd;
+  if (runner === 'codex') {
+    const { bootProjects, useProjects } = await import('../store/projects');
+    if (!useProjects.getState().activeId) await bootProjects();
+    const { activeId } = useProjects.getState();
+    cwd = activeId ? await ensureCanvasWorkspace(activeId).catch(() => null) : null;
+    if (!cwd || useProjects.getState().activeId !== activeId) return false;
+  }
+  const result = await window.desktopSessions.openInCli(runner, cwd, sessionId, 'terminal').catch(() => null);
+  return !!result?.opened;
+}
 
 /** Open a canvas source directly, or hand an agent source back to its runtime. */
 export async function openWhyLink(url: string, source?: SourceSession): Promise<boolean> {
@@ -27,10 +43,7 @@ export async function openWhyLink(url: string, source?: SourceSession): Promise<
   const sessionId = source?.session ?? parsed.searchParams.get('session');
   const runner = source?.runner ?? parsed.searchParams.get('runner');
   const cwd = source?.cwd ?? parsed.searchParams.get('cwd');
-  if (sessionId && runner && window.desktopSessions) {
-    const result = await window.desktopSessions.openInCli(runner, cwd, sessionId, 'terminal').catch(() => null);
-    if (result?.opened) return true;
-  }
+  if (sessionId && runner && await openCanvasSession(runner, cwd, sessionId)) return true;
   toast('error', t('memory.sourceUnavailable'));
   return false;
 }

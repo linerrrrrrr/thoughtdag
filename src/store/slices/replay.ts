@@ -2,14 +2,10 @@ import type { StateCreator } from 'zustand';
 import { shownStaleIds } from '../../lib/stale-judge';
 import { buildContext } from '../context-builder';
 import { runNodeGeneration } from '../streaming';
-import { toast, updateToast, useUiStore } from '../../lib/ui-store';
-import { t, fmt } from '../../i18n';
+import { t } from '../../i18n';
 import type { StoreState, ReplaySlice } from '../types';
 import { condenseGuard } from '../../lib/condense-guard';
 import { documentCopyText, isEditableDocument } from '../../lib/document-copy';
-
-// Batch-replay cancellation flag — one replay at a time, module-scoped.
-let replayAborted = false;
 
 export const createReplaySlice: StateCreator<StoreState, [], [], ReplaySlice> = (set, get) => ({
   /**
@@ -77,44 +73,5 @@ export const createReplaySlice: StateCreator<StoreState, [], [], ReplaySlice> = 
       versionMode: 'append',
       sources: ctx.sources,
     });
-  },
-
-  /**
-   * Batch replay: re-run every node that was stale AT CONFIRMATION TIME,
-   * in dependency order (a node runs only after all its stale structural
-   * parents finished). The snapshot rule keeps the confirm-dialog count
-   * honest and stops the run from chasing reference-edge contagion — nodes
-   * that turn stale DURING the replay keep their badges for the human.
-   */
-  replayStale: async () => {
-    replayAborted = false;
-    get().recomputeStaleness();
-    // the same set the chip counts and the dialog prices: the fingerprint's stale nodes minus the judge's dismissals
-    const snapshot = shownStaleIds(get());
-    if (snapshot.length === 0) return;
-    const structural = () => get().edges.filter((e) => !e.data?.isCrossLink);
-    const remaining = new Set(snapshot);
-    let done = 0;
-    const progress = toast('info', fmt(t('replay.progress'), { done, total: snapshot.length }), 0, {
-      label: t('replay.stop'),
-      run: () => { replayAborted = true; },
-    });
-    try {
-      while (remaining.size > 0 && !replayAborted) {
-        const ready = [...remaining].filter((id) =>
-          !structural().some((e) => e.target === id && remaining.has(e.source)));
-        if (ready.length === 0) break; // safety: no cycle exists on solid edges
-        await Promise.all(ready.map((id) => get().rerunNode(id)));
-        for (const id of ready) remaining.delete(id);
-        done += ready.length;
-        updateToast(progress, fmt(t('replay.progress'), { done, total: snapshot.length }));
-      }
-    } finally {
-      useUiStore.getState().dismissToast(progress);
-      get().recomputeStaleness();
-      toast('success', replayAborted
-        ? fmt(t('replay.stopped'), { done, total: snapshot.length })
-        : fmt(t('replay.done'), { done }));
-    }
   },
 });

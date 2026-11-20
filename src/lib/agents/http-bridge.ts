@@ -118,6 +118,7 @@ export async function installAgentsHttpBridge(apiBase: string): Promise<boolean>
     steer: async (runId, prompt) => (await post<{ ok: boolean }>('/agents/steer', { runId, prompt })).ok,
     answer: async (runId, requestId, response) => (await post<{ ok: boolean }>('/agents/answer', { runId, requestId, response })).ok,
     workspace: async (canvasId) => (await post<{ dir: string }>('/agents/workspace', { canvasId })).dir,
+    canvasWorkspace: async (canvasId, namespace) => (await post<{ dir: string }>('/agents/canvas-workspace', { canvasId, namespace })).dir,
     pickCwd: () => pickThroughHarness(),
     guardWrite: async (cwd, config) => (await post<{ ok: boolean }>('/agents/guard', { cwd, config })).ok,
     writeMaterials: async (cwd, files) => post('/agents/materials', { cwd, files }),

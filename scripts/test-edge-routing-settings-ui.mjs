@@ -1,8 +1,9 @@
-// Global routing preferences in isolated browser storage; no external calls.
+// Run with THOUGHTDAG_DISK_STORAGE=0 to exercise preferences in isolated browser storage.
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { chromium } from 'playwright-core';
+import { clickSettingsBackdrop, openSettingsSection } from './fixtures/canvas-model-picker.mjs';
 
 const appUrl = process.env.APP_URL ?? 'http://127.0.0.1:5173';
 const executablePath = process.env.CHROME_PATH ?? [
@@ -74,6 +75,37 @@ const routing = () => page.evaluate(() => ['curve', 'orthogonal'].map(id => {
       && point.y > blocker.top + 1 && point.y < blocker.bottom - 1) };
 }));
 const paths = async () => (await routing()).map(edge => edge.d);
+const preview = kind => item('routing-' + kind + '-preview');
+const routeMode = value => item('routing-mode').locator(`input[value="${value}"]`);
+const previewPath = kind => preview(kind).locator('[data-preview-route]').getAttribute('d');
+const previewClearance = () => preview('avoidance').evaluate(svg => {
+  const path = svg.querySelector('[data-preview-route]');
+  const blocker = svg.querySelector('[data-preview-obstacle]').getBoundingClientRect();
+  const length = path.getTotalLength(), matrix = path.getScreenCTM();
+  let gap = Infinity;
+  for (let index = 0; index <= 400; index++) {
+    const point = path.getPointAtLength(length * index / 400).matrixTransform(matrix);
+    gap = Math.min(gap, Math.hypot(Math.max(blocker.left - point.x, point.x - blocker.right, 0),
+      Math.max(blocker.top - point.y, point.y - blocker.bottom, 0)));
+  }
+  return gap;
+});
+// The fixture's curve leaves the right side and enters the left side, so its
+// angle from the horizontal measures the deviation from each port's normal.
+const canvasCurveSelector = '.react-flow__edge[data-id="curve"] .react-flow__edge-path';
+const expectEndpointAngles = (perpendicularity, selector = canvasCurveSelector) => page.waitForFunction(({ value, selector }) => {
+  const path = document.querySelector(selector);
+  if (!path) return false;
+  const length = path.getTotalLength();
+  const angle = (from, to) => {
+    const a = path.getPointAtLength(from), b = path.getPointAtLength(to);
+    return Math.abs(Math.atan2(b.y - a.y, b.x - a.x)) * 180 / Math.PI;
+  };
+  const chordAngle = angle(0, length);
+  const expected = (1 - value / 100) * chordAngle;
+  const step = length / 800;
+  return chordAngle > 5 && [angle(0, step), angle(length - step, length)].every(actual => Math.abs(actual - expected) < 1);
+}, { value: perpendicularity, selector });
 const settled = () => page.waitForTimeout(250);
 const viewport = () => page.evaluate(() => window.__rf.getViewport());
 const moveViewport = async next => {
@@ -104,7 +136,7 @@ const fixture = async () => {
         displayName: label, question: label, response: '连线避障验证。', responses: ['连线避障验证。'], responseIndex: 0,
         summaries: [], isCollapsed: false, isEditing: false,
         isEditingResponse: false, isLoading: false, tokenCount: 10, highlights: [], attachments: [],
-        layoutDirection: 'horizontal', edgeRouteDefault: 'curve',
+        layoutDirection: 'horizontal',
       } });
     const nodes = ['curve', 'orthogonal'].flatMap((route, index) => {
       const y = 260 + index * 450;
@@ -114,7 +146,7 @@ const fixture = async () => {
     });
     const edges = ['curve', 'orthogonal'].map(route => ({ id: route, type: 'smoothstep',
       source: `source-${route}`, target: `target-${route}`, sourceHandle: 'out-right', targetHandle: 'in-left',
-      data: { route }, style: { stroke: '#6B5CE7', strokeWidth: 2 } }));
+      data: route === 'orthogonal' ? { route } : {}, style: { stroke: '#6B5CE7', strokeWidth: 2 } }));
     window.__ui.setState({ drafts: {} });
     window.__ui.getState().setPanelOpen(false);
     window.__store.setState({ nodes, edges, selectedNodeIds: [], selectedNodeId: null,
@@ -124,20 +156,17 @@ const fixture = async () => {
   await page.waitForTimeout(650);
 };
 const open = async () => {
-  if (!await item('canvas-routing-panel').isVisible()) {
-    if (await item('routing-entry').isVisible()) await item('routing-entry').click();
-    else { await item('toolbar-more').click(); await item('menu-routing').click(); }
-  }
-  await item('canvas-routing-panel').waitFor();
+  if (!await item('routing-avoid').isVisible()) await openSettingsSection(page, 'edges');
   await item('routing-avoid').waitFor();
 };
 const openLayout = async () => {
+  if (await item('settings-panel').isVisible()) await close();
   if (!await item('canvas-layout-panel').isVisible()) await item('layout-entry').click();
   await item('canvas-layout-panel').waitFor();
 };
 const close = async () => {
-  await item('canvas-routing-panel').getByRole('button', { name: '关闭', exact: true }).click();
-  await item('canvas-routing-panel').waitFor({ state: 'detached' });
+  await item('settings-panel').getByRole('button', { name: '关闭', exact: true }).click();
+  await item('settings-panel').waitFor({ state: 'detached' });
 };
 
 try {
@@ -149,19 +178,76 @@ try {
   assert.ok(defaults.every(edge => !edge.absent && !edge.hits && edge.gap > 5));
   await open();
   assert.equal(await item('layout-entry').innerText(), '排版');
-  assert.equal(await item('routing-entry').innerText(), '连线');
-  assert.equal(await item('canvas-routing-panel').getByRole('heading').innerText(), '连线');
+  assert.equal(await item('routing-entry').count(), 0);
+  assert.equal(await item('settings-entry').getAttribute('aria-expanded'), 'true');
   for (const route of ['curve', 'orthogonal']) {
     const arrow = page.locator(`[data-edge-direction="${route}"]`);
     assert.equal(await arrow.getAttribute('d'), 'M 0 0 L -11 -5 L -11 5 Z');
     assert.notEqual(await arrow.evaluate(element => getComputedStyle(element).fill), 'none');
   }
   check('curved and orthogonal connections use the same filled direction arrow');
-  assert.equal(await item('canvas-routing-panel').locator('[data-routing-apply], [data-routing-cancel]').count(), 0);
+  assert.equal(await item('settings-panel').locator('[data-routing-apply], [data-routing-cancel]').count(), 0);
   assert.equal(await page.locator('[data-layout-tab]').count(), 0);
   assert.equal(await chosen('avoid'), 'on');
   assert.equal(await chosen('clearance'), '20');
   assert.equal(await chosen('curvature'), '25');
+  assert.equal(await chosen('endpoint-perpendicularity'), '100');
+  const panel = item('settings-panel');
+  const fixedInputs = item('connection-layout-enabled');
+  assert.equal(await fixedInputs.count(), 0);
+  await openSettingsSection(page, 'nodes');
+  assert.equal(await fixedInputs.getAttribute('aria-checked'), 'false');
+  assert.equal(await item('connection-layout-choice').count(), 0);
+  await fixedInputs.click();
+  assert.equal(await item('connection-layout-choice').count(), 3);
+  assert.equal(await item('connection-layout-attachments').isVisible(), true);
+  assert.equal(await item('connection-layout-settings').getByRole('radio').count(), 3);
+  await fixedInputs.click();
+  assert.equal(await item('connection-layout-choice').count(), 0);
+  assert.equal(await item('connection-layout-attachments').count(), 0);
+  await open();
+  await settled();
+  for (const kind of ['curve', 'avoidance']) {
+    assert.equal(await panel.getByRole('img', { name: /\S/ }).and(preview(kind)).count(), 1, kind + ' preview has an accessible name');
+    assert.equal(await preview(kind).locator('text:visible').count(), 0, kind + ' preview contains only the diagram');
+  }
+  for (const name of ['曲线弯曲', '端点垂直度', '避让距离']) {
+    assert.equal(await panel.getByRole('spinbutton', { name, exact: true }).isVisible(), true, name + ' keeps its field label');
+  }
+  assert.equal(await panel.getByRole('slider').count(), 3, 'each routing value has one slider');
+  const initialAvoidancePath = await previewPath('avoidance');
+  const initialCurvePath = await previewPath('curve');
+  assert.equal(await item('routing-mode').getByRole('radio').count(), 2);
+  assert.equal(await routeMode('curve').isChecked(), true);
+  await routeMode('curve').focus();
+  await page.keyboard.press('ArrowRight');
+  assert.equal(await routeMode('orthogonal').isChecked(), true);
+  assert.equal((await storedPreferences()).defaultRoute, 'orthogonal');
+  assert.equal(await preview('curve').count(), 0);
+  assert.equal(await item('routing-curvature').count(), 0);
+  assert.equal(await item('routing-endpoint-perpendicularity').count(), 0);
+  assert.match(await previewPath('avoidance'), /L/, 'the avoidance diagram shows the selected elbow route');
+  const elbows = await paths();
+  assert.match(elbows[0], /L/, 'an edge without an explicit route adopts the selected default');
+  assert.equal(elbows[1], defaults[1].d, 'an explicitly styled edge keeps its route');
+  assert.deepEqual(await graph(), originalGraph, 'changing the device default preserves graph and history');
+  await choose('avoid', 'off');
+  assert.equal(await panel.getByRole('slider').count(), 0, 'closed groups and elbow mode expose no curve or clearance sliders');
+  assert.equal(await panel.getByRole('img').count(), 0, 'the fully collapsed panel contains no preview');
+  await panel.screenshot({ path: output + '/panel-collapsed-zh.png' });
+  await choose('avoid', 'on');
+  await close();
+  await page.reload();
+  await ready();
+  await fixture();
+  await open();
+  assert.equal(await routeMode('orthogonal').isChecked(), true, 'reloading preserves the default path mode');
+  await item('routing-mode').locator('label:has(input[value="curve"])').click();
+  assert.equal(await routeMode('curve').isChecked(), true);
+  assert.equal(await previewPath('curve'), initialCurvePath);
+  assert.equal(await previewPath('avoidance'), initialAvoidancePath);
+  assert.equal((await paths())[0], defaults[0].d, 'selecting Curve restores the inherited curve');
+  check('the default path selector updates inherited edges and the diagrams, and collapsed sections hide their controls');
   const clearanceRange = item('routing-clearance').locator('input[type="range"]');
   assert.equal(await clearanceRange.getAttribute('min'), '8');
   assert.equal(await clearanceRange.getAttribute('max'), '64');
@@ -170,6 +256,7 @@ try {
   await page.keyboard.press('ArrowRight');
   assert.equal(await chosen('clearance'), '20.1');
   assert.equal((await storedPreferences()).obstacleClearance, 20.1, 'keyboard range changes apply immediately');
+  assert.notEqual(await previewPath('avoidance'), initialAvoidancePath, 'keyboard changes redraw the avoidance sample');
   const beforeDrag = await paths();
   const sliderBox = await clearanceRange.boundingBox();
   await page.mouse.move(sliderBox.x + sliderBox.width * 0.25, sliderBox.y + sliderBox.height / 2);
@@ -184,27 +271,36 @@ try {
   await choose('clearance', '20');
   await item('routing-clearance').locator('input[type="number"]').evaluate(input => input.dispatchEvent(
     new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', isComposing: true, bubbles: true })));
-  assert.equal(await item('canvas-routing-panel').isVisible(), true, 'IME Escape does not dismiss the work panel');
-  await page.mouse.click(400, 1040);
-  assert.equal(await item('canvas-routing-panel').isVisible(), true, 'outside canvas clicks keep the panel open');
+  assert.equal(await item('settings-panel').isVisible(), true, 'IME Escape does not dismiss Settings');
+  await clickSettingsBackdrop(page);
+  await open();
   await page.evaluate(() => window.__store.getState().setSelectedNodeIds(['source-curve', 'target-curve']));
   await choose('avoid', 'off');
-  assert.deepEqual(await storedPreferences(), { avoidObstacles: false, obstacleClearance: 20, curvature: 0.25 });
-  assert.ok(await item('routing-clearance').locator('input').evaluateAll(inputs => inputs.every(input => input.matches(':disabled'))));
-  await item('canvas-routing-panel').screenshot({ path: output + '/zh-disabled.png' });
+  assert.deepEqual(await storedPreferences(), { defaultRoute: 'curve', avoidObstacles: false, obstacleClearance: 20, curvature: 0.25, endpointPerpendicularity: 1 });
+  assert.equal(await item('routing-clearance').count(), 0, 'closing avoidance removes its numeric and slider controls');
+  assert.equal(await preview('avoidance').count(), 0, 'closing avoidance collapses its preview');
+  await item('settings-panel').screenshot({ path: output + '/zh-disabled.png' });
   await settled();
   const disabled = await routing();
+  assert.equal(await previewPath('curve'), initialCurvePath, 'the obstacle-free curve sample stays independent of clearance');
   assert.ok(disabled.every(edge => edge.hits), 'both path styles outside the selection update before closing the panel');
   assert.deepEqual(await graph(), originalGraph, 'live preferences never mutate graph data or history');
   await page.keyboard.press('Escape');
-  await item('canvas-routing-panel').waitFor({ state: 'detached' });
+  await item('settings-panel').waitFor({ state: 'detached' });
   await open();
   assert.equal(await chosen('avoid'), 'off', 'Escape preserves the applied setting');
+  const moreBox = await item('toolbar-more').boundingBox();
+  const morePoint = { x: moreBox.x + moreBox.width / 2, y: moreBox.y + moreBox.height / 2 };
+  assert.equal(await panel.evaluate((el, point) => el.contains(document.elementFromPoint(point.x, point.y)), morePoint), false,
+    'The backdrop covers the toolbar button at this viewport');
+  await page.mouse.click(morePoint.x, morePoint.y);
+  await item('settings-panel').waitFor({ state: 'detached' });
+  assert.equal(await item('toolbar-more-panel').count(), 0, 'Dismissing Settings cannot activate the toolbar underneath');
   await item('toolbar-more').click();
   await item('toolbar-more-panel').waitFor();
-  assert.equal(await item('canvas-routing-panel').count(), 0);
+  assert.equal(await item('settings-panel').count(), 0);
   await page.keyboard.press('Escape');
-  assert.equal(await item('canvas-routing-panel').count(), 0, 'covered panel does not revive');
+  assert.equal(await item('settings-panel').count(), 0, 'covered panel does not revive');
   await open();
   assert.equal(await chosen('avoid'), 'off');
   check('switch and keyboard changes update paths and persistent preferences immediately, independent of selection');
@@ -213,12 +309,23 @@ try {
   await choose('clearance', '8');
   await settled();
   const light = await routing();
+  const lightPreviewGap = await previewClearance();
+  assert.ok(lightPreviewGap > 0, 'the avoidance sample clears the obstacle at the minimum distance');
   assert.ok(light.every(edge => !edge.hits && edge.gap > 2));
   await choose('clearance', '48');
   assert.equal((await storedPreferences()).obstacleClearance, 48, 'number input applies before blur');
   assert.equal(await item('routing-clearance').locator('input[type="number"]').evaluate(input => input === document.activeElement), true);
   await settled();
   const wide = await routing();
+  const widePreviewPath = await previewPath('avoidance');
+  assert.ok(await previewClearance() > lightPreviewGap + 1, 'increasing clearance visibly widens the sample detour');
+  await choose('clearance', '64');
+  await settled();
+  assert.ok(await preview('avoidance').evaluate(svg => {
+    const frame = svg.getBoundingClientRect(), path = svg.querySelector('[data-preview-route]').getBoundingClientRect();
+    return path.left >= frame.left - 1 && path.right <= frame.right + 1 && path.top >= frame.top - 1 && path.bottom <= frame.bottom + 1;
+  }), 'the maximum avoidance detour fits the sample diagram');
+  await choose('clearance', '48');
   for (const edge of wide) {
     const before = light.find(candidate => candidate.id === edge.id);
     assert.equal(edge.hits, false);
@@ -226,6 +333,7 @@ try {
   }
   await choose('avoid', 'off');
   await choose('avoid', 'on');
+  assert.equal(await previewPath('avoidance'), widePreviewPath, 'turning avoidance back on restores the sample detour');
   assert.equal(await chosen('clearance'), '48', 'disabling avoidance retains the clearance');
   assert.deepEqual(await graph(), originalGraph);
   await close();
@@ -235,17 +343,20 @@ try {
   await open();
   assert.equal(await chosen('clearance'), '48');
   assert.ok((await routing()).every(edge => !edge.hits && edge.gap > 20));
+  await panel.screenshot({ path: output + '/preview-panel-zh.png' });
   check('continuous clearance immediately changes both path styles and persists through reload');
 
   const clearanceInput = item('routing-clearance').locator('input[type="number"]');
   const curvatureInput = item('routing-curvature').locator('input[type="number"]');
   await clearanceInput.fill('65');
+  assert.equal(await previewPath('avoidance'), widePreviewPath, 'an invalid distance keeps the last valid sample path');
   assert.equal(await clearanceInput.getAttribute('aria-invalid'), 'true');
-  await item('canvas-routing-panel').screenshot({ path: output + '/zh-invalid.png' });
+  await item('settings-panel').screenshot({ path: output + '/zh-invalid.png' });
   assert.equal((await storedPreferences()).obstacleClearance, 48, 'invalid clearance never replaces the last valid setting');
   assert.equal(await clearanceRange.inputValue(), '48', 'the slider shows the last effective value while text is invalid');
   await choose('curvature', '30');
   assert.equal((await storedPreferences()).curvature, 0.3, 'valid curvature remains live while clearance is invalid');
+  assert.equal(await previewPath('avoidance'), widePreviewPath, 'curve adjustments stay independent of the avoidance sample');
   await clearanceInput.fill('');
   await close();
   await open();
@@ -261,8 +372,13 @@ try {
   assert.equal(await curvatureInput.getAttribute('aria-invalid'), 'true');
   assert.equal((await storedPreferences()).curvature, 0.3);
   await curvatureInput.fill('');
+  await routeMode('curve').focus();
+  await page.keyboard.press('ArrowRight');
+  assert.equal(await item('routing-curvature').count(), 0);
+  await page.keyboard.press('ArrowLeft');
+  assert.equal(await chosen('curvature'), '', 'switching back to Curve restores an unfinished numeric entry');
   await page.keyboard.press('Escape');
-  await item('canvas-routing-panel').waitFor({ state: 'detached' });
+  await item('settings-panel').waitFor({ state: 'detached' });
   await open();
   assert.equal(await chosen('curvature'), '');
   await choose('curvature', '25');
@@ -278,32 +394,59 @@ try {
   await choose('curvature', '0');
   await settled();
   const shallow = await paths();
+  const shallowCurvePreview = await previewPath('curve');
   await choose('curvature', '73.2');
   await settled();
   const curved = await paths();
+  assert.notEqual(await previewPath('curve'), shallowCurvePreview, 'curve bend redraws the sample curve');
   assert.notEqual(curved[0], shallow[0], 'curvature immediately changes a curved path');
   assert.equal(curved[1], shallow[1], 'curvature does not change an orthogonal path');
   assert.deepEqual(await graph(), curveGraph);
-  assert.deepEqual(await storedPreferences(), { avoidObstacles: false, obstacleClearance: 37.4, curvature: 73.2 / 100 });
+  assert.deepEqual(await storedPreferences(), { defaultRoute: 'curve', avoidObstacles: false, obstacleClearance: 37.4, curvature: 73.2 / 100, endpointPerpendicularity: 1 });
+  const field = 'endpoint-perpendicularity';
+  await expectEndpointAngles(100);
+  const sampleSelector = '[data-routing-curve-preview] [data-preview-route]';
+  await expectEndpointAngles(100, sampleSelector);
+  await choose(field, '0');
+  await expectEndpointAngles(0);
+  await expectEndpointAngles(0, sampleSelector);
+  await choose(field, '50');
+  await expectEndpointAngles(50);
+  await expectEndpointAngles(50, sampleSelector);
+  const halfCurvePreview = await previewPath('curve');
+  const controlPoints = await preview('curve').locator('[data-preview-control]').evaluateAll(controls =>
+    controls.flatMap(control => [Number(control.getAttribute('cx')), Number(control.getAttribute('cy'))]));
+  const pathCoordinates = halfCurvePreview.match(/[-+]?\d*\.?\d+(?:e[-+]?\d+)?/gi).map(Number);
+  assert.deepEqual(controlPoints, pathCoordinates.slice(2, 6), 'both control markers coincide with the actual cubic controls');
+  assert.equal((await paths())[1], curved[1], 'endpoint direction leaves elbow geometry unchanged');
+  const endpointInput = item('routing-' + field).getByRole('spinbutton');
+  await endpointInput.fill('101');
+  assert.equal(await previewPath('curve'), halfCurvePreview, 'an invalid angle keeps the last valid sample curve');
+  assert.equal(await endpointInput.getAttribute('aria-invalid'), 'true');
+  assert.equal((await storedPreferences()).endpointPerpendicularity, 0.5);
+  await item('routing-' + field).getByRole('slider').focus();
+  await page.keyboard.press('ArrowRight');
+  assert.equal(await chosen(field), '50.1');
+  assert.deepEqual(await graph(), curveGraph);
   await close();
   await page.reload();
   await ready();
   await open();
   assert.equal(await chosen('curvature'), '73.2');
+  assert.equal(await chosen(field), '50.1');
   await choose('avoid', 'on');
-  check('curvature updates only curved connections without changing graph state and persists on reload');
+  check('both diagrams follow the applied sliders, including endpoint angles, obstacle clearance and disabled avoidance');
 
   const escapeViewport = await moveViewport({ x: 130, y: 44, zoom: 0.91 });
   await page.keyboard.press('Escape');
-  await item('canvas-routing-panel').waitFor({ state: 'detached' });
+  await item('settings-panel').waitFor({ state: 'detached' });
   await settled();
   sameViewport(escapeViewport, await viewport(), 'Escape on global settings preserves pan and zoom');
   await open();
   const toggleViewport = await moveViewport({ x: 90, y: 70, zoom: 0.86 });
-  await item('routing-entry').click();
-  await item('canvas-routing-panel').waitFor({ state: 'detached' });
+  await close();
   await settled();
-  sameViewport(toggleViewport, await viewport(), 'closing the global settings entry preserves pan and zoom');
+  sameViewport(toggleViewport, await viewport(), 'closing Settings preserves pan and zoom');
   await open();
   const switchViewport = await moveViewport({ x: 140, y: 60, zoom: 0.9 });
   await openLayout();
@@ -329,12 +472,12 @@ try {
   await choose('curvature', '62.5');
   await page.setViewportSize({ width: 390, height: 900 });
   await settled();
-  assert.equal(await item('routing-entry').isVisible(), false);
-  assert.equal(await item('canvas-routing-panel').isVisible(), true, 'resizing keeps the active panel open');
+  assert.equal(await item('settings-entry').isVisible(), true);
+  assert.equal(await item('settings-panel').isVisible(), true, 'resizing keeps the active panel open');
   assert.equal((await storedPreferences()).curvature, 0.625);
   await page.keyboard.press('Escape');
-  await item('canvas-routing-panel').waitFor({ state: 'detached' });
-  assert.equal(await item('toolbar-more').evaluate(element => element === document.activeElement), true);
+  await item('settings-panel').waitFor({ state: 'detached' });
+  assert.equal(await item('settings-entry').evaluate(element => element === document.activeElement), true);
   await open();
   assert.equal(await chosen('curvature'), '62.5');
   await close();
@@ -353,7 +496,7 @@ try {
     useProjects.setState({ activeId: id, projects: [...projects, { ...project, id, name: 'Other test canvas' }] });
     return { activeId, projects };
   });
-  await item('canvas-routing-panel').waitFor({ state: 'detached' });
+  await item('settings-panel').waitFor({ state: 'detached' });
   await open();
   assert.equal(await chosen('curvature'), '', 'switching canvases retains incomplete numeric input');
   assert.equal((await storedPreferences()).curvature, 0.625);
@@ -368,26 +511,34 @@ try {
       (await window.__routingImport('/src/i18n/index.ts')).useI18n.getState().setLang(lang);
       (await window.__routingImport('/src/lib/appearance.ts')).useAppearance.getState().setLighting(theme);
     }, { lang, theme });
-    await page.setViewportSize({ width, height: 900 });
+    const height = width === 390 ? 560 : 900;
+    await page.setViewportSize({ width, height });
     await settled();
     await open();
     await settled();
-    const panel = await item('canvas-routing-panel').boundingBox();
-    assert.ok(panel && panel.x >= 0 && panel.y >= 0 && panel.x + panel.width <= width + 1 && panel.y + panel.height <= 901,
+    const bounds = await panel.boundingBox();
+    assert.ok(bounds && bounds.x >= 0 && bounds.y >= 0 && bounds.x + bounds.width <= width + 1 && bounds.y + bounds.height <= height + 1,
       lang + '/' + theme + '/' + width + ': routing card fits viewport');
-    const controls = await item('canvas-routing-panel').locator('[data-connection-layout-settings], [data-routing-avoid], [data-routing-clearance], [data-routing-curvature]').evaluateAll(elements => elements.map(element => {
-      const rect = element.getBoundingClientRect();
-      return { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom };
-    }));
-    assert.equal(controls.length, 4);
-    assert.ok(controls.every(rect => rect.left >= panel.x && rect.right <= panel.x + panel.width + 1
-      && rect.top >= panel.y && rect.bottom <= panel.y + panel.height + 1), lang + '/' + theme + '/' + width + ': controls remain visible');
+    const fields = item('routing-settings');
+    const groups = ['routing-mode', 'routing-curve-preview', 'routing-curvature', 'routing-endpoint-perpendicularity',
+      'routing-avoid', 'routing-avoidance-preview', 'routing-clearance'];
+    for (const group of groups) {
+      const control = item(group);
+      await control.scrollIntoViewIfNeeded();
+      const box = await control.boundingBox();
+      assert.ok(box && box.width > 0 && box.height > 0 && box.x >= bounds.x - 1 && box.x + box.width <= bounds.x + bounds.width + 1
+        && box.y >= bounds.y - 1 && box.y + box.height <= bounds.y + bounds.height + 1,
+      [lang, theme, width, group].join('/') + ': the whole control or preview is reachable inside the panel');
+    }
+    if (await fields.evaluate(el => el.scrollHeight > el.clientHeight + 1)) {
+      assert.ok(await fields.evaluate(el => el.scrollTop > 0), 'overflowing content scrolls inside the panel');
+    }
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
     await page.screenshot({ path: output + '/' + lang + '-' + theme + '-' + width + '.png' });
     await page.keyboard.press('Escape');
-    await item('canvas-routing-panel').waitFor({ state: 'detached' });
+    await item('settings-panel').waitFor({ state: 'detached' });
   }
-  check('both languages and themes keep the compact live settings reachable on wide and narrow screens');
+  check('both languages and themes keep live settings reachable on wide and narrow screens');
   assert.deepEqual(errors, []);
   assert.deepEqual(writes, []);
 } catch (error) {

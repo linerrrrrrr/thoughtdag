@@ -1,0 +1,86 @@
+{
+  "scope": "设置页正文中的纵向间距。按内容关系登记，单位为界面缩放前的 CSS 像素。",
+  "principles": {
+    "proximity": {
+      "source": "ant-proximity",
+      "section": "纵向间距关系",
+      "guidance": "按关联程度选择小、中、大间距，可用分隔线辅助分组。",
+      "adaptation": "将名称与说明、标题与首项、同组设置项和相邻分区分别登记，同一关系在各设置页复用。"
+    },
+    "hierarchy": {
+      "source": "carbon-spacing",
+      "section": "Creating relationships",
+      "guidance": "相同的间距传达同级关系，留白可以表达不同组之间的边界。",
+      "adaptation": "设置页复用四档间距，同级行保持相同的留白。"
+    },
+    "forms": {
+      "source": "carbon-forms",
+      "section": "Separating inputs, actions and sections",
+      "guidance": "根据表单所在容器选取间距，分区间距应相对组内设置项拉开。",
+      "adaptation": "设置弹窗内采用紧凑行距，跨分区的总留白由分隔线两侧共同分配。"
+    }
+  },
+  "roles": {
+    "hint": {
+      "px": 4,
+      "use": "一项设置的名称与附属说明",
+      "principles": [
+        "proximity",
+        "hierarchy"
+      ]
+    },
+    "heading": {
+      "px": 8,
+      "use": "分区标题与首项，或上下排列的标签与控件",
+      "principles": [
+        "proximity",
+        "forms"
+      ]
+    },
+    "row": {
+      "px": 16,
+      "use": "同一分区内的相邻设置项",
+      "principles": [
+        "forms",
+        "hierarchy"
+      ]
+    },
+    "section": {
+      "px": 40,
+      "use": "前一分区末项到后一分区标题或首项的总留白，线宽另计",
+      "principles": [
+        "proximity",
+        "forms",
+        "hierarchy"
+      ]
+    }
+  },
+  "pages": {
+    "general": "界面与操作 · 外观设置、画布操作",
+    "nodes": "节点显示 · 详细程度、固定输入区、画布字号",
+    "edges": "连线走向 · 默认走线、曲线参数与避障",
+    "providers": "回答模型 · 默认模型、连接与添加表单",
+    "agents": "Agent 执行 · 本机连接、执行设置",
+    "judge": "辅助判断 · 启用状态与配置",
+    "tools": "搜索、识图与记忆 · 能力设置、记忆"
+  },
+  "bindings": [
+    {"file": "src/components/ui/SettingsFields.css", "selector": ".settings-field-row", "property": "row-gap", "role": "heading", "pages": ["general", "providers", "agents", "judge", "tools"]},
+    {"file": "src/components/ui/SettingsFields.css", "selector": ".settings-field-caption", "property": "margin-block-end", "role": "heading", "pages": ["providers"]},
+    {"file": "src/components/ui/SettingsFields.css", "selector": ".settings-page .canvas-layout-field legend", "property": "margin-bottom", "role": "heading", "pages": ["edges", "nodes"]},
+    {"file": "src/components/ui/AgentConnectionSection.css", "selector": ".agent-connection-message", "property": "margin-block-start", "role": "hint", "pages": ["agents"]},
+    {"file": "src/components/ui/SettingsFields.css", "selector": ".settings-field-hint", "property": "margin-block-start", "role": "hint", "pages": ["providers", "agents", "tools", "judge"]},
+    {"file": "src/components/ui/SettingsFields.css", "selector": ".settings-page .canvas-routing-toggle label + p", "property": "margin-block-start", "role": "hint", "pages": ["general"]},
+    {"file": "src/components/ui/SettingsFields.css", "selector": ".settings-field-section > * + *", "property": "margin-block-start", "role": "row", "pages": ["general", "nodes", "providers", "judge", "tools"]},
+    {"file": "src/components/ui/SettingsFields.css", "selector": ".settings-field-section > :is(h4, .settings-api-heading) + *", "property": "margin-block-start", "role": "heading", "pages": ["general", "nodes", "providers"]},
+    {"file": "src/components/ui/SettingsFields.css", "selector": ".settings-field-section + .settings-field-section", "property": "margin-block-start", "role": "section", "pages": ["general", "nodes", "tools"], "half": true},
+    {"file": "src/components/ui/SettingsFields.css", "selector": ".settings-field-section + .settings-field-section", "property": "padding-block-start", "role": "section", "pages": ["general", "nodes", "tools"], "half": true},
+    {"file": "src/components/ui/SettingsFields.css", "selector": ".canvas-type-workspace", "property": "row-gap", "role": "row", "pages": ["nodes"]},
+    {"file": "src/components/ui/SettingsFields.css", "selector": ".workspace-settings .settings-section-divider", "property": "margin-block-start", "role": "section", "pages": ["nodes", "edges", "providers", "agents", "judge"], "half": true},
+    {"file": "src/components/ui/SettingsFields.css", "selector": ".workspace-settings .settings-section-divider", "property": "padding-block-start", "role": "section", "pages": ["nodes", "edges", "providers", "agents", "judge"], "half": true},
+    {"file": "src/components/ui/WorkspaceSettings.css", "selector": ".settings-route-controls", "property": "row-gap", "role": "row", "pages": ["edges"]},
+    {"file": "src/components/ui/WorkspaceSettings.css", "selector": ".settings-page-intro", "property": "margin-bottom", "role": "row", "pages": ["agents", "judge"]},
+    {"file": "src/components/ui/SettingsFields.css", "selector": "[data-node-preferences] [data-connection-layout-settings]", "property": "row-gap", "role": "row", "pages": ["nodes"]},
+    {"file": "src/components/ui/AgentConnectionSection.css", "selector": ".agent-connection-status", "property": "margin-block-start", "role": "hint", "pages": ["agents"]}
+  ]
+}

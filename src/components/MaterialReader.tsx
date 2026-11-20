@@ -2,7 +2,8 @@ import { appSettings } from '../lib/disk-storage';
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useDismissableLayer } from '../lib/use-dismissable-layer';
 import { useSessionDraft } from '../lib/use-session-draft';
-import { useTextHighlighter } from '../lib/use-text-highlighter';
+import { canHighlightConversation, useTextHighlighter } from '../lib/use-text-highlighter';
+import { attachmentHighlights, conversationHighlightTexts } from '../lib/highlight-match';
 import { useProjects } from '../store/projects';
 import { ChevronDown, ChevronRight, Crosshair, FileText, Link2, Loader2, Maximize2, PanelLeft, RefreshCw, ScanText, Send, Sparkles, StickyNote, X, ZoomIn, ZoomOut } from 'lucide-react';
 import type { Attachment, ThoughtNode } from '../types';
@@ -26,6 +27,8 @@ import SearchToggles from './ui/SearchToggles';
 import HighlighterButton from './ui/HighlighterButton';
 import { useReaderDock, READER_MIN_WIDTH, READER_DEFAULT_WIDTH, READER_STRIP_WIDTH, DOCK_MIN_WINDOW, type ReaderDock } from '../lib/reader-dock';
 import { screenToUi, uiToScreen, uiViewport } from '../lib/ui-scale';
+import { findHighlightedPassage, revealHighlight, revealMountedPdfHighlight } from '../lib/highlight-navigation';
+import { findRichHighlightRange } from '../lib/document-highlights';
 
 // MaterialReader: the reading overlay — a VIEW onto a material node, never a
 // container. Select a passage (in the original PDF's text layer, or in the
@@ -71,6 +74,7 @@ const isReadable = (n: ThoughtNode): boolean =>
 export default function MaterialReader({ onLocate }: { onLocate: (id: string) => void }) {
   const readerNodeId = useUiStore((s) => s.readerNodeId);
   const readerAttachmentId = useUiStore((s) => s.readerAttachmentId);
+  const conversationTurn = useUiStore(s => s.readerConversationTurn);
   const node = useStore((s) => (readerNodeId ? s.nodes.find((n) => n.id === readerNodeId) : undefined));
   const dock = useReaderDock();
   useEffect(() => {
@@ -78,12 +82,57 @@ export default function MaterialReader({ onLocate }: { onLocate: (id: string) =>
     if (readerNodeId && !node) useUiStore.getState().setReaderNodeId(null);
   }, [readerNodeId, node]);
   if (!node) return null;
+  const bodyOnly = !!conversationTurn || (readerAttachmentId === '' && !!node.data.attachments?.length
+    && (node.data.stepKind === 'note' || node.data.stepKind === 'link'));
   const documents = node.data.attachments?.filter(isEditableDocument) ?? [];
-  const attachment = node.data.attachments?.find(att => att.id === readerAttachmentId) ?? documents[0];
-  return <ReaderOverlay key={`${node.id}:${attachment?.id ?? ''}`} node={node} onLocate={onLocate} dock={dock} activeAttachment={attachment} />;
+  const attachment = bodyOnly ? undefined : node.data.attachments?.find(att => att.id === readerAttachmentId) ?? documents[0];
+  return <ReaderOverlay key={JSON.stringify([node.id, attachment?.id, bodyOnly, conversationTurn])} node={node} onLocate={onLocate}
+    dock={dock} activeAttachment={attachment} conversationTurn={conversationTurn} bodyOnly={bodyOnly} />;
 }
 
-function ReaderOverlay({ node, onLocate, dock, activeAttachment }: { node: ThoughtNode; onLocate: (id: string) => void; dock: ReaderDock; activeAttachment?: Attachment }) {
+type ExportReaderBody = { extra: string; fileId?: string; fileHtml?: string; imageSrc?: string; original?: boolean; textHtml?: string };
+
+// Keep the first material on its native reading surface. Saved annotations,
+// alternate text and additional attachments remain available in the same sheet.
+export function CanvasExportReader({ node, body, dock }: { node: ThoughtNode; body: string; dock: ReaderDock }) {
+  const att = node.data.attachments?.[0];
+  const content: ExportReaderBody = { extra: body };
+  if (att && node.data.stepKind === 'file' && body) {
+    const template = document.createElement('template');
+    template.innerHTML = body;
+    const file = template.content.querySelector<HTMLElement>('[data-reading-file="' + CSS.escape(att.id) + '"]');
+    if (file) {
+      const section = file.closest('.reading-attachment')!;
+      const image = att.type.startsWith('image/') ? file.querySelector('img') : null;
+      if (image?.getAttribute('src')) {
+        content.imageSrc = image.getAttribute('src')!;
+        image.remove();
+      }
+      content.original = !!(content.imageSrc || file.querySelector('[data-notebook], .pdf-sheet, .document-page'));
+      content.fileId = att.id;
+      content.fileHtml = file.innerHTML;
+      file.remove();
+      section.querySelector('[data-file-header]')?.remove();
+      section.replaceWith(...section.childNodes);
+      content.extra = template.innerHTML;
+    }
+  } else if (body && (node.data.stepKind === 'note' || !node.data.stepKind)) {
+    const template = document.createElement('template');
+    template.innerHTML = body;
+    const primary = template.content.querySelector(node.data.stepKind === 'note' ? '[data-reading-primary]' : '[data-reading-answer]');
+    if (primary) {
+      primary.classList.add('markdown-body', 'text-body', 'text-ink');
+      primary.setAttribute('data-reader-highlight-content', '');
+      content.textHtml = primary.outerHTML;
+      primary.remove();
+      content.extra = template.innerHTML;
+    }
+  }
+  return <ReaderOverlay node={node} onLocate={() => {}} dock={dock} bodyOnly={false}
+    activeAttachment={att} conversationTurn={node.data.stepKind ? undefined : 'response'} exportBody={content} />;
+}
+
+function ReaderOverlay({ node, onLocate, dock, activeAttachment, conversationTurn, bodyOnly, exportBody }: { node: ThoughtNode; onLocate: (id: string) => void; dock: ReaderDock; activeAttachment?: Attachment; conversationTurn?: 'question' | 'response'; bodyOnly: boolean; exportBody?: ExportReaderBody }) {
   const t = useT();
   const projectId = useProjects(s => s.activeId) ?? 'default';
   const draftPrefix = `reader:${projectId}:${node.id}`;
@@ -98,7 +147,8 @@ function ReaderOverlay({ node, onLocate, dock, activeAttachment }: { node: Thoug
   const data = node.data;
   const documentAttachment = activeAttachment && isEditableDocument(activeAttachment) ? activeAttachment : undefined;
   const editableAttachment = documentAttachment && isDocxDocument(documentAttachment) ? documentAttachment : undefined;
-  const nativeDocx = editableAttachment && hasNativeDocxSource(editableAttachment) ? editableAttachment : undefined;
+  const [readDocumentCopy, setReadDocumentCopy] = useState(false);
+  const nativeDocx = !readDocumentCopy && editableAttachment && hasNativeDocxSource(editableAttachment) ? editableAttachment : undefined;
   // Three faces, one body (lib/reader-dock decides which): the full-screen
   // overlay; the column docked on the canvas's left, where the canvas and
   // the node panel stay live beside the text; and, when not even the
@@ -106,8 +156,9 @@ function ReaderOverlay({ node, onLocate, dock, activeAttachment }: { node: Thoug
   // a question asked here still lands on the canvas (the One Rule), but its
   // answer reads right here, in the thread view stacked under the text; the
   // canvas's selection and camera stay where they were.
-  const docked = dock.docked;
-  const collapsed = dock.collapsed;
+  const [expandedForJump, setExpandedForJump] = useState(false);
+  const docked = dock.docked && !(expandedForJump && dock.collapsed);
+  const collapsed = docked && dock.collapsed;
   const [resizing, setResizing] = useState(false);
   const onResizePointerDown = (e: React.PointerEvent) => {
     e.preventDefault();
@@ -134,11 +185,11 @@ function ReaderOverlay({ node, onLocate, dock, activeAttachment }: { node: Thoug
   useDismissableLayer({ dismissOnFocusOutside: true, open: pickerOpen, refs: [pickerRef], onDismiss: () => setPickerOpen(false) });
   // Plain thought nodes carrying a PDF read as files too — the reading
   // loop belongs to the material, not to the node kind.
-  const kind = activeAttachment || data.stepKind === 'file' || (!data.stepKind && (data.attachments ?? []).some((a) => a.type === 'application/pdf'))
-    ? 'file' : data.stepKind === 'link' ? 'link' : 'note';
-  const attachments = useMemo(() => activeAttachment ? [activeAttachment] : data.attachments ?? [], [activeAttachment, data.attachments]);
-  const attachmentOptions = data.attachments ?? [];
-  const scrollKey = `${node.id}:${activeAttachment?.id ?? ''}`;
+  const kind = conversationTurn ?? (activeAttachment || data.stepKind === 'file' || (!data.stepKind && (data.attachments ?? []).some((a) => a.type === 'application/pdf'))
+    ? 'file' : data.stepKind === 'link' ? 'link' : 'note');
+  const attachments = useMemo(() => bodyOnly ? [] : activeAttachment ? [activeAttachment] : data.attachments ?? [], [bodyOnly, activeAttachment, data.attachments]);
+  const attachmentOptions = conversationTurn ? [] : data.attachments ?? [];
+  const scrollKey = JSON.stringify([node.id, activeAttachment?.id, conversationTurn]);
   const pdfAtt = attachments.find((a) => a.type === 'application/pdf');
   // HTML material: original view renders the sanitized page(s), the text
   // view its extracted Markdown — the same dual channel PDFs use
@@ -164,31 +215,35 @@ function ReaderOverlay({ node, onLocate, dock, activeAttachment }: { node: Thoug
   const close = () => useUiStore.getState().setReaderNodeId(null);
 
   // ── the readable copy for the text view ──
-  const textBody = useMemo(() => {
-    if (documentAttachment) return documentCopyText(documentAttachment);
+  const textSources = useMemo((): { text: string; attachmentId?: string; heading?: string }[] => {
+    if (kind === 'response') return [{ text: data.response }];
+    if (documentAttachment) return [{ text: documentCopyText(documentAttachment), attachmentId: documentAttachment.id }];
     if (kind === 'file') {
       const textAtts = attachments.filter((a) => !a.type.startsWith('image/') && a.type !== 'application/pdf');
       // an HTML file's or a notebook's readable copy is its extracted text, never the source
       const parts = textAtts.map((a) => {
         const body = a.type === 'text/html' || isNotebook(a) ? (a.extractedText ?? '') : a.content;
-        return textAtts.length > 1 ? `### ${a.name}\n\n${body}` : body;
+        return { text: body ?? '', attachmentId: a.id, heading: textAtts.length > 1 ? a.name : undefined };
       });
       // an image's readable copy is its extraction companion
       for (const a of attachments) {
-        if (a.type.startsWith('image/') && a.extractedText?.trim()) parts.push(attachments.length > 1 ? `### ${a.name}\n\n${a.extractedText}` : a.extractedText);
+        if (a.type.startsWith('image/') && a.extractedText?.trim()) parts.push({
+          text: a.extractedText, attachmentId: a.id, heading: attachments.length > 1 ? a.name : undefined,
+        });
       }
-      return parts.join('\n\n');
+      return parts;
     }
-    return data.question;
-  }, [documentAttachment, kind, attachments, data.question]);
+    return [{ text: data.question }];
+  }, [documentAttachment, kind, attachments, data.question, data.response]);
+  const textBody = useMemo(() => textSources.map(part => part.text).join('\n\n'), [textSources]);
   const stream = useFileEditPreview(projectId, node.id, attachments.length === 1 ? attachments[0].id : '');
   const previewParts = !documentAttachment ? previewTextParts(textBody, stream) : null;
-  const sections = useMemo(() => splitByPageMarks(textBody), [textBody]);
-  // Highlights on the MATERIAL's own text (markdown files, notes, extracted
-  // PDF copy) — same data shape as answer highlights, stored on the
-  // material node, rendered in the text view. A pure reading layer today:
-  // material content enters context whole, not filtered.
-  const materialHighlights = useMemo(() => new Set((data.highlights ?? []).map((h) => h.text)), [data.highlights]);
+  const sections = useMemo(() => textSources.flatMap(({ text, attachmentId, heading }) => {
+    const highlights = attachmentId ? new Set(attachmentHighlights(data, attachmentId).map(mark => mark.text))
+      : conversationHighlightTexts(data.highlights, conversationTurn ?? 'response');
+    return splitByPageMarks(text).map((section, index) => ({ ...section, attachmentId, highlights,
+      heading: index === 0 ? heading : undefined }));
+  }), [data, textSources, conversationTurn]);
 
   // ── PDF document + text-layer probe ──
   const [view, setView] = useState<'original' | 'text' | 'digest'>(documentAttachment
@@ -247,7 +302,10 @@ function ReaderOverlay({ node, onLocate, dock, activeAttachment }: { node: Thoug
         const content = start?.closest('[data-reader-highlight-content]');
         // Each extracted page renders independently; a mark must fit one source.
         if (!content || content !== end?.closest('[data-reader-highlight-content]')) return;
-        if (materialHighlighter.markSelection(sel, node.id)) {
+        if (materialHighlighter.markSelection(sel, node.id, {
+          source: conversationTurn === 'question' ? 'question' : undefined,
+          attachmentId: content.getAttribute('data-reading-attachment') ?? undefined,
+        })) {
           setAsk(null);
           sel.removeAllRanges();
           return;
@@ -281,11 +339,9 @@ function ReaderOverlay({ node, onLocate, dock, activeAttachment }: { node: Thoug
   // continuations) — a live view of canvas nodes, never a separate store.
   // A canvas p.N chip can pre-address the landing: open on that thread,
   // scroll to that page (one-shot; consumed here so reopen starts clean).
-  const jumpRef = useRef(useUiStore.getState().readerJump);
-  const [threadId, setThreadId] = useState<string | null>(jumpRef.current?.threadId ?? null);
-  useEffect(() => {
-    if (useUiStore.getState().readerJump) useUiStore.setState({ readerJump: null });
-  }, []);
+  const readerJump = useUiStore(s => s.readerJump);
+  const [landing, setLanding] = useState<typeof readerJump>(null);
+  const [threadId, setThreadId] = useState<string | null>(readerJump?.threadId ?? null);
 
   const submitAsk = () => {
     const q = draft.trim();
@@ -507,10 +563,14 @@ function ReaderOverlay({ node, onLocate, dock, activeAttachment }: { node: Thoug
     setClipMode(false);
   };
 
-  // selection inside the rail: only ANSWER text is explorable (the answer
-  // node becomes the parent); question text and chrome stay inert
+  // The pen reads either side of a turn. Passage questions branch from answers.
   const handleRailMouseUp = (event: React.MouseEvent) => {
     if (isViewerMode || event.button !== 0) return;
+    if (railHighlighter.active) {
+      const turn = event.target instanceof Element ? event.target.closest<HTMLElement>('[data-reader-turn]') : null;
+      if (turn?.dataset.readerTurn) railHighlighter.markConversationSelection(event, turn.dataset.readerTurn);
+      return;
+    }
     window.setTimeout(() => {
       const sel = window.getSelection();
       if (!sel || !sel.rangeCount || sel.isCollapsed || !railRef.current) { setAsk((a) => (a?.targetNodeId ? null : a)); return; }
@@ -521,14 +581,6 @@ function ReaderOverlay({ node, onLocate, dock, activeAttachment }: { node: Thoug
       if (!wrap || !wrap.contains(range.endContainer)) return;
       const targetNodeId = wrap.getAttribute('data-turn-answer');
       if (!targetNodeId) return;
-      if (railHighlighter.active) {
-        if (useStore.getState().nodes.find((n) => n.id === targetNodeId)?.data.isLoading) return;
-        if (railHighlighter.markSelection(sel, targetNodeId)) {
-          setAsk(null);
-          sel.removeAllRanges();
-          return;
-        }
-      }
       const text = sel.toString().trim();
       if (text.length < 2) return;
       const rect = range.getBoundingClientRect();
@@ -565,9 +617,11 @@ function ReaderOverlay({ node, onLocate, dock, activeAttachment }: { node: Thoug
     setProgress(null);
   };
 
+  const canMarkBody = !documentAttachment && view === 'text' && !!textBody.trim()
+    && (!conversationTurn || canHighlightConversation(data));
   const materialHighlighter = useTextHighlighter({
     scopeKey: `reader:${node.id}:${view}:${textBody}`,
-    enabled: !isViewerMode && !documentAttachment && view === 'text' && !collapsed && !!textBody.trim(),
+    enabled: canMarkBody && !collapsed,
     surfaceRef: bodyRef,
   });
 
@@ -654,9 +708,10 @@ function ReaderOverlay({ node, onLocate, dock, activeAttachment }: { node: Thoug
 
   // stream follows the reading eye: keep the rail pinned to the newest text
   const railRef = useRef<HTMLDivElement>(null);
+  const railCanHighlight = thread.some(turn => canHighlightConversation(turn.data));
   const railHighlighter = useTextHighlighter({
-    scopeKey: `reader-thread:${node.id}:${threadId ?? ''}:${thread.map(turn => `${turn.id}:${turn.data.responseIndex}:${!!turn.data.isEditingResponse}:${turn.data.response}`).join('\n')}`,
-    enabled: !isViewerMode && !collapsed && thread.some((turn) => !!turn.data.response && !turn.data.isLoading),
+    scopeKey: JSON.stringify(thread.map(({ id, data }) => [id, data.responseIndex, data.question, data.response, canHighlightConversation(data)])),
+    enabled: !collapsed && railCanHighlight,
     surfaceRef: railRef,
   });
   const lastTurn = thread[thread.length - 1];
@@ -674,40 +729,54 @@ function ReaderOverlay({ node, onLocate, dock, activeAttachment }: { node: Thoug
   // reads 0); restored once the document has grown tall enough to hold it.
   const scrollRestored = useRef(false);
 
-  // p.N jump landing: scroll to the addressed page once its holder exists
-  // (page holders mount with the document; sections mount immediately).
-  // Claims scrollRestored — an explicit destination beats session memory.
+  // Take each request once, whether the reader just opened or is already docked.
   useEffect(() => {
-    const page = jumpRef.current?.page;
-    if (!page) return;
-    scrollRestored.current = true;
-    let tries = 0;
-    const attempt = () => {
-      const el = bodyRef.current?.querySelector(`[data-page="${page}"]`);
-      if (el) { el.scrollIntoView({ block: 'start' }); return; }
-      if (++tries < 25) window.setTimeout(attempt, 100);
-    };
-    window.setTimeout(attempt, 150);
-  }, [pdfAtt?.id, view]);
-
-  // a later landing while this material stays open (a p.N chip on the canvas,
-  // a node selected beside the docked reader): scroll there now. The mount-time
-  // jump is the object jumpRef captured; anything else is new.
-  const laterJump = useUiStore((s) => s.readerJump);
-  useEffect(() => {
-    if (!laterJump || laterJump === jumpRef.current) return;
+    if (!readerJump || readerJump !== useUiStore.getState().readerJump) return;
     useUiStore.setState({ readerJump: null });
-    if (laterJump.threadId) setThreadId(laterJump.threadId);
-    const page = laterJump.page;
-    if (!page) return;
-    let tries = 0;
+    if (readerJump.threadId) setThreadId(readerJump.threadId);
+    if (!readerJump.page && !readerJump.rulerMark) return;
+    scrollRestored.current = true;
+    const mark = readerJump.rulerMark;
+    if (mark) {
+      if (dock.collapsed) setExpandedForJump(true);
+      // Legacy text highlights may refer to the extracted copy of a native file.
+      setReadDocumentCopy(!!editableAttachment && !mark.documentMarkId);
+      setView(mark.page ? 'original' : 'text');
+    } else if (pdfAtt) setView('original');
+    setLanding(mark ? { ...readerJump, rulerMark: { ...mark } } : readerJump);
+  }, [readerJump, pdfAtt, editableAttachment, dock.collapsed]);
+
+  useEffect(() => {
+    const body = bodyRef.current;
+    if (!landing || !body) return;
+    const mark = landing.rulerMark;
+    if (nativeDocx && mark?.documentMarkId) return; // the native viewport owns its scrolling
     const attempt = () => {
-      const el = bodyRef.current?.querySelector(`[data-page="${page}"]`);
-      if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'start' }); return; }
-      if (++tries < 25) window.setTimeout(attempt, 100);
+      let target: Range | Element | null;
+      if (!mark) {
+        target = body.querySelector(`[data-page="${landing.page}"]`);
+      } else if (mark.page && mark.documentMarkId) {
+        if (!revealMountedPdfHighlight(body, mark)) return false;
+        setLanding(null);
+        return true;
+      } else {
+        const rich = body.querySelector<HTMLElement>('[data-document-rich-body]');
+        const saved = editableAttachment?.documentHighlights?.find(item => item.id === mark.documentMarkId);
+        target = rich && saved ? findRichHighlightRange(rich, saved)
+          : findHighlightedPassage(body.querySelectorAll<HTMLElement>('[data-reader-highlight-content], [data-document-rich-body]'), mark.text, mark.occurrence);
+      }
+      if (!target) return false;
+      if (mark) revealHighlight(body, target);
+      else if (target instanceof Element) target.scrollIntoView({ block: 'start' });
+      setLanding(null);
+      return true;
     };
-    window.setTimeout(attempt, 50);
-  }, [laterJump]);
+    if (attempt()) return;
+    // Lazy PDF pages and rich document bodies arrive after the reader's shell.
+    const observer = new MutationObserver(() => { if (attempt()) observer.disconnect(); });
+    observer.observe(body, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-pdf-sized', 'style'] });
+    return () => observer.disconnect();
+  }, [landing, nativeDocx, editableAttachment, view, collapsed]);
 
   useEffect(() => {
     const el = bodyRef.current;
@@ -733,7 +802,7 @@ function ReaderOverlay({ node, onLocate, dock, activeAttachment }: { node: Thoug
     onDismiss: () => { if (threadId) setThreadId(null); else close(); },
   });
 
-  const title = activeAttachment?.name
+  const title = (conversationTurn ? data.displayName || data.question.split('\n')[0] || t(conversationTurn === 'question' ? 'panel.question' : 'panel.response') : undefined) ?? activeAttachment?.name
     ?? (kind === 'link' ? (data.linkTitle || data.linkUrl || '') : '')
     ?? '';
   const noteTitle = kind === 'note' ? (data.question.split('\n')[0].replace(/^#+\s*/, '').slice(0, 48) || t('reader.empty')) : '';
@@ -751,15 +820,55 @@ function ReaderOverlay({ node, onLocate, dock, activeAttachment }: { node: Thoug
   const shownTitle = title || noteTitle || fileFallbackTitle;
   const iconButton = 'w-7 h-7 rounded-control text-ink-faint hover:bg-wash hover:text-ink flex items-center justify-center transition-colors shrink-0';
 
+  const imagePane = view === 'original' && !pdfAtt && !htmlAtt && imageAtts.length > 0 && (
+    <div className="relative">
+      {/* h-0 keeps the bar out of the layout flow; items-start stops
+          flex from stretching the toolbar into that zero height */}
+      <div className="sticky top-3 z-10 flex items-start justify-end pr-4 h-0">
+        <div className="flex items-center gap-1 bg-card border border-line rounded-overlay px-1.5 py-1" data-image-zoom>
+          <button onClick={() => setImgZoom((z) => Math.max(0.5, +(z - 0.25).toFixed(2)))} aria-label={t('reader.imageZoomOut')} data-zoom-out
+            className="w-7 h-7 rounded-control hover:bg-wash flex items-center justify-center text-ink-muted hover:text-ink transition-colors"><ZoomOut size={14} strokeWidth={1.75} /></button>
+          <button onClick={() => setImgZoom(1)} data-tooltip={t('reader.imageZoomFit')} data-zoom-fit
+            className="px-2 h-7 rounded-control hover:bg-wash font-mono text-control text-ink-muted hover:text-ink transition-colors min-w-[52px]">{Math.round(imgZoom * 100)}%</button>
+          <button onClick={() => setImgZoom((z) => Math.min(3, +(z + 0.25).toFixed(2)))} aria-label={t('reader.imageZoomIn')} data-zoom-in
+            className="w-7 h-7 rounded-control hover:bg-wash flex items-center justify-center text-ink-muted hover:text-ink transition-colors"><ZoomIn size={14} strokeWidth={1.75} /></button>
+        </div>
+      </div>
+      <div
+        ref={imgPanRef}
+        onPointerDown={startImagePan}
+        onPointerMove={moveImagePan}
+        onPointerUp={finishImagePan}
+        onPointerCancel={finishImagePan}
+        onLostPointerCapture={finishImagePan}
+        data-cursor={!clipMode && imageCanPan ? imagePanning ? 'dragging' : 'draggable' : 'neutral'} className="overflow-x-auto"
+        style={{ touchAction: !clipMode && imageCanPan ? 'none' : undefined }}
+        data-image-pan
+      >
+        {/* w-max + mx-auto instead of items-center: a centered flex
+            child that overflows spills PAST scrollLeft 0 — its left
+            half becomes unreachable. Auto margins center when there
+            is room and pin to 0 when there is not. */}
+        <div className="flex flex-col gap-6 py-6 px-6 w-max min-w-full">
+          {imageAtts.map((att) => (
+            <div key={att.id} className="mx-auto">
+              <ImageFigure att={att} source={exportBody?.imageSrc} zoom={imgZoom} clipMode={clipMode} onClipped={handleImageClipped} />
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+
   // the three faces share this body: header, reading column (+ rail), footer
   const inner = (
     <>
         {/* header */}
         <div className="flex items-center gap-3 flex-wrap px-5 py-3 border-b border-line bg-card shrink-0">
           {headerIcon}
-          {materials.length > 1 ? (
+          {!conversationTurn && materials.length > 1 ? (
             <div ref={pickerRef} className="relative min-w-0" data-reader-material-picker>
-              <button
+              <button data-export-reading-label
                 onClick={() => setPickerOpen((v) => !v)}
                 aria-label={t('reader.switchMaterial')}
                 className="flex items-center gap-1 text-title font-semibold text-ink min-w-0 max-w-full hover:text-accent transition-colors"
@@ -796,14 +905,14 @@ function ReaderOverlay({ node, onLocate, dock, activeAttachment }: { node: Thoug
           {(documentAttachment || imageAtts.length > 0 || htmlAtt || nbAtt || linkHtml) && (
             <div className="flex items-center rounded-control border border-line overflow-hidden shrink-0 text-control">
               {(!documentAttachment || !!pdfAtt) && <button
-                onClick={() => setView('original')}
+                onClick={() => { setLanding(null); setView('original'); }}
                 aria-pressed={view === 'original'}
                 className={`px-3 py-1.5 transition-colors ${view === 'original' ? 'bg-accent/10 text-accent font-medium' : 'text-ink-muted hover:bg-wash'}`}
               >
                 {t('reader.viewOriginal')}
               </button>}
               <button
-                onClick={() => setView('text')}
+                onClick={() => { setLanding(null); setReadDocumentCopy(false); setView('text'); }}
                 aria-pressed={view === 'text'}
                 className={`px-3 py-1.5 transition-colors ${!documentAttachment || pdfAtt ? 'border-l border-line' : ''} ${view === 'text' ? 'bg-accent/10 text-accent font-medium' : 'text-ink-muted hover:bg-wash'}`}
               >
@@ -811,7 +920,7 @@ function ReaderOverlay({ node, onLocate, dock, activeAttachment }: { node: Thoug
               </button>
               {(digestText || digesting) && (
                 <button
-                  onClick={() => setView('digest')}
+                  onClick={() => { setLanding(null); setView('digest'); }}
                   aria-pressed={view === 'digest'}
                   className={`px-3 py-1.5 transition-colors border-l border-line ${view === 'digest' ? 'bg-accent/10 text-accent font-medium' : 'text-ink-muted hover:bg-wash'}`}
                 >
@@ -820,7 +929,7 @@ function ReaderOverlay({ node, onLocate, dock, activeAttachment }: { node: Thoug
               )}
             </div>
           )}
-          {!isViewerMode && !documentAttachment && view === 'text' && !!textBody.trim() && (
+          {!isViewerMode && canMarkBody && (
             <HighlighterButton
               active={materialHighlighter.active}
               buttonRef={materialHighlighter.buttonRef}
@@ -859,7 +968,7 @@ function ReaderOverlay({ node, onLocate, dock, activeAttachment }: { node: Thoug
           )}
           {docAtt && !digestText && !digesting && !!textBody.trim() && !isViewerMode && (
             <button
-              onClick={() => void startDigest()}
+              data-export-omit="run" onClick={() => void startDigest()}
 
               className="flex items-center gap-1.5 text-control px-3 py-1.5 rounded-control border border-line text-ink-muted hover:bg-wash transition-colors shrink-0"
             >
@@ -872,17 +981,17 @@ function ReaderOverlay({ node, onLocate, dock, activeAttachment }: { node: Thoug
               <span className="flex items-center gap-2 text-control text-accent shrink-0">
                 <Loader2 size={13} strokeWidth={1.75} className="animate-spin" />
                 {progress ? fmt(t('reader.recognizing'), { a: progress[0], b: progress[1] }) : '…'}
-                <button onClick={() => { cancelRef.current = true; }} className="text-ink-muted hover:text-red-500 underline decoration-dotted">
+                <button data-export-omit="run" onClick={() => { cancelRef.current = true; }} className="text-ink-muted hover:text-red-500 underline decoration-dotted">
                   {t('reader.stop')}
                 </button>
               </span>
             ) : (
               <button
-                onClick={() => (recog === 'confirm' ? void startRecognize() : setRecog('confirm'))}
+                data-export-omit="run" onClick={() => (recog === 'confirm' ? void startRecognize() : setRecog('confirm'))}
                 onBlur={() => setRecog((r) => (r === 'confirm' ? 'idle' : r))}
                 disabled={!pdfAtt.pageImages?.length || !hasVisionModel}
 
-                className={`flex items-center gap-1.5 text-control px-3 py-1.5 rounded-control border transition-colors shrink-0 disabled:opacity-40 disabled:cursor-not-allowed ${
+                className={`flex items-center gap-1.5 text-control px-3 py-1.5 rounded-control border transition-colors shrink-0 disabled:opacity-40 when-unavailable ${
                   recog === 'confirm' ? 'border-amber-400 bg-amber-50 text-amber-700' : 'border-line text-ink-muted hover:bg-wash'
                 }`}
               >
@@ -898,11 +1007,11 @@ function ReaderOverlay({ node, onLocate, dock, activeAttachment }: { node: Thoug
               <Maximize2 size={14} strokeWidth={1.75} />
             </button>
           ) : uiViewport().width >= DOCK_MIN_WINDOW && (
-            <button onClick={() => useUiStore.getState().setReaderMode('dock')} data-tooltip={t('reader.dock')} aria-label={t('reader.dock')} data-reader-dock className={iconButton}>
+            <button onClick={() => { setExpandedForJump(false); useUiStore.getState().setReaderMode('dock'); }} data-tooltip={t('reader.dock')} aria-label={t('reader.dock')} data-reader-dock className={iconButton}>
               <PanelLeft size={14} strokeWidth={1.75} />
             </button>
           )}
-          <button onClick={close} aria-label={t('panel.close')} className={iconButton}>
+          <button onClick={close} data-material-reader-close aria-label={t('panel.close')} className={iconButton}>
             <X size={16} strokeWidth={1.75} />
           </button>
         </div>
@@ -911,8 +1020,19 @@ function ReaderOverlay({ node, onLocate, dock, activeAttachment }: { node: Thoug
         {/* body: document column + (optional) thread view — beside the text
             in the overlay, stacked under it in the docked column */}
         <div className={`flex-1 min-h-0 flex ${docked ? 'flex-col' : ''}`}>
-        <div ref={bodyRef} onMouseUp={handleMouseUp} onScroll={(e) => scrollMemory.set(scrollKey, e.currentTarget.scrollTop)}
-          className={`flex-1 min-w-0 min-h-0 overscroll-contain bg-wash/60 ${nativeDocx && view === 'text' ? 'flex flex-col overflow-hidden' : 'overflow-y-auto'}`} data-reader-body>
+        <div ref={bodyRef} data-cursor={view === 'original' && pdfAtt ? 'neutral' : 'native'} onMouseUp={handleMouseUp} onScroll={(e) => scrollMemory.set(scrollKey, e.currentTarget.scrollTop)}
+          className={`flex-1 min-w-0 min-h-0 overscroll-contain bg-wash/60 ${exportBody === undefined && nativeDocx && view === 'text' ? 'flex flex-col overflow-hidden' : 'overflow-y-auto'}`} data-reader-body>
+          {exportBody !== undefined ? <div data-export-reading-body>
+            {exportBody.textHtml && <div className="max-w-[820px] mx-auto px-surface-inset py-6" data-reader-highlight-surface>
+              <div dangerouslySetInnerHTML={{ __html: exportBody.textHtml }} />
+            </div>}
+            {exportBody.fileId && <div data-reading-file={exportBody.fileId}>
+              {exportBody.imageSrc && imagePane}
+              {exportBody.fileHtml && <div className={exportBody.original && !exportBody.imageSrc ? undefined : 'max-w-[820px] mx-auto px-surface-inset py-6 markdown-body text-body text-ink'}
+                dangerouslySetInnerHTML={{ __html: exportBody.fileHtml }} />}
+            </div>}
+            {exportBody.extra && <div className="max-w-[820px] mx-auto px-surface-inset py-6 markdown-body text-body text-ink" dangerouslySetInnerHTML={{ __html: exportBody.extra }} />}
+          </div> : <>
           {view === 'original' && pdfAtt && (
             <Suspense fallback={<p className="p-4 text-control text-ink-faint">{t('reader.loading')}</p>}>
               <PdfDocumentView nodeId={node.id} attachment={pdfAtt} anchorsByPage={anchorsByPage}
@@ -932,45 +1052,7 @@ function ReaderOverlay({ node, onLocate, dock, activeAttachment }: { node: Thoug
             <HtmlMaterialView key={linkPseudoAtt.id} att={linkPseudoAtt} baseUrl={data.linkUrl} onSelect={(s) => setAsk(s ? { ...s } : null)} clipMode={clipMode} onClipped={handleClipped} />
           )}
 
-          {view === 'original' && !pdfAtt && !htmlAtt && imageAtts.length > 0 && (
-            <div className="relative">
-              {/* h-0 keeps the bar out of the layout flow; items-start stops
-                  flex from stretching the toolbar into that zero height */}
-              <div className="sticky top-3 z-10 flex items-start justify-end pr-4 h-0">
-                <div className="flex items-center gap-1 bg-card border border-line rounded-overlay px-1.5 py-1" data-image-zoom>
-                  <button onClick={() => setImgZoom((z) => Math.max(0.5, +(z - 0.25).toFixed(2)))} aria-label={t('reader.imageZoomOut')} data-zoom-out
-                    className="w-7 h-7 rounded-control hover:bg-wash flex items-center justify-center text-ink-muted hover:text-ink transition-colors"><ZoomOut size={14} strokeWidth={1.75} /></button>
-                  <button onClick={() => setImgZoom(1)} data-tooltip={t('reader.imageZoomFit')} data-zoom-fit
-                    className="px-2 h-7 rounded-control hover:bg-wash font-mono text-control text-ink-muted hover:text-ink transition-colors min-w-[52px]">{Math.round(imgZoom * 100)}%</button>
-                  <button onClick={() => setImgZoom((z) => Math.min(3, +(z + 0.25).toFixed(2)))} aria-label={t('reader.imageZoomIn')} data-zoom-in
-                    className="w-7 h-7 rounded-control hover:bg-wash flex items-center justify-center text-ink-muted hover:text-ink transition-colors"><ZoomIn size={14} strokeWidth={1.75} /></button>
-                </div>
-              </div>
-              <div
-                ref={imgPanRef}
-                onPointerDown={startImagePan}
-                onPointerMove={moveImagePan}
-                onPointerUp={finishImagePan}
-                onPointerCancel={finishImagePan}
-                onLostPointerCapture={finishImagePan}
-                className={`overflow-x-auto ${!clipMode && imageCanPan ? imagePanning ? 'cursor-grabbing' : 'cursor-grab' : 'cursor-default'}`}
-                style={{ touchAction: !clipMode && imageCanPan ? 'none' : undefined }}
-                data-image-pan
-              >
-                {/* w-max + mx-auto instead of items-center: a centered flex
-                    child that overflows spills PAST scrollLeft 0 — its left
-                    half becomes unreachable. Auto margins center when there
-                    is room and pin to 0 when there is not. */}
-                <div className="flex flex-col gap-6 py-6 px-6 w-max min-w-full">
-                  {imageAtts.map((att) => (
-                    <div key={att.id} className="mx-auto">
-                      <ImageFigure att={att} zoom={imgZoom} clipMode={clipMode} onClipped={handleImageClipped} />
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
+          {imagePane}
 
           {view === 'digest' && docAtt && (
             <div className="max-w-[760px] mx-auto px-8 py-8">
@@ -986,7 +1068,7 @@ function ReaderOverlay({ node, onLocate, dock, activeAttachment }: { node: Thoug
               {digestText && !digesting && (
                 <div className="mt-6 pt-4 border-t border-line flex items-center gap-3 text-control text-ink-faint">
                   <span className="font-mono">{digestModel ? digestModel.split('/').pop() : ''}</span>
-                  <button onClick={() => void startDigest()} className="flex items-center gap-1 hover:text-ink-muted transition-colors">
+                  <button data-export-omit="run" onClick={() => void startDigest()} className="flex items-center gap-1 hover:text-ink-muted transition-colors">
                     <RefreshCw size={11} strokeWidth={1.75} /> {t('reader.redigest')}
                   </button>
                   {digestNode && (
@@ -1001,16 +1083,16 @@ function ReaderOverlay({ node, onLocate, dock, activeAttachment }: { node: Thoug
 
           {view === 'text' && (
             <div className={nativeDocx ? 'flex-1 min-h-0 flex flex-col p-surface-inset' : 'max-w-[820px] mx-auto px-surface-inset py-6'} data-reader-highlight-surface data-highlighter-active={materialHighlighter.active || undefined}>
-              {editableAttachment && !nativeDocx && !isViewerMode && <p className="text-control text-ink-faint mb-4">
+              {editableAttachment && !nativeDocx && !readDocumentCopy && !isViewerMode && <p className="text-control text-ink-faint mb-4">
                 {t('document.legacySource')}
               </p>}
-              {editableAttachment ? (
+              {editableAttachment && !readDocumentCopy ? (
                 nativeDocx
                   ? <Suspense fallback={<p className="text-control text-ink-faint">{t('richDocument.loading')}</p>}>
-                    <SuperDocEditor nodeId={node.id} attachment={nativeDocx} readOnly={isViewerMode} />
+                    <SuperDocEditor nodeId={node.id} attachment={nativeDocx} readOnly={isViewerMode} rulerMark={landing?.rulerMark} />
                     </Suspense>
                   : <DocumentRichBody attachment={editableAttachment} />
-              ) : previewParts ? <StreamingFileText parts={previewParts} /> : textBody.trim() === '' ? (
+              ) : previewParts ? <StreamingFileText parts={previewParts} /> : !textBody.trim() && !sections.some(section => section.heading) ? (
                 htmlAtt?.isExtracting ? (
                   <div className="flex items-center justify-center gap-2 py-16 text-control text-ink-muted">
                     <Loader2 size={16} strokeWidth={1.75} className="animate-spin text-accent" /> {t('reader.loading')}
@@ -1023,19 +1105,19 @@ function ReaderOverlay({ node, onLocate, dock, activeAttachment }: { node: Thoug
               ) : (
                 sections.map((s, i) => (
                   <div key={i} data-page={s.page ?? undefined}>
+                    {s.heading && <div className="markdown-body text-body text-ink"><h3>{s.heading}</h3></div>}
                     {s.page != null && !documentAttachment && (
                       <div className="text-meta text-ink-faint font-mono text-center select-none pt-4 pb-1">— p.{s.page} —</div>
                     )}
-                    <div className="markdown-body text-body text-ink" data-reader-highlight-content>
-                      {materialHighlights.size > 0
-                        ? <HighlightedMarkdown content={s.md} highlights={materialHighlights} />
-                        : <Markdown>{s.md}</Markdown>}
+                    <div className="markdown-body text-body text-ink" data-reader-highlight-content data-reading-attachment={s.attachmentId}>
+                      <Markdown highlights={s.highlights} preserveListNumbers={conversationTurn === 'question'}>{s.md}</Markdown>
                     </div>
                   </div>
                 ))
               )}
             </div>
           )}
+          </>}
         </div>
 
         {/* thread view: the thread lives on the canvas; this is its reading
@@ -1048,7 +1130,7 @@ function ReaderOverlay({ node, onLocate, dock, activeAttachment }: { node: Thoug
               <div className="flex-1 min-w-0">
                 <div className="text-control text-ink-faint leading-snug line-clamp-2">{thread[0].data.question}</div>
               </div>
-              {!isViewerMode && thread.some((turn) => !!turn.data.response && !turn.data.isLoading) && (
+              {!isViewerMode && railCanHighlight && (
                 <HighlighterButton
                   active={railHighlighter.active}
                   buttonRef={railHighlighter.buttonRef}
@@ -1075,18 +1157,25 @@ function ReaderOverlay({ node, onLocate, dock, activeAttachment }: { node: Thoug
                 <X size={14} strokeWidth={1.75} />
               </button>
             </div>
-            <div ref={railRef} onMouseUp={handleRailMouseUp} className="flex-1 min-h-0 overflow-y-auto px-4 py-3 space-y-4">
+            <div ref={railRef} data-cursor="native" onMouseUp={handleRailMouseUp} className="flex-1 min-h-0 overflow-y-auto px-4 py-3 space-y-4">
               {thread.map((turn) => (
-                <div key={turn.id}>
-                  <div className="text-body font-semibold text-ink mb-1.5">{turn.data.question}</div>
+                <div key={turn.id} data-reader-turn={turn.id}>
+                  <div className="markdown-body text-body font-semibold text-ink mb-1.5" data-turn-question={turn.id}
+                    data-highlight-turn={canHighlightConversation(turn.data) ? 'question' : undefined}
+                    data-highlighter-active={(railHighlighter.active && canHighlightConversation(turn.data)) || undefined}>
+                    <Markdown base={turn.data.agentSession?.cwd ?? turn.data.importSource?.cwd} preserveListNumbers
+                      highlights={conversationHighlightTexts(turn.data.highlights, 'question')}>{turn.data.question}</Markdown>
+                  </div>
                   {turn.data.isLoading && !turn.data.response ? (
                     <div className="flex items-center gap-2 text-control text-ink-muted py-1">
                       <Loader2 size={13} strokeWidth={1.75} className="animate-spin text-accent" /> {t('common.thinking')}
                     </div>
                   ) : (
-                    <div className="markdown-body text-body text-ink" data-turn-answer={turn.id} data-highlighter-active={(railHighlighter.active && !turn.data.isLoading) || undefined}>
+                    <div className="markdown-body text-body text-ink" data-turn-answer={turn.id}
+                      data-highlight-turn={canHighlightConversation(turn.data) ? 'response' : undefined}
+                      data-highlighter-active={(railHighlighter.active && canHighlightConversation(turn.data)) || undefined}>
                       {(turn.data.highlights?.length ?? 0) > 0 ? (
-                        <HighlightedMarkdown base={turn.data.agentSession?.cwd ?? turn.data.importSource?.cwd} content={turn.data.response} highlights={new Set(turn.data.highlights.map((h) => h.text))} />
+                        <HighlightedMarkdown base={turn.data.agentSession?.cwd ?? turn.data.importSource?.cwd} content={turn.data.response} highlights={conversationHighlightTexts(turn.data.highlights, 'response')} />
                       ) : (
                         <Markdown base={turn.data.agentSession?.cwd ?? turn.data.importSource?.cwd}>{turn.data.response}</Markdown>
                       )}
@@ -1095,7 +1184,7 @@ function ReaderOverlay({ node, onLocate, dock, activeAttachment }: { node: Thoug
                 </div>
               ))}
             </div>
-            <div className="border-t border-line px-3 py-2.5 shrink-0 flex items-end gap-1.5">
+            <div data-export-omit="run" className="border-t border-line px-3 py-2.5 shrink-0 flex items-end gap-1.5">
               <textarea
                 value={followDraft}
                 onChange={(e) => setFollowDraft(e.target.value)}
@@ -1123,12 +1212,13 @@ function ReaderOverlay({ node, onLocate, dock, activeAttachment }: { node: Thoug
         </div>
 
         {/* footer: ask about the whole material + the questions grown from it */}
-        <div className="border-t border-line bg-card px-5 py-2.5 shrink-0 flex items-center gap-2.5">
+        <div data-export-omit={grownChildren.length ? undefined : 'run'} className="border-t border-line bg-card px-5 py-2.5 shrink-0 flex items-center gap-2.5">
+          <div className="contents" data-export-omit="run">
           <input
             value={wholeDraft}
             onChange={(e) => setWholeDraft(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter' && !isImeComposing(e)) { e.preventDefault(); submitWhole(); } }}
-            placeholder={t('reader.askWhole')}
+            placeholder={t(conversationTurn ? 'common.followUp' : 'reader.askWhole')}
             className="flex-1 min-w-[200px] bg-wash text-control text-ink rounded-control px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-accent/40 placeholder-ink-faint"
             data-reader-wholeask
           />
@@ -1142,6 +1232,7 @@ function ReaderOverlay({ node, onLocate, dock, activeAttachment }: { node: Thoug
           >
             <Send size={14} strokeWidth={1.75} />
           </button>
+          </div>
           {grownChildren.length > 0 && (
             <div className="flex flex-wrap items-center content-start gap-1.5 max-w-[45%] shrink-0 max-h-[3.75rem] overflow-y-auto" data-grown-chips>
               <span className="text-meta text-ink-faint shrink-0">{fmt(t('reader.grown'), { n: grownChildren.length })}</span>
@@ -1152,7 +1243,7 @@ function ReaderOverlay({ node, onLocate, dock, activeAttachment }: { node: Thoug
                     threadId === c.id ? 'bg-accent/10 text-accent' : 'bg-wash text-ink-muted hover:bg-line'
                   }`}
                 >
-                  <button onClick={() => setThreadId(c.id)} className="flex items-center gap-1.5 min-w-0">
+                  <button data-export-reading-label onClick={() => setThreadId(c.id)} className="flex items-center gap-1.5 min-w-0">
                     {c.data.isLoading && <Loader2 size={10} strokeWidth={2} className="animate-spin text-accent shrink-0" />}
                     {/* provenance at a glance: page-anchored vs whole-material */}
                     {c.data.anchor && (
@@ -1233,17 +1324,17 @@ function ReaderOverlay({ node, onLocate, dock, activeAttachment }: { node: Thoug
   // so the column returns.
   if (docked && collapsed) {
     return (
-      <div className="absolute left-0 top-0 bottom-0 z-[30] bg-card border-r border-line flex flex-col items-center py-3 gap-3" style={{ width: READER_STRIP_WIDTH }} data-material-reader data-reader-strip>
+      <div className="absolute left-0 top-0 bottom-0 z-[30] bg-card border-r border-line flex flex-col items-center py-3 gap-3" style={{ width: READER_STRIP_WIDTH }} data-type-surface="reading" data-material-reader data-reader-strip>
         <button onClick={() => useStore.getState().setSelectedNodeId(null)} aria-label={t('reader.stripExpand')} data-reader-strip-expand className="w-7 h-7 rounded-control text-ink-muted hover:bg-wash hover:text-ink flex items-center justify-center transition-colors">
           <ChevronRight size={15} strokeWidth={1.75} />
         </button>
         {headerIcon}
         <span className="text-control text-ink-muted truncate [writing-mode:vertical-rl] max-h-[calc(45*var(--ui-vh))]" data-tooltip={shownTitle} data-tooltip-overflow>{shownTitle}</span>
         <div className="flex-1" />
-        <button onClick={() => useUiStore.getState().setReaderMode('full')} aria-label={t('reader.expand')} className={iconButton}>
+        <button onClick={() => useUiStore.getState().setReaderMode('full')} aria-label={t('reader.expand')} data-reader-expand className={iconButton}>
           <Maximize2 size={14} strokeWidth={1.75} />
         </button>
-        <button onClick={close} aria-label={t('panel.close')} className={iconButton}>
+        <button onClick={close} data-material-reader-close aria-label={t('panel.close')} className={iconButton}>
           <X size={15} strokeWidth={1.75} />
         </button>
       </div>
@@ -1254,14 +1345,14 @@ function ReaderOverlay({ node, onLocate, dock, activeAttachment }: { node: Thoug
   // its right; the canvas steps aside by its width (App reads lib/reader-dock)
   if (docked) {
     return (
-      <div ref={layerRef} className={`absolute left-0 top-0 bottom-0 z-[30] bg-surface border-r border-line flex flex-col ${resizing ? 'select-none' : ''}`} style={{ width: dock.width }} data-material-reader data-reader-docked>
+      <div ref={layerRef} className={`absolute left-0 top-0 bottom-0 z-[30] bg-surface border-r border-line flex flex-col ${resizing ? 'select-none' : ''}`} style={{ width: dock.width }} data-type-surface="reading" data-material-reader data-reader-docked>
         {inner}
         <div
           onPointerDown={onResizePointerDown}
           onPointerMove={onResizePointerMove}
           onPointerUp={onResizePointerUp}
           onDoubleClick={onResizeDoubleClick}
-          className={`absolute right-0 top-0 h-full w-[8px] -mr-[3px] z-20 cursor-col-resize hover:bg-accent/20 transition-colors flex items-center justify-center ${resizing ? 'bg-accent/30' : ''}`}
+          data-cursor="resize-column" className={`absolute right-0 top-0 h-full w-[8px] -mr-[3px] z-20 hover:bg-accent/20 transition-colors flex items-center justify-center ${resizing ? 'bg-accent/30' : ''}`}
           aria-label={t('panel.resizeTitle')}
           data-reader-resize
         >
@@ -1274,7 +1365,7 @@ function ReaderOverlay({ node, onLocate, dock, activeAttachment }: { node: Thoug
 
   // the overlay: the reader as a focused sheet over the canvas
   return (
-    <div className="fixed inset-0 z-[80] bg-ink/25 flex items-center justify-center animate-fade-in" data-material-reader>
+    <div className="fixed inset-0 z-[80] bg-ink/25 flex items-center justify-center animate-fade-in" data-type-surface="reading" data-material-reader>
       <div ref={layerRef} role="dialog" aria-modal="true" aria-label={shownTitle} tabIndex={-1} className={`bg-surface rounded-panel shadow-lg border border-line ${threadId ? "w-[min(1480px,calc(96*var(--ui-vw)))]" : "w-[min(1060px,calc(94*var(--ui-vw)))]"} h-[calc(93*var(--ui-vh))] flex flex-col overflow-hidden transition-all duration-200`}>
         {inner}
       </div>
@@ -1286,8 +1377,8 @@ function ReaderOverlay({ node, onLocate, dock, activeAttachment }: { node: Thoug
 // One image material: the picture at column width × zoom, with the same
 // rubber-band capture as PDF pages — cropped from the ORIGINAL resolution,
 // so a clip of a zoomed-out image loses nothing.
-function ImageFigure({ att, zoom, clipMode, onClipped }: {
-  att: Attachment; zoom: number; clipMode: boolean;
+function ImageFigure({ att, source, zoom, clipMode, onClipped }: {
+  att: Attachment; source?: string; zoom: number; clipMode: boolean;
   onClipped: (att: Attachment, rect: [number, number, number, number], dataUrl: string, screenRect?: { left: number; top: number; width: number; height: number }) => void;
 }) {
   const holderRef = useRef<HTMLDivElement>(null);
@@ -1319,14 +1410,14 @@ function ImageFigure({ att, zoom, clipMode, onClipped }: {
       <div ref={holderRef} className="relative">
         <img
           ref={imgRef}
-          src={`data:${att.type};base64,${att.content}`}
+          src={source ?? `data:${att.type};base64,${att.content}`}
           alt={att.name}
           draggable={false}
           className="w-full rounded-content border border-line bg-white select-none"
         />
         {clipMode && (
           <div
-            className="absolute inset-0 cursor-crosshair"
+            data-cursor="crosshair" className="absolute inset-0"
             style={{ zIndex: 6 }}
             data-clip-overlay={att.id}
             onMouseDown={(e) => { e.preventDefault(); const p = frac(e); setBand({ x0: p.x, y0: p.y, x1: p.x, y1: p.y }); }}

@@ -8,6 +8,8 @@ import { useT, fmt } from '../i18n';
 import { toast } from '../lib/ui-store';
 import { documentWriteError } from '../lib/document-errors';
 import { useFileEditPreview } from '../lib/document-edit-preview';
+import { docxHighlightAddress, registerDocxRulerHost } from '../lib/docx-ruler-navigation';
+import type { OverviewRulerMark } from '../lib/overview-ruler';
 import DocumentEditPreview from './DocumentEditPreview';
 import {
   activateDocx, activeDocxSession, attachDocxHost, claimDocxHost, docxSnapshot,
@@ -32,22 +34,24 @@ function CanvasDocxViewportSync({ viewport }: { viewport: ReturnType<typeof getD
   return null;
 }
 
-export default function SuperDocEditor({ nodeId, attachment, compact = false, readOnly = false, onEditingChange, actionsHost, statusHost }: {
+export default function SuperDocEditor({ nodeId, attachment, compact = false, readOnly = false, onEditingChange, actionsHost, statusHost, rulerMark }: {
   nodeId: string; attachment: Attachment; compact?: boolean; readOnly?: boolean;
   onEditingChange?: (attachmentId: string, active: boolean) => void;
   actionsHost?: HTMLElement | null; statusHost?: HTMLElement | null;
+  rulerMark?: OverviewRulerMark;
 }) {
   // Project hydration swaps graph data before activeId. Remove view hosts
   // through that interval; their document sessions and drafts remain alive.
   const switching = useProjects(state => state.switching);
   return switching ? null : <LiveDocxEditor nodeId={nodeId} attachment={attachment} compact={compact} readOnly={readOnly}
-    onEditingChange={onEditingChange} actionsHost={actionsHost} statusHost={statusHost} />;
+    onEditingChange={onEditingChange} actionsHost={actionsHost} statusHost={statusHost} rulerMark={rulerMark} />;
 }
 
-function LiveDocxEditor({ nodeId, attachment, compact, readOnly, onEditingChange, actionsHost, statusHost }: {
+function LiveDocxEditor({ nodeId, attachment, compact, readOnly, onEditingChange, actionsHost, statusHost, rulerMark }: {
   nodeId: string; attachment: Attachment; compact: boolean; readOnly: boolean;
   onEditingChange?: (attachmentId: string, active: boolean) => void;
   actionsHost?: HTMLElement | null; statusHost?: HTMLElement | null;
+  rulerMark?: OverviewRulerMark;
 }) {
   const t = useT();
   const projectId = useProjects(state => state.activeId) ?? 'default';
@@ -65,6 +69,25 @@ function LiveDocxEditor({ nodeId, attachment, compact, readOnly, onEditingChange
   }, [session, host, compact, readOnly]);
   useEffect(() => { if (host) updateDocxHostMode(session, host, readOnly); }, [session, host, readOnly]);
   const ownsView = !!host && session.owner === host;
+  const readyInstance = session.status === 'ready' && ownsView ? session.instance : null;
+  useEffect(() => {
+    if (!readyInstance) return;
+    let request: AbortController | undefined;
+    const reveal = (mark: OverviewRulerMark) => {
+      if (!mark.documentMarkId || session.attachment.id !== mark.attachmentId) return;
+      request?.abort();
+      request = new AbortController();
+      const { signal } = request;
+      void docxHighlightAddress(readyInstance, session.attachment, mark.documentMarkId, signal).then(async target => {
+        if (signal.aborted || !target || session.owner !== host) return;
+        session.viewport.beginNavigation();
+        await readyInstance.ui.viewport.scrollIntoView({ target, block: 'center', behavior: 'instant' });
+      }).catch(() => { /* The native session may be disposed while its query is running. */ });
+    };
+    const unregister = registerDocxRulerHost(session.element, reveal);
+    if (rulerMark) reveal(rulerMark);
+    return () => { request?.abort(); unregister(); };
+  }, [readyInstance, host, session, rulerMark]);
   const active = activeDocxSession() === session && ownsView && !readOnly;
   // Only an active or unsaved editing session protects the working card.
   // An idle document follows the same overview preference as other files.
@@ -97,11 +120,11 @@ function LiveDocxEditor({ nodeId, attachment, compact, readOnly, onEditingChange
     } catch { toast('error', t('richDocument.exportFailed')); }
     finally { setExportingPrevious(false); }
   };
-  const status = <span role="status">{t(session.saving ? 'richDocument.saving' : needsSave ? 'docx.unsaved' : 'nativeDocument.saved')}</span>;
+  const status = <span data-superdoc-save-status data-type-surface="portal" role="status">{t(session.saving ? 'richDocument.saving' : needsSave ? 'docx.unsaved' : 'nativeDocument.saved')}</span>;
   const actions = <>
-    {!readOnly && <button type="button" data-superdoc-save disabled={session.saving || session.conflict || session.status !== 'ready' || !needsSave}
+    {!readOnly && <button type="button" data-type-surface="portal" data-superdoc-save disabled={session.saving || session.conflict || session.status !== 'ready' || !needsSave}
       onClick={save} aria-label={t('common.save')} data-tooltip={t('document.saveNode')}><Save size={15} /></button>}
-    <button type="button" data-superdoc-export disabled={session.status !== 'ready'} onClick={exportFile}
+    <button type="button" data-type-surface="portal" data-superdoc-export disabled={session.status !== 'ready'} onClick={exportFile}
       aria-label={t('richDocument.exportDocx')} data-tooltip={t('richDocument.exportDocx')}><Download size={15} /></button>
   </>;
   return <div className={`docx-workspace nodrag nopan nowheel ${compact ? 'docx-workspace--compact' : ''}`}
@@ -123,14 +146,14 @@ function LiveDocxEditor({ nodeId, attachment, compact, readOnly, onEditingChange
       data-superdoc-export-previous onClick={() => void exportPrevious()}>{t('docx.exportPreviousCopy')}</button></p>}
     {session.missingFonts.length > 0 && <p className="docx-notice">{fmt(t('docx.missingFonts'), { fonts: session.missingFonts.join('、') })}</p>}
     {session.conflict && <div className="docx-notice">{t('docx.conflict')} <button type="button" onClick={() => void startDocxSession(session, true)}>{t('docx.reloadSaved')}</button></div>}
-    <div className="docx-view-host" ref={setHost} />
+    <div data-type-surface="docx-viewport" className="docx-view-host" ref={setHost} />
     {!ownsView && session.status === 'ready' && <button type="button" className="docx-return-view text-control"
       onClick={() => { if (host) claimDocxHost(session, host); activateDocx(session); }}>{t('docx.editHere')}</button>}
     {preview && !session.dirty && !session.saving && <DocumentEditPreview attachment={attachment} preview={preview} />}
     {session.status === 'loading' && <div className="docx-load-state text-control"><Loader2 size={18} className="animate-spin" />{t('richDocument.loading')}</div>}
     {session.status === 'error' && <div className="docx-load-state text-control" role="alert">{t('document.originalUnavailable')}
       <button type="button" onClick={() => void startDocxSession(session, true)}>{t('docx.retry')}</button></div>}
-    {active && session.instance && createPortal(<div className={`${readerToolbar ? 'docx-toolbar-inline' : 'docx-toolbar-dock'} nodrag nopan nowheel`} data-superdoc-toolbar>
+    {active && session.instance && createPortal(<div className={`${readerToolbar ? 'docx-toolbar-inline' : 'docx-toolbar-dock'} nodrag nopan nowheel`} data-type-surface="portal" data-superdoc-toolbar>
       <SuperDocToolbar key={session.instance.superdocId} instance={session.instance} viewport={session.viewport} name={attachment.name} dirty={needsSave} saving={session.saving} canSave={!session.conflict}
         onSave={save} onExport={exportFile} onHide={() => activateDocx(null)} />
     </div>, readerToolbar ?? document.body)}

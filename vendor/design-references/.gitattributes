@@ -1,0 +1,3 @@
+# Preserve upstream bytes, including files with mixed or missing line endings.
+ant-design/** -text
+carbon-website/** -text

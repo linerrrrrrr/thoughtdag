@@ -5,7 +5,10 @@ export interface LayoutShape {
   width: number;
   height: number;
   frame: boolean;
+  /** Movable parent in the compound layout. */
   parent?: string;
+  /** Unselected frames that enclosed this object before layout. */
+  fixedContainers?: string[];
   fixed?: boolean;
   minWidth?: number;
   minHeight?: number;

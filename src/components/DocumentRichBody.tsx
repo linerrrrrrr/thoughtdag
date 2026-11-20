@@ -19,6 +19,6 @@ export default function DocumentRichBody({ attachment }: { attachment: Attachmen
   }, [attachment]);
   if (failed) return <p className="text-control text-ink-faint">{t('richDocument.loadFailed')}</p>;
   if (content === null) return <p className="text-control text-ink-faint">{t('richDocument.loading')}</p>;
-  return <div className="document-rich-body text-body text-ink" data-document-rich-body={attachment.id}
+  return <div className="document-rich-body text-body text-ink" data-type-surface="native-document" data-document-rich-body={attachment.id}
     dangerouslySetInnerHTML={{ __html: content }} />;
 }

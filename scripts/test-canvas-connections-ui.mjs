@@ -288,11 +288,11 @@ try {
     new KeyboardEvent('keydown', { key, code: key, ctrlKey: key === 'Enter', isComposing: true, bubbles: true })), key);
   assert.equal(await (await labelInput()).inputValue(), '中文输入草稿');
   assert.deepEqual(await storedGraph(), beforeIme);
-  await page.evaluate(() => window.__ui.getState().setApiKeyModalOpen(true));
-  await page.locator('[data-apikey-tabs]').waitFor();
+  await page.locator('[data-settings-entry]').click();
+  await page.locator('[data-settings-panel]').waitFor();
   assert.equal(await inspector.count(), 0, 'another tool card closes the property card');
   await page.keyboard.press('Escape');
-  await page.locator('[data-apikey-tabs]').waitFor({ state: 'detached' });
+  await page.locator('[data-settings-panel]').waitFor({ state: 'detached' });
   assert.equal(await inspector.count(), 0, 'closing the replacement never restores the old card');
   await openEdge('edge-a-b', false);
   assert.equal(await (await labelInput()).inputValue(), '中文输入草稿');

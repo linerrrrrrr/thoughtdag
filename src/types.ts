@@ -43,6 +43,8 @@ export interface Attachment {
   legacyDocumentHtml?: string;
   legacyDocumentText?: string;
   pdfAnnotations?: PdfAnnotation[]; // local original-page marks; never included in model text implicitly
+  /** Reading positions of explicit highlights in the saved document body. */
+  documentHighlights?: DocumentHighlight[];
   extractedBy?: string; // which model produced extractedText (extraction provenance)
   pageImages?: string[]; // rendered page images as base64 PNG (PDF)
   /** a notebook's figures, in output order — the image channel of a .ipynb
@@ -58,6 +60,13 @@ export interface Attachment {
       it). Set by the session adapters, never by hand. */
   paths?: string[];
   op?: ToolOp;
+}
+
+export interface DocumentHighlight {
+  id: string;
+  text: string;
+  color: string;
+  fraction: number;
 }
 
 /** What a tool call DID, classified from its name across runners. */
@@ -90,6 +99,10 @@ export interface Ladder {
 export interface Highlight {
   id: string;
   text: string;
+  /** Conversation marks without a source belong to the answer in older canvases. */
+  source?: 'question';
+  /** A passage marked in one attachment's reading view. Older marks are node-scoped. */
+  attachmentId?: string;
   at?: string; // ISO timestamp: when the user marked it (thinking-timeline raw data)
 }
 
@@ -406,6 +419,7 @@ export interface ThoughtData extends Record<string, unknown> {
   frameColor?: string; // frame node: fixed-palette color token (wayfinding, not decoration)
   frameCarry?: boolean; // frame node: dragging carries contained nodes (absent = true; new frames start false so they can be adjusted into place first)
   lockAspectRatio?: boolean; // preserve each card's ratio during numeric and handle resizing
+  fitContentHeight?: boolean; // expand the full card to its rendered content
   keepOverviewHeight?: boolean; // legacy resize flag; overview height now always follows its content
   /** A height explicitly chosen for this question/answer, including any open disclosures. */
   contentHeightIntent?: { content: string; height: number };

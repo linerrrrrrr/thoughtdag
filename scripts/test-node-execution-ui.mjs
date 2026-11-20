@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { chromium } from 'playwright-core';
-import { initNodePickerFixture, installNodeAgentCatalog } from './fixtures/node-picker.mjs';
+import { initNodePickerFixture } from './fixtures/node-picker.mjs';
 
 const appUrl = new URL(process.env.APP_URL ?? 'http://127.0.0.1:5174');
 const executablePath = process.env.CHROME_PATH ?? ['C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe', 'C:/Program Files/Google/Chrome/Application/chrome.exe'].find(existsSync);
@@ -15,6 +15,13 @@ const context = await browser.newContext({ viewport: { width: 1500, height: 1000
 const page = await context.newPage();
 page.setDefaultTimeout(10000);
 const errors = [], writes = [], checks = [];
+const image = { id: 'screenshot', name: 'image.png', type: 'image/png', size: 68,
+  content: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/aWQAAAAASUVORK5CYII=' };
+const draft = '请说明这张截图';
+let runtimeOnline = true;
+let codexQueries = 0;
+let releaseCatalog;
+const catalogGate = new Promise(resolve => { releaseCatalog = resolve; });
 const catalog = { default: 'api-test', models: [
   { id: 'api-test', name: 'API test model', provider: 'Test API', vision: false },
   { id: 'codex/codex/test-model', name: 'Codex · test-model', provider: '__agent__', vision: false },
@@ -22,8 +29,23 @@ const catalog = { default: 'api-test', models: [
 ] };
 page.on('pageerror', error => errors.push(error.message));
 await page.routeWebSocket('**', socket => socket.close());
-await page.route('**/*', route => {
+await page.route('**/*', async route => {
   const request = route.request(), url = new URL(request.url());
+  if (url.pathname === '/__thoughtdag_storage') return route.fulfill({ status: 404 });
+  const headers = { 'access-control-allow-origin': appUrl.origin, 'access-control-allow-headers': 'content-type' };
+  if (request.method() === 'OPTIONS') return route.fulfill({ status: 204, headers });
+  if (url.pathname === '/api/agents/available') return route.fulfill({ headers, json: { codex: 'fixture-cli' } });
+  if (url.pathname === '/api/agents/models') {
+    const isCodex = url.searchParams.get('runtime') === 'codex';
+    if (isCodex) {
+      codexQueries++;
+      await catalogGate;
+    }
+    const installed = isCodex && runtimeOnline;
+    return route.fulfill({ headers, json: { installed, models: installed
+      ? [{ provider: 'codex', id: 'test-model', name: 'test-model', vision: false }] : [], default: installed ? 'codex/test-model' : null } });
+  }
+  if (url.pathname === '/api/agents/canvas-workspace') return route.fulfill({ headers, json: { dir: 'D:/fixture-workspace' } });
   if (url.pathname === '/api/models') return route.fulfill({ json: catalog });
   if (url.pathname.startsWith('/api/') || url.origin !== appUrl.origin) {
     if (!['GET', 'HEAD', 'OPTIONS'].includes(request.method())) writes.push(url.pathname);
@@ -41,9 +63,9 @@ const settle = () => page.evaluate(() => new Promise(resolve => requestAnimation
 const recheck = () => page.evaluate(async () => (await window.__importLive('/src/lib/use-models.ts')).recheckAgents());
 const pass = label => { checks.push(label); console.log('PASS', label); };
 try {
-  await page.goto(appUrl.href, { waitUntil: 'networkidle' });
-  await page.waitForFunction(() => window.__store?.persist.hasHydrated() && window.__rf);
-  await page.evaluate(async ({ id, catalog }) => {
+  await page.goto(appUrl.href, { waitUntil: 'domcontentloaded', timeout: 90000 });
+  await page.waitForFunction(() => window.__store?.persist.hasHydrated() && window.__rf && window.__projects?.getState().activeId, undefined, { timeout: 90000 });
+  await page.evaluate(async ({ id, image, catalog }) => {
     const useUiStore = window.__ui;
     const { setModelsCache } = await window.__importLive('/src/lib/use-models.ts');
     (await window.__importLive('/src/i18n/index.ts')).useI18n.getState().setLang('zh');
@@ -55,28 +77,38 @@ try {
     window.__store.getState().setNodes([{ id, type: 'thought', width: 520, dragHandle: '.drag-handle', position: { x: 0, y: 0 }, data: {
       executionKind: 'api', question: '', response: '', responses: [], responseIndex: -1,
       isCollapsed: false, isEditing: true, questionEditor: 'canvas', isEditingResponse: false, isLoading: false,
-      detailLevel: 'full', tokenCount: 0, highlights: [], highlightMode: 'tag', attachments: [], excludedAttachmentIds: [], includedAttachmentIds: [],
+      detailLevel: 'full', tokenCount: 0, highlights: [], highlightMode: 'tag', attachments: [image], excludedAttachmentIds: [], includedAttachmentIds: [],
     } }]);
     window.__store.getState().setSelectedNodeId(id);
     window.__store.getState().setEdges([]);
     window.__rf.setViewport({ x: 100, y: 150, zoom: 1 }, { duration: 0 });
-  }, { id, catalog });
+  }, { id, image, catalog });
   await picker().waitFor();
   await page.waitForTimeout(400);
   await page.evaluate(() => window.__rf.setViewport({ x: 100, y: 150, zoom: 1 }, { duration: 0 }));
   const codexOption = picker().locator('[data-node-execution-option="codex"]');
-  assert.equal(await codexOption.count(), 0);
-  await picker().locator('[data-model-picker-trigger]').press('Enter');
-  await panel.getByText('API test model', { exact: true }).waitFor();
-  assert.equal(await panel.locator('[data-runtime-group]').count(), 0);
-  await page.keyboard.press('Escape');
-  await page.evaluate(installNodeAgentCatalog, catalog.models);
-  await page.evaluate(async catalog => (await window.__importLive('/src/lib/use-models.ts')).setModelsCache({ ...catalog, agentsPending: true }), catalog);
-  await settle();
-  assert.equal(await codexOption.count(), 0);
-  await recheck();
-  pass('Absent bridges and unverified catalog entries leave only API available until discovery confirms the runtime.');
-  await picker().locator('[data-node-execution-option="codex"]').click();
+  const canvasInput = card().locator('[data-canvas-question-editor]');
+  await canvasInput.fill(draft);
+  assert.equal(await codexOption.innerText(), 'Agent 执行');
+  assert.equal(codexQueries, 0, 'Choosing API must not launch runtime discovery');
+  const firstCatalogRequest = page.waitForRequest(request => {
+    const url = new URL(request.url());
+    return url.pathname === '/api/agents/models' && url.searchParams.get('runtime') === 'codex';
+  });
+  await codexOption.click();
+  await firstCatalogRequest;
+  await picker().getByRole('status').waitFor();
+  assert.equal(await card().locator('[data-ask-submit]').isDisabled(), true);
+  await canvasInput.press('Enter');
+  assert.equal((await data()).question, '');
+  assert.equal(await picker().locator('[data-model-picker-trigger]').count(), 0);
+  releaseCatalog();
+  await picker().locator('[data-model-picker-trigger]').waitFor();
+  assert.equal(await card().locator('[data-ask-submit]').isEnabled(), true);
+  assert.equal(await canvasInput.inputValue(), draft);
+  assert.deepEqual((await data()).attachments, [image]);
+  assert.equal(await card().locator('[data-question-attachment="screenshot"] img').isVisible(), true);
+  pass('An API draft with image.png shows Agent before discovery. Selecting it verifies the HTTP catalog, preserves the prompt and image, and enables sending once ready.');
   assert.equal((await data()).executionKind, 'codex');
   await picker().locator('[data-model-picker-trigger]').click();
   await panel.waitFor({ state: 'visible' });
@@ -153,22 +185,32 @@ try {
   await focusPicker.locator('[data-node-execution-option="codex"]').click();
   await focus.locator('[data-conversation-question] textarea').fill('Panel draft stays here');
   await focusPicker.locator('[data-model-picker-trigger]').click();
-  await page.evaluate(installNodeAgentCatalog, []);
+  runtimeOnline = false;
   await recheck();
   await panel.waitFor({ state: 'detached' });
-  assert.equal(await codexOption.count(), 0);
-  assert.equal(await focusPicker.locator('[data-node-execution-option="codex"], [data-model-picker-trigger]').count(), 0);
+  assert.equal(await focusPicker.locator('[data-node-execution-option="codex"]').getAttribute('aria-pressed'), 'true');
+  assert.equal(await focusPicker.locator('[data-model-picker-trigger]').count(), 0);
+  assert.equal(await focus.locator('[data-question-send]').isDisabled(), true);
+  await focus.locator('[data-conversation-question] textarea').press('Control+Enter');
+  assert.equal(await page.evaluate(() => window.__nodeExecutionSends.length), 0);
   assert.equal((await data()).executionKind, 'codex');
   assert.equal(await focus.locator('[data-conversation-question] textarea').inputValue(), 'Panel draft stays here');
+  await focusPicker.getByRole('button', { name: 'Agent connection', exact: true }).click();
+  await page.locator('[data-agent-connection-status="disconnected"]').waitFor();
+  runtimeOnline = true;
+  await page.locator('[data-agent-connect]').click();
+  await page.locator('[data-agent-connection-status="connected"]').waitFor();
+  await page.keyboard.press('Escape');
+  await focusPicker.locator('[data-model-picker-trigger]').waitFor();
+  assert.equal(await focus.locator('[data-question-send]').isEnabled(), true);
+  assert.equal(await focus.locator('[data-conversation-question] textarea').inputValue(), 'Panel draft stays here');
+  assert.deepEqual((await data()).attachments, [image]);
   await focusPicker.locator('[data-node-execution-option="api"]').click();
   await focusPicker.locator('[data-model-picker-trigger]').click();
   await panel.getByText('API test model', { exact: true }).waitFor();
   await page.keyboard.press('Escape');
-  await page.evaluate(installNodeAgentCatalog, catalog.models);
-  await recheck();
-  await focusPicker.locator('[data-node-execution-option="codex"]').waitFor();
   assert.equal((await data()).executionKind, 'api');
-  pass('Disconnecting closes the open agent menu and preserves the draft; API stays usable and reconnecting restores the option.');
+  pass('After losing the runtime, Agent stays selected, sending is disabled, and reconnecting from the editor restores models and the draft with its attachment.');
   assert.equal(await focus.count(), 1);
   assert.equal(await focus.locator('[data-conversation-question] textarea').inputValue(), 'Panel draft stays here');
   await focusPicker.locator('[data-node-execution-option="api"]').click();
@@ -218,6 +260,6 @@ try {
   await writeFile(`${out}/result.json`, JSON.stringify({ checks, errors, writes }, null, 2));
 } catch (error) {
   await page.screenshot({ path: `${out}/failure.png`, animations: 'disabled' }).catch(() => {});
-  console.error('Fixture picker on failure:', await picker().innerText().catch(() => 'not mounted'));
+  console.error('Fixture picker on failure:', await picker().innerText({ timeout: 1500 }).catch(() => 'not mounted'), errors);
   throw error;
-} finally { await browser.close(); }
+} finally { releaseCatalog(); await browser.close(); }

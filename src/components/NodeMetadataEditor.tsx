@@ -122,7 +122,7 @@ export default function NodeMetadataEditor({ id, data, name, preview, overview, 
   });
 
   if (!open && overview) return (
-    <div className="node-metadata-overview nodrag nopan" data-node-metadata>
+    <div className="node-metadata-overview nodrag nopan" data-node-metadata data-type-surface="overview">
       <button ref={triggerRef} type="button" onClick={begin} disabled={isViewerMode || data.isLoading}
         className="node-summary-preview"
         aria-label={t('node.metadataEdit')} aria-expanded={false} data-node-metadata-toggle>

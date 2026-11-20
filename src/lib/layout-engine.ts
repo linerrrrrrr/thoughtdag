@@ -5,6 +5,49 @@ import { projectLayout } from './layout-projector';
 import { tightenLayoutFrames } from './layout-frame-fit';
 
 const elk = new ELK();
+type Point = { x: number; y: number };
+
+/** Nearest legal translation on one axis. Each open interval is a pair
+ * of rectangles that would be too close at that displacement. */
+function nearestClearOffset(intervals: [number, number][]): number {
+  intervals.sort((a, b) => a[0] - b[0]);
+  let positive = 0, negative = 0;
+  for (const [start, end] of intervals) {
+    if (start < positive && positive < end) positive = end;
+  }
+  for (let i = intervals.length - 1; i >= 0; i--) {
+    const [start, end] = intervals[i];
+    if (start < negative && negative < end) negative = start;
+  }
+  return positive <= -negative ? positive : negative;
+}
+
+/** Slide the selection the shorter distance horizontally or vertically.
+ * Card-only obstructions retain the existing per-node projection. */
+function translationPastFixedFrames(moving: LayoutShape[], fixed: LayoutShape[], gap: Point): Point | undefined {
+  const xIntervals: [number, number][] = [], yIntervals: [number, number][] = [];
+  let blockedByCard = false, blockedByFrame = false;
+  for (const item of moving) for (const obstacle of fixed) {
+    const left = obstacle.x - item.x - item.width - gap.x, right = obstacle.x + obstacle.width + gap.x - item.x;
+    const top = obstacle.y - item.y - item.height - gap.y, bottom = obstacle.y + obstacle.height + gap.y - item.y;
+    const overlapsX = left < 0 && right > 0, overlapsY = top < 0 && bottom > 0;
+    if (overlapsY) xIntervals.push([left, right]);
+    if (overlapsX) yIntervals.push([top, bottom]);
+    if (overlapsX && overlapsY) {
+      if (obstacle.frame) blockedByFrame = true;
+      else blockedByCard = true;
+    }
+  }
+  if (!blockedByFrame) return blockedByCard ? undefined : { x: 0, y: 0 };
+  const x = nearestClearOffset(xIntervals), y = nearestClearOffset(yIntervals);
+  return Math.abs(x) <= Math.abs(y) ? { x, y: 0 } : { x: 0, y };
+}
+
+function restoreOrigin(shapes: LayoutShape[], origin: Point): LayoutShape[] {
+  const moving = shapes.filter(shape => !shape.fixed);
+  const dx = origin.x - Math.min(...moving.map(shape => shape.x)), dy = origin.y - Math.min(...moving.map(shape => shape.y));
+  return shapes.map(shape => shape.fixed ? shape : { ...shape, x: shape.x + dx, y: shape.y + dy });
+}
 
 /** Sugiyama layering / crossing minimization and component packing are
  * delegated to ELK. VPSC supplies the application's exact constraints.
@@ -13,6 +56,7 @@ const elk = new ELK();
 export async function solveLayout(problem: LayoutProblem): Promise<LayoutSolution> {
   const { shapes, links, options } = problem;
   const moving = shapes.filter((shape) => !shape.fixed);
+  if (!moving.length) return { shapes };
   const ids = new Set(moving.map((shape) => shape.id));
   const byId = new Map(shapes.map(shape => [shape.id, shape]));
   const crossesRegions = links.some(link => link.auxiliary !== 'reference' && ids.has(link.source) && ids.has(link.target)
@@ -60,7 +104,7 @@ export async function solveLayout(problem: LayoutProblem): Promise<LayoutSolutio
   const desired = new Map<string, LayoutShape>();
   const flatten = (node: ElkNode, x = 0, y = 0) => {
     for (const child of node.children ?? []) {
-      const shape = moving.find((item) => item.id === child.id)!;
+      const shape = byId.get(child.id)!;
       const left = x + (child.x ?? 0), top = y + (child.y ?? 0);
       desired.set(child.id, { ...shape, x: left, y: top, width: child.width ?? shape.width, height: child.height ?? shape.height });
       flatten(child, left, top);
@@ -69,42 +113,73 @@ export async function solveLayout(problem: LayoutProblem): Promise<LayoutSolutio
   flatten(graph);
   const origin = { x: Math.min(...moving.map((shape) => shape.x)), y: Math.min(...moving.map((shape) => shape.y)) };
   const elkOrigin = { x: Math.min(...[...desired.values()].map((shape) => shape.x)), y: Math.min(...[...desired.values()].map((shape) => shape.y)) };
-  const anchored = shapes.some(shape => shape.fixed);
+  const fixed = shapes.filter(shape => shape.fixed);
   const boundaryIds = new Set(links.filter(link => link.structural && ids.has(link.source) !== ids.has(link.target))
     .map(link => ids.has(link.source) ? link.target : link.source));
-  const boundaries = shapes.filter(shape => shape.fixed && boundaryIds.has(shape.id));
-  // Fixed context, rather than the previous frame border, supplies the soft
-  // origin of a constrained selection. Otherwise fitting that border feeds
-  // its small displacement back into the next solve and causes drift.
-  const desiredOrigin = boundaries.length ? {
-    x: Math.min(...boundaries.map(shape => shape.x)), y: Math.min(...boundaries.map(shape => shape.y)),
+  const anchors = fixed.filter(shape => boundaryIds.has(shape.id)).map(shape => ({ x: shape.x, y: shape.y }));
+  // Keep ELK's relative positions within each fixed region. When fixed
+  // regions overlap, the shared members start in their intersection.
+  const groups = new Map<string, LayoutShape[]>();
+  for (const shape of desired.values()) {
+    if (!shape.fixedContainers?.length) continue;
+    const key = JSON.stringify([...shape.fixedContainers].sort());
+    const group = groups.get(key);
+    if (group) group.push(shape);
+    else groups.set(key, [shape]);
+  }
+  const frameOffsets = new Map<string, Point>();
+  for (const group of groups.values()) {
+    const frames = group[0].fixedContainers!.map(id => byId.get(id)!);
+    const x = Math.max(...frames.map(frame => frame.x)) + padding.left;
+    const y = Math.max(...frames.map(frame => frame.y)) + padding.top;
+    const offset = { x: x - Math.min(...group.map(shape => shape.x)), y: y - Math.min(...group.map(shape => shape.y)) };
+    for (const shape of group) frameOffsets.set(shape.id, offset);
+    anchors.push({ x, y });
+  }
+  // A fixed origin prevents the previous projected position from feeding
+  // back into the next click, even for selections spanning several regions.
+  const desiredOrigin = anchors.length ? {
+    x: Math.min(...anchors.map(point => point.x)), y: Math.min(...anchors.map(point => point.y)),
   } : origin;
+  const globalOffset = { x: (fixed.length ? desiredOrigin.x : 0) - elkOrigin.x, y: (fixed.length ? desiredOrigin.y : 0) - elkOrigin.y };
   const initial = shapes.map((shape) => {
     if (shape.fixed) return shape;
     const placement = desired.get(shape.id)!;
-    // For a free graph, solve in canonical local coordinates. Large dragged
-    // offsets must not influence floating-point tie breaking in compaction.
-    return { ...placement, x: placement.x + (anchored ? desiredOrigin.x : 0) - elkOrigin.x,
-      y: placement.y + (anchored ? desiredOrigin.y : 0) - elkOrigin.y };
+    const offset = frameOffsets.get(shape.id) ?? globalOffset;
+    return { ...placement, x: placement.x + offset.x, y: placement.y + offset.y };
   });
-  const projected = projectLayout(initial, links, options);
-  if (!projected.shapes) return projected;
+  const projectAndFit = (input: LayoutShape[]) => {
+    const projected = projectLayout(input, links, options);
+    return projected.shapes ? tightenLayoutFrames(projected.shapes, padding) : projected;
+  };
+  const gap = options.direction === 'horizontal' ? { x: options.gap, y: options.crossGap } : { x: options.crossGap, y: options.gap };
+  // Without a fixed context edge or containing region the selection can
+  // translate as a unit. Use its canonical layout when a fixed region
+  // blocks it so that the displaced origin is already feasible next time.
+  if (!anchors.length && fixed.some(shape => shape.frame)) {
+    const free = moving.map(shape => desired.get(shape.id)!);
+    const fitted = projectAndFit(restoreOrigin(free, { x: 0, y: 0 }));
+    if (!fitted.shapes) return fitted;
+    const placed = restoreOrigin(fitted.shapes, origin);
+    const shift = translationPastFixedFrames(placed, fixed, gap);
+    if (shift) {
+      const result = new Map(placed.map(shape => [shape.id, { ...shape, x: shape.x + shift.x, y: shape.y + shift.y }]));
+      return { shapes: shapes.map(shape => result.get(shape.id) ?? shape) };
+    }
+  }
   // Fit before restoring the selection origin so shrinking a frame cannot
   // change that origin again on the next one-click layout.
-  const solution = tightenLayoutFrames(projected.shapes, padding);
+  const solution = projectAndFit(initial);
   if (!solution.shapes) return solution;
   // A free component retains its overall origin even when unrelated fixed
   // cards exist elsewhere. Otherwise soft frame compaction would translate
   // the same region a little further on every click.
-  const boundary = boundaryIds.size > 0;
-  if (!boundary) {
-    const free = solution.shapes.filter(shape => !shape.fixed);
-    const minX = Math.min(...free.map(shape => shape.x)), minY = Math.min(...free.map(shape => shape.y));
-    const translated = solution.shapes.map(shape => shape.fixed ? shape
-      : { ...shape, x: shape.x + origin.x - minX, y: shape.y + origin.y - minY });
-    const fixed = translated.filter(shape => shape.fixed);
-    const blocked = translated.filter(shape => !shape.fixed).some(a => fixed.some(b =>
-      a.x < b.x + b.width + 16 && a.x + a.width + 16 > b.x && a.y < b.y + b.height + 16 && a.y + a.height + 16 > b.y));
+  if (!anchors.length) {
+    const translated = restoreOrigin(solution.shapes, origin);
+    const blocked = translated.filter(shape => !shape.fixed).some(a => fixed.some(b => {
+      const gapX = b.frame ? gap.x : 16, gapY = b.frame ? gap.y : 16;
+      return a.x < b.x + b.width + gapX && a.x + a.width + gapX > b.x && a.y < b.y + b.height + gapY && a.y + a.height + gapY > b.y;
+    }));
     if (!blocked) solution.shapes = translated;
   }
   return solution;

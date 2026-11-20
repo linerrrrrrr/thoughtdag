@@ -13,6 +13,7 @@ const browser = await chromium.launch({ executablePath, headless: true });
 const context = await browser.newContext({ viewport: { width: 1600, height: 1100 }, locale: 'zh-CN', reducedMotion: 'reduce' });
 const page = await context.newPage();
 page.setDefaultTimeout(8000);
+page.setDefaultNavigationTimeout(60000);
 const errors = [], failures = [];
 page.on('pageerror', error => { errors.push(error.message); console.error('PAGE ERROR', error.message); });
 await context.routeWebSocket('**', socket => socket.close());
@@ -202,6 +203,21 @@ try {
   }
   await seed({ kind: 'note', response: '', question: '短便笺。' });
   await openAndClose('note automatic edit', '[data-note-edit]', '[data-note-editor] button');
+  const materialText = Array.from({ length: 40 }, (_, i) => `Line ${i + 1}.`).join('\n\n');
+  for (const kind of ['note', 'link', 'file']) {
+    const extra = kind === 'file' ? { attachments: [
+      { id: 'text-1', name: 'sample.txt', type: 'text/plain', size: materialText.length, content: materialText },
+    ] } : kind === 'link' ? { linkTitle: 'Material preview' } : {};
+    await seed({ kind, question: materialText, response: '', extra });
+    const body = node().locator('[data-content-body]').first();
+    const overflow = () => body.evaluate(element => element.scrollHeight - element.clientHeight);
+    assert.ok(await overflow() > 2, `Default ${kind} preview has a bounded height`);
+    await page.evaluate(id => window.__store.getState().setSelectedNodeIds([id]), id);
+    await node().locator('[data-node-resize="height"]').dblclick();
+    await settle();
+    assert.ok(await overflow() <= 2, `Fitted ${kind} preview shows all rendered content`);
+    if (kind === 'note') await openAndClose('fitted note edit', '[data-note-edit]', '[data-note-editor] button');
+  }
   const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/n7sAAAAASUVORK5CYII=';
   await seed({ kind: 'file', response: '', question: '', extra: { attachments: [
     { id: 'image-1', name: 'image.png', type: 'image/png', size: 68, content: png, extractedText: '识别文字', extractedBy: 'manual' },

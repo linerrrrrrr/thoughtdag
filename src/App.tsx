@@ -17,7 +17,7 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import 'highlight.js/styles/github.css';
-import { ArrowRight, BookOpen, Brain, CircleHelp, Download, FileDown, Eye, FileText, FolderSync, Frame, GitBranch, Hand, Highlighter, History as HistoryIcon, ImageDown, KeyRound, ListRestart, Loader2, MessageCircleQuestion, Minimize2, MoreHorizontal, Paperclip, Redo2, Rewind, Scissors, Search, Share2, SlidersHorizontal, Spline, SquareTerminal, Star, Stethoscope, StickyNote, Trash2, Undo2, Workflow, X } from 'lucide-react';
+import { ArrowRight, Brain, CircleHelp, Download, FileDown, Eye, FileText, FolderSync, Frame, Highlighter, History as HistoryIcon, ImageDown, Loader2, MessageCircleQuestion, Minimize2, MoreHorizontal, Paperclip, Redo2, Rewind, Search, Share2, Settings, SlidersHorizontal, SquareTerminal, Star, Stethoscope, StickyNote, Trash2, Undo2, Workflow } from 'lucide-react';
 import './index.css';
 import { ListFilter } from 'lucide-react';
 import ThoughtNode from './components/ThoughtNode';
@@ -26,14 +26,13 @@ import CanvasControls from './components/CanvasControls';
 import CanvasDetailControl from './components/CanvasDetailControl';
 import ParadigmNode from './components/ParadigmNode';
 import { useAppearance, edgePalette, LEGACY_EDGE_HEX } from './lib/appearance';
-import { canvasTypeScale } from './lib/canvas-typography';
+import { canvasTypeVariables } from './lib/canvas-typography';
 import { useCanvasTypographyPreferences } from './lib/canvas-typography-preferences';
 import ContentNode from './components/ContentNode';
-import FrameNode from './components/FrameNode';
+import FrameNode, { FrameNavigationMenu } from './components/FrameNode';
 import ThoughtEdgeView from './components/ThoughtEdgeView';
 import SelectionInspector from './components/SelectionInspector';
 import CanvasLayoutPanel, { type CanvasLayoutPanelHandle } from './components/CanvasLayoutPanel';
-import CanvasRoutingPanel from './components/CanvasRoutingPanel';
 import { canvasToolViewport, useCanvasPanelPosition, useFocusPanelSpace } from './lib/use-canvas-panel-position';
 import { CanvasToolbarOverflowContext, restoreCanvasToolbarFocus, useResponsiveCanvasHeader } from './lib/use-responsive-canvas-header';
 import CanvasToolbarOverflowAction from './components/CanvasToolbarOverflowAction';
@@ -57,11 +56,12 @@ import CanvasChat from './components/CanvasChat';
 import { REPO_URL, useGithubStars, formatStars } from './lib/github-stars';
 import DiagnosticsPanel from './components/DiagnosticsPanel';
 import MaterialReader from './components/MaterialReader';
+import { NativeGraphSource } from './lib/canvas-html-native-source';
 import ProjectSwitcher from './components/ProjectSwitcher';
 import { useStore } from './store';
+import type { AddQuestionOptions } from './store/types';
 import { undoState } from './store/slices/history';
 import { canvasHistoryCommand, isTextEditingTarget } from './lib/canvas-shortcuts';
-import { shownStaleIds } from './lib/stale-judge';
 import { isFrameNode, resolveCarriedNodeIds } from './lib/frames';
 import { enclosedSelection, partitionSpatialSelection, intersectingEdgeSelection, snapshotEdgeSelectionPaths, type SelectionTarget, type EdgeSelectionPath, type SelectionRegion as SelectionRegionState } from './lib/canvas-selection';
 import type { ArrangeRect } from './lib/arrange-selection';
@@ -75,29 +75,27 @@ import { createQuestionDraft } from './lib/question-draft';
 import { generateId, isImeComposing } from './utils';
 import { recapToNote, recapCamera } from './lib/recap';
 import type { Attachment, ThoughtNode as ThoughtNodeType, ThoughtEdge } from './types';
-import { processFile, FILE_INPUT_ACCEPT } from './lib/attachments';
+import { hasPendingAttachmentFiles, importQuestionFiles, removePendingAttachmentFile, usePendingAttachmentFiles } from './lib/node-file-import';
 import { hasNativeDocxSource, isDocxDocument } from './lib/document-copy';
 import { isConversationStart } from './lib/graph';
 import { contextFocusForSelection } from './lib/context-focus';
-import { buildContext } from './store/context-builder';
 import { exportActiveParadigm, exportActiveProjectHtml, exportActiveProjectJson, exportEventLogCsv } from './lib/export';
-import { countTokens } from './utils';
 import { buildExampleGraph } from './lib/example-graph';
-import { COLORS, FRAME_COLORS, PANEL_INSET, EDGE_ARROW_GEOMETRY } from './lib/constants';
+import { PANEL_INSET, EDGE_ARROW_GEOMETRY } from './lib/constants';
 import { panelShift } from './lib/panel-shift';
 import { useReaderDock } from './lib/reader-dock';
 import { screenToUi, uiToScreen } from './lib/ui-scale';
 import { handleDismissableLayerKeyDown, useDismissableLayer } from './lib/use-dismissable-layer';
 import { migrateActiveCanvasToVault, gcVaultAtBoot } from './lib/attachment-vault-boot';
 import { watchNodeFiles } from './lib/node-files';
-import { consumeOpenRouterCallback, handMintedKeyToModal, startOpenRouterOAuth } from './lib/openrouter-oauth';
+import { consumeOpenRouterCallback, handMintedKeyToModal } from './lib/openrouter-oauth';
 import { bootDesktopUpdateUI } from './lib/desktop-update-ui';
 import { confirmDialog, toast, useUiStore } from './lib/ui-store';
 import ConfirmDialog from './components/ui/ConfirmDialog';
 import Toaster from './components/ui/Toaster';
 import GlobalTooltip from './components/ui/GlobalTooltip';
 import MemoryManagerModal from './components/ui/MemoryManagerModal';
-import ApiKeyModal from './components/ui/ApiKeyModal';
+import WorkspaceSettings from './components/ui/WorkspaceSettings';
 import ShareDialog from './components/ui/ShareDialog';
 import ThoughtMapDialog from './components/ui/ThoughtMapDialog';
 import BackupDialog from './components/ui/BackupDialog';
@@ -105,7 +103,7 @@ import CondenseDialog from './components/ui/CondenseDialog';
 import { backupCapable } from './lib/local-backup';
 import LangSwitch from './components/ui/LangSwitch';
 import ModelPicker from './components/ui/ModelPicker';
-import SearchToggles from './components/ui/SearchToggles';
+import LandingPage from './components/LandingPage';
 import Tutorial from './components/Tutorial';
 import WhatsNewDialog from './components/ui/WhatsNewDialog';
 import LadderJobCard from './components/ui/LadderJobCard';
@@ -114,8 +112,7 @@ import ReleaseNotesDialog from './components/ui/ReleaseNotesDialog';
 import WaitingPill from './components/ui/WaitingPill';
 import { pluginUpdateCommand } from './lib/plugin-update';
 import { useT, t as ti, fmt, useI18n } from './i18n';
-import { isViewerMode, buildViewerLink } from './lib/viewer';
-import { useModels } from './lib/use-models';
+import { isViewerMode, isViewerUnavailable } from './lib/viewer';
 import { useZoomTier } from './lib/use-map-mode';
 import { TimelineBar } from './components/ui/TimelineBar';
 import TimelineOverviewModal from './components/ui/TimelineOverviewModal';
@@ -173,22 +170,11 @@ export default function App() {
     const timer = setTimeout(() => void gcVaultAtBoot(), 6000);
     return () => clearTimeout(timer);
   }, []);
-  // True first launch (no tutorial ever closed, an empty canvas, not a
-  // shared-link viewer): open the lesson unprompted. The example-canvas
-  // button keeps its own trigger for people who skip straight there.
-  useEffect(() => {
-    if (!hydrated || isViewerMode) return;
-    if (appSettings.getItem('thoughtdag.tutorialDone')) return;
-    if (useStore.getState().nodes.length > 0) return;
-    const timer = setTimeout(() => useUiStore.getState().setTutorialOpen(true), 900);
-    return () => clearTimeout(timer);
-  }, [hydrated]);
-
   // Desktop shell: update prompts render as in-app toasts (no-op on web)
   useEffect(() => { bootDesktopUpdateUI(); }, []);
 
   // A pending Sign-in-with-OpenRouter callback (?code=) resolves here: the
-  // exchange runs entirely in the browser, then the ApiKeyModal opens on
+  // exchange runs entirely in the browser, then the answer-model settings open on
   // the model-picking view for the user to confirm what to enable.
   useEffect(() => {
     if (isViewerMode) return;
@@ -217,7 +203,7 @@ export default function App() {
       <LadderJobCard />
       <GlobalTooltip />
       <MemoryManagerModal />
-      <ApiKeyModal />
+      <WorkspaceSettings />
       <ShareDialog />
       <ThoughtMapDialog />
       <BackupDialog />
@@ -236,15 +222,19 @@ function Canvas() {
   const editingEdge = selectedEdges.length === 1 ? selectedEdges[0] : undefined;
   const anchorResolver = useRef(createEdgeAnchorResolver());
   const pendingConnectionDrops = useRef(new Map<string, {
-    parentId: string; end: { x: number; y: number }; node: ThoughtNodeType;
+    parentId: string; sourceHandle?: string | null; end: { x: number; y: number }; node: ThoughtNodeType;
   }>());
-  const [routingOpen, setRoutingOpen] = useState(false);
+  const settingsOpen = useUiStore(s => s.apiKeyModalOpen);
   const activeProjectId = useProjects((s) => s.activeId);
+  const previousSettingsProject = useRef(activeProjectId);
   useEffect(() => {
+    if (previousSettingsProject.current && previousSettingsProject.current !== activeProjectId) {
+      useUiStore.getState().setApiKeyModalOpen(false);
+    }
+    previousSettingsProject.current = activeProjectId;
     anchorResolver.current.clear();
     pendingConnectionDrops.current.clear();
     useCanvasEditing.getState().reset();
-    setRoutingOpen(false);
     useUiStore.getState().setPanelOpen(false);
   }, [activeProjectId]);
   const openEdgeEditor = useCallback((id: string) => {
@@ -258,9 +248,7 @@ function Canvas() {
   const t = useT();
   const setTutorialOpen = useUiStore((s) => s.setTutorialOpen);
   const annotationsHidden = useUiStore((s) => s.annotationsHidden);
-  const setAnnotationsHidden = useUiStore((s) => s.setAnnotationsHidden);
   const wheelPans = useUiStore((s) => s.wheelPans);
-  const setWheelPans = useUiStore((s) => s.setWheelPans);
   const [leftDragPans, setLeftDragPans] = useState(isViewerMode);
   const marqueeOnDrag = !isViewerMode && !leftDragPans;
   const panButtons = isViewerMode ? [1] : [1, 2];
@@ -270,9 +258,9 @@ function Canvas() {
   // the ⋯ menu's GitHub entry carries the star count: the cached number at once, a fresh one within the hour
   const githubStars = useGithubStars();
   const [pendingAttachments, setPendingAttachments] = useState<Attachment[]>([]);
+  const landingAttachmentsRef = useRef(pendingAttachments);
+  const landingFileReads = usePendingAttachmentFiles('landing');
   const [isDraggingLanding, setIsDraggingLanding] = useState(false);
-  const landingFileRef = useRef<HTMLInputElement>(null);
-  const docFileRef = useRef<HTMLInputElement>(null);
   const hasNodes = nodes.length > 0;
   const hasEvents = useStore((s) => s.events.length > 0);
   const highlightCount = useStore((s) => s.nodes.reduce((sum, n) => sum + (n.data.highlights?.length ?? 0), 0));
@@ -305,7 +293,6 @@ function Canvas() {
   // Appearance: lighting swaps the token set, paper swaps the canvas texture
   // (and turns the grid's snapping on). Edge colors resolve per theme.
   const paperTexture = useAppearance((s) => s.paper);
-  const lightingChoice = useAppearance((s) => s.lighting);
   const resolvedTheme = useAppearance((s) => s.resolved);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const themePalette = useMemo(() => edgePalette(), [resolvedTheme]);
@@ -342,16 +329,9 @@ function Canvas() {
   const condenseBuilding = condenseRunState.status === 'building';
   const isParadigm = useProjects((s) => s.projects.find((p) => p.id === s.activeId)?.kind === 'paradigm');
 
+  const showLanding = !hasNodes && !isParadigm && !isViewerMode;
   const fixedLayout = useConnectionLayoutPreferences(({ settings }) =>
     settings.enabled && !isParadigm ? settings.layout : undefined);
-
-  // No configured model: do NOT ambush the first open with the key dialog —
-  // the example canvas needs no key and must be the first thing a newcomer
-  // sees. The dialog is summoned where it has context instead: the toolbar
-  // key button, the model picker, and the moment a generation actually
-  // needs a model (streaming.ts opens it on the no-model error).
-  const modelData = useModels();
-  void modelData;
 
   const loadExample = useCallback(() => {
     const { nodes: exNodes, edges: exEdges } = buildExampleGraph(lang);
@@ -479,27 +459,37 @@ function Canvas() {
   // us real clicks): press = arm; move past 6px = drag with a ghost badge;
   // release = create at the drop point, or at screen center for a click.
   const paletteDrag = useCallback((e: React.PointerEvent, create: (screen: { x: number; y: number } | null) => void) => {
+    if (e.button !== 0) return;
     const startX = e.clientX, startY = e.clientY;
+    const pointerId = e.pointerId;
     const source = e.currentTarget as HTMLElement;
+    const listeners = new AbortController();
     let ghost: HTMLElement | null = null;
     const move = (ev: PointerEvent) => {
+      if (ev.pointerId !== pointerId) return;
       if (!ghost && Math.hypot(ev.clientX - startX, ev.clientY - startY) > 6) {
         ghost = document.createElement('div');
+        ghost.dataset.paletteDragPreview = '';
         ghost.innerHTML = source.innerHTML;
         ghost.style.cssText = 'position:fixed;z-index:300;pointer-events:none;width:36px;height:36px;display:flex;align-items:center;justify-content:center;background:var(--color-card);border:1px solid var(--color-accent);border-radius:var(--radius-control);box-shadow:var(--shadow-lg);opacity:.92;';
         document.body.appendChild(ghost);
       }
       if (ghost) { ghost.style.left = `${screenToUi(ev.clientX) - 18}px`; ghost.style.top = `${screenToUi(ev.clientY) - 18}px`; }
     };
-    const up = (ev: PointerEvent) => {
-      window.removeEventListener('pointermove', move);
-      window.removeEventListener('pointerup', up);
-      const dragged = !!ghost;
+    const finish = () => {
+      listeners.abort();
       ghost?.remove();
-      create(dragged ? { x: ev.clientX, y: ev.clientY } : null);
     };
-    window.addEventListener('pointermove', move);
-    window.addEventListener('pointerup', up);
+    const options = { signal: listeners.signal };
+    window.addEventListener('pointermove', move, options);
+    window.addEventListener('pointerup', ev => {
+      if (ev.pointerId !== pointerId) return;
+      const position = ghost ? { x: ev.clientX, y: ev.clientY } : null;
+      finish();
+      create(position);
+    }, options);
+    window.addEventListener('pointercancel', ev => { if (ev.pointerId === pointerId) finish(); }, options);
+    window.addEventListener('blur', finish, options);
   }, []);
 
   const flowPosAt = useCallback((screen?: { x: number; y: number } | null) => {
@@ -634,7 +624,7 @@ function Canvas() {
         }
         const handles = rfInstance.current?.getInternalNode(id)?.internals.handleBounds?.target;
         if (!node.measured?.width || !node.measured.height || !handles?.length) continue;
-        const position = positionNodeAtConnectionEnd(parent, node, pending.end, handles, fixedLayout);
+        const position = positionNodeAtConnectionEnd(parent, node, pending.end, handles, fixedLayout, pending.sourceHandle);
         next = next.map(item => item.id === id ? { ...item, position } : item);
         settled.set(pending.node, position);
         pendingConnectionDrops.current.delete(id);
@@ -746,14 +736,17 @@ function Canvas() {
   const onConnect: OnConnect = useCallback(
     (connection) => {
       if (connection.source && connection.target) {
-        addCrossLink(connection.source, connection.target);
+        addCrossLink(connection.source, connection.target, connection.sourceHandle);
       }
     },
     [addCrossLink]
   );
 
   // Wire-drag must never start a text selection in the cards it crosses
-  const onConnectStart = useCallback(() => {
+  const onConnectStart = useCallback<NonNullable<React.ComponentProps<typeof ReactFlow>['onConnectStart']>>((event) => {
+    // A touch release can synthesize a click on the original tick after wiring.
+    const tick = event.target instanceof Element ? event.target.closest<HTMLElement>('[data-overview-ruler-mark]') : null;
+    if (tick) tick.dataset.rulerDragged = 'true';
     window.getSelection()?.removeAllRanges();
     document.body.classList.add('tdag-connecting');
   }, []);
@@ -767,6 +760,7 @@ function Canvas() {
     if (connectionState.isValid) return; // landed on a handle — onConnect owns it
     if (connectionState.fromHandle?.type !== 'source' || !connectionState.fromNode) return;
     const parentId = connectionState.fromNode.id;
+    const sourceHandle = connectionState.fromHandle.id;
     const { clientX, clientY } = 'changedTouches' in event ? event.changedTouches[0] : event;
     // Touch events retain the original target throughout a gesture.
     const hit = 'changedTouches' in event ? document.elementFromPoint(clientX, clientY) : event.target;
@@ -779,7 +773,7 @@ function Canvas() {
         const kind = tgt?.data.stepKind ?? '';
         if (fixedLayout && supportsFixedPorts(kind) && !surface?.closest('[data-node-input-region]')) return;
         if (tgt && tgt.connectable !== false && !['note', 'file', 'link', 'frame'].includes(kind)) {
-          useStore.getState().addCrossLink(parentId, targetId);
+          useStore.getState().addCrossLink(parentId, targetId, sourceHandle);
         }
       }
       return;
@@ -789,10 +783,10 @@ function Canvas() {
     if (!end) return;
     const st = useStore.getState();
     if (st.nodes.find((n) => n.id === parentId)?.data.stepKind === 'frame') return;
-    const id = createQuestionDraft({ connectionEnd: end, connectionLayout: fixedLayout, parentId });
+    const id = createQuestionDraft({ connectionEnd: end, connectionLayout: fixedLayout, parentId, sourceHandle });
     const node = useStore.getState().nodes.find(item => item.id === id);
     if (node) {
-      pendingConnectionDrops.current.set(node.id, { parentId, end, node });
+      pendingConnectionDrops.current.set(node.id, { parentId, sourceHandle, end, node });
       // The pointer already chose a visible location; keep this viewport and zoom.
       prevNodeCount.current = useStore.getState().nodes.length;
     }
@@ -805,7 +799,6 @@ function Canvas() {
   const panelFits = useFocusPanelSpace();
   const panelNodeId = useUiStore((s) => s.panelNodeId);
   const viewerLoadError = useUiStore((s) => s.viewerLoadError);
-  const staleCount = useStore((s) => shownStaleIds(s).length);
   const livePanelWidth = useUiStore((s) => s.panelWidth);
   // The panel exists only while its node does: a node deleted, undone or
   // switched away from under the selection must take the panel — and the
@@ -826,8 +819,6 @@ function Canvas() {
       if (layoutPanelRef.current) layoutPanelRef.current.close();
       else useCanvasEditing.getState().setLayoutOpen(false);
     });
-  const showRoutingPanel = useCanvasToolCard('routing', routingOpen && !isViewerMode,
-    () => setRoutingOpen(false));
   const showChatPanel = useCanvasToolCard('chat', chatOpen, () => setChatOpen(false));
   const [formatPanelReady, setFormatPanelReady] = useState(false);
   useEffect(() => {
@@ -1016,29 +1007,30 @@ function Canvas() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [undo, redo, selectedNodeId, selectedNodeIds, setSelectedNodeId, setSelectedNodeIds, batchDelete, edges, deleteEdges, isParadigm, centerNode]);
 
-  const handleSubmit = () => {
-    if (!inputValue.trim()) return;
+  const handleSubmit = (execution?: AddQuestionOptions['execution']) => {
+    const attachments = landingAttachmentsRef.current;
+    if (!inputValue.trim() || hasPendingAttachmentFiles('landing') || attachments.some(attachment => attachment.isExtracting)) return;
     addQuestion(inputValue.trim(), {
-      initialAttachments: pendingAttachments.length > 0 ? pendingAttachments : undefined,
+      execution,
+      initialAttachments: attachments.length > 0 ? attachments : undefined,
     });
     setInputValue('');
-    setPendingAttachments([]);
+    changeLandingAttachments([]);
   };
 
-  const handleFileUpload = async (files: FileList | File[]) => {
-    for (const file of Array.from(files)) {
-      await processFile(file, {
-        add: (att) => setPendingAttachments((prev) => [...prev, att]),
-        update: (attId, patch) => setPendingAttachments((prev) => prev.map((a) =>
-          a.id === attId ? { ...a, ...patch } : a
-        )),
-      });
-    }
+  const changeLandingAttachments = (items: Attachment[]) => {
+    landingAttachmentsRef.current = items;
+    setPendingAttachments(items);
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey && !isImeComposing(e)) { e.preventDefault(); handleSubmit(); }
+  const updatePendingAttachment = (id: string, patch: Partial<Attachment>) => {
+    changeLandingAttachments(landingAttachmentsRef.current.map(item => item.id === id ? { ...item, ...patch } : item));
   };
+
+  const handleFileUpload = (files: FileList | File[]) => importQuestionFiles('landing', Array.from(files), {
+    add: attachment => changeLandingAttachments([...landingAttachmentsRef.current, attachment]),
+    update: updatePendingAttachment,
+  });
 
   const onSelectionChange = useCallback(({ nodes: selectedNodes }: { nodes: { id: string }[] }) => {
     if (marquee.current) return;
@@ -1245,7 +1237,12 @@ function Canvas() {
   // anchored to a page scrolls it to that page, so the text beside the
   // canvas is always the one the selected node came from.
   const readerDock = useReaderDock();
+  const previousReaderSelection = useRef(selectedNodeId);
   useEffect(() => {
+    // Opening the reader at a passage must preserve that explicit destination.
+    // Follow the canvas again when the user makes a new selection.
+    if (previousReaderSelection.current === selectedNodeId) return;
+    previousReaderSelection.current = selectedNodeId;
     if (!readerDock.docked || !selectedNodeId) return;
     const st = useStore.getState();
     const n = st.nodes.find((x) => x.id === selectedNodeId);
@@ -1269,10 +1266,10 @@ function Canvas() {
   }, [readerDock.docked, selectedNodeId]);
 
   return (
-    <div className="relative w-full h-full" data-searching={searching || undefined}>
+    <div className="relative w-full h-full" inert={settingsOpen} data-searching={searching || undefined}>
       {/* Canvas — steps aside by the docked reader's width; the focus panel floats on top of it */}
       <div
-        className="absolute inset-y-0 right-0"
+        className="absolute inset-y-0 right-0" data-cursor="neutral"
         style={{ left: readerDock.width }}
         onDoubleClick={(e) => {
           // Double-click on empty canvas → drop an ask node right there
@@ -1285,7 +1282,12 @@ function Canvas() {
           if (e.dataTransfer.types.includes('application/thoughtdag-content') || e.dataTransfer.types.includes('Files')) {
             e.preventDefault();
             e.dataTransfer.dropEffect = 'copy';
-            if (!hasNodes && !isParadigm) setIsDraggingLanding(true);
+            if (!hasNodes && !isParadigm && e.dataTransfer.types.includes('Files')) setIsDraggingLanding(true);
+          }
+        }}
+        onDragLeave={(e) => {
+          if (isDraggingLanding && !(e.relatedTarget instanceof Node && e.currentTarget.contains(e.relatedTarget))) {
+            setIsDraggingLanding(false);
           }
         }}
         onDrop={(e) => {
@@ -1333,6 +1335,7 @@ function Canvas() {
       <CanvasEdgeRouting.Provider value={routingContext}>
       <CanvasConnectionLayout.Provider value={fixedLayout}>
       <ReactFlow
+        data-type-surface="canvas-viewport"
         data-fixed-connection-layout={fixedLayout}
         onKeyDownCapture={event => {
           // Resolve our active editor before the library deselects a focused node.
@@ -1536,13 +1539,14 @@ function Canvas() {
           <Background variant={BackgroundVariant.Dots} gap={24} size={1} color="var(--canvas-dot)" />
         )}
         <ZoomTierTag />
+        <NativeGraphSource />
         <CanvasWheelZoom />
         {!isViewerMode && <SelectionRegion hasNodeSurface={canvasNodesDraggable && !layoutOpen && selectedNodeIds.length > 1} />}
         {canvasNodesDraggable && !layoutOpen && <SelectionResizeControls leftDragPans={leftDragPans} onNodeContextMenu={onNodeContextMenu} />}
         <ThoughtMapPill panelShiftWidth={occupiedPanelWidth} />
         <TimelineBar />
-        <CanvasControls leftDragPans={leftDragPans} onTogglePan={() => setLeftDragPans(active => !active)}>
-        {nodes.length > 0 && <MiniMap
+        {!showLanding && !isViewerUnavailable && <CanvasControls leftDragPans={leftDragPans} onTogglePan={() => setLeftDragPans(active => !active)}>
+        {nodes.length > 0 && <MiniMap className="canvas-pannable-minimap"
           nodeColor={(node) => {
             const data = node.data as Record<string, unknown>;
             // information density over decoration: type is color, archived
@@ -1565,7 +1569,7 @@ function Canvas() {
           zoomable
           position="bottom-right"
         />}
-        </CanvasControls>
+        </CanvasControls>}
       </ReactFlow>
       </CanvasConnectionLayout.Provider>
       </CanvasEdgeRouting.Provider>
@@ -1596,9 +1600,15 @@ function Canvas() {
       {isViewerMode && !hasNodes && (
         <div className="absolute inset-0 flex items-center justify-center">
           <div className="text-center max-w-[420px] px-6">
-            {viewerLoadError ? (
+            {isViewerUnavailable ? (
               <>
-                <div className="text-3xl mb-3">🔗</div>
+                <div data-type-surface="entry-display" className="viewer-error-symbol mb-3">🔗</div>
+                <div className="text-title font-semibold text-ink mb-1.5">{t('viewer.unavailable')}</div>
+                <p className="text-control text-ink-muted">{t('viewer.unavailableHint')}</p>
+              </>
+            ) : viewerLoadError ? (
+              <>
+                <div data-type-surface="entry-display" className="viewer-error-symbol mb-3">🔗</div>
                 <div className="text-title font-semibold text-ink mb-1.5">{t('viewer.loadError')}</div>
                 <p className="text-control text-ink-muted">{t('viewer.loadErrorHint')}</p>
               </>
@@ -1610,206 +1620,23 @@ function Canvas() {
           </div>
         </div>
       )}
-      {!hasNodes && !isParadigm && !isViewerMode && (
-        <div className="absolute inset-0 flex items-center justify-center pointer-events-none overflow-hidden">
-          {/* Watermark: faint DAG sketches anchoring the corners */}
-          <svg className="absolute -left-10 top-[8%] w-[360px] h-[300px] opacity-[0.35] pointer-events-none" viewBox="0 0 360 300" aria-hidden>
-            <path d="M80 40 C80 90 80 90 80 130 M80 170 C80 210 80 210 80 250" stroke={COLORS.line} strokeWidth="2" fill="none" />
-            <path d="M95 150 C150 150 150 90 205 88" stroke={COLORS.line} strokeWidth="2" strokeDasharray="6 5" fill="none" />
-            <circle cx="80" cy="30" r="7" fill={COLORS.line} />
-            <circle cx="80" cy="150" r="7" fill="none" stroke={COLORS.line} strokeWidth="2.5" />
-            <circle cx="80" cy="262" r="7" fill={COLORS.line} />
-            <circle cx="218" cy="88" r="7" fill={COLORS.line} />
-          </svg>
-          <svg className="absolute right-[-30px] bottom-[10%] w-[320px] h-[280px] opacity-[0.35] pointer-events-none" viewBox="0 0 320 280" aria-hidden>
-            <path d="M240 30 C240 80 240 80 240 120 M240 160 C240 200 240 200 240 240" stroke={COLORS.line} strokeWidth="2" fill="none" />
-            <path d="M225 140 C170 140 170 210 115 212" stroke={COLORS.line} strokeWidth="2" strokeDasharray="6 5" fill="none" />
-            <circle cx="240" cy="20" r="7" fill={COLORS.line} />
-            <circle cx="240" cy="140" r="7" fill="none" stroke={COLORS.line} strokeWidth="2.5" />
-            <circle cx="240" cy="252" r="7" fill={COLORS.line} />
-            <circle cx="102" cy="212" r="7" fill={COLORS.line} />
-          </svg>
-
-          <div className="pointer-events-auto w-[560px] animate-fade-in relative">
-            <div className="text-center mb-8">
-              {/* Mark: a tiny DAG lighting up — main chain in accent, explore branch in warm */}
-              <svg width="52" height="52" viewBox="0 0 44 44" className="mx-auto mb-4" aria-hidden>
-                <circle className="dag-pop" style={{ animationDelay: '0.05s' }} cx="22" cy="7" r="3.5" fill={COLORS.accent} />
-                <line className="dag-pop" style={{ animationDelay: '0.2s' }} x1="22" y1="11" x2="22" y2="19" stroke={COLORS.accent} strokeWidth="2" strokeLinecap="round" />
-                <circle className="dag-pop" style={{ animationDelay: '0.35s' }} cx="22" cy="22" r="3.5" fill="none" stroke={COLORS.accent} strokeWidth="2.5" />
-                <line className="dag-pop" style={{ animationDelay: '0.5s' }} x1="22" y1="25" x2="22" y2="33" stroke={COLORS.accent} strokeWidth="2" strokeLinecap="round" />
-                <circle className="dag-pop" style={{ animationDelay: '0.65s' }} cx="22" cy="37" r="3.5" fill={COLORS.accent} opacity="0.35" />
-                <line className="dag-pop" style={{ animationDelay: '0.8s' }} x1="25.5" y1="23.5" x2="33" y2="28.5" stroke={COLORS.warm} strokeWidth="2" strokeLinecap="round" strokeDasharray="3 3" />
-                <circle className="dag-pop" style={{ animationDelay: '0.95s' }} cx="36" cy="30" r="3.5" fill={COLORS.warm} />
-              </svg>
-              <h1 className="text-4xl font-semibold tracking-tight text-ink mb-2.5">ThoughtDAG</h1>
-              <p className="text-control text-ink-muted">{t('landing.tagline')}</p>
-              <p className="text-control text-ink-muted mt-1.5 font-medium">{t('landing.mechanism')}</p>
-            </div>
-            <div
-              className="bg-card border border-line rounded-content px-5 py-4 transition-colors focus-within:border-accent"
-            >
-              <textarea
-                value={inputValue}
-                onChange={(e) => setInputValue(e.target.value)}
-                onKeyDown={handleKeyDown}
-                onPaste={(e) => {
-                  if (e.clipboardData.getData('text/plain').trim()) return; // TEXT WINS, same rule as canvas paste
-                  const files = Array.from(e.clipboardData.items).filter(i => i.kind === 'file').map(i => i.getAsFile()!).filter(Boolean);
-                  if (files.length) handleFileUpload(files);
-                }}
-                placeholder={t('landing.placeholder')}
-                className="w-full bg-transparent text-ink text-body resize-none focus:outline-none placeholder-ink-faint"
-                rows={3}
-                autoFocus
-              />
-              {/* Pending attachments preview */}
-              {pendingAttachments.length > 0 && (
-                <div className="flex flex-wrap gap-2 mt-2 pb-1">
-                  {pendingAttachments.map((att) => (
-                    <div key={att.id} className="flex items-center gap-1.5 bg-wash rounded-content px-2.5 py-1.5 group">
-                      {att.thumbnailUrl ? (
-                        <img src={att.thumbnailUrl} className="w-6 h-6 rounded-content object-cover" alt={att.name} />
-                      ) : (
-                        <span className="text-control"><FileText size={16} strokeWidth={1.75} /></span>
-                      )}
-                      <span className="text-control text-ink-muted max-w-[100px] truncate">{att.name}</span>
-                      {att.isExtracting && <span className="text-control text-accent"><Loader2 className="animate-spin" size={12} strokeWidth={1.75} /></span>}
-                      {att.numPages != null && <span className="text-control text-ink-faint">{att.numPages}p</span>}
-                      <button
-                        onClick={() => setPendingAttachments((p) => p.filter((a) => a.id !== att.id))}
-                        className="text-ink-faint hover:text-red-500 text-control opacity-0 group-hover:opacity-100 transition-opacity"
-                      ><X size={14} strokeWidth={1.75} /></button>
-                    </div>
-                  ))}
-                </div>
-              )}
-              <div className="flex items-center justify-end mt-2 gap-2">
-                <SearchToggles />
-                <button
-                  onClick={() => landingFileRef.current?.click()}
-                  className="text-ink-faint hover:text-accent hover:bg-wash rounded-control px-3 py-2 transition-colors text-control"
-                  aria-label={t('landing.attach')}
-                >
-                  <Paperclip size={16} strokeWidth={1.75} />
-                </button>
-                <input
-                  ref={landingFileRef}
-                  type="file"
-                  multiple
-                  accept={FILE_INPUT_ACCEPT}
-                  className="hidden"
-                  onChange={(e) => { handleFileUpload(e.target.files || []); e.target.value = ''; }}
-                />
-                <button
-                  onClick={handleSubmit}
-                  disabled={!inputValue.trim() || pendingAttachments.some(a => a.isExtracting)}
-                  className="bg-action hover:bg-action-strong disabled:opacity-30 disabled:cursor-not-allowed text-white text-control px-5 py-2 rounded-control transition-all"
-                >
-                  {pendingAttachments.some(a => a.isExtracting) ? t('landing.extracting') : t('landing.send')}
-                </button>
-              </div>
-            </div>
-
-            {/* Second entrance: start from a document (material-first). The
-                whole landing is the drop target; this card names the gesture. */}
-            <div
-              onClick={() => docFileRef.current?.click()}
-              className={`mt-3 border-2 border-dashed rounded-content px-5 py-3.5 cursor-pointer transition-all text-center bg-card ${
-                isDraggingLanding ? 'border-accent bg-accent/5 ring-2 ring-accent/20' : 'border-line hover:border-accent/40 hover:bg-accent/5'
-              }`}
-            >
-              <div className="flex items-center justify-center gap-2 text-control text-ink-muted font-medium">
-                <BookOpen size={15} strokeWidth={1.75} className="text-accent" /> {t('landing.docStart')}
-              </div>
-              <p className="text-control text-ink-faint mt-1.5">{t('landing.docFormats')}</p>
-              <p className="text-control text-ink-faint mt-0.5">{t('landing.docPrivacy')}</p>
-            </div>
-            <input
-              ref={docFileRef}
-              type="file"
-              multiple
-              accept={FILE_INPUT_ACCEPT}
-              className="hidden"
-              onChange={(e) => { startFromDocuments(e.target.files || []); e.target.value = ''; }}
-            />
-
-            {/* Quick connect: the no-model landing offers the two free doors
-                side by side — GLM's free tier (zh only) and the one-click
-                OpenRouter OAuth (free-tier models included, key minted in
-                this browser) — plus one quiet line for subscription owners.
-                Gone once any model exists. */}
-            {(!modelData || (modelData.models?.length ?? 0) === 0) && (
-              <div className="mt-3 bg-card border border-line rounded-content px-5 py-3.5 text-center" data-quick-connect>
-                <div className="flex items-center justify-center gap-2 text-control text-ink-muted font-medium">
-                  <KeyRound size={15} strokeWidth={1.75} className="text-accent shrink-0" /> {t('landing.quickTitle')}
-                </div>
-                <p className="text-control text-ink-faint mt-1.5">{t('landing.quickDesc')}</p>
-                <div className="mt-2.5 flex items-center justify-center flex-wrap gap-2">
-                  {lang === 'zh' && (
-                    <button
-                      onClick={() => { useUiStore.getState().setApiKeyPresetHint('zhipu'); useUiStore.getState().setApiKeyModalOpen(true); }}
-                      className="text-control bg-accent/10 text-accent hover:bg-accent/20 font-medium px-3 py-1.5 rounded-control transition-colors shrink-0"
-                      data-quick-zhipu
-                    >
-                      {t('landing.quickZhipu')}
-                    </button>
-                  )}
-                  <button
-                    onClick={() => void startOpenRouterOAuth()}
-                    className="text-control bg-accent/10 text-accent hover:bg-accent/20 font-medium px-3 py-1.5 rounded-control transition-colors shrink-0"
-                    data-quick-primary
-                  >
-                    {t('landing.quickOpenRouter')}
-                  </button>
-                  <button
-                    onClick={() => useUiStore.getState().setApiKeyModalOpen(true)}
-                    className="text-control text-ink-muted hover:text-ink hover:bg-wash font-medium px-3 py-1.5 rounded-control transition-colors shrink-0"
-                  >
-                    {t('landing.quickOther')}
-                  </button>
-                </div>
-                <button
-                  onClick={() => useUiStore.getState().setApiKeyModalOpen(true)}
-                  className="mt-2 mx-auto text-control text-ink-faint hover:text-accent transition-colors block"
-                  data-quick-subs
-                >
-                  {t('landing.quickSubs')}
-                </button>
-              </div>
-            )}
-
-            {/* What makes this different — three quiet cards */}
-            <div className="grid grid-cols-3 gap-3 mt-6">
-              {([
-                { icon: GitBranch, title: 'landing.feature1.title', desc: 'landing.feature1.desc' },
-                { icon: Workflow, title: 'landing.feature2.title', desc: 'landing.feature2.desc' },
-                { icon: Scissors, title: 'landing.feature3.title', desc: 'landing.feature3.desc' },
-              ] as const).map(({ icon: Icon, title, desc }) => (
-                <div key={title} className="bg-card border border-line rounded-content px-4 py-3.5">
-                  <Icon size={16} strokeWidth={1.75} className="text-accent mb-2" />
-                  <h3 className="text-title font-semibold text-ink mb-1">{t(title)}</h3>
-                  <p className="text-control text-ink-faint">{t(desc)}</p>
-                </div>
-              ))}
-            </div>
-
-            <div className="text-center mt-6 flex items-center justify-center gap-5">
-              <button
-                onClick={loadExample}
-                className="text-control text-accent hover:text-accent-strong font-medium transition-colors inline-flex items-center gap-1.5"
-              >
-                <Workflow size={14} strokeWidth={1.75} /> {t('landing.loadExample')}
-              </button>
-              <button
-                onClick={() => setTutorialOpen(true)}
-                className="text-control text-ink-muted hover:text-accent transition-colors inline-flex items-center gap-1.5"
-              >
-                <CircleHelp size={14} strokeWidth={1.75} /> {t('landing.howItWorks')}
-              </button>
-            </div>
-          </div>
-        </div>
+      {showLanding && (
+        <LandingPage
+          key={activeProjectId}
+          question={inputValue}
+          onQuestionChange={setInputValue}
+          attachments={pendingAttachments}
+          pendingFiles={landingFileReads}
+          onAttach={handleFileUpload}
+          onRemoveAttachment={id => {
+            if (!removePendingAttachmentFile('landing', id)) changeLandingAttachments(landingAttachmentsRef.current.filter(item => item.id !== id));
+          }}
+          onUpdateAttachment={updatePendingAttachment}
+          onSubmit={handleSubmit}
+          onOpenDocuments={startFromDocuments}
+          onOpenExample={loadExample}
+          draggingFiles={isDraggingLanding}
+        />
       )}
 
       {/* Content palette — canvas material, both modes. Click drops at the
@@ -1823,13 +1650,14 @@ function Canvas() {
               draggable
               onDragStart={(e) => { e.dataTransfer.setData('application/thoughtdag-content', 'ask'); e.dataTransfer.effectAllowed = 'copy'; }}
               data-tooltip={t('palette.askTitle')} aria-label={t('palette.askTitle')}
-              className="w-9 h-9 rounded-control flex items-center justify-center text-accent hover:bg-accent/10 transition-colors cursor-grab"
+              data-cursor="draggable" className="w-9 h-9 rounded-control flex items-center justify-center text-accent hover:bg-accent/10 transition-colors"
             >
               <MessageCircleQuestion size={17} strokeWidth={1.75} />
             </button>
           )}
           <button
             onPointerDown={(e) => paletteDrag(e, (screen) => spawnContentNode('note', flowPosAt(screen)))}
+            data-cursor="draggable"
             data-tooltip={t('palette.noteTitle')} aria-label={t('palette.noteTitle')}
             className="w-9 h-9 rounded-control flex items-center justify-center text-amber-600 hover:bg-amber-500/10 transition-colors"
           >
@@ -1837,6 +1665,7 @@ function Canvas() {
           </button>
           <button
             onPointerDown={(e) => paletteDrag(e, (screen) => spawnContentNode('file', flowPosAt(screen)))}
+            data-cursor="draggable"
             data-tooltip={t('palette.fileTitle')} aria-label={t('palette.fileTitle')}
             className="w-9 h-9 rounded-control flex items-center justify-center text-ink-muted hover:bg-wash transition-colors"
           >
@@ -1844,6 +1673,7 @@ function Canvas() {
           </button>
           <button
             onPointerDown={(e) => paletteDrag(e, (screen) => spawnFrame(flowPosAt(screen)))}
+            data-cursor="draggable"
             data-tooltip={t('palette.frameTitle')} aria-label={t('palette.frameTitle')}
             className="w-9 h-9 rounded-control flex items-center justify-center text-ink-muted hover:bg-wash transition-colors"
           >
@@ -1889,34 +1719,6 @@ function Canvas() {
           </>
         )}
         {!isParadigm && <WaitingPill />}
-        {/* Batch replay: visible only when something is stale. Price at the
-            decision point — N generations is the one many-calls-per-click
-            action in the app, so it confirms with a token estimate. */}
-        {staleCount > 0 && !isParadigm && (
-          <CanvasToolbarOverflowAction label={`${t('replay.chipTitle')} · ${staleCount}`} icon={<ListRestart size={14} />}>
-          <button
-            onClick={() => {
-              const { nodes: ns, edges: es } = useStore.getState();
-              const staleIds = shownStaleIds(useStore.getState());
-              const estTok = staleIds.reduce((sum, sid) => {
-                const blanked = ns.map((x) => x.id === sid ? { ...x, data: { ...x.data, question: '', response: '' } } : x);
-                const { layerTokens } = buildContext(sid, blanked, es);
-                const q = ns.find((x) => x.id === sid)?.data.question ?? '';
-                return sum + layerTokens.material + layerTokens.reference + layerTokens.chain + countTokens(q);
-              }, 0);
-              void confirmDialog({
-                title: t('replay.confirmTitle'),
-                message: fmt(t('replay.confirmMsg'), { n: staleCount, tok: estTok.toLocaleString() }),
-                confirmLabel: t('replay.confirmBtn'),
-              }).then((ok) => { if (ok) void useStore.getState().replayStale(); });
-            }}
-            className="bg-amber-500/10 border border-amber-500/40 rounded-control h-8 px-3 flex items-center gap-1.5 hover:bg-amber-500/20 transition-colors text-amber-600 text-control font-medium"
-
-          >
-            <ListRestart size={14} strokeWidth={1.75} /> {staleCount}
-          </button>
-          </CanvasToolbarOverflowAction>
-        )}
         {/* Keep transient status separate from the canvas view controls. */}
         {condenseBuilding && !isViewerMode && (
           <CanvasToolbarOverflowAction label={fmt(t('condense.entryBuilding'), { i: String(condenseRunState.current), n: String(condenseRunState.total) })} icon={<Loader2 size={14} className="animate-spin" />}>
@@ -1936,7 +1738,7 @@ function Canvas() {
       <div className="canvas-header-actions">
       {/* Viewer: the toolbar collapses to a read-only badge + download + brand
           link — every mutating control lives in the author toolbar below. */}
-      {isViewerMode && (
+      {isViewerMode && !isViewerUnavailable && (
         <div
           className="canvas-toolbar relative z-10"
           data-top-toolbar
@@ -1987,26 +1789,12 @@ function Canvas() {
             >
               <Frame size={16} strokeWidth={1.75} />
             </button>
-            {frameNavOpen && (
-              <div ref={frameNavPanelRef} tabIndex={-1} className="canvas-tool-panel canvas-tool-menu py-1" style={toolbarPanelPosition} data-frame-nav-panel>
-                {frames.map((f) => (
-                  <button
-                    key={f.id}
-                    onClick={() => {
-                      setFrameNavOpen(false);
-                      rfInstance.current?.fitBounds(
-                        { x: f.position.x, y: f.position.y, width: f.width ?? 640, height: f.height ?? 420 },
-                        { duration: 400, padding: 0.15 },
-                      );
-                    }}
-                    className="w-full text-left px-3 py-2 text-control text-ink hover:bg-wash transition-colors flex items-center gap-2"
-                  >
-                    <span className={`w-2.5 h-2.5 rounded-tag shrink-0 ${(FRAME_COLORS[f.data.frameColor ?? 'gray'] ?? FRAME_COLORS.gray).dot}`} />
-                    <span className="truncate">{f.data.question || t('frame.untitled')}</span>
-                  </button>
-                ))}
-              </div>
-            )}
+            {frameNavOpen && <FrameNavigationMenu frames={frames} panelRef={frameNavPanelRef} style={toolbarPanelPosition}
+              onLocate={f => {
+                setFrameNavOpen(false);
+                rfInstance.current?.fitBounds({ x: f.position.x, y: f.position.y, width: f.width ?? 640, height: f.height ?? 420 },
+                  { duration: 400, padding: 0.15 });
+              }} />}
           </div>
         )}
         {hasNodes && (
@@ -2040,7 +1828,7 @@ function Canvas() {
             }
           }} />
         )}
-        <CanvasDetailControl openPing={detailPing} />
+        <CanvasDetailControl openPing={detailPing} selectedEdgeCount={selectedEdges.length} />
         <button
           onClick={() => {
             if (showLayoutPanel) layoutPanelRef.current?.close();
@@ -2056,22 +1844,18 @@ function Canvas() {
           <SlidersHorizontal size={16} strokeWidth={1.75} />
           <span className="canvas-toolbar-label">{t('canvasLayout.title')}</span>
         </button>
-        <button
-          onClick={() => setRoutingOpen(value => !value)}
-          className="canvas-toolbar-button canvas-toolbar-icon canvas-toolbar-secondary"
-          data-tooltip={t('edgeRouting.title')}
-          data-tooltip-icon-only
-          aria-label={t('edgeRouting.title')}
-          aria-expanded={showRoutingPanel}
-          data-routing-entry
-        >
-          <Spline size={16} strokeWidth={1.75} />
-          <span className="canvas-toolbar-label">{t('edgeRouting.title')}</span>
-        </button>
         </div>}
         <div className="canvas-toolbar-group">
-        {/* ⋯ overflow: share, memory, annotations, tutorial —
-            one slot regardless of language or panel width. */}
+        <button type="button" data-settings-entry aria-haspopup="dialog" className="canvas-toolbar-button canvas-toolbar-icon"
+          aria-label={t('settings.title')} data-tooltip={t('settings.title')} data-tooltip-icon-only
+          aria-expanded={settingsOpen} aria-controls={settingsOpen ? 'workspace-settings' : undefined}
+          onClick={() => {
+            const ui = useUiStore.getState();
+            ui.setApiKeyModalOpen(!ui.apiKeyModalOpen, ui.apiKeyModalSection);
+          }}>
+          <Settings size={16} strokeWidth={1.75} aria-hidden="true" />
+          <span className="canvas-toolbar-label">{t('settings.title')}</span>
+        </button>
         <div ref={moreRef} className="relative" data-selection-menu>
           <button
             onClick={() => setMoreOpen((v) => !v)}
@@ -2085,11 +1869,6 @@ function Canvas() {
           {moreOpen && (
             <div className="canvas-tool-panel canvas-tool-menu py-1" style={toolbarPanelPosition} data-toolbar-more-panel>
               <div className="canvas-toolbar-overflow">
-                {hasNodes && <button type="button" data-menu-routing aria-expanded={showRoutingPanel}
-                  onClick={() => { setMoreOpen(false); setRoutingOpen(true); }}
-                  className="w-full text-left px-3 py-2 text-control text-ink hover:bg-wash flex items-center gap-2.5">
-                  <Spline size={14} className="text-ink-faint shrink-0" />{t('edgeRouting.title')}
-                </button>}
                 {hasNodes && <button type="button" data-menu-detail
                   onClick={() => { setMoreOpen(false); setDetailPing(value => value + 1); }}
                   className="w-full text-left px-3 py-2 text-control text-ink hover:bg-wash flex items-center gap-2.5">
@@ -2123,24 +1902,6 @@ function Canvas() {
                   <Redo2 size={14} className="text-ink-faint shrink-0" />{t('canvas.redo')}
                 </button>
               </div>
-              {hasNodes && (
-                <button
-                  onClick={() => { setMoreOpen(false); setAnnotationsHidden(!annotationsHidden); }}
-                  className="w-full text-left px-3 py-2 text-control text-ink hover:bg-wash transition-colors flex items-center gap-2.5"
-                  data-tooltip={annotationsHidden ? undefined : t('toolbar.hideAnnotations')}
-                >
-                  <StickyNote size={14} strokeWidth={1.75} className={`shrink-0 ${annotationsHidden ? 'text-accent' : 'text-ink-faint'}`} /> {annotationsHidden ? t('toolbar.menuAnnotationsShow') : t('toolbar.menuAnnotationsHide')}
-                </button>
-              )}
-              <button
-                onClick={() => { setMoreOpen(false); setWheelPans(!wheelPans); }}
-                className="w-full text-left px-3 py-2 text-control text-ink hover:bg-wash transition-colors flex items-center gap-2.5"
-
-                aria-pressed={wheelPans}
-                data-wheel-pans
-              >
-                <Hand size={14} strokeWidth={1.75} className={`shrink-0 ${wheelPans ? 'text-accent' : 'text-ink-faint'}`} /> <span className="flex-1">{t('toolbar.menuWheelPans')}</span>{wheelPans && <span className="text-accent">✓</span>}
-              </button>
               {highlightCount > 0 && (
                 <button
                   onClick={() => { setMoreOpen(false); useUiStore.getState().setHighlightsOverviewOpen(true); }}
@@ -2180,22 +1941,9 @@ function Canvas() {
               )}
               {hasNodes && !isParadigm && (
                 <button
-                  onClick={() => {
-                    setMoreOpen(false);
-                    void (async () => {
-                      const { nodes: ns, edges: es } = useStore.getState();
-                      // exit gate: a canvas can carry Agent tool
-                      // output — keys, tokens — and a share link IS a copy
-                      const { confirmIfSensitive } = await import('./lib/sensitive-scan');
-                      if (!await confirmIfSensitive(ns)) return;
-                      const url = await buildViewerLink(ns, es);
-                      await navigator.clipboard.writeText(url).catch(() => {});
-                      useUiStore.getState().setShareDialogUrl(url);
-                    })();
-                  }}
+                  onClick={() => { setMoreOpen(false); useUiStore.getState().setShareDialogOpen(true); }}
                   className="w-full text-left px-3 py-2 text-control text-ink hover:bg-wash transition-colors flex items-center gap-2.5"
-                  data-share-link
-                  data-tooltip={t('viewer.shareTitle')}
+                  data-share-canvas
                 >
                   <Share2 size={14} strokeWidth={1.75} className="text-ink-faint shrink-0" /> {t('toolbar.menuShare')}
                 </button>
@@ -2234,41 +1982,6 @@ function Canvas() {
                 </button>
               )}
               {hasNodes && <div className="border-t border-line/60 my-1" />}
-              <div className="px-3 pt-2 pb-1" data-menu-language>
-                <div className="text-control text-ink-faint mb-1.5">{t('lang.label')}</div>
-                <LangSwitch variant="menu" />
-              </div>
-              {/* appearance: two independent axes — lighting remaps the
-                  tokens, paper retextures the canvas (and arms snapping) */}
-              <div className="px-3 pt-2 pb-1" data-appearance-lighting>
-                <div className="text-control text-ink-faint mb-1.5">{t('appearance.lighting')}</div>
-                <div className="flex rounded-control border border-line overflow-hidden text-control">
-                  {([['light', t('appearance.light')], ['dark', t('appearance.dark')], ['system', t('appearance.system')]] as const).map(([v, label], i) => (
-                    <button
-                      key={v}
-                      onClick={() => useAppearance.getState().setLighting(v)}
-                      className={`flex-1 px-1 py-1.5 transition-colors ${i > 0 ? 'border-l border-line' : ''} ${lightingChoice === v ? 'bg-accent/10 text-accent font-medium' : 'text-ink-muted hover:bg-wash'}`}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div className="px-3 pt-1 pb-2" data-appearance-paper>
-                <div className="text-control text-ink-faint mb-1.5">{t('appearance.paper')}</div>
-                <div className="flex rounded-control border border-line overflow-hidden text-control">
-                  {([['plain', t('appearance.plain')], ['grid', t('appearance.grid')]] as const).map(([v, label], i) => (
-                    <button
-                      key={v}
-                      onClick={() => useAppearance.getState().setPaper(v)}
-                      className={`flex-1 px-1 py-1.5 transition-colors ${i > 0 ? 'border-l border-line' : ''} ${paperTexture === v ? 'bg-accent/10 text-accent font-medium' : 'text-ink-muted hover:bg-wash'}`}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div className="border-t border-line/60 my-1" />
               <button
                 onClick={() => { setMoreOpen(false); useUiStore.getState().setMemoryManagerOpen(true); }}
                 className="w-full text-left px-3 py-2 text-control text-ink hover:bg-wash transition-colors flex items-center gap-2.5"
@@ -2432,7 +2145,6 @@ function Canvas() {
         }
       }} />}
       {showLayoutPanel && rfInstance.current && <CanvasLayoutPanel ref={layoutPanelRef} flow={rfInstance.current} />}
-      {showRoutingPanel && <CanvasRoutingPanel onClose={() => setRoutingOpen(false)} />}
       {showProperties && formatPanelReady && !isViewerMode && <CanvasQuickLayoutContext.Provider value={quickLayout}>
         <SelectionInspector getViewportRect={getViewportRect} withDetails={panelOpen}
         onClose={() => { if (useCanvasToolCards.getState().active?.name === 'selection-properties') useCanvasToolCards.getState().active?.suspend(); }}
@@ -2522,7 +2234,7 @@ function ThoughtMapPill({ panelShiftWidth }: { panelShiftWidth: number }) {
     <div
       className="canvas-map-dock absolute z-10 flex items-center gap-related -translate-x-1/2 transition-[left] duration-300"
       style={{ left: `calc((100% - ${panelShiftWidth}px) / 2)` }}
-      data-map-dock
+      data-map-dock data-type-surface="canvas-screen-tools"
     >
       <button
         onClick={() => useUiStore.getState().setThoughtMapOpen(true)}
@@ -2558,10 +2270,10 @@ function ZoomTierTag() {
   }, [canvas, tier]);
   useLayoutEffect(() => {
     if (!canvas) return;
-    const scale = canvasTypeScale(typography, zoom);
     canvas.style.setProperty('--tdag-zoom', String(zoom));
-    canvas.style.setProperty('--canvas-conversation-scale', String(scale.conversation));
-    canvas.style.setProperty('--canvas-summary-type-scale', String(scale.summary));
+    for (const [name, value] of Object.entries(canvasTypeVariables(typography, zoom))) {
+      canvas.style.setProperty(name, String(value));
+    }
   }, [canvas, zoom, typography]);
   return null;
 }

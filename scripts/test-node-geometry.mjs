@@ -37,6 +37,7 @@ try {
       export const makeStore = () => create((...args) => ({ ...createNodeSlice(...args), ...createHistorySlice(...args), events: [], logEvent: () => {} }));
     `, resolveDir: join(root, 'src'), loader: 'ts' },
     bundle: true, platform: 'node', format: 'esm', outfile: bundle, logLevel: 'silent',
+    loader: { '.css': 'empty' },
     define: { 'import.meta.env.VITE_API_BASE': '""', 'import.meta.env.DEV': 'false' },
     plugins: [{ name: 'unrelated-runtime-stubs', setup(builder) {
       builder.onResolve({ filter: /(condense-guard|ui-store|i18n|context-builder|streaming|stale-judge|projects)$/ }, args => ({ path: args.path.split('/').pop(), namespace: 'stub' }));
@@ -129,6 +130,59 @@ try {
     assert.equal(next[1].height, undefined);
     assert.equal(next[2], nodes[2]);
     assert.deepEqual(next.map(n => n.position), nodes.map(n => n.position));
+  });
+  test('content-fit height releases legacy dimensions, follows width and ends with a manual height or ratio lock', () => {
+    const legacy = { ...node('a', 640, 420, { lockAspectRatio: true, keepOverviewHeight: true,
+      contentHeightIntent: { content: 'old', height: 900 } }, 20, 40), style: { height: '420px', width: 640 } };
+    const fitted = apply([legacy], ['a'], { fitContentHeight: true })[0];
+    assert.equal(fitted.data.fitContentHeight, true);
+    assert.equal(fitted.height, undefined);
+    assert.equal(fitted.style.height, undefined);
+    assert.equal(fitted.style.width, 640);
+    assert.equal(fitted.width, legacy.width);
+    assert.equal(fitted.position, legacy.position);
+    assert.equal(fitted.data.lockAspectRatio, false);
+    assert.equal(fitted.data.keepOverviewHeight, undefined);
+    assert.equal(fitted.data.contentHeightIntent, undefined);
+    const measured = { ...fitted, measured: { width: 640, height: 720 } };
+    const nodes = [measured];
+    assert.equal(apply(nodes, ['a'], { fitContentHeight: true }), nodes);
+    const wider = resizeSelectionBy(nodes, nodes, 120, undefined)[0];
+    assert.equal(wider.width, 760);
+    assert.equal(wider.height, undefined);
+    assert.equal(wider.data.fitContentHeight, true);
+    const shorter = resizeSelectionBy(nodes, nodes, undefined, -80)[0];
+    assert.equal(shorter.height, 640);
+    assert.equal(shorter.data.fitContentHeight, undefined);
+    const locked = apply(nodes, ['a'], { lockAspectRatio: true })[0];
+    assert.equal(locked.data.fitContentHeight, undefined);
+    assert.equal(locked.height, 720);
+    assert.equal(locked.data.lockAspectRatio, true);
+    assert.equal(apply(nodes, ['a'], { autoHeight: true })[0].data.fitContentHeight, undefined);
+  });
+  test('fitting a streaming node is undoable while its latest answer remains live', () => {
+    const store = makeStore(), edges = [];
+    const nodes = [node('a', 520, 350, { isLoading: true, lockAspectRatio: true })];
+    store.setState({ nodes, edges, history: [{ nodes, edges }], historyIndex: 0 });
+    store.getState().setSelectionGeometry(['a'], { fitContentHeight: true });
+    const fitted = store.getState().nodes[0];
+    store.setState({ nodes: [{ ...fitted, data: { ...fitted.data, response: 'new text' } }] });
+    store.getState().undo();
+    const restored = store.getState().nodes[0];
+    assert.equal(restored.height, 350);
+    assert.equal(restored.data.lockAspectRatio, true);
+    assert.equal(restored.data.fitContentHeight, undefined);
+    assert.equal(restored.data.response, 'new text');
+    store.getState().redo();
+    assert.equal(store.getState().nodes[0].height, undefined);
+    assert.equal(store.getState().nodes[0].data.fitContentHeight, true);
+    assert.equal(store.getState().nodes[0].data.response, 'new text');
+    const automatic = [{ ...nodes[0], height: undefined, data: { ...nodes[0].data, lockAspectRatio: false } }];
+    store.setState({ nodes: automatic, history: [{ nodes: automatic, edges }], historyIndex: 0 });
+    store.getState().setSelectionGeometry(['a'], { fitContentHeight: true });
+    assert.equal(store.getState().historyIndex, 1, 'The mode itself is an edit on an already automatic card');
+    store.getState().undo();
+    assert.equal(store.getState().nodes[0].data.fitContentHeight, undefined);
   });
   test('retired metadata does not expand single-node formatting or positioning', () => {
     const nodes = [node('a', 600, 300, { canvasGroupId: 'g' }, 85, -40),

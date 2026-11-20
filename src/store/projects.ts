@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { get as idbGet, set as idbSet, del as idbDel } from '../lib/disk-storage';
+import { get as idbGet, set as idbSet, del as idbDel, diskStorageNamespace, updateStoredValue } from '../lib/disk-storage';
 import { useStore } from './index';
 import type { StoreState } from './types';
 import { activeAbortControllers } from './streaming';
@@ -10,11 +10,11 @@ import { toast } from '../lib/ui-store';
 import { t } from '../i18n';
 import type { AgentPermissionMode } from '../types';
 import { normalizeConversationGraph } from '../lib/normalize-graph';
+import { ensureCanvasWorkspace } from '../lib/canvas-workspace';
 
 // Project layer: each canvas persists under its own storage key; this
 // module owns the metadata list and the switching choreography.
-// Metadata writes use bare idbSet — the debounced idbStorage has a single
-// pending slot reserved for the main store and must not be shared.
+// Each metadata edit applies to the latest stored catalog across local windows.
 
 const META_KEY = 'thoughtdag:projects';
 const LEGACY_KEY = 'thoughtdag';
@@ -30,9 +30,7 @@ export interface ProjectMeta {
   kind?: 'chat' | 'paradigm';
   /** Provenance: which paradigm this run canvas was instantiated from. */
   instantiatedFrom?: { name: string; at: string };
-  /** The working directory this canvas hands to agent runtimes, when the
-      person chose one; absent = the source project, else the canvas's
-      own workspace. */
+  /** Optional working directory for runtimes with a selectable directory. */
   agentCwd?: string;
   /** How the agent's boundary guard behaves for this canvas: ask on every
       step outside the working directory (default), or let everything
@@ -53,18 +51,12 @@ export async function setProjectArchived(id: string, archived: boolean): Promise
     if (rest.length > 0) await switchProject(rest[0].id);
     else await createProject('My Canvas');
   }
-  useProjects.setState((s) => ({
-    projects: s.projects.map((p) => (p.id === id ? { ...p, archived } : p)),
-  }));
-  await saveMeta();
+  await patchProject(id, { archived });
 }
 
 /** Stamp paradigm provenance on a project (persisted with the meta list). */
 export async function markInstantiatedFrom(projectId: string, paradigmName: string): Promise<void> {
-  useProjects.setState((s) => ({
-    projects: s.projects.map((p) => (p.id === projectId ? { ...p, instantiatedFrom: { name: paradigmName, at: new Date().toISOString() } } : p)),
-  }));
-  await saveMeta();
+  await patchProject(projectId, { instantiatedFrom: { name: paradigmName, at: new Date().toISOString() } });
 }
 
 interface ProjectsState {
@@ -79,9 +71,38 @@ export const useProjects = create<ProjectsState>(() => ({
   switching: false,
 }));
 
-async function saveMeta(): Promise<void> {
-  const { projects, activeId } = useProjects.getState();
-  await idbSet(META_KEY, { projects, activeId });
+type ProjectIndex = { projects: ProjectMeta[]; activeId: string };
+
+async function editIndex(change: (index: ProjectIndex) => ProjectIndex): Promise<ProjectIndex> {
+  const saved = await updateStoredValue<ProjectIndex>(META_KEY, current => {
+    if (!current) throw new Error('Canvas catalog is unavailable');
+    return change(current);
+  });
+  useProjects.setState({ projects: saved.projects });
+  return saved;
+}
+
+function patchProject(id: string, patch: Partial<ProjectMeta>) {
+  return editIndex(index => ({
+    ...index, projects: index.projects.map(p => p.id === id ? { ...p, ...patch } : p),
+  }));
+}
+
+export async function refreshProjectIndex(): Promise<void> {
+  if (diskStorageNamespace() === 'browser' || !useProjects.getState().activeId) return;
+  const before = useProjects.getState().projects;
+  const index = await idbGet<ProjectIndex>(META_KEY);
+  // A local edit may have finished while the read was in flight.
+  if (index && before === useProjects.getState().projects) useProjects.setState({ projects: index.projects });
+}
+
+export async function prepareCanvasFolders(projects: ReadonlyArray<Pick<ProjectMeta, 'id'>> = useProjects.getState().projects): Promise<void> {
+  const results = await Promise.allSettled(projects.map(({ id }) => ensureCanvasWorkspace(id)));
+  const failure = results.find(result => result.status === 'rejected');
+  if (failure) {
+    console.error('[thoughtdag] could not prepare canvas workspace:', failure.reason);
+    toast('error', t('toast.canvasWorkspaceFailed'));
+  }
 }
 
 // ─── Boot & migration ───────────────────────────────────────────
@@ -93,15 +114,16 @@ export function bootProjects(): Promise<void> {
   bootPromise ??= (async () => {
     // The graph store also imports project helpers. Subscribe once both modules are initialized.
     useStore.subscribe(touchProjectOnGraphChange);
-    let meta = await idbGet<{ projects: ProjectMeta[]; activeId: string }>(META_KEY);
+    let meta = await idbGet<ProjectIndex>(META_KEY);
     if (!meta || meta.projects.length === 0) {
       const legacy = await idbGet<string>(LEGACY_KEY); // raw persist envelope string
       const id = crypto.randomUUID();
       const now = Date.now();
       if (legacy) await idbSet(projectStorageKey(id), legacy);
-      meta = { projects: [{ id, name: 'My Canvas', createdAt: now, updatedAt: now }], activeId: id };
-      await idbSet(META_KEY, meta);
-      if (legacy) await idbDel(LEGACY_KEY);
+      meta = await updateStoredValue<ProjectIndex>(META_KEY, current => current?.projects.length ? current : {
+        projects: [{ id, name: 'My Canvas', createdAt: now, updatedAt: now }], activeId: id,
+      });
+      if (legacy) await idbDel(meta.activeId === id ? LEGACY_KEY : projectStorageKey(id));
     }
     if (!meta.projects.some((p) => p.id === meta.activeId)) {
       meta.activeId = meta.projects[0].id;
@@ -109,6 +131,8 @@ export function bootProjects(): Promise<void> {
     useProjects.setState({ projects: meta.projects, activeId: meta.activeId });
     useStore.persist.setOptions({ name: projectStorageKey(meta.activeId) });
     await useStore.persist.rehydrate(); // fires onFinishHydration → App gate opens
+    await prepareCanvasFolders(meta.projects);
+    window.addEventListener('focus', () => { void refreshProjectIndex().catch(() => undefined); });
   })().catch(async (e) => {
     console.error('[thoughtdag] project boot failed:', e);
     toast('error', t('toast.projectsLoadFailed'));
@@ -145,6 +169,10 @@ export async function switchProject(id: string): Promise<void> {
   try {
     await drainGenerations();
     await flushPendingWrites();
+    const saved = await editIndex(index => index.projects.some(p => p.id === id) ? {
+      activeId: id, projects: index.projects.map(p => p.id === id && p.archived ? { ...p, archived: false } : p),
+    } : index);
+    if (!saved.projects.some(p => p.id === id)) return;
     resetMemoryWriteCaps(); // a canvas visit is one memory session (#47)
     suppressTouch = true;
     useStore.persist.setOptions({ name: projectStorageKey(id) });
@@ -153,11 +181,7 @@ export async function switchProject(id: string): Promise<void> {
     // opening IS unarchiving: archived means "hidden from the lists", and
     // a canvas the user just switched to is back in the working set —
     // whether opened from the canvas menu or a source link.
-    useProjects.setState((s) => ({
-      activeId: id,
-      projects: s.projects.map((p) => (p.id === id && p.archived ? { ...p, archived: false } : p)),
-    }));
-    await saveMeta();
+    useProjects.setState({ activeId: id });
   } finally {
     suppressTouch = false;
     useProjects.setState({ switching: false });
@@ -167,34 +191,20 @@ export async function switchProject(id: string): Promise<void> {
 // ─── CRUD ───────────────────────────────────────────────────────
 export async function createProject(name = 'Untitled', kind: 'chat' | 'paradigm' = 'chat'): Promise<string> {
   const id = crypto.randomUUID();
-  const now = Date.now();
-  useProjects.setState((s) => ({
-    projects: [...s.projects, { id, name, createdAt: now, updatedAt: now, kind }],
-  }));
-  await saveMeta();
-  await switchProject(id); // empty key rehydrates to an empty canvas
+  await registerProject(id, name, kind);
   return id;
 }
 
 export async function setProjectAgentCwd(id: string, cwd: string | undefined): Promise<void> {
-  useProjects.setState((s) => ({
-    projects: s.projects.map((p) => (p.id === id ? { ...p, agentCwd: cwd } : p)),
-  }));
-  await saveMeta();
+  await patchProject(id, { agentCwd: cwd });
 }
 
 export async function setProjectAgentGuard(id: string, guard: { mode: AgentPermissionMode; allow: string[] } | undefined): Promise<void> {
-  useProjects.setState((s) => ({
-    projects: s.projects.map((p) => (p.id === id ? { ...p, agentGuard: guard } : p)),
-  }));
-  await saveMeta();
+  await patchProject(id, { agentGuard: guard });
 }
 
 export async function renameProject(id: string, name: string): Promise<void> {
-  useProjects.setState((s) => ({
-    projects: s.projects.map((p) => (p.id === id ? { ...p, name } : p)),
-  }));
-  await saveMeta();
+  await patchProject(id, { name });
 }
 
 export async function deleteProject(id: string): Promise<void> {
@@ -207,27 +217,30 @@ export async function deleteProject(id: string): Promise<void> {
   const { removeCanvasDocuments } = await import('../lib/managed-document-file');
   await removeCanvasDocuments(id);
   await idbDel(projectStorageKey(id));
-  useProjects.setState((s) => ({ projects: s.projects.filter((p) => p.id !== id) }));
-  await saveMeta();
+  await editIndex(index => {
+    const remaining = index.projects.filter(p => p.id !== id);
+    return { projects: remaining, activeId: index.activeId === id ? remaining[0]?.id ?? '' : index.activeId };
+  });
   // the why layer's copy goes with it (desktop only; a no-op elsewhere)
   void import('../lib/canvas-record').then((m) => m.removeCanvasRecord(id)).catch(() => undefined);
 }
 
-// Register a project entry for graph data already written to its storage key
-// (used by JSON import) and switch to it.
-export async function adoptImportedProject(
+// New canvases hydrate an empty key. Imports have already written their graph.
+async function registerProject(
   id: string,
   name: string,
   kind: 'chat' | 'paradigm' = 'chat',
   extras?: Partial<Pick<ProjectMeta, 'instantiatedFrom'>>,
 ): Promise<void> {
   const now = Date.now();
-  useProjects.setState((s) => ({
-    projects: [...s.projects, { id, name, createdAt: now, updatedAt: now, kind, ...extras }],
+  await editIndex(index => ({
+    ...index, projects: [...index.projects, { id, name, createdAt: now, updatedAt: now, kind, ...extras }],
   }));
-  await saveMeta();
+  await prepareCanvasFolders([{ id }]);
   await switchProject(id);
 }
+
+export const adoptImportedProject = registerProject;
 
 // Seed a new paradigm project with the built-in rule-out/rule-in score and
 // switch to it (shared by the landing page and the project switcher).
@@ -247,13 +260,10 @@ let touchTimer: ReturnType<typeof setTimeout> | null = null;
 function touchProjectOnGraphChange(state: StoreState, prev: StoreState) {
   if (suppressTouch) return;
   if (state.nodes === prev.nodes && state.edges === prev.edges) return;
+  const { activeId } = useProjects.getState();
+  if (!activeId) return;
   if (touchTimer) clearTimeout(touchTimer);
   touchTimer = setTimeout(() => {
-    const { activeId } = useProjects.getState();
-    if (!activeId) return;
-    useProjects.setState((s) => ({
-      projects: s.projects.map((p) => (p.id === activeId ? { ...p, updatedAt: Date.now() } : p)),
-    }));
-    void saveMeta();
+    void patchProject(activeId, { updatedAt: Date.now() }).catch(error => console.warn('[thoughtdag] canvas timestamp:', error));
   }, 1000);
 }

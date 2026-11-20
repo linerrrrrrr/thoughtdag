@@ -1,0 +1,151 @@
+{
+  "formatVersion": 1,
+  "archivedOn": "2026-11-20",
+  "sources": {
+    "ant-proximity": {
+      "title": "亲密性",
+      "page": "https://ant.design/docs/spec/proximity-cn/",
+      "repository": "https://github.com/ant-design/ant-design",
+      "directory": "ant-design",
+      "revision": "7edbdd48ae7062ccffedc4709077f29126258160",
+      "version": "master · 2026-11-20",
+      "document": {
+        "path": "docs/spec/proximity.zh-CN.md",
+        "blob": "93106487d46dd1950b2ec3b064163183221cd8f8"
+      },
+      "sections": [
+        "纵向间距关系"
+      ],
+      "license": {
+        "spdx": "MIT",
+        "path": "LICENSE",
+        "blob": "9b563deb0073e49fbbba1067fb2cbdd5ad3453a4"
+      },
+      "figures": [
+        {
+          "path": "figures/vertical.png",
+          "url": "https://gw.alipayobjects.com/zos/rmsportal/goazWUHPXsGEDFIGsNlm.png",
+          "sha256": "f28cf38354f5d8311b661cf100797a4c52ed90d7f0427ee19c792ea99e323e66"
+        },
+        {
+          "path": "figures/divider.png",
+          "url": "https://gw.alipayobjects.com/zos/rmsportal/XNFCsupiYDBTJFQkmOmv.png",
+          "sha256": "944ed3f112ad69443ff32251d2f4430219223ab9de93147efadfb21037966414"
+        }
+      ]
+    },
+    "carbon-spacing": {
+      "title": "Spacing",
+      "page": "https://www.carbondesignsystem.com/building-blocks/foundations/spacing/overview",
+      "repository": "https://github.com/carbon-design-system/carbon-website",
+      "directory": "carbon-website",
+      "revision": "5e9cd1da43c32d3d3b991dc947b427f674da61a8",
+      "version": "main · 2026-09-30",
+      "document": {
+        "path": "src/pages/elements/spacing/overview.mdx",
+        "blob": "c3c6ba5ba8329d765ee484a3c2c07efa4aaf715f"
+      },
+      "sections": [
+        "Spacing scale",
+        "Stacking",
+        "Creating relationships",
+        "Creating hierarchy"
+      ],
+      "license": {
+        "spdx": "Apache-2.0",
+        "path": "LICENSE",
+        "blob": "99cfe63a27e71b0d22bf38693af0babe33ce4e9e"
+      },
+      "figures": [
+        {
+          "path": "src/pages/elements/spacing/images/spacing-01.svg",
+          "blob": "ab166f0473cd57cf1d96254d7a2f3eaaebac549c"
+        },
+        {
+          "path": "src/pages/elements/spacing/images/spacing-02.svg",
+          "blob": "2fd928e14cf21a040cde67019c115fdb871f4c36"
+        },
+        {
+          "path": "src/pages/elements/spacing/images/spacing-03.svg",
+          "blob": "620a664b62eebeb7fc20715f4927a2107295e3ec"
+        },
+        {
+          "path": "src/pages/elements/spacing/images/spacing-04.svg",
+          "blob": "4dfe8a55060beaa349f5acd51dc11153af9e1def"
+        },
+        {
+          "path": "src/pages/elements/spacing/images/spacing-05.svg",
+          "blob": "42c0db27404e7c28ac1364663cebe844f233e3b3"
+        },
+        {
+          "path": "src/pages/elements/spacing/images/spacing-06.svg",
+          "blob": "e23b1fad0c58d5a41969fac2bf5135a578ce4b70"
+        },
+        {
+          "path": "src/pages/elements/spacing/images/spacing-07.svg",
+          "blob": "c7d32b126a9afec912640e85822bf4bb7265d423"
+        },
+        {
+          "path": "src/pages/elements/spacing/images/spacing-08.svg",
+          "blob": "1bfa50a5a974c72025a28c5fe3fc8df67622c79b"
+        },
+        {
+          "path": "src/pages/elements/spacing/images/spacing-09.svg",
+          "blob": "2397cd6a9820bb6f0b74ba82a241464234d3051b"
+        },
+        {
+          "path": "src/pages/elements/spacing/images/spacing-10.svg",
+          "blob": "843fb26c30120469aa6fcaf383ac330e413d0428"
+        },
+        {
+          "path": "src/pages/elements/spacing/images/spacing-11.svg",
+          "blob": "0449aecdfa3c375324a1fafa563d75fe0797ffa1"
+        },
+        {
+          "path": "src/pages/elements/spacing/images/spacing-12.svg",
+          "blob": "4ec14e61d761c17ca1c6288fa7e3d1c6d4b8fa5e"
+        },
+        {
+          "path": "src/pages/elements/spacing/images/spacing-13.svg",
+          "blob": "b9a575849167dcfed0a38ccf1e872f8f48157b6b"
+        },
+        {
+          "path": "src/pages/elements/spacing/images/spacing-1_revised.png",
+          "blob": "c6f2f1deedcd3693a6ec95ad8270738c2d3b215d"
+        },
+        {
+          "path": "src/pages/elements/spacing/images/spacing-stack.png",
+          "blob": "fadee3b7c26e559e719090977a252c2aa9e94f59"
+        }
+      ]
+    },
+    "carbon-forms": {
+      "title": "Forms",
+      "page": "https://v10.carbondesignsystem.com/patterns/forms-pattern/",
+      "repository": "https://github.com/carbon-design-system/carbon-website",
+      "directory": "carbon-website",
+      "revision": "a20e8eacf8c2ced43128384c21989d901c6bb6da",
+      "version": "v10 · 2025-08-19",
+      "document": {
+        "path": "src/pages/patterns/forms-pattern/index.mdx",
+        "blob": "dd392ced1d1e652571339721afa6b6c6a657f96b"
+      },
+      "sections": [
+        "Group and section headings",
+        "Form context",
+        "Separating inputs, actions and sections"
+      ],
+      "license": {
+        "spdx": "Apache-2.0",
+        "path": "LICENSE",
+        "blob": "99cfe63a27e71b0d22bf38693af0babe33ce4e9e"
+      },
+      "figures": [
+        {
+          "path": "src/pages/patterns/forms-pattern/images/form_spacing.png",
+          "blob": "05e109d602783bf0e9354ee048ab960a301a5e96"
+        }
+      ]
+    }
+  }
+}

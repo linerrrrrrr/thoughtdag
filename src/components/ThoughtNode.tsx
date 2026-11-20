@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect, useLayoutEffect, useContext } from 'react';
+import { useState, useRef, useEffect, useLayoutEffect, useContext } from 'react';
 import { conclusionOf } from '../lib/turn-insight';
 import { useReactFlow, useUpdateNodeInternals, type NodeProps } from '@xyflow/react';
 import { AlertTriangle, Archive, BookOpen, Check, ChevronDown, ChevronRight, Globe, Hourglass, Minimize2, RefreshCw, Send, Square, Trash2, UserRound, X, Pencil } from 'lucide-react';
@@ -12,9 +12,10 @@ import { useStore } from '../store';
 import { staleHiddenByJudge, currentStaleVerdict } from '../lib/stale-judge';
 import { setNodeDetail, useNodeDetail } from '../lib/node-detail';
 import { isImeComposing , activeSummary, awaitingInput, formatStamp } from '../utils';
-import { processFile } from '../lib/attachments';
+import { clipboardFilePaste } from '../lib/clipboard-files';
+import { importNodeFiles, nodeFilesPending, useNodeFilesPending } from '../lib/node-file-import';
 import { isRunLocked } from '../lib/paradigm';
-import { useTextHighlighter } from '../lib/use-text-highlighter';
+import { canHighlightConversation, hasConversationHighlightText, useConversationHighlights, useTextHighlighter } from '../lib/use-text-highlighter';
 import NodeHighlightsSection from './NodeHighlightsSection';
 import { useUiStore, toast } from '../lib/ui-store';
 import SearchToggles from './ui/SearchToggles';
@@ -22,16 +23,19 @@ import NodeExecutionPicker, { NodeExecutionBadge } from './ui/NodeExecutionPicke
 import { Markdown, HighlightedMarkdown } from './Markdown';
 import ReasoningDisclosure from './ui/ReasoningDisclosure';
 import NodeOverview from './NodeOverview';
-import NodeNumber from './NodeNumber';
+import OverviewRuler from './OverviewRuler';
 import NodeDetailsButton from './NodeDetailsButton';
 import NodeConnectionHandles from './NodeConnectionHandles';
 import NodeResizeControls from './NodeResizeControls';
 import { isConversationStart } from '../lib/graph';
 import { getNodeDisplayName, getNodeNameSource } from '../lib/node-display-name';
+import { nodeExecutionKind } from '../lib/node-execution';
+import { availableExecutionModels, useModels } from '../lib/use-models';
 import NodeMetadataEditor from './NodeMetadataEditor';
 import NodeTokenUsage from './NodeTokenUsage';
 import NodeContextSources from './NodeContextSources';
 import NodeInputRegion from './NodeInputRegion';
+import QuestionAttachments, { QuestionFilePicker } from './QuestionAttachments';
 import { CanvasConnectionLayout } from '../lib/edge-routing-context';
 import './ConversationSurface.css';
 import './NodeConnectionLayout.css';
@@ -42,7 +46,7 @@ import { AgentTrace } from './ui/AgentTrace';
 import { AgentActivityView } from './ui/AgentActivityView';
 import { activeAgentActivity, originalQuestionBeforeInstructions } from '../lib/agent-activity';
 import { AgentRerunButton } from './ui/AgentRerunButton';
-import { ResponseCopyButton, ResponseVersions } from './ui/ResponseActions';
+import { MessageCopyButton, ResponseVersions } from './ui/ResponseActions';
 import { SquareTerminal } from 'lucide-react';
 import { useT, fmt } from '../i18n';
 import { isViewerMode } from '../lib/viewer';
@@ -71,10 +75,11 @@ export default function ThoughtNode({ id, data, selected }: NodeProps<ThoughtNod
   const editResponse = useStore((s) => s.editResponse);
   const setSelectedNodeId = useStore((s) => s.setSelectedNodeId);
   const selectedNodeId = useStore((s) => s.selectedNodeId);
-  const addAttachment = useStore((s) => s.addAttachment);
+  const filesPending = useNodeFilesPending(id);
   const rerunNode = useStore((s) => s.rerunNode);
   const t = useT();
   const activity = activeAgentActivity(data);
+  const displayedQuestion = originalQuestionBeforeInstructions(data.question, activity);
   const [isDropTarget, setIsDropTarget] = useState(false);
   // An ask node's first question lives in shared drafts until sent:
   // undoing the node and redoing it brings the words back.
@@ -89,11 +94,12 @@ export default function ThoughtNode({ id, data, selected }: NodeProps<ThoughtNod
   const customStyleHeight = useStore((s) => s.nodes.find((n) => n.id === id)?.style?.height);
   const configuredWidth = customWidth ?? pixelDimension(customStyleWidth);
   const configuredHeight = customHeight ?? pixelDimension(customStyleHeight);
-  const responseRef = useRef<HTMLDivElement>(null);
   const nodeRef = useRef<HTMLDivElement>(null);
   const questionTaRef = useRef<HTMLTextAreaElement>(null);
   const questionEditorRef = useRef<HTMLDivElement>(null);
   const responseEditorRef = useRef<HTMLDivElement>(null);
+  const questionActionsRef = useRef<HTMLDivElement>(null);
+  const responseActionsRef = useRef<HTMLDivElement>(null);
   const hasQuestionDraft = useUiStore(s => s.drafts[questionEditKey] !== undefined && s.drafts[questionEditKey] !== data.question);
   const hasResponseDraft = useUiStore(s => s.drafts[responseEditKey] !== undefined && s.drafts[responseEditKey] !== data.response);
   const rf = useReactFlow();
@@ -114,6 +120,9 @@ export default function ThoughtNode({ id, data, selected }: NodeProps<ThoughtNod
   const canvasConnectionLayout = useContext(CanvasConnectionLayout);
   const connectionLayout = isParadigmNode ? undefined : canvasConnectionLayout;
   const isAwaitingAsk = awaiting === 'ask';
+  const needsAgentModel = !isViewerMode && isAwaitingAsk && nodeExecutionKind(data) === 'codex';
+  const models = useModels(needsAgentModel);
+  const agentUnavailable = needsAgentModel && !availableExecutionModels(models, 'codex').length;
   const isFailedQuestion = awaiting === 'failed';
   const isQuestionComposer = isAwaitingAsk || isFailedQuestion;
   const questionEditActive = data.isEditing && data.questionEditor !== 'panel';
@@ -133,9 +142,11 @@ export default function ThoughtNode({ id, data, selected }: NodeProps<ThoughtNod
   const isCollapsed = data.isCollapsed && !fullDetail && !protectWorkingCard;
   const zoomedOut = mapMode && !protectWorkingCard;
   const overview = zoomedOut || isCollapsed;
+  const fitContentHeight = data.fitContentHeight === true && configuredHeight == null;
   const viewHeight = useStableNodeViewHeight(nodeRef, !overview && configuredHeight == null,
-    [id, data.question, data.response, data.responseIndex, data.isLoading, overview, connectionLayout], configuredWidth,
-    !!(metadataEditing || questionEditActive || editingResponseHere));
+    [id, data.question, data.response, data.responseIndex, data.isLoading, overview, connectionLayout, fitContentHeight,
+      isQuestionComposer ? data.attachments?.length : undefined], configuredWidth,
+    !!(metadataEditing || questionEditActive || editingResponseHere), fitContentHeight);
   // Glyph tier: the node collapses to one seal — the thinking's skeleton
   const glyphTier = zoomTier === 'glyph' && zoomedOut;
   // Handles move to hug the seal at glyph tier — tell React Flow to re-measure
@@ -246,27 +257,10 @@ export default function ThoughtNode({ id, data, selected }: NodeProps<ThoughtNod
   }, [isAwaitingAsk, isAwaitingHuman, questionEditActive]);
 
   const highlighter = useTextHighlighter({
-    scopeKey: `${id}:${data.responseIndex}:${data.response}`,
-    enabled: !isViewerMode && !!data.response && !data.isLoading && !data.isEditingResponse && !zoomedOut && !isCollapsed,
-    surfaceRef: responseRef,
+    scopeKey: JSON.stringify([id, data.responseIndex, data.question, data.response]),
+    enabled: canHighlightConversation(data) && !zoomedOut && !isCollapsed,
+    surfaceRef: nodeRef,
   });
-  const { markSelection } = highlighter;
-  const handleTextSelection = useCallback((event: MouseEvent) => {
-    if (event.button !== 0 || (event.target instanceof Element && event.target.closest('button, input, textarea'))) return;
-    if (!(event.target instanceof Node) || !responseRef.current?.contains(event.target)) return;
-    const selection = window.getSelection();
-    const range = selection?.rangeCount ? selection.getRangeAt(0) : null;
-    if (selection && range && selection.toString().trim().length > 0
-      && responseRef.current?.contains(range.startContainer) && responseRef.current.contains(range.endContainer)) {
-      markSelection(selection, id);
-    }
-  }, [id, markSelection]);
-
-  useEffect(() => {
-    if (!highlighter.active) return;
-    document.addEventListener('mouseup', handleTextSelection);
-    return () => document.removeEventListener('mouseup', handleTextSelection);
-  }, [handleTextSelection, highlighter.active]);
 
   const handleDoubleClickQuestion = (e: React.MouseEvent) => {
     e.stopPropagation(); // inline edit, not the panel
@@ -299,6 +293,7 @@ export default function ThoughtNode({ id, data, selected }: NodeProps<ThoughtNod
   const questionDismiss = useInlineEditDismiss({
     active: !!questionEditActive,
     ref: questionEditorRef,
+    actionsRef: questionActionsRef,
     onOutside: () => setEditing(id, false),
     onCancel: () => {
       if (!awaiting) { cancelQuestionEdit(); return; }
@@ -314,13 +309,14 @@ export default function ThoughtNode({ id, data, selected }: NodeProps<ThoughtNod
   const responseDismiss = useInlineEditDismiss({
     active: !!editingResponseHere,
     ref: responseEditorRef,
+    actionsRef: responseActionsRef,
     onOutside: () => setEditingResponse(id, false),
     onCancel: cancelResponseEdit,
     ignoreOutside: event => isGeometryControl(event.target),
     ignoreFocusOutside: isGeometryControl,
   });
   const handleEditSubmit = () => {
-    if (!editValue.trim() || condenseGuard()) return;
+    if (!editValue.trim() || agentUnavailable || nodeFilesPending(id) || condenseGuard()) return;
     useUiStore.getState().setDraft(questionEditKey, '');
     // Successful answers stay intact on an unchanged revision; a failed
     // attempt can explicitly resend the same question.
@@ -361,7 +357,7 @@ export default function ThoughtNode({ id, data, selected }: NodeProps<ThoughtNod
   const isStart = useStore(s => isConversationStart(id, s.edges));
   const hasMultipleVersions = data.responses.length > 1;
 
-  const highlightedTexts = new Set(data.highlights.map((h) => h.text));
+  const { questionHighlights, responseHighlights: highlightedTexts } = useConversationHighlights(data.highlights);
   const handleCitationClick = (event: React.MouseEvent) => {
     if (highlighter.active || window.getSelection()?.toString()) return;
     const target = (event.target as HTMLElement).closest?.('[data-node-cite]')?.getAttribute('data-node-cite');
@@ -419,6 +415,7 @@ export default function ThoughtNode({ id, data, selected }: NodeProps<ThoughtNod
   return (
     <div
       ref={nodeRef}
+      data-cursor="inherit" data-type-surface="canvas-geometry"
       style={{ width: configuredWidth ?? 520, height: fixedHeight }}
       data-thought-natural-height={overview || undefined}
       data-connection-layout={connectionLayout}
@@ -428,6 +425,7 @@ export default function ThoughtNode({ id, data, selected }: NodeProps<ThoughtNod
       data-node-stale={isStale || undefined}
       data-node-detail-locked={data.detailLevel || undefined}
       data-thought-resized={fixedHeight != null || undefined}
+      data-fit-content-height={fitContentHeight || undefined}
       data-awaiting-ask={isAwaitingAsk || undefined}
       onPointerDownCapture={event => {
         // Keep conversation buttons under the pointer until click capture freezes the height.
@@ -443,16 +441,11 @@ export default function ThoughtNode({ id, data, selected }: NodeProps<ThoughtNod
         isHuman ? 'human-node' : isStart ? 'root-node' : 'conversation-step-node'
       } ${data.isLoading ? 'loading-border' : ''} ${selected || selectedNodeId === id ? 'node-selected' : ''} ${isDropTarget ? 'node-drop-target' : ''}`}
       onClick={(event) => { if (!event.ctrlKey && !event.metaKey && !event.shiftKey) setSelectedNodeId(id); }}
-      onDrop={async (e) => {
+      onDrop={(e) => {
         e.preventDefault();
         e.stopPropagation();
         setIsDropTarget(false);
-        for (const file of Array.from(e.dataTransfer.files)) {
-          await processFile(file, {
-            add: (att) => addAttachment(id, att),
-            update: (attId, patch) => useStore.getState().setAttachmentData(id, attId, patch),
-          });
-        }
+        void importNodeFiles(id, Array.from(e.dataTransfer.files));
         setSelectedNodeId(id);
       }}
       onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setIsDropTarget(true); }}
@@ -464,18 +457,19 @@ export default function ThoughtNode({ id, data, selected }: NodeProps<ThoughtNod
       {data.focusRole === 'down' && !glyphTier && (
         // Context Focus: floating corner tag — the card may have no meta
         // row yet (unanswered follow-up), so it cannot live there
-        <span className="absolute -top-2.5 right-4 z-10 text-control text-accent/80 bg-card border border-line rounded-tag px-2 py-px whitespace-nowrap" data-focus-down>
+        <span className="absolute -top-2.5 right-4 z-10 text-control text-accent/80 bg-card border border-line rounded-tag px-2 py-px whitespace-nowrap" data-focus-down data-type-surface="node-badge">
           {t('focus.downstream')}
         </span>
       )}
       <NodeConnectionHandles id={id} large={overview} />
+      <OverviewRuler id={id} data={data} textSurface={overview ? undefined : 'conversation'} />
       {connectionLayout && <NodeInputRegion nodeId={id} compact={overview} />}
 
       {/* Stale dot pins to the CARD's corner — at glyph tier the card is
           gone (one centered seal), so the seal wears an amber ring instead
           of a dot floating where the card used to be */}
       {isStale && zoomedOut && !glyphTier && (
-        <span className="absolute top-2.5 right-2.5 w-3.5 h-3.5 rounded-full bg-amber-500 z-10" role="img" aria-label={staleTitle} data-stale-dot />
+        <span className="absolute top-2.5 right-2.5 w-3.5 h-3.5 rounded-full bg-amber-500 z-10" role="img" aria-label={staleTitle} data-stale-dot data-type-surface="node-badge" />
       )}
       {glyphTier ? (
         <div
@@ -485,7 +479,6 @@ export default function ThoughtNode({ id, data, selected }: NodeProps<ThoughtNod
           data-node-stale={isStale || undefined}
         >
           <NodeOverview
-            number={data.nodeNumber}
             name={nodeName}
             action={<NodeDetailsButton nodeId={id} />}
             source={nodeNameSource}
@@ -495,9 +488,9 @@ export default function ThoughtNode({ id, data, selected }: NodeProps<ThoughtNod
           />
         </div>
       ) : (
-      <div className="conversation-node-content">
+      <div className="conversation-node-content" data-type-surface="conversation">
       {/* Header */}
-      <div data-node-details-header className="thought-node-header shrink-0 border-b border-line drag-handle">
+      <div data-node-details-header data-type-surface="overview" className="thought-node-header shrink-0 border-b border-line drag-handle">
         <div className="node-header-main">
           <div className="node-header-identity">
             <button onClick={() => zoomedOut ? setNodeDetail(id, 'full') : fullDetail ? setNodeDetail(id, 'summary') : toggleCollapse(id)}
@@ -508,7 +501,6 @@ export default function ThoughtNode({ id, data, selected }: NodeProps<ThoughtNod
               }`}>
               {zoomedOut || isCollapsed ? <ChevronRight size={18} strokeWidth={1.75} /> : <ChevronDown size={18} strokeWidth={1.75} />}
             </button>
-            <NodeNumber number={data.nodeNumber} />
           </div>
           <div className="node-header-author">
             {!isHuman && <NodeExecutionBadge data={data} />}
@@ -522,7 +514,7 @@ export default function ThoughtNode({ id, data, selected }: NodeProps<ThoughtNod
             <NodeDetailsButton nodeId={id} />
             {data.isLoading && (
               <button
-                onClick={(e) => { e.stopPropagation(); stopGeneration(id); }}
+                data-export-omit="run" onClick={(e) => { e.stopPropagation(); stopGeneration(id); }}
                 aria-label={t('actions.stop')}
                 className="text-white bg-red-500 hover:bg-red-600 rounded-control w-7 h-7 flex items-center justify-center transition-colors"
               >
@@ -590,42 +582,51 @@ export default function ThoughtNode({ id, data, selected }: NodeProps<ThoughtNod
         preview={versionSummary ?? (data.importSource ? conclusionOf(data.response) : data.response)}
         overview={zoomedOut || isCollapsed} open={metadataEditing} onOpenChange={setMetadataEditing} />
 
-      {!isCollapsed && !zoomedOut && (data.response || data.highlights.length > 0) && (
+      {!isCollapsed && !zoomedOut && (hasConversationHighlightText(data) || data.highlights.length > 0) && (
         <NodeHighlightsSection nodeId={id} highlights={data.highlights} highlightMode={data.highlightMode}
-          highlighter={highlighter} canHighlight={!!data.response && !data.isLoading && !data.isEditingResponse} />
+          highlighter={highlighter} canHighlight={canHighlightConversation(data)} />
       )}
 
       {!isCollapsed && !zoomedOut && (
-        <div className={`p-surface-inset min-h-0 ${splitEnabled ? 'conversation-node-split-body' : fixedHeight != null ? 'flex-1 overflow-y-auto nowheel' : ''} nodrag nopan`} data-thought-body data-conversation-split-body={splitEnabled || undefined}>
-          <ConversationSplit nodeId={id} surface="node" enabled={splitEnabled} question={<>
+        <div className={`p-surface-inset min-h-0 ${splitEnabled ? 'conversation-node-split-body' : 'conversation-question-body'} nodrag nopan`} data-thought-body data-conversation-split-body={splitEnabled || undefined}
+          data-cursor="native" onMouseUp={event => highlighter.markConversationSelection(event, id)}>
           {data.anchor && anchorMaterialId && (
-            <button onClick={openReaderAtAnchor}
+            <button onClick={openReaderAtAnchor} data-open-export-reader={anchorMaterialId} data-export-page={data.anchor.page}
               data-tooltip={fmt(t('node.openAtPage'), { n: data.anchor.page })}
-              className="mb-2 text-control font-mono text-accent bg-accent/10 hover:bg-accent/20 rounded-tag px-1.5 py-0.5 transition-colors">
+              className="self-start shrink-0 mb-2 text-control font-mono text-accent bg-accent/10 hover:bg-accent/20 rounded-tag px-1.5 py-0.5 transition-colors">
               p.{data.anchor.page}
             </button>
           )}
+          <ConversationSplit nodeId={id} surface="node" enabled={splitEnabled} question={<>
           {/* Question */}
           {editingQuestionHere ? (
             <div ref={questionEditorRef} onBlur={questionDismiss.onBlur}
               onFocusCapture={() => { if (awaiting && !questionEditActive) setEditing(id, true); }}
-              className={isQuestionComposer ? 'node-question-composer' : undefined}>
-              {isQuestionComposer && <NodeExecutionPicker nodeId={id} />}
-              <textarea
-                value={editValue}
-                onChange={(e) => setEditValue(e.target.value)}
-                onKeyDown={handleEditKeyDown}
-                onInput={(e) => autoGrowTa(e.currentTarget)}
-                ref={(el) => { questionTaRef.current = el; autoGrowTa(el); }}
-                placeholder={data.instruction || (isQuestionComposer ? t('node.askPlaceholder') : undefined)}
-                aria-label={t('panel.question')}
-                data-canvas-question-editor
-                className={isQuestionComposer ? 'node-ask-textarea nodrag nopan nowheel' : `w-full bg-wash border rounded-control p-3 text-body text-ink resize-none focus:outline-none focus:ring-2 ${
-                  isHuman ? 'border-warm focus:ring-warm/20' : 'border-accent focus:ring-accent/20'
-                }`}
-                rows={2}
-                autoFocus={!!questionEditActive}
-              />
+              className={isQuestionComposer ? 'node-question-composer' : 'conversation-question-editor'}>
+              <div className="question-composer-content nodrag nopan nowheel">
+                <QuestionAttachments nodeId={id} />
+                <textarea
+                  value={editValue}
+                  onChange={(e) => setEditValue(e.target.value)}
+                  onPaste={(event) => {
+                    const { files, preventText } = clipboardFilePaste(event.clipboardData);
+                    if (!files.length) return;
+                    if (preventText) event.preventDefault();
+                    void importNodeFiles(id, files);
+                  }}
+                  onKeyDown={handleEditKeyDown}
+                  onInput={(e) => autoGrowTa(e.currentTarget)}
+                  ref={(el) => { questionTaRef.current = el; autoGrowTa(el); }}
+                  placeholder={data.instruction || (isQuestionComposer ? t('node.askPlaceholder') : undefined)}
+                  aria-label={t('panel.question')}
+                  data-canvas-question-editor
+                  className={isQuestionComposer ? 'node-ask-textarea nodrag nopan nowheel' : `w-full bg-wash border rounded-control p-3 text-body text-ink resize-none focus:outline-none focus:ring-2 ${
+                    isHuman ? 'border-warm focus:ring-warm/20' : 'border-accent focus:ring-accent/20'
+                  }`}
+                  rows={2}
+                  autoFocus={!!questionEditActive}
+                />
+              </div>
               {/* A fresh node is a landing page in a card: the same per-ask
                   switches (web, scholar, recall) sit under its question, so
                   the first ask can open a door without leaving the card.
@@ -633,40 +634,14 @@ export default function ThoughtNode({ id, data, selected }: NodeProps<ThoughtNod
               {isQuestionComposer && (
                 <div className="node-ask-actions nodrag nopan" onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
                   <div className="flex min-w-0 flex-wrap items-center gap-1" data-ask-toggles>
+                    <QuestionFilePicker onAttach={files => void importNodeFiles(id, files)} />
                     <SearchToggles nodeId={isFailedQuestion ? id : undefined} executionNodeId={id} size={16} />
                   </div>
+                  <NodeExecutionPicker nodeId={id} />
                   <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={handleEditSubmit}
-                    disabled={!editValue.trim()} aria-label={t('common.send')}
+                    disabled={!editValue.trim() || filesPending || agentUnavailable} aria-label={t('common.send')}
                     className="node-ask-send" data-ask-submit>
                     <Send size={16} strokeWidth={1.75} />
-                  </button>
-                </div>
-              )}
-              {/* Keep focus in the draft until the clicked revision action completes. */}
-              {!isHuman && !isQuestionComposer && (
-                <div className="flex items-center justify-end gap-2 mt-1.5">
-                  {/* the node's own switches (what a re-ask runs with), editable
-                      here; mousedown is defaulted away so the textarea keeps
-                      focus, and stopped so the click never selects the node */}
-                  <div className="mr-auto flex items-center gap-1 nodrag nopan" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }} onClick={(e) => e.stopPropagation()} data-edit-toggles>
-                    <SearchToggles nodeId={id} size={15} />
-                  </div>
-                  <button
-                    onMouseDown={(e) => e.preventDefault()}
-                    onClick={cancelQuestionEdit}
-                    className="text-control text-ink-muted hover:text-red-500 hover:bg-wash px-3 py-1.5 rounded-control transition-colors flex items-center gap-1"
-                    data-edit-cancel
-                  >
-                    <X size={12} strokeWidth={2} /> {t('question.editCancel')}
-                  </button>
-                  <button
-                    onMouseDown={(e) => e.preventDefault()}
-                    onClick={handleEditSubmit}
-                    disabled={!editValue.trim()}
-                    className="text-control bg-action hover:bg-action-strong disabled:opacity-30 disabled:cursor-not-allowed text-white px-3.5 py-1.5 rounded-control transition-colors flex items-center gap-1.5"
-                    data-edit-submit
-                  >
-                    <Check size={12} strokeWidth={2.25} /> {t('question.editSubmit')}
                   </button>
                 </div>
               )}
@@ -674,8 +649,8 @@ export default function ThoughtNode({ id, data, selected }: NodeProps<ThoughtNod
                 <div className="flex justify-end mt-1.5">
                   <button
                     onClick={handleEditSubmit}
-                    disabled={!editValue.trim()}
-                    className="text-control bg-warm hover:opacity-85 disabled:opacity-30 disabled:cursor-not-allowed text-white px-4 py-1.5 rounded-control transition-all flex items-center gap-1.5"
+                    disabled={!editValue.trim() || filesPending}
+                    className="text-control bg-warm hover:opacity-85 disabled:opacity-30 when-unavailable text-white px-4 py-1.5 rounded-control transition-all flex items-center gap-1.5"
                   >
                     <Send size={12} strokeWidth={1.75} /> {t('paradigm.start')}
                   </button>
@@ -686,19 +661,56 @@ export default function ThoughtNode({ id, data, selected }: NodeProps<ThoughtNod
             // The split pane owns question scrolling; pending turns retain
             // their original bounded reading area.
             <div className="conversation-question" data-conversation-question>
-            <div
-              onDoubleClick={handleDoubleClickQuestion}
-              className={`conversation-user-message question-md markdown-body cursor-text ${splitEnabled ? '' : 'max-h-[180px] overflow-y-auto'} nowheel nopan`}
-            >
-              {/* a question is markdown like an answer (lists, code, emphasis), set compact; the plaques above keep the plain text */}
-              <Markdown base={data.agentSession?.cwd ?? data.importSource?.cwd} diagrams="placeholder">{originalQuestionBeforeInstructions(data.question, activity)}</Markdown>
-            </div>
-            {!isViewerMode && <div className="conversation-question-tools"><button onClick={handleDoubleClickQuestion} aria-label={t(hasQuestionDraft ? 'edit.resumeDraft' : 'actions.editQuestion')} data-tooltip={hasQuestionDraft ? t('edit.resumeDraft') : undefined} disabled={data.isLoading} data-edit-question className="w-6 h-6 shrink-0 rounded-control flex items-center justify-center text-ink-faint hover:text-accent hover:bg-wash disabled:opacity-30"><Pencil size={13} /></button></div>}
+              <div
+                onDoubleClick={event => { if (highlighter.active) event.stopPropagation(); else handleDoubleClickQuestion(event); }}
+                data-highlight-turn="question" data-highlighter-active={highlighter.active || undefined}
+                data-cursor="text" className={`conversation-user-message question-md markdown-body ${splitEnabled || (fitContentHeight && fixedHeight == null) ? '' : 'max-h-[180px] overflow-y-auto'} nowheel nopan`}
+              >
+                <Markdown base={data.agentSession?.cwd ?? data.importSource?.cwd} diagrams="placeholder" preserveListNumbers highlights={questionHighlights}>{displayedQuestion}</Markdown>
+              </div>
             </div>
           )}
 
-          </>} answer={<>
-          {!data.isLoading && activity.length > 0 && <AgentActivityView key={`${id}:${data.responseIndex}`} entries={activity} compact base={data.agentSession?.cwd ?? data.importSource?.cwd} failed={data.generationFailed} />}
+          </>} questionActions={!editingQuestionHere && (
+            <div className="conversation-question-actions flex shrink-0 flex-wrap items-center justify-end gap-0.5 text-ink-muted">
+              {!isViewerMode && <button type="button" onClick={handleDoubleClickQuestion}
+                aria-label={t(hasQuestionDraft ? 'edit.resumeDraft' : 'actions.editQuestion')}
+                data-tooltip={t(hasQuestionDraft ? 'edit.resumeDraft' : 'actions.editQuestion')}
+                disabled={data.isLoading} data-edit-question
+                className="inline-flex size-7 items-center justify-center rounded-control hover:bg-wash hover:text-accent focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent disabled:opacity-30">
+                <Pencil size={14} strokeWidth={1.75} aria-hidden="true" />
+              </button>}
+              <MessageCopyButton kind="question" text={displayedQuestion} />
+            </div>
+          )} questionTools={editingQuestionHere && !isHuman && !isQuestionComposer && (
+            <div ref={questionActionsRef} onBlur={questionDismiss.onBlur} className="flex items-center justify-end gap-2 mt-1.5">
+              {/* the node's own switches (what a re-ask runs with), editable
+                  here; mousedown is defaulted away so the textarea keeps
+                  focus, and stopped so the click never selects the node */}
+              <div className="mr-auto flex items-center gap-1 nodrag nopan" onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }} onClick={(e) => e.stopPropagation()} data-edit-toggles>
+                <SearchToggles nodeId={id} size={15} />
+              </div>
+              <button
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={cancelQuestionEdit}
+                className="text-control text-ink-muted hover:text-red-500 hover:bg-wash px-3 py-1.5 rounded-control transition-colors flex items-center gap-1"
+                data-edit-cancel
+              >
+                <X size={12} strokeWidth={2} /> {t('question.editCancel')}
+              </button>
+              <button
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={handleEditSubmit}
+                disabled={!editValue.trim() || filesPending}
+                className="text-control bg-action hover:bg-action-strong disabled:opacity-30 when-unavailable text-white px-3.5 py-1.5 rounded-control transition-colors flex items-center gap-1.5"
+                data-edit-submit
+              >
+                <Check size={12} strokeWidth={2.25} /> {t('question.editSubmit')}
+              </button>
+            </div>
+          )} answer={<>
+          {!data.isLoading && activity.length > 0 && <AgentActivityView key={`${id}:${data.responseIndex}`} entries={activity} compact base={data.agentSession?.cwd ?? data.importSource?.cwd} failed={data.generationFailed}
+            questionHighlights={questionHighlights} penActive={highlighter.active} />}
           {data.isLoading && !!data.pendingApprovals?.length && (
             <div className="flex flex-col gap-1.5">
               {data.pendingApprovals.map((req) => <ApprovalCard key={req.id} nodeId={id} request={req} compact />)}
@@ -729,13 +741,13 @@ export default function ThoughtNode({ id, data, selected }: NodeProps<ThoughtNod
                 )}
               </div>
             ) : data.response && !data.restreaming ? (
-              // Streaming: show the live tail of the response on the canvas.
+              // Fitted cards grow with the stream; other cards show its live tail.
               // While the "response" is still a tool's placeholder line
               // (the answer has not started), the thinking that led to the
               // tool stays visible beneath it.
               <div className="flex flex-col gap-1.5">
-                <div data-conversation-answer className="conversation-answer text-body text-ink max-h-[180px] overflow-hidden flex flex-col justify-end whitespace-pre-wrap break-words">
-                  {data.response.length > 400 ? '…' + data.response.slice(-400) : data.response}
+                <div data-conversation-answer className={`conversation-answer text-body text-ink flex flex-col justify-end whitespace-pre-wrap break-words ${fitContentHeight ? '' : 'max-h-[180px] overflow-hidden'}`}>
+                  {!fitContentHeight && data.response.length > 400 ? '…' + data.response.slice(-400) : data.response}
                   <span className="inline-block w-2 h-4 bg-accent animate-pulse rounded-none" />
                 </div>
                 {data.reasoning && TOOL_PLACEHOLDER.test(data.response) && (
@@ -773,10 +785,6 @@ export default function ThoughtNode({ id, data, selected }: NodeProps<ThoughtNod
                 rows={6}
                 autoFocus
               />
-              <div className="flex justify-end gap-2 mt-2">
-                <button onClick={cancelResponseEdit} className="text-control text-ink-muted hover:text-ink px-3 py-1.5 rounded-control hover:bg-wash transition-colors">{t('common.cancel')}</button>
-                <button onClick={handleResponseEditSubmit} className="text-control bg-action hover:bg-action-strong text-white px-4 py-1.5 rounded-control transition-colors">{t('common.save')}</button>
-              </div>
             </div>
           ) : (
             <>
@@ -784,11 +792,11 @@ export default function ThoughtNode({ id, data, selected }: NodeProps<ThoughtNod
               <ReasoningDisclosure text={versionReasoning} />
             )}
             <div
-              ref={responseRef}
+              data-highlight-turn="response"
               onClick={handleCitationClick}
               data-conversation-answer
               data-highlighter-active={highlighter.active || undefined}
-              className={`conversation-answer markdown-body text-body text-ink ${!splitEnabled && fixedHeight == null ? 'max-h-[400px] overflow-y-auto' : ''} cursor-text nopan nodrag nowheel`}
+              data-cursor="text" className={`conversation-answer markdown-body text-body text-ink ${!splitEnabled && fixedHeight == null ? 'max-h-[400px] overflow-y-auto' : ''} nopan nodrag nowheel`}
             >
               {highlightedTexts.size > 0 ? (
                 <HighlightedMarkdown base={data.agentSession?.cwd ?? data.importSource?.cwd} content={data.response} highlights={highlightedTexts} diagrams="placeholder" />
@@ -818,12 +826,19 @@ export default function ThoughtNode({ id, data, selected }: NodeProps<ThoughtNod
 
           </>} />
 
+          {editingResponseHere && (
+            <div ref={responseActionsRef} data-export-omit="edit" onBlur={responseDismiss.onBlur} className="shrink-0 flex justify-end gap-2 mt-2">
+              <button onClick={cancelResponseEdit} className="text-control text-ink-muted hover:text-ink px-3 py-1.5 rounded-control hover:bg-wash transition-colors">{t('common.cancel')}</button>
+              <button onClick={handleResponseEditSubmit} className="text-control bg-action hover:bg-action-strong text-white px-4 py-1.5 rounded-control transition-colors">{t('common.save')}</button>
+            </div>
+          )}
+
           {/* Keep actions for the displayed version below both scrolling panes. */}
           {data.response && !data.isLoading && !editingResponseHere && !isHuman && !isAwaitingAsk && !data.generationFailed && (
             <div className="conversation-actions nowheel flex flex-wrap items-center gap-0.5 text-ink-faint" data-node-response-footer>
               {!isViewerMode && (
                 <button
-                  onClick={(e) => { e.stopPropagation(); void rerunNode(id); }}
+                  data-export-omit="run" onClick={(e) => { e.stopPropagation(); void rerunNode(id); }}
                   className="rounded-control w-6 h-6 flex items-center justify-center transition-colors hover:text-accent hover:bg-wash"
                   data-tooltip={t('common.regenerate')}
                   aria-label={t('common.regenerate')}
@@ -831,7 +846,7 @@ export default function ThoughtNode({ id, data, selected }: NodeProps<ThoughtNod
                   <RefreshCw size={14} strokeWidth={1.75} />
                 </button>
               )}
-              <ResponseCopyButton key={data.responseIndex} text={data.response} />
+              <MessageCopyButton kind="response" key={data.responseIndex} text={data.response} />
               {!isViewerMode && (
                 <button
                   onClick={(e) => { e.stopPropagation(); startEditResponse(); }}

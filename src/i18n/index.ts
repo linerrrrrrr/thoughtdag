@@ -1,5 +1,6 @@
 import { appSettings } from '../lib/disk-storage';
 import { create } from 'zustand';
+import { useSyncExternalStore } from 'react';
 import { en } from './en';
 import { zh } from './zh';
 
@@ -41,8 +42,9 @@ export const useI18n = create<I18nState>((set) => ({
 }));
 
 /** Reactive translator — components re-render when the language changes. */
+const currentLang = () => useI18n.getState().lang;
 export function useT(): (key: MessageKey) => string {
-  const lang = useI18n((s) => s.lang);
+  const lang = useSyncExternalStore(useI18n.subscribe, currentLang, currentLang);
   return (key) => DICTS[lang][key] ?? en[key] ?? key;
 }
 

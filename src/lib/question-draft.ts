@@ -6,11 +6,12 @@ import { condenseGuard } from './condense-guard';
 import { placeNewNodes } from './layout';
 import { useUiStore } from './ui-store';
 import { inheritedNodeExecution } from './node-execution';
-import { positionNodeAtConnectionEnd } from './edge-anchors';
+import { positionNodeAtConnectionEnd, rulerSourceHandle } from './edge-anchors';
 import type { ConnectionLayout } from './connection-layout-preferences';
 
 export interface QuestionDraftOptions {
   parentId?: string;
+  sourceHandle?: string | null;
   position?: { x: number; y: number };
   /** Released wire tip in canvas coordinates; anchors the new input when a parent exists. */
   connectionEnd?: { x: number; y: number };
@@ -40,12 +41,12 @@ export function createQuestionDraft(options: QuestionDraftOptions = {}): string 
   };
   const edge: ThoughtEdge | undefined = parent ? {
     id: `edge-${parent.id}-${id}`, source: parent.id, target: id,
-    sourceHandle: 'continue', targetHandle: 'top',
+    sourceHandle: rulerSourceHandle(options.sourceHandle) ?? 'continue', targetHandle: 'top',
     type: 'smoothstep', style: { stroke: COLORS.accent, strokeWidth: 2 }, animated: false,
     markerEnd: { type: 'arrowclosed', color: COLORS.accent, ...EDGE_ARROW_GEOMETRY },
     data: {},
   } : undefined;
-  if (parent && options.connectionEnd) node.position = positionNodeAtConnectionEnd(parent, node, options.connectionEnd, undefined, options.connectionLayout);
+  if (parent && options.connectionEnd) node.position = positionNodeAtConnectionEnd(parent, node, options.connectionEnd, undefined, options.connectionLayout, options.sourceHandle);
   const deselectedEdges = state.edges.map((existing) => existing.selected ? { ...existing, selected: false } : existing);
   const edges = edge ? [...deselectedEdges, edge] : deselectedEdges;
   const nodes = [...state.nodes.map((existing) => existing.selected ? { ...existing, selected: false } : existing), node];

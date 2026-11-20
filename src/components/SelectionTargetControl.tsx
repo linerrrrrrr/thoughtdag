@@ -31,7 +31,7 @@ export default function SelectionTargetControl({ region }: { region: SelectionRe
   };
   if (!visible) return null;
   return <div ref={ref} className="canvas-toolbar selection-target-toolbar nodrag nopan nowheel"
-    role="group" aria-label={t('selection.target')} data-selection-target-control data-selection-target-docked
+    role="group" aria-label={t('selection.target')} data-selection-target-control data-selection-target-docked data-type-surface="canvas-screen-tools"
     style={style} onPointerDown={event => event.stopPropagation()} onClick={event => event.stopPropagation()}
     onDoubleClick={event => event.stopPropagation()}>
     {(['nodes', 'edges', 'frames'] as const).map(value => {

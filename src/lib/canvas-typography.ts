@@ -12,7 +12,8 @@ export const DEFAULT_CANVAS_TYPOGRAPHY: Readonly<CanvasTypography> = {
   summaryExponent: 0,
 };
 
-const SUMMARY_MIN_ZOOM = 0.32; // Lower compensation bound in NodeOverview.css.
+const SUMMARY_MIN_ZOOM = 0.32;
+const COMPACT_MIN_ZOOM = 0.22;
 
 function bounded(value: unknown, min: number, max: number, fallback: number): number {
   return typeof value === 'number' && Number.isFinite(value) ? Math.max(min, Math.min(max, value)) : fallback;
@@ -32,6 +33,19 @@ export function canvasTypeScale(settings: CanvasTypography, zoom: number) {
   return {
     conversation: (settings.bodySize / 16) * Math.min(zoom, 1) ** settings.bodyExponent / zoom,
     summary: Math.max(zoom, SUMMARY_MIN_ZOOM) ** settings.summaryExponent,
+    summaryCompensation: 1 / Math.max(zoom, SUMMARY_MIN_ZOOM),
+    compactCompensation: 1 / Math.max(zoom, COMPACT_MIN_ZOOM),
+  };
+}
+
+/** Both the canvas and its settings preview feed the registered surface styles. */
+export function canvasTypeVariables(settings: CanvasTypography, zoom: number) {
+  const scale = canvasTypeScale(settings, zoom);
+  return {
+    '--canvas-conversation-scale': scale.conversation,
+    '--canvas-summary-type-scale': scale.summary,
+    '--canvas-summary-compensation': scale.summaryCompensation,
+    '--canvas-compact-compensation': scale.compactCompensation,
   };
 }
 
@@ -40,6 +54,7 @@ export function canvasTypePreview(settings: CanvasTypography, zoom: number) {
   const scale = canvasTypeScale(settings, zoom);
   return {
     body: 16 * zoom * scale.conversation,
-    summary: 14 * UI_SCALE * Math.min(1, zoom / SUMMARY_MIN_ZOOM) * scale.summary,
+    summary: 14 * UI_SCALE * zoom * scale.summaryCompensation * scale.summary,
+    compact: 14 * UI_SCALE * zoom * scale.compactCompensation,
   };
 }

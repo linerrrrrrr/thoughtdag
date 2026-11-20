@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
 import { chromium } from 'playwright-core';
+import { openSettingsSection } from './fixtures/canvas-model-picker.mjs';
 
 const app = process.env.APP_URL ?? 'http://127.0.0.1:5173';
 const output = 'local-tests/response-actions';
@@ -40,25 +41,46 @@ context.on('weberror', error => errors.push(error.error().message));
 const node = page.locator('.react-flow__node[data-id="answers"]');
 const card = node.locator('.conversation-actions');
 const panel = page.locator('.focus-response-actions');
+const question = '有哪些**备选方案**？';
 const answers = [Array.from({ length: 24 }, (_, i) => `第 ${i + 1} 段。滚动长回答时仍可操作节点底栏。`).join('\n\n'), '第二版回答', '第三版回答'];
 const mode = value => page.evaluate(value => { window.clipboardFixture.mode = value; }, value);
 try {
-  await page.goto(app, { waitUntil: 'networkidle' });
-  await page.waitForFunction(() => window.__store?.persist.hasHydrated() && window.__rf && window.__ui);
-  await page.evaluate(answers => {
+  await page.goto(app, { waitUntil: 'commit' });
+  await page.waitForFunction(() => window.__store?.persist.hasHydrated() && window.__rf && window.__ui, undefined, { timeout: 60000 });
+  await page.evaluate(({ answers, question }) => {
     const ui = window.__ui.getState();
     ui.setTutorialOpen(false); ui.setReleaseNotesOpen(false); ui.setPanelOpen(false); ui.setPanelWidth(380);
     const nodes = [{ id: 'answers', type: 'thought', dragHandle: '.drag-handle', width: 380, height: 400,
-      position: { x: 0, y: 0 }, data: { question: '有哪些备选方案？', response: answers[0], responses: answers,
+      position: { x: 0, y: 0 }, data: { question, response: answers[0], responses: answers,
         responseIndex: 0, generatedAts: answers.map(() => '2026-11-20T02:00:00Z'),
         detailLevel: 'full', isCollapsed: false, isLoading: false, tokenCount: 10, highlights: [],
         highlightMode: 'tag', attachments: [], excludedAttachmentIds: [], includedAttachmentIds: [], roleMode: 'inherit' } }];
     window.__store.setState({ nodes, edges: [], selectedNodeId: null, selectedNodeIds: [], history: [{ nodes, edges: [] }], historyIndex: 0 });
-  }, answers);
+  }, { answers, question });
   await card.waitFor();
   // Let the initial fit of the new fixture finish before measuring screen coordinates.
   await page.waitForTimeout(550);
   await page.evaluate(() => window.__rf.setViewport({ x: 100, y: 180, zoom: .9 }, { duration: 0 }));
+
+  const bubble = node.locator('.conversation-user-message');
+  const editQuestion = node.getByRole('button', { name: '编辑问题', exact: true });
+  const copyQuestion = node.getByRole('button', { name: '复制问题', exact: true });
+  const [bubbleBox, editBox, copyBox] = await Promise.all([bubble, editQuestion, copyQuestion].map(el => el.boundingBox()));
+  assert.ok(editBox && copyBox && bubbleBox);
+  assert.ok(editBox.y >= bubbleBox.y + bubbleBox.height - 1 && Math.abs(editBox.y - copyBox.y) < 1,
+    'Question actions share a row below the bubble');
+  assert.ok(copyBox.x >= editBox.x + editBox.width - 1 && Math.abs(copyBox.x + copyBox.width - bubbleBox.x - bubbleBox.width) <= 12,
+    'Edit and copy sit together at the right edge of the question');
+  const dividerBox = await node.locator('[data-conversation-divider]').boundingBox();
+  assert.ok(copyBox.y + copyBox.height <= dividerBox.y + 1, 'The full question action row fits above the divider');
+  assert.doesNotMatch(await copyQuestion.locator('..').innerText(), /\d{1,2}:\d{2}/);
+  await node.screenshot({ path: `${output}/node-question-actions.png` });
+  await copyQuestion.click();
+  assert.equal(await page.evaluate(() => window.clipboardFixture.written), question, 'Copy preserves the question Markdown');
+  await editQuestion.click();
+  assert.equal(await node.locator('[data-canvas-question-editor]').inputValue(), question);
+  await node.locator('[data-edit-cancel]').click();
+  console.log('PASS The question bubble has right-aligned edit and copy actions without a timestamp');
 
   const copy = card.getByRole('button', { name: '复制回答' });
   const pager = card.getByRole('group', { name: '回答版本' });
@@ -110,6 +132,25 @@ try {
     return { answer: area.clientHeight, cardBottom: el.getBoundingClientRect().bottom, footerBottom: footer.getBoundingClientRect().bottom };
   });
   assert.ok(compact.answer > 0 && compact.footerBottom <= compact.cardBottom, JSON.stringify(compact));
+  const compactQuestion = node.locator('[data-conversation-split-question]');
+  await compactQuestion.evaluate(el => { el.scrollTop = el.scrollHeight; });
+  const clickVisibleQuestionAction = async button => {
+    const point = await button.evaluate(el => {
+      const target = el.getBoundingClientRect();
+      const pane = el.closest('[data-conversation-split-question]').getBoundingClientRect();
+      const x = (target.left + target.right) / 2;
+      const y = (Math.max(target.top, pane.top) + Math.min(target.bottom, pane.bottom)) / 2;
+      return el.contains(document.elementFromPoint(x, y)) ? { x, y } : null;
+    });
+    assert.ok(point, 'Scrolling to the end of the compact question exposes a clickable button');
+    await page.mouse.click(point.x, point.y);
+  };
+  await node.screenshot({ path: `${output}/node-compact-question-actions.png` });
+  await clickVisibleQuestionAction(copyQuestion);
+  assert.equal(await page.evaluate(() => window.clipboardFixture.written), question);
+  await clickVisibleQuestionAction(editQuestion);
+  assert.equal(await node.locator('[data-canvas-question-editor]').inputValue(), question);
+  await node.locator('[data-canvas-question-editor]').press('Escape');
   await scroll.evaluate(el => { el.scrollTop = el.scrollHeight; });
   const compactEnd = await lastLineBounds();
   assert.ok(compactEnd.top >= compactEnd.paneTop - 1 && compactEnd.bottom <= compactEnd.paneBottom + 1, JSON.stringify(compactEnd));
@@ -134,9 +175,11 @@ try {
   const targets = await pager.getByRole('button').evaluateAll(buttons => buttons.map(b => [b.offsetWidth, b.offsetHeight]));
   assert.ok(targets.every(([w, h]) => w >= 32 && h >= 32));
   await copy.scrollIntoViewIfNeeded();
+  assert.equal(await copy.innerText(), '', 'The response copy button shows only its icon');
   const before = await copy.boundingBox();
   await copy.click();
   await card.getByRole('status').getByText('已复制').waitFor();
+  assert.equal(await copy.innerText(), '', 'Copy success feedback stays icon-only');
   assert.equal(await page.evaluate(() => window.clipboardFixture.written), answers[0]);
   assert.equal((await copy.boundingBox()).width, before.width);
   await card.screenshot({ path: `${output}/canvas-copied.png` });
@@ -151,10 +194,13 @@ try {
   assert.equal(await card.getByRole('status').textContent(), '', 'A late completion belongs only to its original answer');
   await node.locator('[data-node-details]').click();
   await panel.waitFor();
-  await page.locator('[data-toolbar-more]').click();
-  const more = page.locator('[data-toolbar-more-panel]');
-  await more.locator('[data-appearance-lighting]').getByRole('button', { name: '暗', exact: true }).click();
-  await more.locator('[data-menu-language]').getByRole('button', { name: 'English' }).click();
+  await openSettingsSection(page, 'general');
+  const settings = page.locator('[data-settings-panel]');
+  await settings.locator('[data-appearance-lighting]').getByRole('button', { name: '暗', exact: true }).click();
+  await page.keyboard.press('Escape');
+  await node.screenshot({ path: `${output}/node-question-actions-dark.png` });
+  await openSettingsSection(page, 'general');
+  await settings.locator('[data-menu-language]').getByRole('button', { name: 'English' }).click();
   await page.keyboard.press('Escape');
   const englishPager = card.getByRole('group', { name: 'Response versions' });
   await mode('denied');
@@ -187,6 +233,10 @@ try {
   const viewer = await context.newPage();
   await viewer.goto(new URL(hash, app).href);
   const shared = viewer.locator('.conversation-actions');
+  const sharedNode = viewer.locator('.react-flow__node[data-id="answers"]');
+  await sharedNode.getByRole('button', { name: 'Copy question', exact: true }).click();
+  assert.equal(await viewer.evaluate(() => window.clipboardFixture.written), question);
+  assert.equal(await sharedNode.locator('[data-edit-question]').count(), 0);
   await shared.getByRole('button', { name: 'Next response version' }).click();
   assert.equal(await shared.getByRole('group').innerText(), 'v1/3');
   assert.equal(await shared.getByRole('button', { name: 'Delete response version' }).count(), 0);

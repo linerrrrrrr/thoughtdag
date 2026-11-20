@@ -87,6 +87,10 @@ function createAgentsHttp({ workspaceRoot = path.join(process.env.THOUGHTDAG_HOM
         return json(res, 200, { ok: runtime(owners.get(id)).answer(id, String(body?.requestId ?? ''), body?.response) }), true;
       }
       if (p === '/agents/workspace' && method === 'POST') return json(res, 200, { dir: await ops.workspaceFor(workspaceRoot, String(body?.canvasId ?? 'default')) }), true;
+      if (p === '/agents/canvas-workspace' && method === 'POST') {
+        const { ensureCanvasWorkspace } = require('../managed-documents.cjs');
+        return json(res, 200, { dir: await ensureCanvasWorkspace(workspaceRoot, body?.namespace, body?.canvasId) }), true;
+      }
       if (p === '/agents/guard' && method === 'POST') return json(res, 200, { ok: await ops.writeGuard(String(body?.cwd ?? ''), body?.config) }), true;
       if (p === '/agents/materials' && method === 'POST') return json(res, 200, await ops.writeMaterials(String(body?.cwd ?? ''), body?.files)), true;
       if (p === '/agents/document' && method === 'GET') return json(res, 200, { service: 'thoughtdag-managed-documents', version: 1 }), true;

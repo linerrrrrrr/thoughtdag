@@ -1,5 +1,6 @@
 import type { ThoughtEdge, ThoughtNode } from '../types';
 import type { ConnectionLayout } from './connection-layout-preferences';
+import { isOverviewRulerHandle, overviewRulerMarks, overviewRulerTicks, resolveRulerHandle, rulerGeometry, type OverviewRulerTick } from './overview-ruler';
 
 export type LayoutDirection = 'horizontal' | 'vertical';
 export type AnchorSide = 'top' | 'right' | 'bottom' | 'left';
@@ -52,8 +53,14 @@ export function anchorHandle(type: 'source' | 'target', side: AnchorSide): strin
   return `${type === 'source' ? 'out' : 'in'}-${side}`;
 }
 
+/** Only ruler marks pin a wire. Ordinary ports continue to face the other node. */
+export function rulerSourceHandle(handle: string | null | undefined): string | undefined {
+  return handle && isOverviewRulerHandle(handle) ? handle : undefined;
+}
+
 /** Legacy IDs remain geometry aliases, never evidence of the edge's purpose. */
 export function handleSide(handle: string | null | undefined): AnchorSide | undefined {
+  if (isOverviewRulerHandle(handle)) return 'right';
   if (handle === 'continue') return 'bottom';
   if (handle === 'branch') return 'right';
   if (handle === 'top' || handle === 'left') return handle;
@@ -68,12 +75,16 @@ function pointFor(box: NodeRect, side: AnchorSide): { x: number; y: number } {
   return { x: box.x + box.width / 2, y: box.y + (side === 'bottom' ? box.height : 0) };
 }
 
-function resultFor(source: NodeRect, target: NodeRect, sourceSide: AnchorSide, targetSide: AnchorSide): EdgeAnchors {
+function resultFor(source: NodeRect, target: NodeRect, sourceSide: AnchorSide, targetSide: AnchorSide,
+  tick?: OverviewRulerTick): EdgeAnchors {
   return {
-    sourceHandle: anchorHandle('source', sourceSide), targetHandle: anchorHandle('target', targetSide),
+    sourceHandle: tick?.mark.id ?? anchorHandle('source', sourceSide), targetHandle: anchorHandle('target', targetSide),
     sourceSide, targetSide,
     axis: sourceSide === 'left' || sourceSide === 'right' ? 'horizontal' : 'vertical',
-    sourceAnchor: pointFor(source, sourceSide), targetAnchor: pointFor(target, targetSide),
+    sourceAnchor: tick ? { x: source.x + source.width + rulerGeometry.gap + tick.left + rulerGeometry.tickWidth,
+      y: source.y + rulerGeometry.inset + tick.top }
+      : pointFor(source, sourceSide),
+    targetAnchor: pointFor(target, targetSide),
   };
 }
 
@@ -89,16 +100,20 @@ export function resolveEdgeAnchors(
   if (!source || !target || source.id === target.id || source.data.stepKind === 'frame'
     || target.data.stepKind === 'frame' || MATERIAL_KINDS.has(target.data.stepKind ?? '')) return null;
   const a = rect(source), b = rect(target);
+  const handle = resolveRulerHandle(source.data, edge.sourceHandle);
+  const tick = handle
+    ? overviewRulerTicks(overviewRulerMarks(source.data), Math.max(0, a.height - 2 * rulerGeometry.inset))
+      .find(item => item.mark.id === handle) : undefined;
   const fixed = fixedLayout && fixedConnectionSides(fixedLayout);
-  const out = supportsFixedPorts(source.data.stepKind) ? fixed?.source : undefined;
+  const out = tick ? 'right' : supportsFixedPorts(source.data.stepKind) ? fixed?.source : undefined;
   const input = supportsFixedPorts(target.data.stepKind) ? fixed?.target : undefined;
-  if (out && input) return resultFor(a, b, out, input);
+  if (out && input) return resultFor(a, b, out, input, tick);
   const preferred = preference ?? (source.data.layoutDirection === 'horizontal' || target.data.layoutDirection === 'horizontal'
     ? 'horizontal' : 'vertical');
   const rightward = b.x + b.width / 2 >= a.x + a.width / 2;
   const downward = b.y + sideAnchorOffset(b.height) >= a.y + sideAnchorOffset(a.height);
-  const horizontal = resultFor(a, b, out ?? (rightward ? 'right' : 'left'), input ?? (rightward ? 'left' : 'right'));
-  const vertical = resultFor(a, b, out ?? (downward ? 'bottom' : 'top'), input ?? (downward ? 'top' : 'bottom'));
+  const horizontal = resultFor(a, b, out ?? (rightward ? 'right' : 'left'), input ?? (rightward ? 'left' : 'right'), tick);
+  const vertical = resultFor(a, b, out ?? (downward ? 'bottom' : 'top'), input ?? (downward ? 'top' : 'bottom'), tick);
   const gapX = Math.max(b.x - a.x - a.width, a.x - b.x - b.width);
   const gapY = Math.max(b.y - a.y - a.height, a.y - b.y - b.height);
 
@@ -117,9 +132,10 @@ export function positionNodeAtConnectionEnd(
   source: ThoughtNode, target: ThoughtNode, end: { x: number; y: number },
   targetHandles?: readonly { id?: string | null; x: number; y: number; width: number; height: number }[],
   fixedLayout?: ConnectionLayout,
+  sourceHandle?: string | null,
 ): { x: number; y: number } {
   const box = { ...rect(target), x: 0, y: 0 };
-  const edge: ThoughtEdge = { id: '', source: source.id, target: target.id };
+  const edge: ThoughtEdge = { id: '', source: source.id, target: target.id, sourceHandle };
   const preferred = nodeLayoutDirection(source);
   const offsetFor = (side: AnchorSide) => {
     const handle = targetHandles?.find(item => item.id === anchorHandle('target', side));
@@ -184,8 +200,13 @@ export function createEdgeAnchorResolver() {
         && prior.tx === target.position.x && prior.ty === target.position.y;
       // ResizeObserver/semantic zoom may change the body height, but should
       // not rotate the wire. Drag release is an explicit geometry decision.
-      const preserveSides = compatible && (dragging || (unmoved && !prior.dragging && (prior.measured || !measured)));
+      const preserveSides = compatible && rulerSourceHandle(prior.anchors.sourceHandle) === rulerSourceHandle(fresh.sourceHandle)
+        && (dragging || (unmoved && !prior.dragging && (prior.measured || !measured)));
       const anchors = preserveSides ? resultFor(rect(source), rect(target), prior.anchors.sourceSide, prior.anchors.targetSide) : fresh;
+      if (preserveSides && isOverviewRulerHandle(fresh.sourceHandle)) {
+        anchors.sourceHandle = fresh.sourceHandle;
+        anchors.sourceAnchor = fresh.sourceAnchor;
+      }
       cache.set(edge.id, { sourceId: edge.source, targetId: edge.target,
         sx: source.position.x, sy: source.position.y, tx: target.position.x, ty: target.position.y,
         preference: preferenceKey, dragging, measured, anchors });

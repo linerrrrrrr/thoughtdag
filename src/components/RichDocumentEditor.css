@@ -18,11 +18,10 @@
   height: 32px;
   border-radius: var(--radius-control);
   color: var(--color-ink-muted);
-  cursor: pointer;
 }
 .rich-document-tool:hover { background: var(--color-wash); color: var(--color-ink); }
 .rich-document-tool[aria-pressed="true"] { background: color-mix(in srgb, var(--color-accent) 10%, transparent); color: var(--color-accent); }
-.rich-document-tool:disabled { opacity: .4; cursor: default; }
+.rich-document-tool:disabled { opacity: .4; }
 .rich-document-tool:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 1px; }
 .rich-document-select {
   min-width: 0;
@@ -34,7 +33,7 @@
   color: var(--color-ink);
 }
 .rich-document-color { position: relative; overflow: hidden; }
-.rich-document-color input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
+.rich-document-color input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; }
 .rich-document-surface {
   height: min(calc(55*var(--ui-vh)), 640px);
   min-height: 200px;
@@ -52,7 +51,6 @@
   padding: 16px;
   overflow-wrap: anywhere;
   outline: none;
-  cursor: text;
 }
 .rich-document-surface:focus-within { border-color: var(--color-accent); }
 .rich-document-surface .tiptap > :first-child { margin-top: 0; }
@@ -70,8 +68,8 @@
 .rich-document-surface [data-resize-handle] { width: 12px; height: 12px; background: #fff; border: 2px solid var(--color-accent); border-radius: 2px; opacity: 0; }
 .rich-document-surface [data-resize-container]:hover [data-resize-handle],
 .rich-document-surface .ProseMirror-selectednode [data-resize-handle] { opacity: 1; }
-.rich-document-surface [data-resize-handle="bottom-left"] { cursor: nesw-resize; transform: translate(-50%, 50%); }
-.rich-document-surface [data-resize-handle="bottom-right"] { cursor: nwse-resize; transform: translate(50%, 50%); }
+.rich-document-surface [data-resize-handle="bottom-left"] { transform: translate(-50%, 50%); }
+.rich-document-surface [data-resize-handle="bottom-right"] { transform: translate(50%, 50%); }
 .rich-document-surface .tiptap .tableWrapper { max-width: 100%; overflow-x: auto; margin: 1em 0; }
 .rich-document-surface .tiptap table { border-collapse: collapse; table-layout: fixed; width: 100%; }
 .rich-document-surface .tiptap td,
@@ -79,6 +77,5 @@
 .rich-document-surface .tiptap th { background: #f4f5f7; font-weight: 600; }
 .rich-document-surface .tiptap .selectedCell::after { z-index: 2; position: absolute; inset: 0; background: color-mix(in srgb, var(--color-accent) 12%, transparent); pointer-events: none; content: ''; }
 .rich-document-surface .tiptap .column-resize-handle { position: absolute; right: -2px; top: 0; bottom: -2px; width: 4px; background: var(--color-accent); pointer-events: none; }
-.rich-document-surface .tiptap.resize-cursor { cursor: col-resize; }
 .rich-document-surface .tiptap pre { overflow-x: auto; background: #ebeef3; border-radius: var(--radius-control); padding: 12px; }
 .rich-document-surface .tiptap code { font-family: var(--font-mono); }

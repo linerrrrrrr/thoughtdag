@@ -35,9 +35,9 @@
   height: calc(var(--resize-hit-size) / var(--resize-scale));
   transform: translate(-50%, -50%);
 }
-.node-resize-width { left: 100%; top: 50%; cursor: ew-resize; }
-.node-resize-height { left: 75%; top: 100%; cursor: ns-resize; }
-.node-resize-both { left: 100%; top: 100%; cursor: nwse-resize; }
+.node-resize-width { left: 100%; top: 50%; }
+.node-resize-height { left: 75%; top: 100%; }
+.node-resize-both { left: 100%; top: 100%; }
 .node-resize-controls[hidden],
 .node-resize-handle[hidden],
 .selection-resize-handle[hidden] { display: none; }

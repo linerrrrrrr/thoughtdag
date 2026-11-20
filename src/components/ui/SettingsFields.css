@@ -1,0 +1,177 @@
+.settings-field-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, min(46%, 20rem));
+  align-items: center;
+  row-gap: var(--settings-space-heading);
+  column-gap: var(--spacing-surface-inset);
+  min-height: var(--spacing-control-size);
+}
+
+.settings-field-title,
+.settings-field-hint,
+.settings-field-status {
+  display: block;
+  font-size: var(--text-control);
+  line-height: var(--text-control--line-height);
+  overflow-wrap: anywhere;
+}
+
+.settings-field-title {
+  color: var(--color-ink);
+  font-weight: 500;
+}
+
+.settings-field-hint,
+.settings-field-status { color: var(--color-ink-muted); }
+.settings-field-hint { margin-block-start: var(--settings-space-hint); }
+.settings-field-caption { margin-block-end: var(--settings-space-heading); }
+.settings-page .canvas-routing-toggle label + p { margin-block-start: var(--settings-space-hint); }
+.settings-field-status { text-align: end; }
+.settings-field-control { width: 100%; min-width: 0; }
+
+.settings-field-section {
+  display: grid;
+  min-width: 0;
+}
+
+.settings-field-section > * + * { margin-block-start: var(--settings-space-row); }
+.settings-field-section > :is(h4, .settings-api-heading) + * { margin-block-start: var(--settings-space-heading); }
+
+.settings-field-section + .settings-field-section,
+.workspace-settings .settings-section-divider {
+  margin-block-start: calc(var(--settings-space-section) / 2);
+  border-top: 1px solid var(--color-line);
+  padding-block-start: calc(var(--settings-space-section) / 2);
+}
+
+.settings-appearance-choice {
+  justify-self: start;
+  width: min(100%, 16rem);
+}
+
+.settings-appearance-choice button { min-height: var(--spacing-control-size); }
+.settings-appearance-choice button:focus-visible { outline: 2px solid var(--color-accent); outline-offset: -2px; }
+.settings-paper-sample,
+.settings-theme-sample {
+  position: relative;
+  display: block;
+  flex: none;
+  width: min(100%, 62px);
+  height: 32px;
+  overflow: hidden;
+  border: 1px solid var(--color-line);
+  border-radius: 4px;
+}
+/* Each thumbnail depicts its target palette regardless of the active theme. */
+.settings-theme-sample > span {
+  position: absolute;
+  inset: 0;
+  color-scheme: light;
+  --sample-surface: light-dark(#fff, #222833);
+  --sample-line: light-dark(#a9b3c2, #728098);
+  --sample-nav: light-dark(#ebeef3, #171b22);
+  background:
+    linear-gradient(var(--sample-line) 0 0) 52% 36% / 30% 2px no-repeat,
+    linear-gradient(var(--sample-line) 0 0) 63% 61% / 42% 2px no-repeat,
+    linear-gradient(to right, var(--sample-nav) 24%, var(--sample-surface) 24%);
+}
+.settings-theme-sample[data-lighting="dark"] > span,
+.settings-theme-sample[data-lighting="system"] > span + span { color-scheme: dark; }
+.settings-theme-sample[data-lighting="system"] > span + span { clip-path: inset(0 0 0 50%); }
+.settings-paper-sample { background-color: var(--color-surface); background-size: 6px 6px; }
+.settings-paper-sample[data-paper="plain"] {
+  background-image: radial-gradient(circle, var(--color-ink-faint) .7px, transparent .8px);
+}
+.settings-paper-sample[data-paper="grid"] {
+  background-image: linear-gradient(to right, var(--color-line-strong) 1px, transparent 1px),
+                    linear-gradient(to bottom, var(--color-line-strong) 1px, transparent 1px);
+}
+.settings-page .canvas-routing-switch { flex: none; }
+
+.settings-node-detail legend {
+  float: inline-start;
+  max-width: 36%;
+  padding-block: var(--spacing-related);
+}
+.settings-node-detail [role="radiogroup"] {
+  width: min(62%, 28rem);
+  margin: 0 0 0 auto;
+}
+
+[data-node-preferences] [data-connection-layout-settings] { row-gap: var(--settings-space-row); }
+.settings-page .canvas-layout-field legend { margin-bottom: var(--settings-space-heading); }
+
+.canvas-type-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+@container settings-fields (width < 48rem) {
+  .canvas-type-workspace { row-gap: var(--settings-space-row); }
+}
+
+@container settings-fields (min-width: 48rem) {
+  .canvas-type-workspace {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-rows: repeat(3, auto);
+    column-gap: var(--settings-inset);
+  }
+  /* Both panels use the same heading, plot and footer tracks. */
+  .canvas-type-workspace > :is(.type-demo, .canvas-type-curve) {
+    grid-row: span 3;
+    grid-template-rows: subgrid;
+    row-gap: 0;
+  }
+  .canvas-type-workspace :is(h5, figcaption) { margin-block-end: var(--spacing-related); }
+  .canvas-type-workspace .type-demo-frame {
+    grid-row: span 2;
+    grid-template-rows: subgrid;
+  }
+  .canvas-type-workspace .canvas-type-curve-legend {
+    grid-template-columns: auto auto minmax(0, max-content);
+    justify-content: space-between;
+    align-content: center;
+    justify-items: start;
+    padding-block: 0;
+  }
+  .canvas-type-workspace .canvas-type-curve-legend > div {
+    display: flex;
+    grid-row: auto;
+    align-items: center;
+    gap: var(--spacing-control-gap);
+  }
+  .canvas-type-workspace .canvas-type-curve-legend dd { white-space: nowrap; }
+}
+
+@container settings-fields (width > 32rem) {
+  [data-interface-preferences] .settings-field-row {
+    grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+  }
+  .settings-appearance-choice[role="group"] { width: min(100%, 27rem); }
+  .settings-paper-sample, .settings-theme-sample { width: min(100%, 80px); height: 34px; }
+}
+
+@container settings-fields (min-width: 35rem) {
+  [data-node-preferences] .connection-layout-options {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  [data-node-preferences] .connection-layout-options .canvas-layout-choice + .canvas-layout-choice {
+    border-top: 0;
+    border-left: 1px solid var(--color-line);
+  }
+  [data-node-preferences] .connection-layout-options .canvas-layout-choice > span {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--spacing-related);
+    padding: var(--spacing-section-gap);
+  }
+}
+
+@container settings-fields (max-width: 32rem) {
+  .settings-field-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .settings-field-status { text-align: start; }
+  .settings-node-detail legend { float: none; max-width: none; padding-block: 0; }
+  .settings-node-detail [role="radiogroup"] { width: 100%; margin: 0; }
+}

@@ -1,6 +1,6 @@
 import { useContext, useEffect } from 'react';
 import { Handle, Position, useNodeConnections, useStore as useFlowStore, useUpdateNodeInternals } from '@xyflow/react';
-import { anchorHandle, fixedConnectionSides, handleSide, sideAnchorOffset, supportsFixedPorts, type AnchorSide } from '../lib/edge-anchors';
+import { anchorHandle, fixedConnectionSides, handleSide, rulerSourceHandle, sideAnchorOffset, supportsFixedPorts, type AnchorSide } from '../lib/edge-anchors';
 import { CanvasConnectionLayout } from '../lib/edge-routing-context';
 import './NodeConnectionHandles.css';
 
@@ -25,13 +25,15 @@ export default function NodeConnectionHandles({ id, isTargetAllowed = true, mute
   const horizontal = useFlowStore((state) => state.nodeLookup.get(id)?.data.layoutDirection === 'horizontal');
   const connectable = useFlowStore((state) => state.nodesConnectable && state.nodeLookup.get(id)?.connectable !== false);
   const connectingFrom = useFlowStore((state) => state.connection.inProgress ? state.connection.fromNode.id : null);
+  const connectingMark = useFlowStore(state => state.connection.inProgress ? rulerSourceHandle(state.connection.fromHandle.id) : undefined);
   const updateNodeInternals = useUpdateNodeInternals();
   const offset = sideAnchorOffset(height);
   const incoming = new Set(connections.filter((edge) => edge.target === id).map((edge) => handleSide(edge.targetHandle)));
-  const outgoing = new Set(connections.filter((edge) => edge.source === id).map((edge) => handleSide(edge.sourceHandle)));
+  const outgoing = new Set(connections.filter(edge => edge.source === id && !rulerSourceHandle(edge.sourceHandle)).map(edge => handleSide(edge.sourceHandle)));
   const naturalOutput = outgoing.values().next().value ?? (horizontal ? 'right' : 'bottom');
   const candidateTargets = connectable && connectingFrom !== null && connectingFrom !== id;
-  const newLinkTarget = candidateTargets && !connections.some(edge => edge.source === connectingFrom && edge.target === id);
+  const newLinkTarget = candidateTargets && !connections.some(edge => edge.source === connectingFrom && edge.target === id
+    && rulerSourceHandle(edge.sourceHandle) === connectingMark);
   const connectedKey = [...incoming, ...outgoing].join(',');
   useEffect(() => { updateNodeInternals(id); }, [id, offset, large, fixed, connectedKey, updateNodeInternals]);
   const tone = muted ? '!bg-ink-faint' : '!bg-accent';
@@ -41,6 +43,9 @@ export default function NodeConnectionHandles({ id, isTargetAllowed = true, mute
     pointerEvents: connectable ? undefined : 'none' as const,
   });
   return <>
+    {layout === 'dock' && fixed && isTargetAllowed && (
+      <span aria-hidden="true" className="node-input-stem" style={{ top: offset }} />
+    )}
     {(fixed ? [fixed.source] : SIDES).map((side) => <Handle key={`out-${side}`} type="source" position={POSITIONS[side]} id={anchorHandle('source', side)}
       className={`${common} tdag-output-port ${fixed || outgoing.has(side) || side === naturalOutput ? 'tdag-port-used' : 'tdag-port-candidate'} ${connectingFrom !== null ? 'tdag-port-connecting' : ''}`}
       style={positioning(side)} isConnectable={connectable} isConnectableStart={connectable && (connectingFrom === null || connectingFrom === id)} isConnectableEnd={false}

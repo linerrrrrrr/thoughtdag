@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="560" viewBox="0 0 1200 560" role="img" aria-labelledby="title desc">
-  <title id="title">Replay updates dependent nodes in order</title>
-  <desc id="desc">An edited upstream node marks two dependent nodes stale. Replay regenerates them in dependency order while keeping older answer versions.</desc>
+  <title id="title">Updating individual nodes after an upstream edit</title>
+  <desc id="desc">Two answers depend on an edited source. The user updates the first answer, then updates the second using the result.</desc>
   <defs>
     <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
       <path d="M1 1L11 6L1 11Z" fill="#6d5dfc"/>
@@ -10,8 +10,8 @@
     </filter>
   </defs>
   <rect width="1200" height="560" rx="32" fill="#fbf8f3"/>
-  <text x="72" y="72" font-family="Inter, Arial, sans-serif" font-size="26" font-weight="700" fill="#211a2b">Replay follows dependencies, not screen position</text>
-  <text x="72" y="108" font-family="Inter, Arial, sans-serif" font-size="18" fill="#6c6472">An upstream edit marks downstream answers stale. Replay updates them from left to right.</text>
+  <text x="72" y="72" font-family="Inter, Arial, sans-serif" font-size="26" font-weight="700" fill="#211a2b">Updating two nodes on the same path</text>
+  <text x="72" y="108" font-family="Inter, Arial, sans-serif" font-size="18" fill="#6c6472">To refresh both answers, click the upstream badge first. Wait for the answer, then click the downstream badge.</text>
 
   <path d="M348 275H486" stroke="#6d5dfc" stroke-width="5" stroke-linecap="round" marker-end="url(#arrow)"/>
   <path d="M710 275H848" stroke="#6d5dfc" stroke-width="5" stroke-linecap="round" marker-end="url(#arrow)"/>
@@ -33,9 +33,9 @@
     <circle cx="521" cy="212" r="17" fill="#fff1d8"/>
     <text x="521" y="218" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="16" font-weight="800" fill="#c06b00">1</text>
     <text x="550" y="218" font-family="Inter, Arial, sans-serif" font-size="15" font-weight="700" fill="#c06b00">STALE</text>
-    <text x="510" y="270" font-family="Inter, Arial, sans-serif" font-size="22" font-weight="700" fill="#211a2b">Replay first</text>
+    <text x="510" y="270" font-family="Inter, Arial, sans-serif" font-size="22" font-weight="700" fill="#211a2b">Click the badge</text>
     <text x="510" y="307" font-family="Inter, Arial, sans-serif" font-size="17" fill="#6c6472">Regenerate from v2</text>
-    <text x="510" y="340" font-family="Inter, Arial, sans-serif" font-size="16" fill="#817788">Older answer remains a version</text>
+    <text x="510" y="340" font-family="Inter, Arial, sans-serif" font-size="16" fill="#817788">Old version saved</text>
   </g>
 
   <g filter="url(#shadow)">
@@ -43,10 +43,10 @@
     <circle cx="883" cy="212" r="17" fill="#fff1d8"/>
     <text x="883" y="218" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="16" font-weight="800" fill="#c06b00">2</text>
     <text x="912" y="218" font-family="Inter, Arial, sans-serif" font-size="15" font-weight="700" fill="#c06b00">STALE</text>
-    <text x="872" y="270" font-family="Inter, Arial, sans-serif" font-size="22" font-weight="700" fill="#211a2b">Replay second</text>
+    <text x="872" y="270" font-family="Inter, Arial, sans-serif" font-size="22" font-weight="700" fill="#211a2b">Click the next badge</text>
     <text x="872" y="307" font-family="Inter, Arial, sans-serif" font-size="17" fill="#6c6472">Wait for node 1 to finish</text>
     <text x="872" y="340" font-family="Inter, Arial, sans-serif" font-size="16" fill="#817788">Then use its current answer</text>
   </g>
 
-  <text x="600" y="465" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="18" font-weight="650" fill="#51475a">The graph stays visible. Replay only refreshes the work you choose.</text>
+  <text x="600" y="465" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="18" font-weight="650" fill="#51475a">Each click updates one answer. Older versions stay available for comparison.</text>
 </svg>

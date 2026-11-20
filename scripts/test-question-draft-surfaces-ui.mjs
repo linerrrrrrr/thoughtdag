@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { chromium } from 'playwright-core';
+import { initNodePickerFixture, installNodeAgentCatalog } from './fixtures/node-picker.mjs';
 
 const appUrl = new URL(process.env.APP_URL ?? 'http://127.0.0.1:5173');
 const executablePath = process.env.CHROME_PATH ?? [
@@ -27,6 +28,7 @@ page.on('pageerror', error => errors.push(error.message));
 await page.routeWebSocket('**', socket => socket.close());
 await page.route('**/*', route => {
   const request = route.request(), url = new URL(request.url());
+  if (url.pathname === '/__thoughtdag_storage') return route.fulfill({ status: 404 });
   if (url.pathname === '/api/models') return route.fulfill({ json: catalog });
   if (url.pathname.startsWith('/api/') || url.origin !== appUrl.origin) {
     if (!['GET', 'HEAD', 'OPTIONS'].includes(request.method())) writes.push(`${request.method()} ${url.pathname}`);
@@ -34,10 +36,9 @@ await page.route('**/*', route => {
   }
   return route.continue();
 });
+await context.addInitScript(initNodePickerFixture);
+await context.addInitScript(installNodeAgentCatalog, catalog.models);
 await context.addInitScript(() => {
-  localStorage.setItem('thoughtdag.seeded', 'yes');
-  localStorage.setItem('thoughtdag.tutorialDone', '1');
-  localStorage.setItem('thoughtdag.lang', 'zh');
   localStorage.setItem('thoughtdag.canvasDetail', 'full');
 });
 const nodeId = 'draft-api';
@@ -62,10 +63,10 @@ const setViewport = async (zoom = 1) => {
 };
 
 try {
-  await page.goto(appUrl.href, { waitUntil: 'networkidle' });
-  await page.waitForFunction(() => window.__store?.persist.hasHydrated() && window.__ui && window.__rf);
+  await page.goto(appUrl.href, { waitUntil: 'domcontentloaded', timeout: 60000 });
+  await page.waitForFunction(() => window.__store?.persist.hasHydrated() && window.__ui && window.__rf, null, { timeout: 60000 });
   await page.evaluate(async catalog => {
-    (await import('/src/lib/use-models.ts')).setModelsCache(catalog);
+    (await window.__importLive('/src/lib/use-models.ts')).setModelsCache(catalog);
     const ui = window.__ui.getState();
     ui.setTutorialOpen(false);
     ui.setReleaseNotesOpen(false);
@@ -206,14 +207,14 @@ try {
   pass('Blocked sends during condense preserve the shared draft from both buttons and keyboard shortcuts');
 
   await page.evaluate(async () => {
-    (await import('/src/lib/appearance.ts')).useAppearance.getState().setLighting('light');
-    (await import('/src/i18n/index.ts')).useI18n.getState().setLang('zh');
+    (await window.__importLive('/src/lib/appearance.ts')).useAppearance.getState().setLighting('light');
+    (await window.__importLive('/src/i18n/index.ts')).useI18n.getState().setLang('zh');
   });
   await setViewport();
   await page.screenshot({ path: `${output}/light-zh-wide.png`, animations: 'disabled' });
   await page.evaluate(async () => {
-    (await import('/src/lib/appearance.ts')).useAppearance.getState().setLighting('dark');
-    (await import('/src/i18n/index.ts')).useI18n.getState().setLang('en');
+    (await window.__importLive('/src/lib/appearance.ts')).useAppearance.getState().setLighting('dark');
+    (await window.__importLive('/src/i18n/index.ts')).useI18n.getState().setLang('en');
   });
   await page.setViewportSize({ width: 1000, height: 800 });
   await setViewport(.72);
@@ -248,11 +249,33 @@ try {
   assert.equal(await draft('draft-agent'), undefined);
   pass('Enter in either question input submits once and both surfaces show the saved question');
 
+  const numberedQuestion = [
+    '1. Disclosure', 'Reference in English.',
+    '1. 信息披露', '中文参考文献。', '',
+    '2. Ownership', 'Reference in English.',
+    '2. 所有权', '中文参考文献。', '',
+    '7. Appendix', '', '   4. Example', '   4. 示例',
+  ].join('\n');
   await panel.locator('[data-edit-question]').click();
-  await panelInput().fill('修订后的问题');
+  await panelInput().fill(numberedQuestion);
   await panelInput().press('Enter');
   await panelInput().waitFor({ state: 'detached' });
-  assert.equal((await data('draft-agent')).question, '修订后的问题');
+  assert.equal((await data('draft-agent')).question, numberedQuestion);
+  for (const surface of [card('draft-agent').locator('.conversation-user-message'), panel.locator('[data-conversation-user-message]')]) {
+    const ordinals = await surface.locator('ol').evaluateAll(lists => lists.map(list => {
+      let next = list.start;
+      return [...list.children].map(item => {
+        if (item.hasAttribute('value')) next = item.value;
+        return next++;
+      });
+    }));
+    assert.deepEqual(ordinals, [[1, 1, 2, 2, 7], [4, 4]], 'The preview preserves paired, skipped and nested source numbers');
+  }
+  await page.screenshot({ path: `${output}/numbered-question.png`, animations: 'disabled' });
+  await card('draft-agent').locator('[data-edit-question]').click();
+  assert.equal(await canvasInput('draft-agent').inputValue(), numberedQuestion);
+  await card('draft-agent').locator('[data-edit-cancel]').click();
+  pass('The canvas and details show authored list numbers and reopening the editor restores the exact source');
   await card(nodeId).locator('[data-edit-question]').click();
   await canvasInput().fill('在画布修订问题');
   await canvasInput().press('Enter');

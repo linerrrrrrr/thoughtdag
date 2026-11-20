@@ -22,7 +22,8 @@ function restoreSize(drag: Gesture) {
   if (drag.region) useCanvasEditing.getState().setSelectionTarget(drag.target);
   useStore.setState(state => ({ nodes: state.nodes.map(node => node.id !== drag.original.id ? node : {
     ...node, width: drag.original.width, height: drag.original.height,
-    data: { ...node.data, keepOverviewHeight: drag.original.data.keepOverviewHeight, contentHeightIntent: drag.original.data.contentHeightIntent },
+    data: { ...node.data, keepOverviewHeight: drag.original.data.keepOverviewHeight, contentHeightIntent: drag.original.data.contentHeightIntent,
+      fitContentHeight: drag.original.data.fitContentHeight },
   }) }));
 }
 
@@ -119,6 +120,10 @@ export default function NodeResizeControls({ id, widthOnly = false }: { id: stri
     if (!cancel) move(event);
     finish(cancel);
   };
+  const fitHeight = () => {
+    if (gesture.current || connecting || multi || widthOnly) return;
+    useStore.getState().setSelectionGeometry([id], { fitContentHeight: true });
+  };
 
   return <div ref={ref} className="node-resize-controls" hidden={connecting || multi || (widthOnly && locked)}
     style={resizeControlStyle(zoom, true)}
@@ -134,9 +139,17 @@ export default function NodeResizeControls({ id, widthOnly = false }: { id: stri
           : { marginLeft: -cornerInset, marginTop: -cornerInset }}
         className={`node-resize-handle node-resize-${direction} react-flow__resize-control thought-resize-${direction === 'width' ? 'side' : direction === 'height' ? 'bottom' : 'corner'} nodrag nopan`}
         aria-label={locked ? `${label} · ${t('format.lockAspectRatio')}` : label}
+        data-tooltip={direction === 'height' ? label : undefined}
         onPointerDown={event => start(event, direction)} onPointerMove={move}
         onPointerUp={event => release(event)} onPointerCancel={event => release(event, true)} onLostPointerCapture={event => release(event, true)}
-        onClick={event => event.stopPropagation()} onDoubleClick={event => event.stopPropagation()}
+        onClick={event => {
+          event.stopPropagation();
+          if (direction === 'height' && event.detail === 0) fitHeight();
+        }}
+        onDoubleClick={event => {
+          event.stopPropagation();
+          if (direction === 'height') fitHeight();
+        }}
         onKeyDown={event => {
           if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229 || gesture.current) return;
           const horizontal = event.key === 'ArrowLeft' ? -1 : event.key === 'ArrowRight' ? 1 : 0;

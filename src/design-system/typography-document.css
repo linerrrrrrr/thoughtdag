@@ -1,0 +1,5 @@
+/* An imported page retains its authored type. A fixed-width page is fitted
+   to the reader column as one composition after its natural width is known. */
+html[data-type-surface="document-frame"] > body[data-fit-to-column] {
+  zoom: var(--document-fit-zoom) !important;
+}

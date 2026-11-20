@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
 import { chromium } from 'playwright-core';
+import { openModelConnection } from './fixtures/canvas-model-picker.mjs';
 
 const executablePath = process.env.CHROME_PATH ?? [
   'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe', '/usr/bin/chromium',
@@ -38,7 +39,7 @@ const choice = (name, value) => item(`layout-${name}`).locator(`label:has(input[
 const value = name => item(`layout-${name}`).locator('input:checked').inputValue();
 const none = async () => {
   await settle();
-  assert.equal(await page.locator('.canvas-tool-panel:visible, [data-canvas-chat]').count(), 0,
+  assert.equal(await page.locator('.canvas-tool-panel:visible, [data-settings-panel], [data-canvas-chat]').count(), 0,
     'closing a replacement must not revive an older card');
 };
 const stable = (before, after, message) => {
@@ -167,7 +168,7 @@ try {
     await settle();
     await item('canvas-detail-trigger').click();
     await item('canvas-detail-panel').waitFor();
-    await item('canvas-detail-panel').locator('fieldset').first().locator('button').last().click();
+    await item('canvas-detail-panel').getByRole('radio').last().check();
     await settle();
     const open = await style('canvas-detail-trigger');
     await page.keyboard.press('Escape');
@@ -182,14 +183,17 @@ try {
   console.log('PASS stable toolbar in both languages, themes and wide/narrow windows; detail setting uses a separate marker');
 
   await page.evaluate(async () => {
-    window.desktopAgents = { workspace: async () => 'E:/toolbar-test', capabilities: { nativePicker: false } };
+    window.desktopAgents = {
+      workspace: async () => 'E:/toolbar-test', capabilities: { nativePicker: false },
+      canvasWorkspace: async id => `E:/toolbar-test/${id}/external`,
+      models: async runtime => runtime === 'codex'
+        ? { installed: true, models: [{ provider: 'test', id: 'model', name: 'Test model' }], default: 'test/model' }
+        : { installed: false, models: [], default: null },
+    };
     const id = 'codex/test/model';
-    (await window.__toolbarImport('/src/lib/use-models.ts')).setModelsCache({
-      models: [{ id, name: 'Test model', provider: '__agent__', vision: false }], default: id,
-    });
+    await (await window.__toolbarImport('/src/lib/use-models.ts')).recheckAgents();
     window.__ui.setState({ selectedModel: id });
   });
-  await item('agent-cwd').waitFor();
   for (const theme of ['light', 'dark']) {
     await page.evaluate(async theme => (await window.__toolbarImport('/src/lib/appearance.ts')).useAppearance.getState().setLighting(theme), theme);
     await item('layout-entry').click();
@@ -197,7 +201,7 @@ try {
     await settle();
     const expected = await style('layout-entry');
     await item('layout-entry').click();
-    for (const [entry, panel] of [['agent-cwd', 'agent-cwd-menu'], ['agent-permission-chip', 'agent-permission-menu'], ['model-picker-trigger', 'model-picker-panel']]) {
+    for (const [entry, panel] of [['settings-entry', 'settings-panel'], ['model-picker-trigger', 'model-picker-panel']]) {
       await settle();
       const before = await item(entry).boundingBox();
       await item(entry).click();
@@ -205,16 +209,30 @@ try {
       await settle();
       assert.deepEqual(await style(entry), expected, `${theme} ${entry} expanded`);
       stable(before, await item(entry).boundingBox(), `${entry} keeps geometry`);
-      await item(entry).hover();
-      await page.waitForTimeout(220);
-      assert.deepEqual(await style(entry), expected, `${theme} ${entry} expanded hover`);
+      if (entry === 'model-picker-trigger') {
+        await item(entry).hover();
+        await page.waitForTimeout(220);
+        assert.deepEqual(await style(entry), expected, `${theme} ${entry} expanded hover`);
+      }
       const iconColors = await item(entry).locator(':scope > svg').evaluateAll(icons => icons.map(icon => getComputedStyle(icon).color));
       assert.ok(iconColors.every(color => color === expected.color));
       await page.screenshot({ path: `${output}/${theme}-${entry}.png` });
-      await item(entry).click();
+      if (entry === 'settings-entry') await page.keyboard.press('Escape');
+      else await item(entry).click();
       await none();
       assert.equal(await item(entry).getAttribute('aria-expanded'), 'false');
     }
+    await openModelConnection(page, 'agents');
+    for (const [entry, menu] of [['agent-cwd', 'agent-cwd-menu'], ['agent-permission-chip', 'agent-permission-menu']]) {
+      await item(entry).click();
+      await item(menu).waitFor();
+      assert.equal(await item(entry).getAttribute('aria-expanded'), 'true');
+      await page.keyboard.press('Escape');
+      assert.equal(await item(entry).getAttribute('aria-expanded'), 'false');
+      assert.equal(await item(entry).evaluate(el => el === document.activeElement), true);
+    }
+    await page.keyboard.press('Escape');
+    await none();
   }
   assert.deepEqual(errors, []);
   assert.deepEqual(writes, []);

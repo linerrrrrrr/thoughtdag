@@ -150,9 +150,11 @@ try {
     await page.waitForFunction(() => window.__store?.persist.hasHydrated() && window.__rf);
     await runtime();
     await divider().waitFor();
+    // Compare the persisted geometry under the same typography as the seeded card.
+    await page.evaluate(() => window.__rf.setViewport({ x: 120, y: 120, zoom: .75 }, { duration: 0 }));
     await settle();
     const restored = await metrics();
-    assert.ok(restored.outer <= restored.fullContentCap + 2);
+    assert.ok(restored.outer <= restored.fullContentCap + 2, JSON.stringify(restored));
     assert.ok((await read()).height <= restored.fullContentCap + 2);
     check('The tightened saved height persists across reload');
 
@@ -289,8 +291,8 @@ try {
         question: pane('data-conversation-split-question'), answer: pane('data-conversation-split-answer'),
         line: split.querySelector('[data-conversation-divider]').offsetHeight };
     });
-    near(shortPanel.top, 16, 'The panel frame keeps the top canvas inset');
-    near(shortPanel.bottom, shortPanel.viewport - 16, 'The panel frame extends to the viewport bottom');
+    near(shortPanel.top, 0, 'The panel frame meets the canvas top');
+    near(shortPanel.bottom, shortPanel.viewport, 'The panel frame meets the canvas bottom');
     assert.ok(shortPanel.question.height <= shortPanel.question.content + 1);
     assert.ok(shortPanel.answer.height <= shortPanel.answer.content + 1);
     assert.ok(shortPanel.reading <= shortPanel.question.content + shortPanel.answer.content + shortPanel.line + 2);

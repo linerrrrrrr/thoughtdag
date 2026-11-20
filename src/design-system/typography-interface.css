@@ -1,0 +1,60 @@
+@import './typography-offline.css';
+@import './typography-document.css';
+
+/* The body supplies screen density to application chrome and body portals.
+   Host portals and embedded documents retain their destination scale. */
+body[data-type-surface="screen"] { zoom: var(--ui-scale); font-size: var(--text-body); }
+:where([data-type-surface="portal"], [data-type-surface="reading"], [data-type-surface="native-document"]) {
+  zoom: 1;
+}
+/* SuperDoc's engine handles author zoom and hit testing in screen pixels. */
+[data-type-surface="docx-viewport"] > .docx-engine {
+  transform: scale(var(--docx-viewport-compensation, 1));
+  transform-origin: top left;
+}
+
+/* The entrance wordmark and viewer symbol have display sizes of their own. */
+.viewer-error-symbol[data-type-surface="entry-display"] { font-size: 1.875rem; line-height: 1.2; }
+.welcome-title[data-type-surface="entry-display"] { font-size: clamp(3rem, 5.2vw, 5.5rem); line-height: 1.05; }
+
+/* The diagrams use SVG viewBox units and travel with their artwork. */
+[data-type-surface="tutorial-diagram"] .diagram-badge { font-size: 6px; }
+[data-type-surface="tutorial-diagram"] .diagram-caption { font-size: 7px; }
+
+/* Timeline detail is continuous, including outgoing words during a transition. */
+[data-timeline-overview] [data-type-surface="timeline-ladder"] {
+  --ladder-font-size: calc(13px + .9px * var(--timeline-detail));
+}
+[data-type-surface="timeline-ladder"],
+[data-type-surface="timeline-ladder"] .ladder-morph-ghost { font-size: var(--ladder-font-size); }
+[data-type-surface="timeline-ladder"] .ladder-morph-ghost {
+  position: absolute;
+  inset: 0 0 auto;
+  pointer-events: none;
+  line-height: 1.3;
+}
+[data-type-surface="timeline-ladder"][data-timeline-fallback] { transition: font-size 160ms ease-out; }
+
+/* The downloadable share image uses the same print dimensions during preview and export. */
+[data-type-surface="artwork-preview"] {
+  width: 460px;
+  height: 575px;
+  transform: scale(var(--artwork-preview-scale));
+  transform-origin: top left;
+}
+[data-type-surface="artwork-preview"][data-artwork-preview="full"] { --artwork-preview-scale: 1.2; }
+[data-type-surface="artwork-preview"][data-artwork-preview="thumbnail"] { --artwork-preview-scale: 0.28695; }
+[data-type-surface="artwork-preview"][data-artwork-preview="share"] { --artwork-preview-scale: 0.4; }
+[data-type-surface="share-artwork"] .tmap-k { font-size: 11px; }
+[data-type-surface="share-artwork"] .tmap-date { font-size: calc(10.5px * var(--tmx)); }
+[data-type-surface="share-artwork"] .tmap-t { font-size: min(calc(34px * var(--tmt)), 48px); }
+[data-type-surface="share-artwork"].tmap-scroll .tmap-t { font-size: min(calc(28px * var(--tmt)), 40px); }
+[data-type-surface="share-artwork"] .tmap-s { font-size: min(calc(15px * var(--tms)), 20px); }
+[data-type-surface="share-artwork"] .tmap-sig-byline { font-size: min(calc(13px * var(--tms)), 17px); }
+[data-type-surface="share-artwork"] .tmap-sig-corner { font-size: 13.5px; }
+[data-type-surface="share-artwork"] .tmap-stats { font-size: calc(14px * var(--tmx)); }
+[data-type-surface="share-artwork"] .tmap-stats b { font-size: calc(16px * var(--tmx)); }
+[data-type-surface="share-artwork"] .tmap-statline { font-size: calc(14px * var(--tmx)); }
+[data-type-surface="share-artwork"] .tmap-statline b { font-size: calc(16px * var(--tmx)); }
+[data-type-surface="share-artwork"] .tmap-brand .tmap-bt { font-size: 10px; }
+[data-type-surface="share-artwork"] .tmap-brand .tmap-bt b { font-size: 12px; }

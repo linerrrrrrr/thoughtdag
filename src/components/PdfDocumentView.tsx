@@ -34,11 +34,13 @@ const commentKey = (projectId: string | null, nodeId: string, attachmentId: stri
 const annotationRevision = (annotations?: PdfAnnotation[]) => annotations?.length ? JSON.stringify(annotations) : undefined;
 
 /** Render the imported pages and the undoable canvas marks exactly once. */
-export default function PdfDocumentView({ nodeId, attachment, compact = false, actionsHost, statusHost, anchorsByPage, activeThreadId, onAnchorClick, clipMode = false, onClipped, onEditingChange }: {
+export default function PdfDocumentView({ nodeId, attachment, compact = false, actionsHost, statusHost, toolsHost, anchorsByPage, activeThreadId, onAnchorClick, clipMode = false, onClipped, onEditingChange, savedPages }: {
   nodeId: string; attachment: Attachment; compact?: boolean;
-  actionsHost?: HTMLElement | null; statusHost?: HTMLElement | null;
+  actionsHost?: HTMLElement | null; statusHost?: HTMLElement | null; toolsHost?: HTMLElement | null;
   anchorsByPage?: Map<number, Anchor[]>; activeThreadId?: string | null; onAnchorClick?: (id: string) => void;
   clipMode?: boolean; onClipped?: ClipHandler; onEditingChange?: (editing: boolean) => void;
+  /** Static HTML export supplies already rendered, passive pages. */
+  savedPages?: string;
 }) {
   const t = useT();
   const projectId = useProjects(state => state.activeId);
@@ -49,6 +51,7 @@ export default function PdfDocumentView({ nodeId, attachment, compact = false, a
   const cached = peekPdfDocument(cacheKey, attachment);
   const initialResource = cached?.document && cached.pdfjs ? { doc: cached.document, pdfjs: cached.pdfjs, resource: cached } : null;
   const root = useRef<HTMLDivElement>(null);
+  const pageViewport = useRef<HTMLDivElement>(null);
   const resourceRef = useRef<PdfDocumentResource | null>(null);
   const previousRetry = useRef(0);
   const [mode, setMode] = useState<Mode>('read');
@@ -101,7 +104,7 @@ export default function PdfDocumentView({ nodeId, attachment, compact = false, a
   }, [cacheKey, attachment.pdfFileRevision, retry]);
 
   useEffect(() => {
-    const element = root.current;
+    const element = pageViewport.current;
     if (!element) return;
     const observer = new ResizeObserver(entries => {
       if (!element.isConnected || entries[0].contentRect.width <= 0) return;
@@ -121,7 +124,7 @@ export default function PdfDocumentView({ nodeId, attachment, compact = false, a
 
   useEffect(() => {
     if (!compact) return;
-    const scroller = root.current?.closest<HTMLElement>('[data-content-body]');
+    const scroller = pageViewport.current;
     const resource = resourceRef.current;
     if (!scroller || !resource) return;
     if (resource.canvasScroll) {
@@ -147,7 +150,10 @@ export default function PdfDocumentView({ nodeId, attachment, compact = false, a
     const current = currentAttachment();
     if (!current) return;
     state.pushHistory();
-    state.setAttachmentData(nodeId, attachment.id, { pdfAnnotations: change(current.pdfAnnotations ?? []) });
+    state.setAttachmentData(nodeId, attachment.id, {
+      pdfAnnotations: change(current.pdfAnnotations ?? []),
+      ...(loaded && { numPages: loaded.doc.numPages }),
+    });
     state.pushHistory();
   };
   const annotate = (page: number, rects: Rect[], text?: string, pointNote = false) => {
@@ -240,49 +246,56 @@ export default function PdfDocumentView({ nodeId, attachment, compact = false, a
     cancelComment(annotation);
   };
 
-  const saveButton = <button type="button" data-pdf-save disabled={!needsWrite || saving || !loaded}
+  const saveButton = <button type="button" data-type-surface="portal" data-pdf-save disabled={!needsWrite || saving || !loaded}
     onClick={() => void saveAnnotations()} aria-label={t('common.save')} data-tooltip={t('document.saveNode')}
     className={actionsHost ? undefined : 'pdf-document-tool text-control text-ink-muted hover:bg-wash'}><Save size={15} strokeWidth={1.75} /></button>;
-  const status = <span role="status" className="text-meta text-ink-faint">{saving ? t('richDocument.saving')
+  const status = <span data-pdf-save-status data-type-surface="portal" role="status" className="text-meta text-ink-faint">{saving ? t('richDocument.saving')
     : needsWrite ? t('docx.unsaved') : t('nativeDocument.saved')}</span>;
+  const fallbackNotice = error && <div className={`pdf-fallback-notice flex items-center gap-2 flex-wrap text-control text-ink-muted ${compact ? 'p-3' : ''}`}>
+    <p className="flex-1 min-w-0">{t('pdfDocument.textFallback')}</p>
+    {!isViewerMode && <button type="button" onClick={() => setRetry(value => value + 1)} className="pdf-document-tool text-control text-accent"><RefreshCw size={14} />{t('pdfDocument.retry')}</button>}
+  </div>;
+  const toolbar = !isViewerMode && (loaded || savedPages !== undefined) && !error && <div data-type-surface="portal" className="pdf-document-toolbar" role="group" aria-label={t('pdfDocument.read')}>
+    {([{ value: 'read', icon: MousePointer2, label: 'pdfDocument.read' }, { value: 'highlight', icon: Highlighter, label: 'pdfDocument.highlight' }, { value: 'comment', icon: MessageSquare, label: 'pdfDocument.comment' }] as const).map(({ value, icon: Icon, label }) => (
+      <button key={value} type="button" disabled={clipMode} aria-pressed={effectiveMode === value} onClick={() => setMode(current => current === value ? 'read' : value)} data-pdf-mode={value}
+        aria-label={toolsHost ? t(label) : undefined} data-tooltip={toolsHost ? t(label) : undefined}
+        className={`pdf-document-tool text-control ${effectiveMode === value ? 'bg-accent/10 text-accent' : 'text-ink-muted hover:bg-wash'}`}>
+        <Icon size={15} strokeWidth={1.75} />{!toolsHost && t(label)}
+      </button>
+    ))}
+    {actionsHost ? createPortal(saveButton, actionsHost) : <div className="ml-auto flex items-center gap-2">{!statusHost && status}{saveButton}</div>}
+    {statusHost && createPortal(status, statusHost)}
+  </div>;
   return <div ref={root} className={`pdf-document-view nodrag nopan nowheel ${compact ? 'pdf-document-compact' : ''}`}
     data-pdf-document={attachment.id} onDoubleClick={event => event.stopPropagation()} onMouseUp={selectText}>
     <div className="pdf-document-controls">
-      {!isViewerMode && loaded && !error && <div className="pdf-document-toolbar" role="group" aria-label={t('pdfDocument.read')}>
-        {([{ value: 'read', icon: MousePointer2, label: 'pdfDocument.read' }, { value: 'highlight', icon: Highlighter, label: 'pdfDocument.highlight' }, { value: 'comment', icon: MessageSquare, label: 'pdfDocument.comment' }] as const).map(({ value, icon: Icon, label }) => (
-          <button key={value} type="button" disabled={clipMode} aria-pressed={effectiveMode === value} onClick={() => setMode(current => current === value ? 'read' : value)} data-pdf-mode={value}
-            className={`pdf-document-tool text-control ${effectiveMode === value ? 'bg-accent/10 text-accent' : 'text-ink-muted hover:bg-wash'}`}>
-            <Icon size={15} strokeWidth={1.75} />{t(label)}
-          </button>
-        ))}
-        {actionsHost ? createPortal(saveButton, actionsHost) : <div className="ml-auto flex items-center gap-2">{!statusHost && status}{saveButton}</div>}
-        {statusHost && createPortal(status, statusHost)}
-      </div>}
+      {toolsHost ? createPortal(toolbar, toolsHost) : toolbar}
       {!isViewerMode && effectiveMode !== 'read' && <p className="pdf-document-mode-hint text-control text-ink-faint">{t(effectiveMode === 'highlight' ? 'pdfDocument.highlightHint' : 'pdfDocument.commentHint')}</p>}
       {active && loaded && !error && <PdfComment key={active.id} annotation={active} nodeId={nodeId} attachmentId={attachment.id} isNew={pending?.id === active.id} saving={saving}
         onClose={() => setActiveId(null)} onCancel={() => cancelComment(active)} onSave={comment => saveComment(active, comment)} onDelete={() => removeAnnotation(active)} />}
+      {compact && fallbackNotice}
     </div>
-    {error ? <div className="pdf-document-fallback" data-pdf-fallback>
-      <div className="flex items-center gap-2 flex-wrap text-control text-ink-muted">
-        <p className="flex-1 min-w-0">{t('pdfDocument.textFallback')}</p>
-        {!isViewerMode && <button type="button" onClick={() => setRetry(value => value + 1)} className="pdf-document-tool text-control text-accent"><RefreshCw size={14} />{t('pdfDocument.retry')}</button>}
-      </div>
-      {documentCopyText(attachment).trim() && <div className="markdown-body text-body text-ink" data-pdf-fallback-text><Markdown>{documentCopyText(attachment)}</Markdown></div>}
-      {annotations.length > 0 && <section className="pdf-document-fallback-comments" aria-label={t('pdfDocument.comment')} data-pdf-fallback-annotations>
-        {annotations.map(annotation => <article key={annotation.id} className="pdf-document-fallback-comment" data-pdf-fallback-annotation={annotation.id}>
-          <div className="text-meta text-ink-faint">{fmt(t('pdfDocument.page'), { page: annotation.page })}</div>
-          {annotation.text && <blockquote className="pdf-document-quote text-body text-ink-muted">{annotation.text}</blockquote>}
-          {annotation.comment && <p className="text-body text-ink whitespace-pre-wrap">{annotation.comment}</p>}
-          {!annotation.text && !annotation.comment && <p className="text-control text-ink-muted">{t('pdfDocument.savedMark')}</p>}
-        </article>)}
-      </section>}
-    </div> : !loaded ? <div className="pdf-document-status text-control text-ink-muted"><Loader2 size={16} className="animate-spin" />{t('pdfDocument.loading')}</div>
-      : <div className="pdf-document-pages">{Array.from({ length: loaded.doc.numPages }, (_, index) => (
-        <PdfOriginalPage key={`${attachment.id}:${index + 1}`} doc={loaded.doc} pdfjs={loaded.pdfjs} resource={loaded.resource} pageNo={index + 1} width={width} mode={effectiveMode}
-          annotations={annotations.filter(annotation => annotation.page === index + 1)} pending={pendingAnnotations.filter(annotation => annotation.page === index + 1)}
-          activeId={activeId} onAnnotationClick={setActiveId} onAnnotate={annotate} anchors={anchorsByPage?.get(index + 1)} activeThreadId={activeThreadId}
-          onAnchorClick={onAnchorClick} clipMode={clipMode} onClipped={onClipped} />
-      ))}</div>}
+    <div ref={pageViewport} className="pdf-page-viewport" data-content-body={compact || undefined}>
+      {savedPages !== undefined ? <div className="pdf-document-pages" dangerouslySetInnerHTML={{ __html: savedPages }} />
+      : error ? <div className="pdf-document-fallback" data-pdf-fallback>
+        {!compact && fallbackNotice}
+        {documentCopyText(attachment).trim() && <div className="markdown-body text-body text-ink" data-pdf-fallback-text><Markdown>{documentCopyText(attachment)}</Markdown></div>}
+        {annotations.length > 0 && <section className="pdf-document-fallback-comments" aria-label={t('pdfDocument.comment')} data-pdf-fallback-annotations>
+          {annotations.map(annotation => <article key={annotation.id} className="pdf-document-fallback-comment" data-pdf-fallback-annotation={annotation.id}>
+            <div className="text-meta text-ink-faint">{fmt(t('pdfDocument.page'), { page: annotation.page })}</div>
+            {annotation.text && <blockquote className="pdf-document-quote text-body text-ink-muted">{annotation.text}</blockquote>}
+            {annotation.comment && <p className="text-body text-ink whitespace-pre-wrap">{annotation.comment}</p>}
+            {!annotation.text && !annotation.comment && <p className="text-control text-ink-muted">{t('pdfDocument.savedMark')}</p>}
+          </article>)}
+        </section>}
+      </div> : !loaded ? <div className="pdf-document-status text-control text-ink-muted"><Loader2 size={16} className="animate-spin" />{t('pdfDocument.loading')}</div>
+        : <div className="pdf-document-pages">{Array.from({ length: loaded.doc.numPages }, (_, index) => (
+          <PdfOriginalPage key={`${attachment.id}:${index + 1}`} doc={loaded.doc} pdfjs={loaded.pdfjs} resource={loaded.resource} pageNo={index + 1} width={width} mode={effectiveMode}
+            annotations={annotations.filter(annotation => annotation.page === index + 1)} pending={pendingAnnotations.filter(annotation => annotation.page === index + 1)}
+            activeId={activeId} onAnnotationClick={setActiveId} onAnnotate={annotate} anchors={anchorsByPage?.get(index + 1)} activeThreadId={activeThreadId}
+            onAnchorClick={onAnchorClick} clipMode={clipMode} onClipped={onClipped} />
+        ))}</div>}
+    </div>
   </div>;
 }
 
@@ -329,12 +342,12 @@ function PdfOriginalPage({ doc, pdfjs, resource, pageNo, width, mode, annotation
   const canvas = useRef<HTMLCanvasElement>(null);
   const textLayer = useRef<HTMLDivElement>(null);
   const [visible, setVisible] = useState(pageNo <= 2);
-  const [ratio, setRatio] = useState(() => resource.pageRatios.get(pageNo) ?? 1.4142);
+  const [ratio, setRatio] = useState(() => resource.pageRatios.get(pageNo));
   const [hasText, setHasText] = useState<boolean | null>(null);
   const [renderError, setRenderError] = useState(false);
   const [band, setBand] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
   const drag = useRef<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
-  const height = Math.round(width * ratio);
+  const height = Math.round(width * (ratio ?? 1.4142));
   useDismissableLayer({ open: !!band, refs: [holder], dismissOnOutside: false, onDismiss: () => { drag.current = null; setBand(null); } });
   useEffect(() => {
     let dead = false;
@@ -347,7 +360,7 @@ function PdfOriginalPage({ doc, pdfjs, resource, pageNo, width, mode, annotation
         resource.pageRatios.set(pageNo, value);
         setRatio(value);
       }
-    }).catch(() => {});
+    }).catch(() => { if (!dead) setRatio(1.4142); });
     return () => { dead = true; };
   }, [doc, resource, pageNo]);
   useEffect(() => {
@@ -434,7 +447,7 @@ function PdfOriginalPage({ doc, pdfjs, resource, pageNo, width, mode, annotation
   const allAnnotations = [...annotations, ...pending];
   return <div className="pdf-document-page-wrap">
     <div className="pdf-document-page-label text-meta text-ink-faint">{fmt(t('pdfDocument.page'), { page: pageNo })}</div>
-    <div ref={holder} data-pdf-page data-page={pageNo} className="pdf-document-page" style={{ width, height }}
+    <div ref={holder} data-pdf-page data-page={pageNo} data-cursor="neutral" data-pdf-sized={ratio !== undefined || undefined} className="pdf-document-page" style={{ width, height }}
       onClick={event => {
         if (mode !== 'comment' || clipMode || hasText === false || (event.target instanceof Element && event.target.closest('button'))) return;
         const selection = window.getSelection();
@@ -443,7 +456,7 @@ function PdfOriginalPage({ doc, pdfjs, resource, pageNo, width, mode, annotation
         onAnnotate(pageNo, [[Math.min(.97, clamp((event.clientX - bounds.left) / bounds.width)), Math.min(.98, clamp((event.clientY - bounds.top) / bounds.height)), .025, .018]], undefined, true);
       }}>
       <canvas ref={canvas} className="pdf-document-canvas" />
-      <div ref={textLayer} className="tdag-textlayer" />
+      <div ref={textLayer} data-type-surface="native-document" className="tdag-textlayer" />
       {renderError && <p className="pdf-document-render-error text-control">{t('pdfDocument.failed')}</p>}
       {allAnnotations.map(annotation => <div key={annotation.id}>
         {annotation.rects.map((rect, index) => <button key={index} type="button" data-pdf-annotation={annotation.id}

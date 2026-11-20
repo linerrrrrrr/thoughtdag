@@ -31,6 +31,10 @@ npm run lint
 
 ## 设计语言
 
+- 设置页正文的说明、标题与首项、同组行、相邻分区使用 [间距注册表](src/design-system/settings-spacing.json)。新设置页登记页面和样式绑定。修改数值后运行 `npm run spacing:sync`，`npm run spacing:check` 校验来源、间距层级与 CSS。维护步骤见[设置页间距](docs/reference/settings-spacing.md)。
+
+- 应用光标统一登记在 `runtime/design-system/cursors.css`，主界面、桌面状态页和离线导出共用它。按钮、链接和输入框按原生语义接入。自定义点击、拖动、缩放、尺寸调节目标要在实际命中元素上选用已登记的 `data-cursor` 或注册选择器，按只读、禁用、拖动中等状态更新。运行 `npm run cursor:check` 查漏，`npm run test:cursor-gate` 复验构建拦截。
+- 新增应用组件、渲染函数或独立 HTML 页面时，在 `src/design-system/typography-registry.json` 登记。普通文字继承所在界面的字号，显式字号使用语义角色。画布、弹层、原始文档和导出内容切换缩放方式时，在实际渲染元素上设置 `data-type-surface`，并在对应的 `typography-canvas.json` 或 `typography-interface.json` 登记。开发和构建会运行同一检查，`npm run test:typography-gate` 可复验外接输入坞漏接后的拦截。
 - 新增、调整或审查应用 UI 时，使用项目技能 [thoughtdag-design-system](.agents/skills/thoughtdag-design-system/SKILL.md)，按工具、阅读、画布场景选择规则。
 - [DESIGN.md](DESIGN.md) 说明视觉角色和组件组合；运行数值来自共享 CSS token。避免把当前局部差异直接升级为全局标准。
 - 工具栏与卡片的显隐按 [入口状态规则](DESIGN.md#toolbar-and-card-visibility) 分类：区分打开态、持续设置、选区操作与直接动作；卡片切换保持工具栏结构稳定，覆盖即关闭旧卡片且不自动恢复。「节点／连线／分区」属于框选后出现的选区操作；分区不计入节点，单选和多选共用「选区属性」。

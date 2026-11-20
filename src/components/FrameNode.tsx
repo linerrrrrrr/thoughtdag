@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState } from 'react';
+import { useLayoutEffect, useRef, useState, type CSSProperties, type Ref } from 'react';
 import { NodeResizer, useStore as useRfStore, type NodeProps } from '@xyflow/react';
 import { Link2, Link2Off } from 'lucide-react';
 import type { ThoughtNode as ThoughtNodeType } from '../types';
@@ -19,6 +19,19 @@ import { frameHeaderScale, FRAME_HEADER_INSET, FRAME_MIN_WIDTH, FRAME_MIN_HEIGHT
 
 /** Resizing is a step of its own: settle before, record after. */
 const recordStep = () => useStore.getState().pushHistory();
+
+export function FrameNavigationMenu({ frames, onLocate, style, panelRef }: {
+  frames: ThoughtNodeType[]; onLocate?: (frame: ThoughtNodeType) => void; style?: CSSProperties; panelRef?: Ref<HTMLDivElement>;
+}) {
+  const t = useT();
+  return <div ref={panelRef} tabIndex={-1} className="canvas-tool-panel canvas-tool-menu py-1" style={style} data-frame-nav-panel>
+    {frames.map(frame => <button key={frame.id} type="button" data-frame-nav-id={frame.id} onClick={() => onLocate?.(frame)}
+      className="w-full text-left px-3 py-2 text-control text-ink hover:bg-wash transition-colors flex items-center gap-2">
+      <span className={`w-2.5 h-2.5 rounded-tag shrink-0 ${(FRAME_COLORS[frame.data.frameColor ?? 'gray'] ?? FRAME_COLORS.gray).dot}`} />
+      <span className="truncate">{frame.data.question || t('frame.untitled')}</span>
+    </button>)}
+  </div>;
+}
 
 export default function FrameNode({ id, data, selected }: NodeProps<ThoughtNodeType>) {
   const t = useT();
@@ -89,18 +102,18 @@ export default function FrameNode({ id, data, selected }: NodeProps<ThoughtNodeT
 
   return (
     <div
-      data-frame-node
+      data-frame-node data-cursor="inherit" data-type-surface="canvas-geometry"
       className={`relative w-full h-full pointer-events-none rounded-content border border-dashed flex flex-col transition-colors ${color.border} ${color.bg} ${
         selected ? 'node-selected' : ''
       }`}
       onClick={(event) => { if (!event.ctrlKey && !event.metaKey && !event.shiftKey) setSelectedNodeId(id); }}
     >
-      <span ref={measureRef} aria-hidden="true" className={`absolute invisible pointer-events-none whitespace-nowrap font-semibold ${editing ? 'text-title' : 'text-control'}`}>{label}</span>
+      <span ref={measureRef} aria-hidden="true" data-frame-label-measure data-type-surface="canvas-object" className={`absolute invisible pointer-events-none whitespace-nowrap font-semibold ${editing ? 'text-title' : 'text-control'}`}>{label}</span>
       {/* The label adapts to existing space; it never expands the region. */}
       <div
-        data-frame-header
+        data-frame-header data-type-surface="frame-label"
         className="absolute drag-handle pointer-events-auto flex items-center gap-2 min-w-0"
-        style={{ left: FRAME_HEADER_INSET, top: FRAME_HEADER_INSET, transform: `scale(${barScale})`, transformOrigin: 'top left', width: Math.max(0, width - FRAME_HEADER_INSET * 2) / barScale }}
+        style={{ left: FRAME_HEADER_INSET, top: FRAME_HEADER_INSET, '--frame-label-scale': barScale, width: Math.max(0, width - FRAME_HEADER_INSET * 2) / barScale } as CSSProperties}
       >
         {editing ? (
           <input
@@ -117,7 +130,7 @@ export default function FrameNode({ id, data, selected }: NodeProps<ThoughtNodeT
           />
         ) : (
           <span
-            onDoubleClick={() => { if (isViewerMode) return; setDraft(data.question); setEditing(true); }}
+            data-cursor="inherit" onDoubleClick={() => { if (isViewerMode) return; setDraft(data.question); setEditing(true); }}
             className="flex-1 min-w-0 truncate font-semibold text-ink-muted/80 select-none text-control"
             data-tooltip={data.question || t('frame.titlePlaceholder')} data-tooltip-overflow
           >

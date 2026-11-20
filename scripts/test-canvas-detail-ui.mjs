@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { chromium } from 'playwright-core';
+import { openSettingsSection } from './fixtures/canvas-model-picker.mjs';
 
 const executablePath = process.env.CHROME_PATH ?? [
   'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',
@@ -48,6 +49,19 @@ const globalDetail = async (value) => {
   await panel().locator(`[data-canvas-detail="${value}"]`).click();
   await page.waitForTimeout(100);
 };
+const setSingleDetail = async (value) => {
+  if (await panel().isVisible()) await page.keyboard.press('Escape');
+  await node().click({ button: 'right', position: { x: 12, y: 5 } });
+  await page.locator(`[data-node-detail-controls="detail-thought"] [data-node-detail="${value}"]`).click();
+  await page.keyboard.press('Escape');
+};
+const assertDetailPanel = async (label) => {
+  const options = [label === '全局详细程度' ? '随缩放' : '跟随全局', '简略', '摘要', '完整'];
+  const group = panel().getByRole('radiogroup', { name: label, exact: true });
+  await group.waitFor();
+  assert.equal(await group.getByRole('radio').count(), options.length);
+  assert.equal((await panel().innerText()).replace(/\s+/g, ' '), [label, ...options].join(' '));
+};
 const assertCentered = async (before, message) => {
   const after = await viewport();
   const { width, height } = await page.locator('.react-flow').boundingBox();
@@ -68,6 +82,8 @@ const wheel = async (locator, { modifier = 'Control', dy = 100, dx = 0, point } 
 try {
   await page.goto(process.env.APP_URL ?? 'http://127.0.0.1:5184', { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => window.__store?.persist.hasHydrated() && window.__rf && window.__ui);
+  // Let the initial project camera settle before placing the test nodes.
+  await page.waitForTimeout(650);
   assert.equal(await page.evaluate(() => window.__ui.getState().wheelPans), true);
   await page.evaluate(() => {
     window.__ui.getState().setTutorialOpen(false);
@@ -87,9 +103,9 @@ try {
     window.__store.setState({ nodes, edges: [], selectedNodeIds: ['detail-thought'], selectedNodeId: 'detail-thought', history: [{ nodes, edges: [] }], historyIndex: 0 });
     window.__ui.getState().setPanelOpen(false);
   });
+  await setViewport();
   await node().waitFor();
   const contentBefore = await page.evaluate(() => window.__store.getState().nodes.map(({ id, position, data }) => ({ id, position, question: data.question, response: data.response, responses: data.responses })));
-  await setViewport();
   await page.mouse.move(1250, 700);
   const beforePan = await viewport();
   await page.mouse.wheel(60, 120);
@@ -190,7 +206,8 @@ try {
   assert.ok((await node().textContent()).includes('第 20 条分析'), 'Full mode renders full answer, not its summary');
   check('Global detail overrides zoom for thought, note, file and link nodes');
 
-  await panel().locator('[data-node-detail="summary"]').click();
+  await assertDetailPanel('全局详细程度');
+  await setSingleDetail('summary');
   assert.equal(await detail(), 'summary');
   await globalDetail('compact');
   assert.equal(await detail(), 'summary');
@@ -205,7 +222,7 @@ try {
   assert.equal(await detail(), 'summary');
   check('Node lock wins over zoom/global changes and supports undo/redo');
 
-  await panel().locator('[data-node-detail="auto"]').click();
+  await setSingleDetail('auto');
   assert.equal(await detail(), 'compact');
   await globalDetail('auto');
   assert.equal(await detail(), 'full');
@@ -214,10 +231,7 @@ try {
   check('Unlock restores global/automatic detail; Escape returns focus');
 
   await setViewport(0.6);
-  await node().click({ button: 'right', position: { x: 20, y: 20 } });
-  const nodeControls = page.locator('[data-node-detail-controls="detail-thought"]');
-  await nodeControls.locator('[data-node-detail="summary"]').click();
-  await page.keyboard.press('Escape');
+  await setSingleDetail('summary');
   assert.equal(await detail(), 'summary');
   await node().locator('[data-node-details="detail-thought"]').click();
   await page.locator('[data-focus-panel]').waitFor();
@@ -227,6 +241,46 @@ try {
 
   await setViewport(0.35);
   await globalDetail('full');
+  await page.keyboard.press('Escape');
+  const thought = await node().boundingBox(), note = await node('detail-note').boundingBox();
+  await page.mouse.move(thought.x - 12, Math.min(thought.y, note.y) - 12);
+  await page.mouse.down();
+  await page.mouse.move(Math.max(thought.x + thought.width, note.x + note.width) + 12,
+    Math.max(thought.y + thought.height, note.y + note.height) + 12, { steps: 12 });
+  await page.mouse.up();
+  await page.locator('[data-selection-properties]').waitFor();
+  await openPanel();
+  await assertDetailPanel('所选节点的详细程度');
+  await panel().screenshot({ path: `${output}/detail-marquee.png` });
+  const selectedIds = () => page.evaluate(() => window.__store.getState().selectedNodeIds);
+  assert.deepEqual(await selectedIds(), ['detail-thought', 'detail-note']);
+  assert.equal(await page.locator('[data-selection-target-control]').isVisible(), true);
+  assert.equal(await levels.locator('input:checked').count(), 0, 'Different node locks have no shared radio value');
+  await radio('compact').click();
+  assert.equal(await detail(), 'compact');
+  assert.equal(await detail('detail-note'), 'compact');
+  assert.equal(await detail('detail-file'), 'full');
+  assert.equal(await page.evaluate(() => window.__ui.getState().canvasDetail), 'full');
+  await page.evaluate(() => window.__store.getState().undo());
+  assert.equal(await detail(), 'summary');
+  assert.equal(await detail('detail-note'), 'full', 'One undo restores each original node lock');
+  await page.evaluate(() => window.__store.getState().redo());
+  assert.equal(await radio('compact').isChecked(), true);
+  await radio('auto').click();
+  assert.equal(await detail(), 'full');
+  assert.equal(await detail('detail-note'), 'full');
+  assert.deepEqual(await selectedIds(), ['detail-thought', 'detail-note']);
+  await page.keyboard.press('Escape');
+  assert.equal(await page.locator('[data-selection-properties]').isVisible(), false);
+  await page.mouse.click(1000, 800);
+  assert.deepEqual(await selectedIds(), []);
+  await openPanel();
+  await assertDetailPanel('全局详细程度');
+  assert.equal(await radio('full').isChecked(), true);
+  check('Marquee detail uses the same four controls, edits only selected nodes and unlocks or undoes them together');
+
+  await setSingleDetail('summary');
+  await openPanel();
   await page.screenshot({ path: `${output}/detail-light.png` });
   await page.evaluate(async () => (await import('/src/lib/appearance.ts')).useAppearance.getState().setLighting('dark'));
   await page.screenshot({ path: `${output}/detail-dark.png` });
@@ -235,11 +289,16 @@ try {
   const bounds = await panel().boundingBox();
   assert.ok(bounds.x >= 0 && bounds.x + bounds.width <= 640 && bounds.y + bounds.height <= 900);
   await page.screenshot({ path: `${output}/detail-narrow.png` });
-  await page.evaluate(async () => (await import('/src/i18n/index.ts')).useI18n.getState().setLang('en'));
+  await openSettingsSection(page, 'general');
+  await page.locator('[data-menu-language]').getByRole('button', { name: 'English', exact: true }).click();
+  await page.keyboard.press('Escape');
+  await openPanel();
   await levels.getByRole('radio', { name: 'Follow zoom' }).waitFor();
   assert.equal(await rowCount(), 2, 'Longer labels wrap into two pairs');
   await levels.screenshot({ path: `${output}/detail-english-narrow.png` });
-  await page.evaluate(async () => (await import('/src/i18n/index.ts')).useI18n.getState().setLang('zh'));
+  await openSettingsSection(page, 'general');
+  await page.locator('[data-menu-language]').getByRole('button', { name: '中文', exact: true }).click();
+  await page.keyboard.press('Escape');
   check('Detail controls fit desktop and narrow viewports in both themes');
 
   assert.equal(await page.evaluate(() => window.__store.getState().nodes.find((n) => n.id === 'detail-thought').data.detailLevel), 'summary', 'Lock remains in live graph');
@@ -270,14 +329,36 @@ try {
   check('Full detail exposes the answer even for a previously collapsed card');
 
   await page.evaluate(() => {
+    const store = window.__store.getState();
+    const frame = { ...store.nodes[0], id: 'detail-frame', width: 860, height: 660,
+      position: { x: -60, y: -60 }, data: { ...store.nodes[0].data, stepKind: 'frame' } };
+    store.setNodes([...store.nodes, frame]);
+    store.setEdges([{ id: 'detail-edge', source: 'detail-thought', target: 'detail-note', selected: true }]);
+    store.setSelectedNodeIds(['detail-thought', 'detail-frame']);
+  });
+  await openPanel();
+  await assertDetailPanel('所选节点的详细程度');
+  await radio('compact').click();
+  assert.equal(await detail(), 'compact');
+  assert.equal(await detail('detail-note'), 'full', 'A selected frame and edge do not bring in their nodes');
+  assert.equal(await page.evaluate(() => window.__store.getState().nodes.find(item => item.id === 'detail-frame').data.detailLevel), undefined);
+  await page.evaluate(() => window.__store.getState().setSelectedNodeIds(['detail-frame']));
+  await openPanel();
+  await assertDetailPanel('所选节点的详细程度');
+  assert.equal(await levels.locator('input:disabled').count(), 4, 'Frame and edge alone have no editable node detail');
+  assert.equal(await page.evaluate(() => window.__ui.getState().canvasDetail), 'full');
+  await page.keyboard.press('Escape');
+  check('Mixed selection only edits graph nodes and cannot fall through to global detail');
+
+  await page.evaluate(() => {
     window.__projects.setState((state) => ({ projects: state.projects.map((project) => project.id === state.activeId ? { ...project, kind: 'paradigm' } : project) }));
-    window.__store.setState((state) => ({ nodes: state.nodes.filter((item) => item.id === 'detail-thought').map((item) => ({ ...item, data: { ...item.data, stepKind: 'prompt', instruction: '保留范式指令，不因为显示设置而改写。' } })) }));
+    window.__store.setState((state) => ({ edges: [], nodes: state.nodes.filter((item) => item.id === 'detail-thought').map((item) => ({ ...item, data: { ...item.data, detailLevel: undefined, stepKind: 'prompt', instruction: '保留范式指令，不因为显示设置而改写。' } })) }));
     window.__store.getState().setSelectedNodeId('detail-thought');
   });
   await node().locator('textarea').waitFor();
   await globalDetail('summary');
   assert.equal(await detail(), 'summary');
-  await panel().locator('[data-node-detail="summary"]').click();
+  await setSingleDetail('summary');
   await globalDetail('compact');
   assert.equal(await detail(), 'summary');
   await page.keyboard.press('Escape');

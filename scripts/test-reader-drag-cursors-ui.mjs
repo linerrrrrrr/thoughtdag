@@ -17,6 +17,7 @@ const errors = [], writes = [], checks = [];
 page.on('pageerror', error => errors.push(error.message));
 page.setDefaultTimeout(10000);
 await page.routeWebSocket('**', socket => socket.close());
+await page.route('**/__thoughtdag_storage**', route => route.fulfill({ status: 404, body: '' }));
 await page.route('**/api/**', route => {
   if (!['GET', 'HEAD', 'OPTIONS'].includes(route.request().method())) writes.push(route.request().url());
   return route.fulfill({ json: { models: [], providers: [], sessions: [], topics: [] } });

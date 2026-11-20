@@ -9,7 +9,7 @@ import { harnessOutbound, markHarnessTurn, stampHarnessTurn, isHarnessAgentModel
 import { agentOutbound, adoptAgentTurn, deriveFollowupModel, isAgentModel } from '../lib/agents/agent-runtime';
 import { countTokens, activeSummary } from '../utils';
 import { toast, useUiStore } from '../lib/ui-store';
-import { getModelsOnce, reconcileModelId, describeModel } from '../lib/use-models';
+import { availableExecutionModels, getCachedModels, getModelsOnce, reconcileModelId, describeModel } from '../lib/use-models';
 import { contextLengthFor } from '../lib/runtime-providers';
 import { memoryContextBlock, judgeMemory } from '../lib/memory';
 import { fetchRecallItems, recallContextBlock } from '../lib/recall';
@@ -25,7 +25,7 @@ import { isViewerMode } from '../lib/viewer';
 import type { Reference } from '../types';
 import type { StoreState } from './types';
 import { settleAgentActivity, upsertAgentActivity } from '../lib/agent-activity';
-import { resolveNodeModel } from '../lib/node-execution';
+import { nodeExecutionKind, resolveNodeModel } from '../lib/node-execution';
 import { toolAttachmentsFingerprint, type CodexNativeHistory } from '../lib/agents/codex-history';
 import type { AgentActivityEntry } from '../types';
 
@@ -200,7 +200,11 @@ export async function runNodeGeneration(
   const executionData = get().nodes.find((n) => n.id === nodeId)?.data;
   const pinnedRaw = deriveFollowupModel(executionData, useUiStore.getState().selectedModel);
   let pinnedModel = pinnedRaw;
-  const modelData = await getModelsOnce();
+  // A verified local catalog is enough to start an Agent even if the API list is still loading.
+  const cachedModels = getCachedModels();
+  const localAgentReady = nodeExecutionKind(executionData) === 'codex'
+    && availableExecutionModels(cachedModels, 'codex').length > 0;
+  const modelData = localAgentReady ? cachedModels : await getModelsOnce();
   const serverDefaultModel: string | null = modelData?.default ?? null;
   if (pinnedRaw && !isAgentModel(pinnedRaw) && modelData && modelData.models.length > 0) {
     const r = reconcileModelId(pinnedRaw, modelData.models);

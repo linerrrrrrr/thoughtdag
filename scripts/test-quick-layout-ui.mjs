@@ -20,7 +20,7 @@ const checks = [], errors = [], blockedWrites = [];
 page.on('pageerror', (error) => errors.push(error.message));
 await page.routeWebSocket('**', (socket) => socket.close());
 await context.route('**/api/**', (route) => {
-  if (['GET', 'HEAD', 'OPTIONS'].includes(route.request().method())) return route.continue();
+  if (['GET', 'HEAD', 'OPTIONS'].includes(route.request().method())) return route.fulfill({ json: {} });
   blockedWrites.push(route.request().url());
   return route.abort('blockedbyclient');
 });
@@ -49,7 +49,7 @@ await page.addInitScript(() => {
 });
 const check = (name) => { checks.push(name); console.log(`PASS ${name}`); };
 const graph = () => page.evaluate(() => {
-  const state = window.__store.getState();
+  const state = window.__layoutTestStore.getState();
   return { nodes: state.nodes.map((n) => ({ id: n.id, position: n.position, width: n.width, height: n.height,
     group: n.data.canvasGroupId, kind: n.data.stepKind, direction: n.data.layoutDirection, route: n.data.edgeRouteDefault })),
   edges: state.edges.map((e) => ({ id: e.id, source: e.source, target: e.target, data: e.data })),
@@ -122,7 +122,6 @@ const settled = async () => {
 };
 const openSettings = async () => {
   if (await page.locator('[data-canvas-layout-panel]').isVisible()) return;
-  await page.locator('[data-toolbar-more]').click();
   await page.locator('[data-layout-entry]').click();
   await page.locator('[data-canvas-layout-panel]').waitFor();
 };
@@ -137,7 +136,7 @@ const hold = async (selector) => {
 };
 const release = async () => { await page.evaluate(() => window.__releaseLayoutReplies()); await settled(); };
 const renderedGeometry = () => page.evaluate(() => {
-    const nodes = window.__store.getState().nodes;
+    const nodes = window.__rf.getNodes();
     const rectangles = nodes.map((n) => {
       const box = document.querySelector(`.react-flow__node[data-id="${n.id}"]`).getBoundingClientRect();
       return { id: n.id, frame: n.data.stepKind === 'frame', x: box.x, y: box.y, width: box.width, height: box.height };
@@ -173,15 +172,17 @@ const renderedGeometry = () => page.evaluate(() => {
       if (hits.size) edgeHits.push({ id: edge.id, hits: [...hits] });
     }
     const formatPanel = document.querySelector('[data-selection-toolbar]')?.getBoundingClientRect();
-    return { nodeOverlaps, frameOverlaps, headerHits, edgeHits, rectangles, formatPanelLeft: formatPanel?.left };
+    return { nodeOverlaps, frameOverlaps, headerHits, edgeHits, rectangles, rightBoundary: formatPanel?.left ?? innerWidth };
   });
 const assertRenderedGeometry = (geometry) => {
+  assert.ok(geometry.rectangles.some(node => node.frame) && geometry.rectangles.some(node => !node.frame),
+    'the rendered example must include frames and their cards');
   assert.deepEqual(geometry.nodeOverlaps, [], 'example cards must not overlap');
   assert.deepEqual(geometry.frameOverlaps, [], 'example chapters must not overlap');
   assert.deepEqual(geometry.headerHits, [], 'zoom-compensated region titles must not overlap cards');
   assert.deepEqual(geometry.edgeHits, [], 'example arrows must not cross unrelated cards');
   assert.ok(geometry.rectangles.filter((n) => !n.frame).every((n) => n.x >= 90), 'fitted cards clear the left creation tools and timeline');
-  assert.ok(geometry.rectangles.every((n) => n.x + n.width <= geometry.formatPanelLeft - 8), 'fitted graph clears the right format panel');
+  assert.ok(geometry.rectangles.every((n) => n.x + n.width <= geometry.rightBoundary - 8), 'fitted graph stays in the visible canvas');
   assert.ok(geometry.rectangles.every((n) => n.y + n.height <= 1020), 'fitted graph clears the bottom canvas actions');
 };
 const frameHeaderBounds = () => page.evaluate(() => [...document.querySelectorAll('[data-frame-header]')].map((header) => {
@@ -190,7 +191,7 @@ const frameHeaderBounds = () => page.evaluate(() => [...document.querySelectorAl
   const bounds = frame.getBoundingClientRect();
   const carry = header.querySelector('[data-frame-carry-toggle]').getBoundingClientRect();
   return { id: frame.dataset.id, titleWidth: title.clientWidth, titleScrollWidth: title.scrollWidth,
-    worldWidth: window.__store.getState().nodes.find((node) => node.id === frame.dataset.id)?.width,
+    worldWidth: window.__rf.getNode(frame.dataset.id)?.width,
     headerScale: header.style.transform, zoom: window.__rf.getZoom(),
     frameLeft: bounds.left, frameRight: bounds.right, carryLeft: carry.left, carryRight: carry.right };
 }));
@@ -200,9 +201,33 @@ const assertFrameHeaders = (headers) => {
     assert.ok(header.carryLeft >= header.frameLeft - 1 && header.carryRight <= header.frameRight + 1, `${header.id} carry control overflows its frame`);
   }
 };
+const assertExampleChapters = ({ rectangles }) => {
+  const chapters = {
+    'frame-chain': ['root', 'ruleout', 'chain1', 'branch1', 'check'],
+    'frame-material': ['note', 'ask', 'stale-demo'],
+    'frame-prune': ['noise', 'cmp-full', 'cmp-pruned'],
+    'frame-read': ['brief', 'brief-ask', 'brief-digest'],
+  };
+  const cards = rectangles.filter(node => !node.frame);
+  const welcome = cards.find(card => card.id === 'ex-welcome');
+  assert.ok(welcome, 'the welcome card is present outside the four chapters');
+  for (const [id, expected] of Object.entries(chapters)) {
+    const frame = rectangles.find(node => node.id === 'ex-' + id);
+    assert.ok(frame, `missing example chapter ${id}`);
+    const members = cards.filter(card => card.x >= frame.x - 0.1 && card.y >= frame.y - 0.1
+      && card.x + card.width <= frame.x + frame.width + 0.1 && card.y + card.height <= frame.y + frame.height + 0.1);
+    assert.deepEqual(members.map(card => card.id).sort(), expected.map(id => 'ex-' + id).sort(), `${id} has the wrong cards`);
+    assert.ok(welcome.x + welcome.width <= frame.x + 0.1 || welcome.x >= frame.x + frame.width - 0.1
+      || welcome.y + welcome.height <= frame.y + 0.1 || welcome.y >= frame.y + frame.height - 0.1,
+    `welcome intersects ${id}`);
+  }
+};
 try {
   await page.goto(appUrl, { waitUntil: 'networkidle' });
   await page.waitForFunction(() => window.__store?.persist.hasHydrated() && window.__rf && window.__ui && window.__canvasEditing);
+  // A lazily loaded fixture may load another dev-module instance. Keep the
+  // mounted canvas store for graph snapshots throughout the browser run.
+  await page.evaluate(() => { window.__layoutTestStore = window.__store; });
   await fixture();
   await page.keyboard.press('Control+a');
   const selected = (await graph()).selected;
@@ -267,6 +292,44 @@ try {
   check('a node with obsolete group metadata can be laid out and undone without moving another node');
 
   await fixture(true);
+  await page.evaluate(() => window.__store.getState().setSelectedNodeIds(['file', 'a', 'b', 'outside']));
+  const cardsBefore = await graph();
+  await openSettings();
+  await page.locator('[data-layout-preview]').click();
+  await settled();
+  assert.deepEqual(await graph(), cardsBefore, 'preview must not move stored cards or add history');
+  const previewCards = await page.evaluate(() => window.__canvasEditing.getState().layoutPreview);
+  assert.ok(previewCards, 'the selection must have a feasible preview inside the fixed frame');
+  assertOrder({ nodes: previewCards, edges: cardsBefore.edges });
+  const checkVisibleRegion = async () => {
+    const { rectangles } = await renderedGeometry();
+    const frame = rectangles.find(node => node.id === 'region');
+    for (const card of rectangles.filter(node => node.id !== 'region')) {
+      if (card.id === 'outside') {
+        assert.ok(card.x + card.width <= frame.x + 1 || card.x >= frame.x + frame.width - 1
+          || card.y + card.height <= frame.y + 1 || card.y >= frame.y + frame.height - 1,
+        'the selected outside card intersects the unselected frame');
+      } else {
+        assert.ok(card.x >= frame.x - 1 && card.y >= frame.y - 1
+          && card.x + card.width <= frame.x + frame.width + 1 && card.y + card.height <= frame.y + frame.height + 1,
+        `the unselected frame lost ${card.id}`);
+      }
+    }
+  };
+  await checkVisibleRegion();
+  await page.locator('[data-layout-apply]').click();
+  await settled();
+  const cardsAfter = await graph();
+  assertOrder(cardsAfter);
+  assertClear(cardsAfter.nodes);
+  assert.deepEqual(cardsAfter.nodes.find(n => n.id === 'region'), cardsBefore.nodes.find(n => n.id === 'region'));
+  assert.equal(cardsAfter.historyIndex, cardsBefore.historyIndex + 1);
+  await checkVisibleRegion();
+  await page.keyboard.press('Control+z');
+  await page.waitForTimeout(300);
+  assert.deepEqual((await graph()).nodes, cardsBefore.nodes);
+  check('preview and apply keep selected cards inside or outside an unselected frame; one undo restores the graph');
+
   await page.evaluate(() => window.__store.getState().setSelectedNodeIds(['region']));
   const frameBefore = await graph();
   await applyLayout();
@@ -437,55 +500,148 @@ try {
   assert.deepEqual(direct.actual, direct.expected);
   check('direct store requests preserve the click-time snapshot across lazy imports');
 
-  await page.evaluate(async () => {
-    const { buildExampleGraph } = await import('/src/lib/example-graph.ts');
-    const { nodes, edges } = buildExampleGraph('zh');
-    window.__canvasEditing.getState().reset();
-    localStorage.setItem('thoughtdag.canvasLayout', JSON.stringify({ method: 'chains', direction: 'vertical', density: 'standard', route: 'curve' }));
-    window.__ui.getState().setCanvasDetail('full');
-    window.__store.setState({ nodes, edges, history: [{ nodes, edges }], historyIndex: 0, selectedNodeIds: [], selectedNodeId: null,
-      staleIds: [], staleFps: {}, staleVerdicts: {} });
-    document.activeElement?.blur();
-  });
-  await page.waitForFunction(() => window.__store.getState().nodes.every((n) => n.measured?.width > 0 && n.measured?.height > 0));
-  await page.waitForTimeout(900);
-  await page.evaluate(() => window.__rf.fitView({ duration: 0, padding: 0.14 }));
+  const loadExample = async (legacyFrames = false) => {
+    await page.evaluate(async (legacyFrames) => {
+      const { buildExampleGraph } = await import('/src/lib/example-graph.ts');
+      const { nodes, edges } = buildExampleGraph('zh');
+      // Existing canvases keep their saved frame rectangles across upgrades.
+      if (legacyFrames) {
+        const heights = { 'ex-frame-chain': 1820, 'ex-frame-material': 1560, 'ex-frame-prune': 1240, 'ex-frame-read': 1240 };
+        for (const node of nodes) if (heights[node.id]) node.height = heights[node.id];
+      }
+      window.__canvasEditing.getState().reset();
+      localStorage.setItem('thoughtdag.canvasLayout', JSON.stringify({ method: 'chains', direction: 'vertical', density: 'standard', route: 'curve' }));
+      window.__ui.setState({ drafts: {} });
+      window.__ui.getState().setCanvasDetail('full');
+      window.__layoutTestStore.setState({ nodes, edges, history: [{ nodes, edges }], historyIndex: 0, selectedNodeIds: [], selectedNodeId: null,
+        staleIds: [], staleFps: {}, staleVerdicts: {} });
+      document.activeElement?.blur();
+    }, legacyFrames);
+    await page.waitForFunction(() => window.__layoutTestStore.getState().nodes.every((n) => n.measured?.width > 0 && n.measured?.height > 0));
+    await page.waitForTimeout(900);
+    await page.evaluate(() => window.__rf.fitView({ duration: 0, padding: 0.18 }));
+  };
+  await loadExample(true);
+  await page.evaluate(() => window.__rf.setViewport({ x: 145, y: 250, zoom: 0.3 }, { duration: 0 }));
+  await page.waitForTimeout(200);
+  const initialBoxes = (await renderedGeometry()).rectangles;
+  const expectedCards = initialBoxes.filter(node => !node.frame).map(node => node.id).sort();
+  const expectedFrames = initialBoxes.filter(node => node.frame).map(node => node.id).sort();
+  assert.equal(expectedCards.length, 15); assert.equal(expectedFrames.length, 4);
+  await page.mouse.move(100, 80);
+  await page.mouse.down();
+  await page.mouse.move(1450, 960, { steps: 12 });
+  await page.mouse.up();
+  await page.locator('[data-selection-target-control]').waitFor();
+  const marqueeBefore = await graph();
+  assert.deepEqual([...marqueeBefore.selected].sort(), expectedCards);
+  const savedMarquee = await page.evaluate(() => window.__canvasEditing.getState().selectionRegion);
+  assert.deepEqual([...savedMarquee.frameIds].sort(), expectedFrames);
+  assert.equal(await page.locator('[data-selection-target="nodes"]').getAttribute('aria-pressed'), 'true');
+  await openSettings();
+  for (const [field, value] of Object.entries({ scope: 'selection', method: 'chains', direction: 'vertical', density: 'compact', route: 'curve' })) {
+    await page.locator(`[data-layout-${field}] label:has(input[value="${value}"])`).click();
+  }
+  // A replacement region can contain the same cards but different frames.
+  // Deliver the old worker reply only after the scope has changed.
+  await hold('[data-layout-preview]');
+  await page.evaluate(region => window.__canvasEditing.getState().setSelectionRegion({
+    ...region, frameIds: region.frameIds.slice(1),
+  }), savedMarquee);
+  await release();
+  assert.equal(await page.evaluate(() => window.__canvasEditing.getState().layoutPreview), null);
+  assert.deepEqual(await graph(), marqueeBefore);
+  await page.evaluate(region => window.__canvasEditing.getState().setSelectionRegion(region), savedMarquee);
+  await page.locator('[data-layout-preview]').click();
+  await settled();
+  const marqueePlan = await page.evaluate(() => window.__canvasEditing.getState().layoutPreview);
+  assert.ok(marqueePlan, `the node marquee must have a feasible preview: ${await page.locator('[data-canvas-layout-panel] [role="alert"]').allTextContents()}`);
+  assert.deepEqual(await graph(), marqueeBefore, 'preview retains selected nodes, stored geometry and history');
+  const geometryOf = nodes => nodes.map(({ id, position, width, height }) => ({ id, position, width, height }));
+  for (const frame of marqueeBefore.nodes.filter(node => node.kind === 'frame')) {
+    const planned = marqueePlan.find(node => node.id === frame.id);
+    assert.ok(planned.width !== frame.width || planned.height !== frame.height, `${frame.id} still uses its old frame size`);
+  }
+  await page.screenshot({ path: `${outputDir}/legacy-marquee-preview.png` });
+  await page.locator('[data-layout-apply]').click();
+  await settled();
+  const marqueeAfter = await graph();
+  assert.deepEqual(geometryOf(marqueeAfter.nodes), geometryOf(marqueePlan));
+  assert.deepEqual([...marqueeAfter.selected].sort(), expectedCards, 'participating frames do not become selected');
+  assert.equal(marqueeAfter.historyIndex, marqueeBefore.historyIndex + 1);
+  assert.equal(await page.locator('[data-canvas-layout-panel]').count(), 0);
+  await page.screenshot({ path: `${outputDir}/legacy-marquee-applied.png` });
+  const updatedMarquee = await page.evaluate(() => window.__canvasEditing.getState().selectionRegion);
+  assert.deepEqual([...updatedMarquee.frameIds].sort(), expectedFrames);
+  assert.deepEqual([...updatedMarquee.nodeIds].sort(), expectedCards);
+  assert.notDeepEqual(updatedMarquee.rect, savedMarquee.rect, 'the marquee updates around the arranged cards and frames');
+  assert.equal(await page.locator('[data-selection-target="nodes"]').getAttribute('aria-pressed'), 'true');
+  await openSettings();
+  assert.equal(await page.locator('[data-layout-scope] input:checked').inputValue(), 'selection');
+  await applyLayout();
+  assert.equal(await page.locator('[data-canvas-layout-panel]').count(), 0);
+  assert.deepEqual(await graph(), marqueeAfter, 'reapplying the same node marquee keeps its geometry and undo history');
+  await page.keyboard.press('Control+z');
+  await page.waitForTimeout(250);
+  assert.deepEqual((await graph()).nodes, marqueeBefore.nodes, 'one undo restores all original cards and four legacy frame bounds');
+  check('a node marquee around four saved frames previews, applies and undoes compact vertical layout in selection scope');
+
+  await loadExample();
+  assertExampleChapters(await renderedGeometry());
   await page.keyboard.press('Control+a');
-  assert.equal((await graph()).selected.length, (await graph()).nodes.length);
+  const example = await graph();
+  assert.deepEqual([...example.selected].sort(), example.nodes.filter(n => n.kind !== 'frame').map(n => n.id).sort());
+  // The node selection excludes frames. Explicitly choose the whole canvas
+  // to exercise frame fitting as well.
+  const wholeCanvasSettings = async () => {
+    await openSettings();
+    await page.locator('[data-layout-scope]').locator('label:has(input[value="all"])').click();
+  };
+  await wholeCanvasSettings();
   await applyLayout();
   await page.waitForTimeout(650);
   const exampleFirst = await graph();
+  assert.ok(exampleFirst.nodes.filter(n => n.kind !== 'frame').every(n => n.direction === 'vertical'),
+    'vertical layout must apply to every example card');
+  assert.equal(exampleFirst.historyIndex, example.historyIndex + 1);
   const exampleGeometry = await renderedGeometry();
   await writeFile(`${outputDir}/example-geometry.json`, JSON.stringify(exampleGeometry, null, 2));
   await page.screenshot({ path: `${outputDir}/example-layout.png` });
   assertRenderedGeometry(exampleGeometry);
+  assertExampleChapters(exampleGeometry);
   const verticalHeaders = await frameHeaderBounds();
   await writeFile(`${outputDir}/frame-headers-vertical.json`, JSON.stringify(verticalHeaders, null, 2));
   assertFrameHeaders(verticalHeaders);
+  await wholeCanvasSettings();
   await applyLayout();
   await page.waitForTimeout(650);
   const exampleAgain = await graph();
   assert.deepEqual(exampleAgain.nodes, exampleFirst.nodes, 'example layout must stay stable after measured DOM refresh');
   assert.equal(exampleAgain.historyLength, exampleFirst.historyLength, 'repeat example layout must not add history');
   check('the real example canvas keeps chapters clear and repeated layout stable after DOM measurement');
-  await page.evaluate(() => { window.__store.getState().setSelectedNodeIds([]); window.__store.getState().setSelectedNodeId(null); });
+  await page.evaluate(() => { window.__layoutTestStore.getState().setSelectedNodeIds([]); window.__layoutTestStore.getState().setSelectedNodeId(null); });
   await page.mouse.move(1700, 800);
   await page.waitForTimeout(400);
   await page.screenshot({ path: `${outputDir}/example-deselected.png` });
 
   await page.keyboard.press('Control+a');
-  await openSettings();
+  await wholeCanvasSettings();
   await page.locator('[data-layout-direction]').locator('label:has(input[value="horizontal"])').click();
   await page.locator('[data-layout-apply]').click();
   await settled();
+  const horizontalExample = await graph();
+  assert.ok(horizontalExample.nodes.filter(n => n.kind !== 'frame').every(n => n.direction === 'horizontal'),
+    'horizontal layout must apply to every example card');
+  assert.equal(horizontalExample.historyIndex, exampleFirst.historyIndex + 1);
   const horizontalGeometry = await renderedGeometry();
   await writeFile(`${outputDir}/example-horizontal-geometry.json`, JSON.stringify(horizontalGeometry, null, 2));
   assertRenderedGeometry(horizontalGeometry);
+  assertExampleChapters(horizontalGeometry);
   const horizontalHeaders = await frameHeaderBounds();
   await writeFile(`${outputDir}/frame-headers-horizontal.json`, JSON.stringify(horizontalHeaders, null, 2));
   assertFrameHeaders(horizontalHeaders);
   await writeFile(`${outputDir}/frame-headers.json`, JSON.stringify({ vertical: verticalHeaders, horizontal: horizontalHeaders }, null, 2));
-  await page.evaluate(() => { window.__store.getState().setSelectedNodeIds([]); window.__store.getState().setSelectedNodeId(null); });
+  await page.evaluate(() => { window.__layoutTestStore.getState().setSelectedNodeIds([]); window.__layoutTestStore.getState().setSelectedNodeId(null); });
   await page.mouse.move(1700, 800);
   await page.waitForTimeout(400);
   await page.screenshot({ path: `${outputDir}/example-horizontal-deselected.png` });

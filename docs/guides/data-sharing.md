@@ -45,12 +45,25 @@ The desktop app provides the complete experience; the browser entry appears only
 
 Imported edits and regenerated alternatives can become visible graph branches rather than being flattened into one transcript.
 
-## Share a read-only graph
+## Share a canvas file
 
-**Share** compresses a graph into a URL. A recipient can pan, zoom, and read, but cannot edit. Review the payload before sending it. Large graphs or sensitive material are better shared as an exported file.
+Use **Share canvas** to export a complete `.json` file or a thought-map image. A read-only mark prompts the recipient on import. Importing can still create an editable copy.
+
+Choose **Export canvas (.html)** in the canvas menu to save the entire canvas in one offline file, including nodes outside the current view. The file opens at the same position and zoom, with the same node detail and colors. The toolbar, minimap and any open reader or node details panel keep their appearance.
+
+Recipients can pan, zoom, navigate to frames and open node details or the reader. The file preserves saved document revisions, pages and annotations. Ruler ticks lead to the corresponding passage or PDF annotation.
+
+| Surface | Removed from the read-only copy |
+| --- | --- |
+| Workspace | Project and model switching, application search, canvas chat, settings, the More menu, undo and redo |
+| Canvas structure | Creation palette, layout and selection tools, edge editing, resize handles and the interaction lock |
+| Conversation and details | Composers, editing, deletion, sending, regeneration, execution and terminal controls |
+| Materials | Import and save actions, editor toolbars, annotation editing, recognition, digest generation and follow-up prompts |
+
+Project names, source labels, attachment thumbnails and other saved information remain visible when the associated command is removed. Remaining controls perform local reading or navigation actions.
 
 ## Recover recent changes
 
 Use `Cmd+Z` / `Ctrl+Z` and redo for recent operations. Automatic folder backup provides recoverable files; make another manual backup before major restructuring or version upgrades.
 
-**Local-first** does not mean data can never leave the device. Transfer occurs through an explicit action: a remote model or tool request, export, backup folder, or share link.
+**Local-first** does not mean data can never leave the device. Transfer can occur through an explicit action, such as a remote model or tool request, export, or backup folder.

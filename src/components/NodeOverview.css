@@ -3,12 +3,9 @@
    Below the lower bound it shrinks with the map to avoid label collisions;
    there is no upper bound, so locked overviews never grow into display type. */
 [data-node-overview-surface] {
-  --overview-min-zoom: 0.32;
-  --overview-zoom: calc(var(--ui-scale, 1) / max(var(--overview-min-zoom), var(--tdag-zoom, 1)));
   --overview-radius: var(--radius-panel);
 }
 [data-node-overview-surface='compact'] {
-  --overview-min-zoom: 0.22;
   --overview-radius: var(--radius-toolbar);
 }
 .react-flow .react-flow__node > [data-node-overview-surface] {
@@ -39,9 +36,6 @@
 
 /* Headers and metadata stay mounted when detail changes, preserving focus,
    editor drafts and their existing explicit-submit behavior. */
-[data-node-overview-surface] .conversation-node-content > :is(.thought-node-header, .node-metadata-overview),
-[data-node-overview-surface] > :is([data-focus-down], [data-stale-dot]),
-.node-overview { zoom: var(--overview-zoom, 1); }
 [data-node-overview-surface].conversation-node .thought-node-header {
   min-height: calc(var(--spacing-control-size) + var(--spacing-toolbar-inset) * 2);
   padding: var(--spacing-toolbar-inset) var(--spacing-surface-inset);
@@ -104,11 +98,3 @@
 .node-overview--compact .node-overview-identity { margin-bottom: var(--spacing-control-gap); }
 .node-overview--compact .node-file-type { padding: 0; background: transparent; }
 .node-overview--compact .node-overview-name { font-size: var(--text-control); line-height: var(--text-control--line-height); font-weight: 500; }
-
-/* Summary type adjusts independently of its screen-sized header and controls. */
-[data-node-overview-surface='summary'] :is(.node-overview-name, .node-summary-name) {
-  font-size: calc(var(--text-title) * var(--canvas-summary-type-scale, 1));
-}
-[data-node-overview-surface='summary'] :is(.node-overview-preview, .node-summary-text) {
-  font-size: calc(var(--text-control) * var(--canvas-summary-type-scale, 1));
-}

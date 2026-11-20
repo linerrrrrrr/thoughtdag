@@ -65,7 +65,7 @@ export default function DocumentEditPreview({ attachment, preview }: { attachmen
   if (html === null) return null;
   return <div className="docx-edit-preview" data-document-edit-preview={attachment.id}>
     <span className="text-meta text-ink-muted">{t('document.editPreview')}</span>
-    <div ref={viewport} className="docx-edit-preview-body document-rich-body text-body text-ink"
+    <div ref={viewport} data-type-surface="native-document" className="docx-edit-preview-body document-rich-body text-body text-ink"
       dangerouslySetInnerHTML={{ __html: html }} />
   </div>;
 }

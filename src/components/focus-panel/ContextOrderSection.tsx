@@ -52,7 +52,7 @@ export default function ContextOrderSection({ nodeId, inspect = false }: { nodeI
     if (inspect && state.targetId === nodeId) state.setActiveEdge(edgeId);
   };
   const sourceRow = (edge: ThoughtEdge, index: number, kind: 'ordered' | 'reference') => (
-    <div key={edge.id} className="context-source-row" tabIndex={inspect ? 0 : undefined}
+    <div key={edge.id} className="context-source-row" data-cursor="native" tabIndex={inspect ? 0 : undefined}
       data-context-order-item={kind === 'ordered' ? edge.source : undefined}
       data-context-reference-item={kind === 'reference' ? edge.source : undefined}
       data-context-source-edge={edge.id} data-context-source-active={activeEdgeId === edge.id || undefined}

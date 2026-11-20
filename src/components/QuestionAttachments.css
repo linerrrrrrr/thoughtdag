@@ -1,0 +1,167 @@
+.question-attachments {
+  --attachment-height: 64px;
+  --attachment-art: calc(var(--attachment-height) - 10px);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-related);
+  max-height: calc(2 * var(--attachment-height) + var(--spacing-related));
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+
+.question-attachment {
+  position: relative;
+  flex: 0 0 min(212px, max(144px, calc((100% - var(--spacing-related)) / 2)));
+  min-width: 0;
+  max-width: 100%;
+}
+.question-attachment-face {
+  display: grid;
+  grid-template-columns: var(--attachment-art) minmax(0, 1fr);
+  align-items: center;
+  gap: var(--spacing-related);
+  width: 100%;
+  height: var(--attachment-height);
+  padding-inline: var(--spacing-control-gap) 28px;
+  overflow: hidden;
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-content);
+  background: var(--color-card);
+  color: var(--color-ink);
+  text-align: start;
+}
+.question-attachment-art {
+  display: grid;
+  place-items: center;
+  width: var(--attachment-art);
+  height: var(--attachment-art);
+  overflow: hidden;
+  border-radius: var(--radius-tag);
+  color: var(--color-material-file-ink);
+  background: var(--color-material-file-wash);
+}
+.question-attachment-art img { width: 100%; height: 100%; object-fit: cover; }
+.question-attachment-art .file-identity {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  border: 0;
+  border-radius: inherit;
+}
+.question-attachment-art .file-identity > span { display: none; }
+.question-file-copy { display: grid; min-width: 0; gap: 1px; }
+.question-attachment-name, .question-attachment-detail {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 1.25;
+}
+.question-attachment-detail { color: var(--color-ink-muted); }
+.question-attachment-remove {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-end: 4px;
+  margin-block: auto;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-control);
+  color: var(--color-ink-muted);
+}
+.question-attachments button:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: -2px;
+}
+button.question-attachment-face:hover { border-color: var(--color-accent); }
+.question-attachment-remove:hover { background: var(--color-wash); color: var(--color-ink); }
+@media (hover: hover) and (pointer: fine) {
+  .question-attachment:not(:hover, :focus-within) .question-attachment-remove { opacity: 0; }
+}
+.question-attach-button {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: var(--spacing-control-size);
+  height: var(--spacing-control-size);
+  border-radius: var(--radius-control);
+  color: var(--color-ink-muted);
+}
+.question-attach-button:hover { color: var(--color-ink); background: var(--color-wash); }
+.question-composer-content > .question-attachments { margin-block-end: var(--spacing-related); }
+.node-question-composer .question-composer-content {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.node-question-composer .question-composer-content > .node-ask-textarea { min-height: 3.2em; }
+.node-question-composer .node-ask-actions {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--spacing-control-gap);
+}
+.node-ask-actions > [data-node-execution-picker] {
+  min-width: 0;
+  max-width: 100%;
+  justify-self: end;
+  justify-content: flex-end;
+  flex-wrap: nowrap;
+}
+.node-ask-actions [data-node-execution-picker] > [role="group"] { flex: none; }
+.node-ask-actions [data-node-execution-picker] > .relative { min-width: 0; max-width: 200px; }
+.node-ask-actions [data-model-picker-trigger] { width: 100%; max-width: 100%; height: var(--spacing-control-size); padding-block: 0; }
+.node-ask-actions > .node-ask-send { grid-column: 3; }
+
+/* A manually sized card shares its remaining height between the thumbnail
+   and the question. Keep additional files on a scrollable row. */
+.conversation-node[data-thought-resized] .conversation-question-body .node-question-composer:has(.question-attachments) {
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.conversation-node[data-thought-resized] .conversation-question-body .node-question-composer .question-composer-content:has(.question-attachments) {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 0;
+  container-type: size;
+}
+.conversation-node[data-thought-resized] .node-question-composer .question-composer-content:has(.question-attachments) > .node-ask-textarea {
+  flex: 1 1 0;
+  min-height: 1lh;
+}
+.conversation-node[data-thought-resized] .node-question-composer .question-attachments {
+  flex: none;
+  flex-wrap: nowrap;
+}
+.conversation-node[data-thought-resized] .conversation-question-body .node-question-composer .question-attachments {
+  --attachment-height: clamp(40px, calc(100cqh - var(--text-body) * var(--text-body--line-height) - var(--spacing-related) - 3px), 64px);
+}
+.conversation-node[data-thought-resized][data-awaiting-ask] { container-type: size; }
+@container (max-height: 310px) {
+  .conversation-node .conversation-question-body:has(.question-attachments) { padding-block: var(--spacing-related); }
+  .conversation-question-body .node-question-composer:has(.question-attachments) { padding-block: 6px; gap: var(--spacing-control-gap); }
+  .node-question-composer .question-composer-content > .question-attachments { margin-block-end: var(--spacing-control-gap); }
+}
+@container (max-width: 435px) {
+  .node-ask-actions [data-node-execution-option] { display: grid; place-items: center; width: 28px; padding: 0; }
+  .node-ask-actions [data-node-execution-option] svg { display: block; }
+  .node-ask-actions [data-node-execution-option] span { display: none; }
+}
+.focus-message-editor .question-composer-content:has(.question-attachments),
+.conversation-question-editor .question-composer-content:has(.question-attachments) {
+  padding: var(--spacing-section-gap);
+  background: var(--color-wash);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-content);
+}
+.focus-message-editor .question-composer-content:has(.question-attachments):focus-within,
+.conversation-question-editor .question-composer-content:has(.question-attachments):focus-within { border-color: var(--color-accent); }
+.question-composer-content:has(.question-attachments) > textarea {
+  display: block;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+}

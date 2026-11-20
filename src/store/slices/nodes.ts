@@ -16,6 +16,8 @@ import { reorderNodeLayers } from '../../lib/node-layer';
 import { fitFrameNodes, frameContentIds, isFrameNode, nodesRect } from '../../lib/frames';
 import { applySelectionGeometry } from '../../lib/node-geometry';
 import { applyEdgeSettings, applyBatchEdgeSettings } from '../../lib/edge-edit';
+import { rulerSourceHandle } from '../../lib/edge-anchors';
+import { resolveRulerHandle, remapOverviewRulerHandle } from '../../lib/overview-ruler';
 import { canvasLayoutInputKey, planCanvasLayout } from '../../lib/canvas-layout';
 import { questionHeightRatio } from '../../lib/conversation-split';
 import { modelExecutionKind, modelMatchesExecution, nodeExecutionKind } from '../../lib/node-execution';
@@ -26,6 +28,21 @@ function copiedNodeData(data: ThoughtNode['data']): ThoughtNode['data'] {
   Reflect.deleteProperty(copy, 'canvasGroupId');
   Reflect.deleteProperty(copy, 'previousCanvasGroupId');
   return copy;
+}
+
+function closesStructuralCycle(edge: ThoughtEdge, nodes: ThoughtNode[], edges: ThoughtEdge[]): boolean {
+  const structural = edges.filter(e => !e.data?.isCrossLink);
+  return walkUpAncestors(edge.source, nodes, structural).ordered.some(n => n.id === edge.target);
+}
+
+function asStructuralEdge(edge: ThoughtEdge): ThoughtEdge {
+  const data = { ...edge.data };
+  delete data.isCrossLink;
+  return {
+    ...edge, sourceHandle: rulerSourceHandle(edge.sourceHandle) ?? 'continue', targetHandle: 'top', animated: false,
+    style: { stroke: COLORS.accent, strokeWidth: 2 },
+    markerEnd: { type: 'arrowclosed', color: COLORS.accent, width: 18, height: 18 }, data,
+  };
 }
 
 // A node that goes while it is still generating takes its stream with it:
@@ -230,36 +247,36 @@ export const createNodeSlice: StateCreator<StoreState, [], [], NodeSlice> = (set
     get().pushHistory();
   },
 
-  addCrossLink: (sourceId: string, targetId: string) => {
+  addCrossLink: (sourceId, targetId, sourceHandle) => {
     const { edges, nodes } = get();
-    // References may point in either direction without becoming structural
-    // cycles. Only an identical source-target connection is redundant.
-    const exists = edges.some((e) => e.source === sourceId && e.target === targetId);
-    if (exists) return;
+    const src = nodes.find(n => n.id === sourceId), tgt = nodes.find(n => n.id === targetId);
+    if (!src || !tgt || sourceId === targetId) return;
+    const markId = rulerSourceHandle(sourceHandle);
+    const pair = edges.filter(e => e.source === sourceId && e.target === targetId);
+    if (markId && resolveRulerHandle(src.data, markId) !== markId) return;
+    if (pair.some(e => resolveRulerHandle(src.data, e.sourceHandle) === markId)) return;
     // MATERIAL sources wire SOLID by default. A dashed reference carries a
     // node's Q/A transcript — a material has none, so a dashed wire from a
     // material is a nearly-empty gesture that LOOKS like "file connected"
     // (the exact misreading a real canvas produced). Solid is the only
     // honest default; the toast offers the way back down.
-    const srcNode = nodes.find((x) => x.id === sourceId);
-    if (srcNode && ['note', 'file', 'link'].includes(srcNode.data.stepKind ?? '')) {
+    if (['note', 'file', 'link'].includes(src.data.stepKind ?? '')) {
       get().pushHistory();
       const matEdge: ThoughtEdge = {
-        id: `edge-${sourceId}-${targetId}`,
-        source: sourceId, sourceHandle: 'continue',
+        id: markId ? `edge-${generateId()}` : `edge-${sourceId}-${targetId}`,
+        source: sourceId, sourceHandle: markId ?? 'continue',
         target: targetId, targetHandle: 'top',
         type: 'smoothstep',
         style: { stroke: COLORS.accent, strokeDasharray: '8 4', strokeWidth: 2 },
         animated: true,
         data: { isCrossLink: true, createdAt: new Date().toISOString() },
       };
-      set((state) => ({ edges: [...state.edges, matEdge] }));
+      const converted = closesStructuralCycle(matEdge, nodes, edges) ? matEdge : asStructuralEdge(matEdge);
+      set((state) => ({ edges: [...state.edges, converted] }));
       get().logEvent('connect', matEdge.id);
-      // structural conversion reuses the cycle guard, styling, layout and
-      // staleness reaction in one place; on refusal the edge stays dashed.
-      get().setEdgeStructural(matEdge.id, true);
-      const converted = get().edges.find((e) => e.id === matEdge.id);
-      if (converted && !converted.data?.isCrossLink) {
+      get().pushHistory();
+      if (converted.data?.isCrossLink) toast('error', t('edge.cycleBlocked'));
+      else {
         const ctx = buildContext(sourceId, get().nodes, get().edges);
         const tok = ctx.messages.reduce((s2, m) => s2 + countTokens(m.content), 0);
         toast('success', fmt(t('edge.materialWiredFull'), { n: tok.toLocaleString() }), 8000, {
@@ -273,15 +290,12 @@ export const createNodeSlice: StateCreator<StoreState, [], [], NodeSlice> = (set
     // Anchor by geometry: a reference into a node right below reads as part
     // of the vertical grammar (bottom→top); anything else routes via the
     // side channel so dashed lines never cut across the chain columns.
-    const src = nodes.find((n) => n.id === sourceId);
-    const tgt = nodes.find((n) => n.id === targetId);
-    const vertical = !!src && !!tgt
-      && tgt.position.y > src.position.y + 60
+    const vertical = tgt.position.y > src.position.y + 60
       && Math.abs(tgt.position.x - src.position.x) < 320;
     const newEdge: ThoughtEdge = {
-      id: `crosslink-${sourceId}-${targetId}`,
+      id: markId ? `crosslink-${generateId()}` : `crosslink-${sourceId}-${targetId}`,
       source: sourceId,
-      sourceHandle: vertical ? 'continue' : 'branch',
+      sourceHandle: markId ?? (vertical ? 'continue' : 'branch'),
       target: targetId,
       targetHandle: vertical ? 'top' : 'left',
       type: 'smoothstep',
@@ -297,21 +311,19 @@ export const createNodeSlice: StateCreator<StoreState, [], [], NodeSlice> = (set
     // Price tag at the moment of connection — BOTH prices, so it's a
     // decision, not a nudge. When the source has no upstream chain the two
     // relationships carry the same conversation, so no choice is needed.
-    if (src && !['note', 'file', 'link'].includes(src.data.stepKind ?? '')) {
-      const { ordered } = walkUpAncestors(sourceId, nodes, edges.filter((e) => !e.data?.isCrossLink));
-      const chain = ordered.filter((n) => n.id !== sourceId && !['note', 'file', 'link'].includes(n.data.stepKind ?? ''));
-      if (chain.length > 0) {
-        const quoteTok = countTokens(referenceBlockContent({ source: src, edge: newEdge }));
-        // Full tier = SOLID wiring: the target reads the source's whole
-        // upstream, files included — price the real thing, not a transcript.
-        const ctx = buildContext(sourceId, nodes, edges);
-        const fullTok = ctx.messages.reduce((sum, m) => sum + countTokens(m.content), 0)
-          + countTokens(src.data.question + src.data.response);
-        toast('info', fmt(t('edge.linkedQuote'), { n: quoteTok }), 8000, {
-          label: fmt(t('edge.makeFull'), { m: fullTok }),
-          run: () => get().setEdgeStructural(newEdge.id, true),
-        });
-      }
+    const { ordered } = walkUpAncestors(sourceId, nodes, edges.filter((e) => !e.data?.isCrossLink));
+    const chain = ordered.filter((n) => n.id !== sourceId && !['note', 'file', 'link'].includes(n.data.stepKind ?? ''));
+    if (chain.length > 0) {
+      const quoteTok = countTokens(referenceBlockContent({ source: src, edge: newEdge }));
+      // Full tier = SOLID wiring: the target reads the source's whole
+      // upstream, files included — price the real thing, not a transcript.
+      const ctx = buildContext(sourceId, nodes, edges);
+      const fullTok = ctx.messages.reduce((sum, m) => sum + countTokens(m.content), 0)
+        + countTokens(src.data.question + src.data.response);
+      toast('info', fmt(t('edge.linkedQuote'), { n: quoteTok }), 8000, {
+        label: fmt(t('edge.makeFull'), { m: fullTok }),
+        run: () => get().setEdgeStructural(newEdge.id, true),
+      });
     }
   },
 
@@ -349,34 +361,16 @@ export const createNodeSlice: StateCreator<StoreState, [], [], NodeSlice> = (set
     const { nodes, edges } = get();
     const edge = edges.find((e) => e.id === edgeId);
     if (!edge) return;
-    if (structural) {
-      // Dashed → solid: the target will read the source's whole upstream.
-      // Guard the DAG: if the source already sits downstream of the target
-      // along structural edges, going solid would close a cycle.
-      const structuralEdges = edges.filter((e) => !e.data?.isCrossLink);
-      const { ordered } = walkUpAncestors(edge.source, nodes, structuralEdges);
-      if (ordered.some((n) => n.id === edge.target)) {
-        toast('error', t('edge.cycleBlocked'));
-        return;
-      }
+    if (structural && closesStructuralCycle(edge, nodes, edges)) {
+      toast('error', t('edge.cycleBlocked'));
+      return;
     }
     get().pushHistory();
     get().logEvent(structural ? 'connect' : 'disconnect', edgeId, { convert: true });
     set((state) => ({
       edges: state.edges.map((e) => {
         if (e.id !== edgeId) return e;
-        if (structural) {
-          const rest = { ...(e.data ?? {}) };
-          delete rest.isCrossLink;
-          return {
-            ...e,
-            sourceHandle: 'continue', targetHandle: 'top',
-            animated: false,
-            style: { stroke: COLORS.accent, strokeWidth: 2 },
-            markerEnd: { type: 'arrowclosed' as const, color: COLORS.accent, width: 18, height: 18 },
-            data: rest,
-          };
-        }
+        if (structural) return asStructuralEdge(e);
         return {
           ...e,
           animated: true,
@@ -414,7 +408,7 @@ export const createNodeSlice: StateCreator<StoreState, [], [], NodeSlice> = (set
     return { ok: true };
   },
 
-  applyCanvasLayout: async (options, selectedIds, isCurrent) => {
+  applyCanvasLayout: async (options, selectedIds, isCurrent, onCommit) => {
     const state = get();
     const input = canvasLayoutInputKey(state.nodes, state.edges);
     const selection = [...state.selectedNodeIds].sort().join('\0');
@@ -459,6 +453,7 @@ export const createNodeSlice: StateCreator<StoreState, [], [], NodeSlice> = (set
     });
     if (!changed) return { ok: true };
     get().pushHistory();
+    onCommit?.(nodes);
     set({ nodes });
     get().pushHistory();
     return { ok: true };
@@ -474,11 +469,14 @@ export const createNodeSlice: StateCreator<StoreState, [], [], NodeSlice> = (set
         let newIndex = direction === 'prev' ? responseIndex - 1 : responseIndex + 1;
         if (newIndex < 0) newIndex = responses.length - 1;
         if (newIndex >= responses.length) newIndex = 0;
+        const question = n.data.questions?.[newIndex] ?? n.data.question;
+        const response = responses[newIndex];
         return {
           ...n,
           // navigating away from a failed placeholder reclaims the older answer;
           // the question mirrors its version's wording (a version is a PAIR)
-          data: { ...n.data, responseIndex: newIndex, response: responses[newIndex], agentActivity: undefined, question: n.data.questions?.[newIndex] ?? n.data.question, generationFailed: undefined, highlights: pruneHighlights(n.data.highlights, responses[newIndex]) },
+          data: { ...n.data, responseIndex: newIndex, response, agentActivity: undefined, question, generationFailed: undefined,
+            highlights: pruneHighlights(n.data.highlights, response, question) },
         };
       }),
     }));
@@ -493,6 +491,8 @@ export const createNodeSlice: StateCreator<StoreState, [], [], NodeSlice> = (set
         const newResponses = n.data.responses.filter((_, i) => i !== versionIndex);
         if (newResponses.length === 0) return n; // Don't delete last version
         const newIndex = Math.min(n.data.responseIndex, newResponses.length - 1);
+        const questions = n.data.questions?.filter((_, i) => i !== versionIndex);
+        const question = questions?.[newIndex] ?? n.data.question;
         return {
           ...n,
           data: {
@@ -500,8 +500,7 @@ export const createNodeSlice: StateCreator<StoreState, [], [], NodeSlice> = (set
             responses: newResponses,
             responseIndex: newIndex,
             response: newResponses[newIndex],
-            questions: n.data.questions?.filter((_, i) => i !== versionIndex),
-            question: n.data.questions?.filter((_, i) => i !== versionIndex)[newIndex] ?? n.data.question,
+            questions, question,
             summaries: n.data.summaries?.filter((_, i) => i !== versionIndex),
             generatedBy: n.data.generatedBy?.filter((_, i) => i !== versionIndex),
             summaryTypes: n.data.summaryTypes?.filter((_, i) => i !== versionIndex),
@@ -512,7 +511,7 @@ export const createNodeSlice: StateCreator<StoreState, [], [], NodeSlice> = (set
             agentActivity: undefined,
             generatedAts: n.data.generatedAts?.filter((_, i) => i !== versionIndex),
             editedAts: n.data.editedAts?.filter((_, i) => i !== versionIndex),
-            highlights: pruneHighlights(n.data.highlights, newResponses[newIndex]),
+            highlights: pruneHighlights(n.data.highlights, newResponses[newIndex], question),
           },
         };
       }),
@@ -764,9 +763,11 @@ export const createNodeSlice: StateCreator<StoreState, [], [], NodeSlice> = (set
     // would entangle the copy with its source.
     const idMap = new Map<string, string>();
     const attIdMap = new Map<string, string>();
+    const highlightIds = new Map<string, Map<string, string>>();
     for (const n of originals) {
       idMap.set(n.id, generateId());
       for (const a of n.data.attachments ?? []) attIdMap.set(a.id, generateId());
+      highlightIds.set(n.id, new Map((n.data.highlights ?? []).map(h => [h.id, generateId()])));
     }
     const remapAttIds = (ids?: string[]) => (ids ?? []).map((x) => attIdMap.get(x) ?? x);
 
@@ -781,7 +782,10 @@ export const createNodeSlice: StateCreator<StoreState, [], [], NodeSlice> = (set
         excludedAttachmentIds: remapAttIds(n.data.excludedAttachmentIds),
         includedAttachmentIds: remapAttIds(n.data.includedAttachmentIds),
         digestOf: n.data.digestOf ? (attIdMap.get(n.data.digestOf) ?? n.data.digestOf) : undefined,
-        highlights: (n.data.highlights ?? []).map((h) => ({ ...h, id: generateId() })),
+        highlights: (n.data.highlights ?? []).map(h => ({
+          ...h, id: highlightIds.get(n.id)!.get(h.id)!,
+          ...(h.attachmentId ? { attachmentId: attIdMap.get(h.attachmentId) ?? h.attachmentId } : {}),
+        })),
         isEditing: false,
         isEditingResponse: false,
         isLoading: false,
@@ -795,9 +799,10 @@ export const createNodeSlice: StateCreator<StoreState, [], [], NodeSlice> = (set
       .filter((e) => selected.has(e.source) && selected.has(e.target))
       .map((e) => ({
         ...e,
-        id: `edge-${idMap.get(e.source)!}-${idMap.get(e.target)!}`,
+        id: `edge-${generateId()}`,
         source: idMap.get(e.source)!,
         target: idMap.get(e.target)!,
+        sourceHandle: e.sourceHandle && remapOverviewRulerHandle(e.sourceHandle, attIdMap, highlightIds.get(e.source)!),
         data: e.data ? { ...e.data } : e.data,
       }));
 

@@ -1,0 +1,44 @@
+name: Application design registries
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run test:typography-gate
+      - run: npm run test:cursor-gate
+      - run: npm run test:spacing-gate
+      - run: npm run build
+      - name: Verify input layouts, screen sizes and cursors in Chromium
+        shell: bash
+        env:
+          THOUGHTDAG_DISK_STORAGE: '0'
+          APP_URL: http://127.0.0.1:5173
+          VITE_API_BASE: http://127.0.0.1:5173
+        run: |
+          export CHROME_PATH="$(command -v google-chrome)"
+          node node_modules/vite/bin/vite.js --host 127.0.0.1 --port 5173 --strictPort > "$RUNNER_TEMP/typography-vite.log" 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+          curl --retry 20 --retry-connrefused --retry-delay 1 -fsS "$APP_URL" >/dev/null
+          node scripts/test-node-input-region-ui.mjs
+          node scripts/test-canvas-type-scale-ui.mjs
+          npm run test:spacing-ui
+          node scripts/test-status-typography-ui.mjs
+          node scripts/test-canvas-cursor-ui.mjs
+          node scripts/test-document-cursor-ui.mjs
+          node scripts/test-reader-drag-cursors-ui.mjs
+          node scripts/test-canvas-html-ui.mjs

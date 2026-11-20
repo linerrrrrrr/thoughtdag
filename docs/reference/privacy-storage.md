@@ -4,9 +4,11 @@
 
 Canvases, model credentials, imported documents, and local session mirrors stay on your machine. Canvas state defaults to browser IndexedDB; optional folder backup writes `.thoughtdag.json` files.
 
-A local installation can set an absolute `THOUGHTDAG_HOME` and enable `THOUGHTDAG_DISK_STORAGE=1` to store canvases, attachments, and settings under its `browser-storage` directory, and agent workspaces under `workspaces`. On the first visit to each browser origin, the app copies and verifies its existing records before switching. The browser originals remain available; separate origins are not merged.
+A local installation with an absolute `THOUGHTDAG_HOME` and `THOUGHTDAG_DISK_STORAGE=1` uses one canvas library per data directory. Localhost, loopback IP addresses, and different ports share the same canvases, attachments, and settings when they use that directory. Point a test instance at a separate `THOUGHTDAG_HOME` for an independent library.
 
-The browser still holds a locator and filesystem permissions. If browser data is cleared, reopen the same origin and choose the existing local data to reconnect. If the local storage service is unavailable, the app stops at a retry screen rather than silently opening an empty canvas. Folder backup remains a separate feature.
+The first upgrade merges the catalogs from earlier local addresses. Canvases with distinct IDs keep their own entries even when their names match. Verified empty default canvases can be skipped. Retired storage directories are preserved under `browser-storage/legacy-backup/`. The first connection also copies and verifies any eligible browser-only records and retains their originals. Reopening the app after clearing browser data reconnects to the same library. The page offers a retry if the local service is unavailable.
+
+Each locally hosted canvas has a folder for external tools. Creating or importing a canvas creates `workspaces/<project storage ID>/<canvas ID>/external/` under the data directory. Upgrading provisions missing folders for older canvases. Canvases that already had external files keep their original folder. Codex starts in the corresponding folder when launched from a canvas. Renaming or archiving a canvas preserves the path. Deleting a canvas preserves the external files. You manage these files independently of the canvas nodes and attachments.
 
 ## Editing a canvas file by number
 
@@ -20,7 +22,6 @@ Content leaves the device only through a feature that requires transfer:
 
 - a model request to a remote endpoint;
 - a search or external tool call;
-- a share URL you create and send;
 - a backup folder managed by a third-party sync service;
 - an exported file you distribute.
 

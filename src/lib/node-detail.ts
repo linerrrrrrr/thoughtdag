@@ -1,5 +1,6 @@
 import type { NodeDetailLevel } from '../types';
 import { useStore } from '../store';
+import { isFrameNode } from './frames';
 import { useUiStore } from './ui-store';
 import { useZoomTier, type ZoomTier } from './use-map-mode';
 
@@ -14,12 +15,18 @@ export function useNodeDetail(locked?: NodeDetailLevel) {
   return { tier: fixed ? TIERS[fixed] : automaticTier, fixed };
 }
 
-/** Presentation only. One undo step, with no generation or context mutation. */
-export function setNodeDetail(nodeId: string, detailLevel?: NodeDetailLevel) {
-  const node = useStore.getState().nodes.find((item) => item.id === nodeId);
-  if (!node || node.data.stepKind === 'frame' || node.data.detailLevel === detailLevel) return;
-  useStore.getState().pushHistory();
-  useStore.setState((state) => ({ nodes: state.nodes.map((item) => item.id === nodeId
-    ? { ...item, data: { ...item.data, detailLevel } } : item) }));
-  useStore.getState().pushHistory();
+/** All changed node locks form one undo step. Omit the level to follow the global preference. */
+export function setNodeDetail(nodeIds: string | readonly string[], detailLevel?: NodeDetailLevel) {
+  const targets = new Set(typeof nodeIds === 'string' ? [nodeIds] : nodeIds);
+  const state = useStore.getState();
+  let changed = false;
+  const nodes = state.nodes.map(node => {
+    if (!targets.has(node.id) || isFrameNode(node) || node.data.detailLevel === detailLevel) return node;
+    changed = true;
+    return { ...node, data: { ...node.data, detailLevel } };
+  });
+  if (!changed) return;
+  state.pushHistory();
+  useStore.setState({ nodes });
+  state.pushHistory();
 }

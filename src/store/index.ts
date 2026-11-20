@@ -1,4 +1,5 @@
 import { create, type StateCreator } from 'zustand';
+import { browserRenderStore } from '../lib/browser-render-store';
 import { persist } from 'zustand/middleware';
 import { createIdbObjectStorage } from '../lib/persistence';
 import { isViewerMode } from '../lib/viewer';
@@ -71,7 +72,7 @@ function withNodeNumbers(createState: StateCreator<StoreState>): StateCreator<St
   };
 }
 
-export const useStore = create<StoreState>()(persist(withNodeNumbers((...a) => ({
+export const useStore = browserRenderStore(create<StoreState>()(persist(withNodeNumbers((...a) => ({
   ...createHistorySlice(...a),
   ...createNodeSlice(...a),
   ...createLlmSlice(...a),
@@ -122,7 +123,7 @@ export const useStore = create<StoreState>()(persist(withNodeNumbers((...a) => (
   onRehydrateStorage: () => (_state, error) => {
     if (error) console.error('[thoughtdag] rehydration failed:', error);
   },
-}));
+})));
 
 // Staleness watcher: whenever the graph itself changes (any source — edits,
 // generation, undo, project switch, rehydration), recompute which answers

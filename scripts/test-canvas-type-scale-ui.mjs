@@ -1,10 +1,11 @@
-// Real canvas typography from the model menu, including nested overview zoom.
+// Real canvas typography from Node settings, including nested overview zoom.
 // Run against a local Vite dev server with APP_URL and optional CHROME_PATH.
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
 import { documentBrowser } from './fixtures/original-file-browser.mjs';
 import { screenFont } from './fixtures/screen-font.mjs';
+import { clickSettingsBackdrop, openSettingsSection } from './fixtures/canvas-model-picker.mjs';
 
 const appUrl = new URL(process.env.APP_URL ?? 'http://127.0.0.1:5173');
 const executablePath = process.env.CHROME_PATH ?? [
@@ -18,6 +19,7 @@ const { context, close } = await documentBrowser(appUrl.href, {
   executablePath, viewport: { width: 1600, height: 1100 }, locale: 'zh-CN', reducedMotion: 'reduce',
 });
 const page = await context.newPage();
+page.setDefaultTimeout(15000);
 const errors = [], apiWrites = [];
 page.on('pageerror', error => errors.push(error.message));
 await context.routeWebSocket('**', socket => socket.close());
@@ -41,12 +43,22 @@ await context.addInitScript(() => {
 const card = id => page.locator('.react-flow__node[data-id="' + id + '"]');
 const answer = card('reading').locator('.conversation-answer');
 const preview = card('overview').locator('[data-node-preview]');
+const compact = card('compact').locator('.node-overview--compact .node-overview-name');
 const readingCard = card('reading');
 const reasoning = readingCard.locator('[data-reasoning-toggle]');
 const copyButton = readingCard.getByRole('button', { name: '复制回答', exact: true });
 const activity = card('activity').locator('[data-activity-history]');
-const settings = page.locator('[data-canvas-typography-toggle]');
-const field = name => page.locator('[data-canvas-typography-field="' + name + '"]');
+const settingsPanel = page.locator('[data-settings-panel]');
+const handle = name => page.locator('[data-canvas-type-handle="' + name + '"]');
+const handleSize = async name => Number(await handle(name).getAttribute('aria-valuenow'));
+const chart = page.locator('[data-canvas-type-chart]');
+const curveHeights = role => chart.locator('polyline[data-series="' + role + '"]').evaluate(line => Array.from(line.points, point => point.y));
+const scrubber = page.locator('[data-canvas-type-scrubber]');
+const previewZoom = page.locator('[data-canvas-typography-preview-zoom]');
+const play = page.locator('[data-canvas-type-play]');
+const sample = role => page.locator('[data-canvas-typography-sample="' + role + '"]');
+const viewport = () => page.evaluate(() => window.__rf.getViewport());
+const storedSettings = () => page.evaluate(() => localStorage.getItem('thoughtdag.canvasTypography'));
 const apply = page.locator('[data-canvas-typography-apply]');
 const reset = page.locator('[data-canvas-typography-reset]');
 const ready = () => page.waitForFunction(() => window.__store?.persist.hasHydrated() && window.__rf && window.__ui);
@@ -69,7 +81,22 @@ async function expectReading(zoom, body, summary) {
   await setZoom(zoom);
   near(await screenFont(answer), body, 'Full answer at ' + zoom);
   near(await screenFont(preview), summary, 'Summary at ' + zoom);
+  near(await screenFont(compact), 10.5 * Math.min(1, zoom / .22), 'Compact name at ' + zoom);
   near((await card('reading').boundingBox()).width, 520 * zoom, 'Full node width at ' + zoom);
+}
+
+async function expectSample(role, expected, label) {
+  const element = sample(role);
+  // Chromium can paint the local viewport transform one frame before
+  // inheriting the new em size through its scaled, clipped scene.
+  const end = Date.now() + 2500;
+  let actual;
+  do {
+    await settle();
+    actual = await screenFont(element);
+    if (Math.abs(actual - expected) < .15) return;
+  } while (Date.now() < end);
+  near(actual, expected, label);
 }
 
 async function expectFrame(zoom, body) {
@@ -80,7 +107,6 @@ async function expectFrame(zoom, body) {
     [reasoning.locator('span'), 14, 'Reasoning label'],
     [copyButton, 14, 'Copy label'],
     [readingCard.locator('[data-generated-at]'), 12, 'Timestamp'],
-    [readingCard.locator('.node-header-identity [data-node-number]'), 14, 'Header number'],
     [readingCard.locator('[data-node-metadata-toggle] span').first(), 14, 'Name and summary disclosure'],
     [readingCard.locator('[data-highlight-disclosure] span').first(), 14, 'Highlights disclosure'],
     [activity.locator('span').first(), 14, 'Activity heading'],
@@ -101,13 +127,35 @@ async function expectFrame(zoom, body) {
 }
 
 async function openSettings() {
-  if (!await settings.isVisible()) {
-    const tabs = page.locator('[data-picker-view="settings"]');
-    if (!await tabs.isVisible()) await page.locator('[data-project-switcher] [data-model-picker-trigger]').click();
-    await tabs.click();
-  }
-  if (await settings.getAttribute('aria-expanded') !== 'true') await settings.click();
-  await field('bodySize').waitFor();
+  await openSettingsSection(page, 'nodes');
+  await chart.waitFor();
+}
+
+async function adjustHandle(name, key, count) {
+  const slider = handle(name);
+  await slider.focus();
+  for (let i = 0; i < count; i++) await page.keyboard.press(key);
+}
+
+async function dragHandle(name, dy) {
+  const slider = handle(name);
+  await slider.scrollIntoViewIfNeeded();
+  const box = await slider.boundingBox();
+  const x = box.x + box.width / 2, y = box.y + box.height / 2;
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  await page.mouse.move(x, y + dy, { steps: 6 });
+  await page.mouse.up();
+  await settle();
+}
+
+async function editBothCurves() {
+  await adjustHandle('bodySize', 'ArrowUp', 4);
+  await adjustHandle('bodyExponent', 'ArrowUp', 10);
+  await adjustHandle('summaryExponent', 'ArrowUp', 10);
+  near(await handleSize('bodySize'), 20, 'Keyboard adjusts the full-size anchor');
+  near(await handleSize('bodyExponent'), 20 * Math.sqrt(.5), 'Up moves the half-zoom anchor to a larger screen size');
+  near(await handleSize('summaryExponent'), 10.5 * Math.sqrt(2), 'Up moves the summary anchor to a larger screen size');
 }
 
 async function reload() {
@@ -129,9 +177,10 @@ try {
     const data = { question: '放大画布后，节点里的文字会怎样变化？', response, responses: [response], responseIndex: 0,
       tokenCount: 100, displayName: 'Next question', displaySummary: 'Keep the next answer in view.', highlights: [],
       attachments: [], excludedAttachmentIds: [], includedAttachmentIds: [], isCollapsed: false, isEditing: false, isLoading: false };
-    const nodes = ['reading', 'overview', 'activity'].map((id, i) => ({ id, type: 'thought', dragHandle: '.drag-handle',
-      width: 520, height: 335, position: { x: id === 'activity' ? 535 : 0, y: id === 'overview' ? 355 : 0 },
-      data: { ...data, nodeNumber: i + 1, detailLevel: id === 'overview' ? 'summary' : 'full',
+    const levels = { reading: 'full', overview: 'summary', activity: 'full', compact: 'compact' };
+    const nodes = Object.entries(levels).map(([id, detailLevel], i) => ({ id, type: 'thought', dragHandle: '.drag-handle',
+      width: 520, height: 335, position: { x: i < 2 ? 0 : 535, y: i % 2 * 355 },
+      data: { ...data, nodeNumber: i + 1, detailLevel,
         generatedAts: ['2026-05-01T00:00:00Z'], reasonings: ['Reviewing the question.'],
         agentActivities: id === 'activity' ? [[{ id: 'step', kind: 'reasoning', status: 'completed',
           text: 'Reviewing the question.', startedAt: 1000, endedAt: 3000 }]] : undefined } }));
@@ -148,31 +197,109 @@ try {
     if (zoom === 2) await readingCard.screenshot({ path: output + '/conversation-200.png' });
   }
 
+  await openSettingsSection(page, 'edges');
+  await settingsPanel.getByRole('heading', { name: '连线走向', exact: true }).waitFor();
+  assert.equal(await settingsPanel.getByText('这些设置用于各画布。选中一条连线，可单独指定它的走线。', { exact: true }).count(), 0);
   await openSettings();
-  assert.deepEqual(await Promise.all(['bodySize', 'bodyExponent', 'summaryExponent'].map(name => field(name).inputValue())), ['16', '1', '0']);
-  await field('bodySize').fill('20');
-  await field('bodyExponent').fill('0.5');
-  await field('summaryExponent').fill('0.5');
-  await page.locator('[data-canvas-typography-preview-zoom]').fill('50');
+  await settingsPanel.getByRole('heading', { name: '画布字号', level: 4 }).waitFor();
+  assert.equal(await settingsPanel.getByRole('button', { name: '画布字号', exact: true }).count(), 0);
+  assert.equal(await settingsPanel.getByText('设定各画布的默认显示方式。单个节点可以锁定自己的详细程度。', { exact: true }).count(), 0);
+  assert.equal(await settingsPanel.getByText('上游对话和文件接入同一个端口，延伸使用独立出口。', { exact: true }).count(), 0);
+  await settingsPanel.locator('[data-canvas-detail]:checked').click();
   await settle();
-  near(await screenFont(page.locator('[data-canvas-typography-sample="body"]')), 20 * Math.sqrt(.5), 'Body sample reflects the unsaved curve');
-  near(await screenFont(page.locator('[data-canvas-typography-sample="summary"]')), 10.5 * Math.sqrt(.5), 'Summary sample reflects the unsaved curve');
+  assert.ok(await chart.isVisible(), 'The typography editor stays open when another node setting receives focus');
+  const savedViewport = await viewport();
+  const initialSettings = await storedSettings();
+  assert.deepEqual(await Promise.all(['bodySize', 'bodyExponent', 'summaryExponent'].map(handleSize)), [16, 8, 10.5]);
+  const compactCurve = await curveHeights('compact');
+  await previewZoom.fill('16');
+  const compactLabel = page.locator('.canvas-type-curve-legend [data-series="compact"] b');
+  near(parseFloat(await compactLabel.textContent()), 10.5 * .16 / .22, 'Compact reference curve follows the real low-zoom compensation');
+  await previewZoom.fill('100');
+  const oldBodyCurve = await curveHeights('body'), oldSummaryCurve = await curveHeights('summary');
+  await dragHandle('bodySize', -12);
+  const draggedSize = await handleSize('bodySize');
+  assert.ok(draggedSize > 16, 'Dragging the full-size point up increases the reading size');
+  assert.notDeepEqual(await curveHeights('body'), oldBodyCurve, 'Editing changes the plotted body curve');
+  assert.deepEqual(await curveHeights('summary'), oldSummaryCurve);
+  await expectSample('body', draggedSize, 'The rendered preview follows the dragged point');
+  await dragHandle('summaryExponent', -18);
+  assert.ok(await handleSize('summaryExponent') > 10.5, 'Dragging the summary point updates its own curve');
+  assert.notDeepEqual(await curveHeights('summary'), oldSummaryCurve, 'Editing changes the plotted summary curve');
+  near(await handleSize('bodySize'), draggedSize, 'Dragging the summary curve preserves the body curve');
+  await page.keyboard.press('Escape');
+  await openSettings();
+  await editBothCurves();
+  assert.deepEqual(await curveHeights('compact'), compactCurve, 'The compact reference curve stays fixed while editing');
+  await chart.scrollIntoViewIfNeeded();
+  const chartBox = await chart.boundingBox();
+  // Scrub across the plot away from the curve edit handles.
+  const plotY = chartBox.y + chartBox.height * .2;
+  await page.mouse.move(chartBox.x + chartBox.width * .22, plotY);
+  await page.mouse.down();
+  const firstZoom = Number(await previewZoom.inputValue());
+  await page.mouse.move(chartBox.x + chartBox.width * .65, plotY, { steps: 8 });
+  await page.mouse.up();
+  const draggedZoom = Number(await previewZoom.inputValue());
+  assert.ok(draggedZoom > firstZoom + 25, 'Dragging across the graph changes the preview zoom continuously');
+  await settle();
+  const ratio = draggedZoom / 100;
+  await expectSample('body', 20 * Math.sqrt(Math.min(1, ratio)), 'Graph drag updates the body sample');
+  await expectSample('summary', 10.5 * Math.sqrt(Math.max(.32, ratio)) * Math.min(1, ratio / .32), 'Graph drag updates the summary sample');
+  await scrubber.focus();
+  await page.keyboard.press('ArrowLeft');
+  assert.equal(Number(await previewZoom.inputValue()), draggedZoom - 1, 'The graph can also be scrubbed by keyboard');
+  await play.click();
+  assert.equal(await play.getAttribute('aria-pressed'), 'true');
+  const playingZoom = await previewZoom.inputValue();
+  await page.waitForFunction(initial => document.querySelector('[data-canvas-typography-preview-zoom]').value !== initial, playingZoom);
+  await play.click();
+  assert.equal(await play.getAttribute('aria-pressed'), 'false');
+  const pausedZoom = await previewZoom.inputValue();
+  await page.waitForTimeout(120);
+  assert.equal(await previewZoom.inputValue(), pausedZoom, 'Pausing freezes the preview');
+  const stage = page.locator('[data-canvas-typography-stage]');
+  await stage.scrollIntoViewIfNeeded();
+  const stageBox = await stage.boundingBox();
+  const tinyCard = stage.locator('[data-canvas-typography-node="full"]');
+  const beforePan = await tinyCard.boundingBox();
+  const stageX = stageBox.x + stageBox.width / 2, stageY = stageBox.y + stageBox.height / 2;
+  await page.mouse.move(stageX, stageY);
+  await page.mouse.down();
+  await page.mouse.move(stageX + 18, stageY + 10, { steps: 4 });
+  await page.mouse.up();
+  await settle();
+  const afterPan = await tinyCard.boundingBox();
+  near(afterPan.x - beforePan.x, 18, 'Dragging the preview moves its cards horizontally');
+  near(afterPan.y - beforePan.y, 10, 'Dragging the preview moves its cards vertically');
+  await page.mouse.wheel(0, 180);
+  await page.waitForFunction(initial => Number(document.querySelector('[data-canvas-typography-preview-zoom]').value) < Number(initial), pausedZoom);
+  await settle();
+  const wheelZoom = Number(await previewZoom.inputValue());
+  const afterWheel = await tinyCard.boundingBox();
+  near(afterWheel.width / afterPan.width, wheelZoom / Number(pausedZoom), 'Wheel zoom scales the miniature card geometry');
+  await previewZoom.fill('50');
+  await settle();
+  assert.equal(await scrubber.getAttribute('aria-valuenow'), '50', 'The slider updates the graph cursor');
+  await expectSample('body', 20 * Math.sqrt(.5), 'Body sample reflects the unsaved curve');
+  await expectSample('summary', 10.5 * Math.sqrt(.5), 'Summary sample reflects the unsaved curve');
   near(await screenFont(answer), 16, 'Editing and preview zoom keep the live canvas unchanged');
   near(await screenFont(preview), 10.5, 'Summary preview is local');
-  await page.locator('[data-model-picker-panel]').screenshot({ path: output + '/settings.png' });
-  await page.mouse.click(1400, 750);
+  assert.deepEqual(await viewport(), savedViewport, 'Editing, scrubbing and playback preserve the actual canvas camera');
+  assert.equal(await storedSettings(), initialSettings, 'Draft edits are not saved as applied preferences');
+  await settingsPanel.screenshot({ path: output + '/settings.png' });
+  await clickSettingsBackdrop(page);
   await expectReading(.5, 8, 10.5);
   await openSettings();
-  assert.equal(await field('bodySize').inputValue(), '20', 'Outside dismissal preserves the session draft');
+  assert.equal(await handleSize('bodySize'), 20, 'Outside dismissal preserves the session draft');
   await page.keyboard.press('Escape');
-  assert.equal(await field('bodySize').isVisible(), false, 'Escape closes the settings editor');
+  await settingsPanel.waitFor({ state: 'detached' });
   await expectReading(.5, 8, 10.5);
   await openSettings();
-  assert.equal(await field('bodySize').inputValue(), '16', 'Escape discards the draft');
-  await field('bodySize').fill('20');
-  await field('bodyExponent').fill('0.5');
-  await field('summaryExponent').fill('0.5');
+  assert.equal(await handleSize('bodySize'), 16, 'Escape discards the draft');
+  await editBothCurves();
   await apply.click();
+  await clickSettingsBackdrop(page);
   for (const z of [.16, .5, 1, 1.25, 2]) {
     const body = 20 * Math.sqrt(Math.min(1, z));
     await expectReading(z, body, 10.5 * Math.sqrt(Math.max(.32, z)) * Math.min(1, z / .32));
@@ -185,10 +312,12 @@ try {
 
   await page.setViewportSize({ width: 320, height: 780 });
   await openSettings();
-  assert.equal(await field('bodySize').inputValue(), '20');
-  const menu = page.locator('[data-model-picker-panel]');
-  assert.ok(await menu.evaluate(el => el.scrollWidth <= el.clientWidth + 1 && el.getBoundingClientRect().right <= innerWidth + 1), 'Settings fit the narrow viewport');
-  await menu.screenshot({ path: output + '/settings-narrow.png' });
+  assert.equal(await handleSize('bodySize'), 20);
+  assert.ok(await settingsPanel.evaluate(el => el.scrollWidth <= el.clientWidth + 1 && el.getBoundingClientRect().right <= innerWidth + 1), 'Settings fit the narrow viewport');
+  await chart.scrollIntoViewIfNeeded();
+  const narrowChart = await chart.boundingBox();
+  assert.ok(narrowChart.width > 140 && narrowChart.x >= 0 && narrowChart.x + narrowChart.width <= 321, 'The graph fits the narrow panel');
+  await settingsPanel.screenshot({ path: output + '/settings-narrow.png' });
   await reset.click();
   await page.setViewportSize({ width: 1600, height: 1100 });
   await expectReading(2, 16, 10.5);
@@ -199,9 +328,9 @@ try {
   // At the minimum zoom a locked full card is smaller than a screen-sized
   // control. Clipped controls must not intercept clicks on the blank canvas.
   await openSettings();
-  await field('bodyExponent').fill('0');
+  await adjustHandle('bodyExponent', 'End', 1);
   await apply.click();
-  await page.mouse.click(1490, 900);
+  await clickSettingsBackdrop(page);
   await setZoom(.04);
   const minimumZoom = await readingCard.evaluate(wrapper => {
     const root = wrapper.querySelector('[data-node-detail-level="full"]');
@@ -252,7 +381,7 @@ try {
   assert.deepEqual(mountHeights[1], mountHeights[0], 'First mount at 200% and 100% yields the same canonical height limit and saved height');
   assert.deepEqual(errors, []);
   assert.deepEqual(apiWrites, []);
-  console.log('PASS canvas prose, controls, icons and hit areas share the selected scale; minimum-zoom clipping, saved geometry, preferences and reset');
+  console.log('PASS curve editing, keyboard controls, preview playback and camera, screen sizes, saved preferences, geometry and reset');
 } finally {
   await close();
 }

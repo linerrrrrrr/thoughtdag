@@ -15,12 +15,12 @@ export function fileEditPreview(project: string, node: string, attachment: strin
 
 export function useFileEditPreview(project: string, node: string, attachment: string) {
   const key = keyOf(project, node, attachment);
-  return useSyncExternalStore(subscribe, () => previews.get(key));
+  return useSyncExternalStore(subscribe, () => previews.get(key), () => undefined);
 }
 
 export function previewTextParts(source: string, preview?: FileEditPreview) {
   if (!preview?.before) return null;
   const at = source.indexOf(preview.before);
   if (at < 0 || source.indexOf(preview.before, at + 1) >= 0) return null;
-  return { leading: source.slice(0, at), replacement: preview.after, trailing: source.slice(at + preview.before.length) };
+  return { leading: source.slice(0, at), original: preview.before, replacement: preview.after, trailing: source.slice(at + preview.before.length) };
 }

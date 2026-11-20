@@ -5,7 +5,7 @@ import { partitionContext, type ContextReference } from '../lib/graph';
 import { attachmentContextKey } from '../lib/attachment-fingerprint';
 import { isNotebook, notebookContext, notebookForAgent } from '../lib/notebook';
 import { countTokens } from '../utils';
-import { fuzzyHighlightRegex, highlightFoundIn } from '../lib/highlight-match';
+import { conversationHighlightTexts, fuzzyHighlightRegex, highlightFoundIn } from '../lib/highlight-match';
 import type { ContextMessage, ImageAttachment } from '../lib/api';
 
 // Build the prompt from the layered context partition (lib/graph.ts).
@@ -50,33 +50,31 @@ function nodeTitle(node: ThoughtNode): string {
   return q.length > 60 ? `${q.slice(0, 60)}…` : q;
 }
 
-/** A node's response as context text, respecting its highlight mode. */
-function renderResponse(node: ThoughtNode): string {
+/** Apply the node's highlight mode to the marked speaker's own text. */
+function renderTurnPart(node: ThoughtNode, part: 'question' | 'response'): string {
   const mode = node.data.highlightMode || 'off';
-  const highlights = node.data.highlights || [];
-  if (mode === 'filter' && highlights.length > 0) {
-    return highlights.map((h) => h.text).join('\n\n');
+  const original = node.data[part];
+  if (!original || mode === 'off') return original;
+  const highlights = conversationHighlightTexts(node.data.highlights, part);
+  if (!highlights.size) return original;
+  if (mode === 'filter') return [...highlights].join('\n\n');
+  let tagged = original;
+  const fallback: string[] = [];
+  for (const text of highlights) {
+    const re = fuzzyHighlightRegex(text);
+    let matched = false;
+    if (re) tagged = tagged.replace(re, (m) => { matched = true; return `[Important] ${m} [/Important]`; });
+    if (!matched && highlightFoundIn(original, text)) fallback.push(`[Important] ${text} [/Important]`);
   }
-  if (mode === 'tag' && highlights.length > 0) {
-    let tagged = node.data.response;
-    const fallback: string[] = [];
-    for (const h of highlights) {
-      const re = fuzzyHighlightRegex(h.text);
-      let matched = false;
-      if (re) tagged = tagged.replace(re, (m) => { matched = true; return `[Important] ${m} [/Important]`; });
-      if (!matched && highlightFoundIn(node.data.response, h.text)) fallback.push(`[Important] ${h.text} [/Important]`);
-    }
-    return fallback.length ? `${tagged}\n\n${fallback.join('\n')}` : tagged;
-  }
-  return node.data.response;
+  return fallback.length ? `${tagged}\n\n${fallback.join('\n')}` : tagged;
 }
 
 /** Q/A of one node inside a reference block — always full text (collapse
     is a view state and never changes what flows). */
 function transcriptLines(node: ThoughtNode): string[] {
   const lines: string[] = [];
-  if (node.data.question) lines.push(`Q: ${node.data.question}`);
-  const a = renderResponse(node);
+  if (node.data.question) lines.push(`Q: ${renderTurnPart(node, 'question')}`);
+  const a = renderTurnPart(node, 'response');
   if (a) lines.push(`A: ${a}`);
   return lines;
 }
@@ -410,11 +408,11 @@ function compileContext(
     if (node.data.archived) continue;
     pushAttachments(node, 'chain');
     if (node.data.question) {
-      messages.push({ role: 'user', content: node.data.question });
+      messages.push({ role: 'user', content: renderTurnPart(node, 'question') });
       sources.push({ layer: 'chain', nodeId: node.id, part: 'question' });
     }
     if (node.data.response) {
-      const rendered = renderResponse(node);
+      const rendered = renderTurnPart(node, 'response');
       messages.push({ role: 'assistant', content: staleSet.has(node.id) ? `${STALE_MARK}\n${rendered}` : rendered });
       sources.push({ layer: 'chain', nodeId: node.id, part: 'response' });
     }

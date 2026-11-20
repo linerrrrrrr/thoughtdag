@@ -1,34 +1,33 @@
-import { get as browserGet, set as browserSet, del as browserDel, keys as browserKeys } from 'idb-keyval';
+import { get as browserGet, set as browserSet, del as browserDel, keys as browserKeys, update as browserUpdate } from 'idb-keyval';
 
 // Only this locator and browser-granted filesystem permissions remain in the
 // browser. The canvas, attachments and settings are kept by the local host.
 const LOCATOR_KEY = 'thoughtdag:disk-storage:locator:v1';
-const BROWSER_ONLY_KEYS = new Set(['thoughtdag.backupDirHandle']);
+const IMPORT_KEY = 'thoughtdag:disk-storage:import-id';
+const PRIVATE_KEYS = new Set([LOCATOR_KEY, IMPORT_KEY]);
+const BROWSER_ONLY_KEYS = new Set(['thoughtdag.backupDirHandle', ...PRIVATE_KEYS]);
 const ENDPOINT = '/__thoughtdag_storage';
 const ERROR_EVENT = 'thoughtdag:storage-error';
+const UUID = /^[a-f\d]{8}-(?:[a-f\d]{4}-){3}[a-f\d]{12}$/i;
 type Locator = { version: 1; namespace: string; origin: string };
 type PathPart = string | number;
 type Special = { path: PathPart[]; kind: string; value?: string; target?: PathPart[] };
 type Encoded = { format: 1; value: unknown; special: Special[] };
 type Space = 'kv' | 'settings';
-export type StorageCandidate = { namespace: string; createdAt: string };
 declare const __THOUGHTDAG_DISK_STORAGE_REQUIRED__: boolean | undefined;
 
-export class StorageRecoveryRequired extends Error {
-  candidates: StorageCandidate[];
-  constructor(candidates: StorageCandidate[]) {
-    super('Existing local data requires an explicit choice');
-    this.candidates = candidates;
-  }
-}
+export class StorageHostUpdateRequired extends Error {}
+export class BrowserImportChoiceRequired extends Error {}
+class CanvasWriteConflict extends Error {}
 
 let locator: Locator | null = null;
 export function diskStorageNamespace(): string {
   return locator?.namespace ?? 'browser';
 }
 let storedSettings: Map<string, string> | null = null;
-const pending = new Map<string, Promise<void>>();
-const failed = new Set<string>();
+const pending = new Map<string, Promise<unknown>>();
+const failed = new Map<string, boolean>();
+const editRevisions = new Map<string, string | null>();
 
 /** Preserve structured-clone values used by the canvas, including empty and
  * undefined fields and repeated references. Unsupported types fail closed. */
@@ -115,10 +114,17 @@ async function request(payload: Record<string, unknown>): Promise<Record<string,
   const response = await fetch(ENDPOINT, {
     method: 'POST', credentials: 'same-origin', cache: 'no-store',
     headers: { 'content-type': 'application/json', 'x-thoughtdag-storage': '1' },
-    body: JSON.stringify(payload),
+    body: JSON.stringify({ ...payload, protocol: 3 }),
   });
   if (!response.ok) throw new Error(`Local storage is unavailable (${response.status})`);
   return await response.json() as Record<string, unknown>;
+}
+
+export async function diskCanvasWorkspace(canvasId: string): Promise<string | null> {
+  if (!locator) return null;
+  const { dir } = await request({ op: 'canvasWorkspace', namespace: locator.namespace, origin: locator.origin, canvasId });
+  if (typeof dir !== 'string' || !dir) throw new Error('Missing canvas workspace path');
+  return dir;
 }
 
 async function hostVersion(): Promise<number | null> {
@@ -126,41 +132,95 @@ async function hostVersion(): Promise<number | null> {
     const response = await fetch(ENDPOINT, { headers: { 'x-thoughtdag-storage': '1' }, cache: 'no-store', credentials: 'same-origin' });
     if (!response.ok || !response.headers.get('content-type')?.includes('application/json')) return null;
     const value = await response.json() as { service?: string; version?: number };
-    return value.service === 'thoughtdag-local-storage' && (value.version === 1 || value.version === 2) ? value.version : null;
+    return value.service === 'thoughtdag-local-storage' && typeof value.version === 'number' ? value.version : null;
   } catch { return null; }
 }
 
-function reportFailure(key?: string): void {
-  if (key) failed.add(key);
-  if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent(ERROR_EVENT));
+function reportFailure(key?: string, conflict = false): void {
+  if (key) {
+    if (failed.get(key) === conflict) return;
+    failed.set(key, conflict);
+  }
+  if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent(ERROR_EVENT, { detail: { conflict } }));
 }
 
-function queueWrite(space: Space, key: string, op: 'set' | 'delete', value?: string): Promise<void> {
-  if (!locator) return Promise.reject(new Error('Local storage is not initialized'));
+function queueOperation<T>(space: Space, key: string, operation: () => Promise<T>): Promise<T> {
   const id = `${space}:${key}`;
-  const current = locator;
   const previous = pending.get(id) ?? Promise.resolve();
-  const next = previous.catch(() => undefined).then(async () => {
-    await request({ op, namespace: current.namespace, space, key, ...(op === 'set' ? { value } : {}) });
-  });
+  const next = previous.catch(() => undefined).then(operation);
   pending.set(id, next);
   void next.then(() => {
     failed.delete(id);
     if (pending.get(id) === next) pending.delete(id);
-  }, () => {
-    reportFailure(id);
+  }, (error: unknown) => {
+    reportFailure(id, error instanceof CanvasWriteConflict);
     if (pending.get(id) === next) pending.delete(id);
   });
   return next;
 }
 
-async function diskRead(space: Space, key: string): Promise<unknown> {
+function queueWrite(space: Space, key: string, op: 'set' | 'delete', value?: string): Promise<void> {
+  if (!locator) return Promise.reject(new Error('Local storage is not initialized'));
+  const namespace = locator.namespace;
+  return queueOperation(space, key, async () => {
+    await request({ op, namespace, space, key, ...(op === 'set' ? { value } : {}) });
+  });
+}
+
+async function diskRead(space: Space, key: string, forEditing = false): Promise<unknown> {
   if (!locator) throw new Error('Local storage is not initialized');
   await pending.get(`${space}:${key}`);
   const response = await request({ op: 'get', namespace: locator.namespace, space, key });
+  if (forEditing) {
+    if (response.found === true && typeof response.revision !== 'string') throw new Error('Missing canvas revision');
+    editRevisions.set(key, response.found === true ? response.revision as string : null);
+  }
   if (response.found === false) return undefined;
   if (response.found !== true || typeof response.value !== 'string') throw new Error('Invalid storage response');
   return decodeStoredValue(response.value);
+}
+
+// Only hydration may advance the editor's base revision. Background reads
+// of the same graph must never grant permission to overwrite newer edits.
+export async function getCanvasForEditing(key: string): Promise<unknown> {
+  if (!locator || !key.startsWith('thoughtdag:project:')) return get(key);
+  return diskRead('kv', key, true);
+}
+
+export async function saveEditedCanvas(key: string, value: unknown): Promise<void> {
+  if (!locator || !key.startsWith('thoughtdag:project:')) return set(key, value);
+  const namespace = locator.namespace;
+  return queueOperation('kv', key, async () => {
+    if (!editRevisions.has(key)) throw new Error('Canvas must be opened before saving');
+    const result = await request({ op: 'compareSet', namespace, space: 'kv', key,
+      expectedRevision: editRevisions.get(key), value: encodeStoredValue(value) });
+    if (result.applied === false) throw new CanvasWriteConflict('Canvas was saved in another window');
+    if (result.applied !== true || typeof result.revision !== 'string') throw new Error('Invalid canvas save response');
+    editRevisions.set(key, result.revision);
+  });
+}
+
+/** Apply a change to the latest index even when another entrance to this
+ * data root has a write in flight. The updater must be safe to retry. */
+export async function updateStoredValue<T>(key: string, apply: (current: T | undefined) => T): Promise<T> {
+  if (!locator) {
+    let updated!: T;
+    await browserUpdate<T>(key, current => (updated = apply(current)));
+    return updated;
+  }
+  const address = { namespace: locator.namespace, space: 'kv', key };
+  return queueOperation('kv', key, async () => {
+    const read = await request({ op: 'get', ...address });
+    if (read.found !== false && !(read.found === true && typeof read.value === 'string')) throw new Error('Invalid storage response');
+    let expected = read.found === false ? null : read.value as string;
+    for (;;) {
+      const updated = apply(expected === null ? undefined : decodeStoredValue(expected) as T);
+      const result = await request({ op: 'compareSet', ...address, expected, value: encodeStoredValue(updated) });
+      if (result.applied === true) return updated;
+      if (result.applied !== false || !(result.value === null || typeof result.value === 'string')) throw new Error('Invalid storage update');
+      expected = result.value;
+    }
+  });
 }
 
 export async function get<T = unknown>(key: IDBValidKey): Promise<T | undefined> {
@@ -186,10 +246,10 @@ export async function del(key: IDBValidKey): Promise<void> {
 }
 
 export async function keys(): Promise<IDBValidKey[]> {
-  if (!locator) return (await browserKeys()).filter((key) => key !== LOCATOR_KEY);
+  if (!locator) return (await browserKeys()).filter((key) => !PRIVATE_KEYS.has(String(key)));
   const result = await request({ op: 'keys', namespace: locator.namespace, space: 'kv' });
   if (!Array.isArray(result.keys) || !result.keys.every((key) => typeof key === 'string')) throw new Error('Invalid storage response');
-  const native = (await browserKeys()).filter((key) => typeof key === 'string' && BROWSER_ONLY_KEYS.has(key));
+  const native = (await browserKeys()).filter((key) => typeof key === 'string' && BROWSER_ONLY_KEYS.has(key) && !PRIVATE_KEYS.has(key));
   return [...result.keys, ...native];
 }
 
@@ -223,7 +283,7 @@ function browserSettings(): Map<string, string> {
 }
 
 async function sourceKeys(): Promise<string[]> {
-  const list = (await browserKeys()).filter((key) => key !== LOCATOR_KEY && !(typeof key === 'string' && BROWSER_ONLY_KEYS.has(key)));
+  const list = (await browserKeys()).filter((key) => !(typeof key === 'string' && BROWSER_ONLY_KEYS.has(key)));
   if (!list.every((key): key is string => typeof key === 'string')) throw new Error('Unsupported browser storage key');
   return list.sort();
 }
@@ -237,8 +297,9 @@ function auditAttachments(values: Map<string, unknown>): void {
       const attachments = (node as { data?: { attachments?: unknown[] } })?.data?.attachments;
       if (!Array.isArray(attachments)) continue;
       for (const item of attachments) {
-        const att = item as { id?: string; contentInVault?: boolean; editedDocxRevision?: string; pdfFileRevision?: string };
-        if (att?.contentInVault && (!att.id || !values.has(`att-content:${att.id}`))) throw new Error('An attachment source is missing');
+        const att = item as { id?: string; contentVaultId?: string; contentInVault?: boolean; editedDocxRevision?: string; pdfFileRevision?: string };
+        const vaultId = att?.contentVaultId ?? att?.id;
+        if (att?.contentInVault && (!vaultId || !values.has(`att-content:${vaultId}`))) throw new Error('An attachment source is missing');
         if (att?.editedDocxRevision && !values.has(`att-docx-revision:${att.editedDocxRevision}`)) throw new Error('A saved document revision is missing');
         if (att?.pdfFileRevision && !values.has(`att-pdf-revision:${att.pdfFileRevision}`)) throw new Error('A saved PDF revision is missing');
       }
@@ -246,9 +307,9 @@ function auditAttachments(values: Map<string, unknown>): void {
   }
 }
 
-async function migrateBrowserData(version: number, onProgress?: (message: string) => void): Promise<Locator> {
-  const keysBefore = await sourceKeys();
+async function importBrowserData(selected: Locator, keysBefore: string[], savedImportId: string | undefined, onProgress?: (message: string) => void): Promise<void> {
   const preferences = browserSettings();
+  if (!keysBefore.length && !preferences.size) return;
   const values = new Map<string, unknown>();
   const serialized = new Map<string, string>();
   for (const key of keysBefore) {
@@ -257,15 +318,19 @@ async function migrateBrowserData(version: number, onProgress?: (message: string
     serialized.set(key, encodeStoredValue(value));
   }
   auditAttachments(values);
-  const result: Locator = { version: 1, namespace: crypto.randomUUID(), origin: window.location.origin };
-  await request({ op: 'create', namespace: result.namespace, origin: result.origin });
+  const importId = savedImportId ?? crypto.randomUUID();
+  await browserSet(IMPORT_KEY, importId);
+  const source = { importId, origin: selected.origin };
+  const started = await request({ op: 'beginImport', ...source });
+  if (started.alreadyMigrated === true) return;
+  if (started.alreadyMigrated !== false) throw new Error('Invalid browser import');
   let done = 0;
   const total = serialized.size + preferences.size;
   for (const [space, entries] of [['kv', serialized], ['settings', preferences]] as const) {
     for (const [key, value] of entries) {
       const encoded = space === 'settings' ? encodeStoredValue(value) : value;
-      await request({ op: 'set', namespace: result.namespace, space, key, value: encoded });
-      const copy = await request({ op: 'get', namespace: result.namespace, space, key });
+      await request({ op: 'stageSet', ...source, space, key, value: encoded });
+      const copy = await request({ op: 'stageGet', ...source, space, key });
       if (copy.found !== true || copy.value !== encoded) throw new Error('Local data verification failed');
       onProgress?.(`${++done}/${total}`);
     }
@@ -276,15 +341,11 @@ async function migrateBrowserData(version: number, onProgress?: (message: string
     if (encodeStoredValue(await browserGet(key)) !== old) throw new Error('Browser data changed during migration');
   }
   if (JSON.stringify([...preferences].sort()) !== JSON.stringify([...browserSettings()].sort())) throw new Error('Browser settings changed during migration');
-  if (version >= 2) await request({ op: 'finish', namespace: result.namespace, origin: result.origin });
-  // The locator is committed only after all data has been written and read back.
-  await browserSet(LOCATOR_KEY, result);
-  return result;
+  const result = await request({ op: 'finishImport', ...source, keys: { kv: keysBefore, settings: [...preferences.keys()] } });
+  if (result.namespace !== selected.namespace || result.alreadyMigrated !== true) throw new Error('Browser import did not complete');
 }
 
 async function openDisk(saved: Locator): Promise<void> {
-  if (saved.version !== 1 || saved.origin !== window.location.origin) throw new Error('Storage locator does not match this page');
-  await request({ op: 'open', namespace: saved.namespace, origin: saved.origin });
   locator = saved;
   try {
     const response = await request({ op: 'keys', namespace: saved.namespace, space: 'settings' });
@@ -303,41 +364,49 @@ async function openDisk(saved: Locator): Promise<void> {
 }
 
 /** Must run before importing app modules that read settings at module scope. */
-export async function initializeDiskStorage(onProgress?: (message: string) => void, choice?: string): Promise<'disk' | 'browser'> {
+export async function initializeDiskStorage(onProgress?: (message: string) => void, choice?: 'project' | 'import'): Promise<'disk' | 'browser'> {
   // A shared viewer is a guest session and must not migrate local data.
   if (window.location.hash.startsWith('#view=')) return 'browser';
   const initialize = async (): Promise<'disk' | 'browser'> => {
-    const saved = await browserGet<Locator>(LOCATOR_KEY);
-    const version = await hostVersion();
+    const [saved, importId, version] = await Promise.all([
+      browserGet<Locator>(LOCATOR_KEY), browserGet<string>(IMPORT_KEY), hostVersion(),
+    ]);
     const required = typeof __THOUGHTDAG_DISK_STORAGE_REQUIRED__ !== 'undefined' && __THOUGHTDAG_DISK_STORAGE_REQUIRED__;
-    if ((saved || required) && !version) throw new Error('The configured local data service is unavailable');
+    if ((saved || importId || required) && !version) throw new Error('The configured local data service is unavailable');
     if (!version) return 'browser';
-    let selected = saved;
-    if (!selected && version >= 2) {
-      const response = await request({ op: 'list', origin: window.location.origin });
-      if (!Array.isArray(response.namespaces)) throw new Error('Invalid storage recovery list');
-      const candidates = response.namespaces as StorageCandidate[];
-      if (!candidates.every((item) => typeof item.namespace === 'string' && typeof item.createdAt === 'string')) throw new Error('Invalid storage recovery list');
-      if (candidates.length && !choice) throw new StorageRecoveryRequired(candidates);
-      if (choice && choice !== 'new') {
-        if (!candidates.some((item) => item.namespace === choice)) throw new Error('The selected local data is unavailable');
-        selected = { version: 1, namespace: choice, origin: window.location.origin };
-        await request({ op: 'open', namespace: choice, origin: selected.origin });
-        await browserSet(LOCATOR_KEY, selected);
-      }
+    if (version !== 3) throw new StorageHostUpdateRequired('The local data service needs an update');
+    const origin = window.location.origin;
+    if (saved && (saved.version !== 1 || saved.origin !== origin || !UUID.test(saved.namespace))) throw new Error('Invalid previous storage locator');
+    if (importId !== undefined && !UUID.test(importId)) throw new Error('Invalid browser import receipt');
+    const keys = saved ? [] : await sourceKeys();
+    const index = !saved && keys.includes('thoughtdag:projects')
+      ? await browserGet<{ projects?: { id: string }[] }>('thoughtdag:projects') : undefined;
+    const projectIds = index?.projects?.map(project => project.id) ?? [];
+    const connected = await request({ op: 'connect', origin, previousNamespace: saved?.namespace,
+      importId, projectIds, legacyGraph: keys.includes('thoughtdag') });
+    if (typeof connected.namespace !== 'string' || !UUID.test(connected.namespace) || typeof connected.alreadyMigrated !== 'boolean') {
+      throw new Error('Invalid shared storage response');
     }
-    selected ??= await migrateBrowserData(version, onProgress);
+    const selected: Locator = { version: 1, namespace: connected.namespace, origin };
+    // A locator is written only after a verified disk migration. Its old
+    // IndexedDB contents remain a backup even if the data root is changed.
+    if (!saved && !connected.alreadyMigrated) {
+      if (connected.confirmBrowserImport && !choice) throw new BrowserImportChoiceRequired();
+      if (!connected.confirmBrowserImport || choice === 'import') await importBrowserData(selected, keys, importId, onProgress);
+    }
     await openDisk(selected);
+    await browserSet(LOCATOR_KEY, selected);
     return 'disk';
   };
   if (typeof navigator !== 'undefined' && navigator.locks) return navigator.locks.request('thoughtdag-storage-migration', initialize);
   return initialize();
 }
 
-export function onDiskStorageError(listener: () => void): () => void {
-  window.addEventListener(ERROR_EVENT, listener);
-  if (failed.size) listener();
-  return () => window.removeEventListener(ERROR_EVENT, listener);
+export function onDiskStorageError(listener: (conflict: boolean) => void): () => void {
+  const handler = (event: Event) => listener((event as CustomEvent).detail?.conflict === true);
+  window.addEventListener(ERROR_EVENT, handler);
+  if (failed.size) listener([...failed.values()].includes(true));
+  return () => window.removeEventListener(ERROR_EVENT, handler);
 }
 
 export async function flushDiskWrites(): Promise<void> {

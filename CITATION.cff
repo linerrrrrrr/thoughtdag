@@ -19,6 +19,6 @@ abstract: >-
   infinite canvas. One rule governs everything: a wire is context. The
   instrument keeps human-AI collaboration legible: context assembly is
   visible and layered, every generation records an upstream fingerprint,
-  stale answers are flagged and replayable in dependency order, and runs
+  stale answers are flagged and can be regenerated individually, and runs
   export as auditable manifests. Reusable workflow templates (paradigms)
   let researchers design, run, and re-run reasoning experiments.

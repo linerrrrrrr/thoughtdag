@@ -15,20 +15,28 @@ try {
   await mkdir(out, { recursive: true });
   for (const [lang, colorScheme] of [['zh', 'light'], ['en', 'dark']]) {
     const context = await browser.newContext({ locale: lang, colorScheme, viewport: { width: 1380, height: 800 } });
+    await context.routeWebSocket('**', socket => socket.close());
     await context.route('**/*', route => {
       const url = new URL(route.request().url());
       if (url.origin !== origin || url.pathname.startsWith('/api/') || url.pathname.startsWith('/__thoughtdag_storage')) return route.abort();
       return route.continue();
     });
-    await context.addInitScript(() => {
+    await context.addInitScript(lighting => {
       localStorage.setItem('thoughtdag.seeded', 'yes');
       localStorage.setItem('thoughtdag.tutorialDone', '1');
-    });
+      localStorage.setItem('thoughtdag.lighting', lighting);
+      window.numberCopies = [];
+      Object.defineProperty(navigator, 'clipboard', {
+        value: { writeText: async text => { window.numberCopies.push(text); } },
+      });
+    }, colorScheme);
     const page = await context.newPage();
+    page.setDefaultTimeout(12000);
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
     await page.goto(origin + '/?lang=' + lang);
     await page.waitForFunction(() => window.__store?.persist.hasHydrated() && !!window.__rf && !!window.__ui);
+    assert.equal(await page.locator('html').getAttribute('data-theme'), colorScheme);
     await page.evaluate(() => {
       const data = { question: '', response: '', responses: [], responseIndex: -1, isLoading: false, isEditing: false,
         isEditingResponse: false, isCollapsed: false, tokenCount: 0, highlights: [], attachments: [], excludedAttachmentIds: [], includedAttachmentIds: [] };
@@ -43,28 +51,68 @@ try {
       window.__ui.getState().setReleaseNotesOpen(false);
       window.__ui.getState().setPanelOpen(false);
     });
+    // Adding the fixture schedules a 400ms camera animation to its last node.
+    await page.waitForFunction(() => window.__store.getState().nodes[0]?.measured?.height);
+    await page.waitForTimeout(600);
     const card = id => page.locator('.react-flow__node[data-id="' + id + '"]');
-    const label = id => card(id).locator('[data-node-number]');
-    for (const [level, zoom] of [['full', 1], ['summary', 0.65], ['compact', 0.35]]) {
+    const menu = page.locator('body > [data-selection-menu]');
+    const action = menu.getByRole('button', { name: lang === 'zh' ? /复制节点编号/ : /Copy node number/i });
+    const copies = () => page.evaluate(() => window.numberCopies);
+    const expectedCopies = [];
+    const levels = [['full', 1], ['summary', 0.65], ['compact', 0.35]];
+    async function setLevel(level, zoom) {
       await page.evaluate(async ([level, zoom]) => {
         window.__ui.getState().setCanvasDetail(level);
         await window.__rf.setViewport({ x: 20, y: 15, zoom }, { duration: 0 });
       }, [level, zoom]);
-      await card('file-a').locator('[data-node-detail-level="' + level + '"]').waitFor();
+    }
+    async function checkNumber(id, number, level) {
+      const surface = card(id).locator('[data-node-detail-level="' + level + '"]');
+      await surface.waitFor();
+      assert.doesNotMatch(await surface.innerText(), /#\d+/, id + ' in ' + level);
+      await surface.click({ button: 'right', position: { x: 16, y: 10 } });
+      await action.waitFor();
+      assert.ok((await action.innerText()).includes('#' + number));
+      assert.deepEqual(await copies(), expectedCopies, 'Opening the menu leaves the clipboard alone');
+      if (!expectedCopies.length) await page.screenshot({ path: out + '/' + lang + '-menu.png', animations: 'disabled' });
+      await action.click();
+      await menu.waitFor({ state: 'hidden' });
+      expectedCopies.push('#' + number);
+      assert.deepEqual(await copies(), expectedCopies);
+    }
+    for (const [level, zoom] of levels) {
+      await setLevel(level, zoom);
       for (const [id, number] of [['file-a', 3], ['file-b', 12], ['question', 13]]) {
-        assert.equal(await label(id).innerText(), '#' + number);
-        const hint = await label(id).getAttribute('data-tooltip');
-        assert.ok(hint.includes('#' + number) && hint.includes(lang === 'zh' ? '提问' : 'question'));
-        assert.ok(await label(id).evaluate(el => {
-          const b = el.getBoundingClientRect(), p = el.closest('.react-flow__node').getBoundingClientRect();
-          return b.width > 5 && b.height > 4 && b.left >= p.left && b.right <= p.right + 1;
-        }), id + ' label fits in ' + level);
+        await checkNumber(id, number, level);
       }
-      assert.equal(await label('frame').count(), 0);
       await page.screenshot({ path: out + '/' + lang + '-' + level + '.png' });
     }
+    await card('file-a').locator('[data-node-detail-level="compact"]').click({ button: 'right', position: { x: 16, y: 10 } });
+    await action.waitFor();
+    await page.keyboard.press('Escape');
+    await menu.waitFor({ state: 'hidden' });
+    await card('file-b').locator('[data-node-detail-level="compact"]').click({ button: 'right', position: { x: 16, y: 10 } });
+    await action.waitFor();
+    await page.mouse.click(1250, 700);
+    await menu.waitFor({ state: 'hidden' });
+    assert.deepEqual(await copies(), expectedCopies, 'Dismissing a menu never copies');
+    const frame = card('frame').locator('[data-frame-header]');
+    assert.doesNotMatch(await frame.innerText(), /#\d+/);
+    await frame.click({ button: 'right' });
+    await menu.waitFor();
+    assert.equal(await action.count(), 0, 'Frames have no node number');
+    await page.keyboard.press('Escape');
+    await menu.waitFor({ state: 'hidden' });
+    await page.evaluate(() => window.__projects.setState(s => ({
+      projects: s.projects.map(p => p.id === s.activeId ? { ...p, kind: 'paradigm' } : p),
+    })));
+    await card('question').locator('[data-node-paradigm]').waitFor();
+    for (const [level, zoom] of levels) {
+      await setLevel(level, zoom);
+      await checkNumber('question', 13, level);
+    }
     assert.deepEqual(errors, []);
-    console.log('PASS distinct file and conversation numbers, frame exclusion and label fit in three detail levels (' + lang + ', ' + colorScheme + ')');
+    console.log('PASS hidden numbers, copy from file/conversation/paradigm menus at all detail levels, frame exclusion and dismissal (' + lang + ', ' + colorScheme + ')');
     await context.close();
   }
 } finally {

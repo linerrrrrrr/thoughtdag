@@ -1,5 +1,5 @@
 import type { ThoughtNode } from '../types';
-import { isFrameNode, nodeRect, type Rect } from './frames';
+import { frameMembers, isFrameNode, nodeRect, type Rect } from './frames';
 
 export type SelectionTarget = 'nodes' | 'edges' | 'frames';
 
@@ -38,6 +38,21 @@ export type EdgeSelectionPath = { id: string; points: Point[] };
 
 /** The confirmed area keeps all three candidate sets, including empty types. */
 export type SelectionRegion = { rect: Rect; nodeIds: string[]; edgeIds: string[]; frameIds: string[] };
+
+/** Use the confirmed marquee's frame hits for layout without changing the
+ * active node selection. An additive marquee can include several rectangles. */
+export function layoutSelectionIds(nodes: ThoughtNode[], selectedIds: string[], target: SelectionTarget, region: SelectionRegion | null): string[] {
+  if (target !== 'nodes' || !region?.frameIds.length || !selectedIds.length) return selectedIds;
+  const selected = new Set(selectedIds);
+  if (region.nodeIds.length !== selected.size || !region.nodeIds.every(id => selected.has(id))) return selectedIds;
+  const candidates = new Set(region.frameIds);
+  const frames = nodes.filter(node => candidates.has(node.id) && isFrameNode(node) && !node.hidden && node.selectable !== false);
+  const available = new Set([...selected, ...frames.map(frame => frame.id)]);
+  // Arranging a frame also moves its contents, including nested frames.
+  // A hidden or otherwise unselected member must stay outside this operation.
+  const included = frames.filter(frame => frameMembers(frame, nodes).every(member => available.has(member.id)));
+  return included.length ? [...selectedIds, ...included.map(frame => frame.id)] : selectedIds;
+}
 
 /** Sample the rendered route once per marquee, including curves and detours. */
 export function snapshotEdgeSelectionPaths(root: Element): EdgeSelectionPath[] {

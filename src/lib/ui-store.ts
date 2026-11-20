@@ -1,6 +1,16 @@
 import { appSettings } from './disk-storage';
 import { create } from 'zustand';
+import { browserRenderStore } from './browser-render-store';
 import type { NodeDetailLevel } from '../types';
+import type { OverviewRulerMark } from './overview-ruler';
+
+interface ReaderJump {
+  page?: number;
+  threadId?: string;
+  attachmentId?: string;
+  rulerMark?: OverviewRulerMark;
+  conversationTurn?: 'question' | 'response';
+}
 
 // Transient UI state (toasts, confirm dialog) — deliberately separate from
 // the main store: no persistence, no undo history, and the imperative API
@@ -30,6 +40,7 @@ const MODEL_KEY = 'thoughtdag.model';
 const EFFORT_KEY = 'thoughtdag.agentEffort';
 /** The effort level for the next agent turn, in that runtime's own words; '' = the runtime's own default. */
 export type AgentEffort = string;
+export type SettingsSection = 'general' | 'nodes' | 'edges' | 'providers' | 'agents' | 'judge' | 'tools';
 const MCP_KEY = 'thoughtdag.mcpTools';
 try { appSettings.removeItem('thoughtdag.autoRefreshPaused'); } catch { /* Retired preference has no runtime effect. */ }
 const HIDE_ANNOTATIONS_KEY = 'thoughtdag.hideAnnotations';
@@ -87,7 +98,8 @@ interface UiState {
   readerAttachmentId: string | null;
   /** One-shot landing spot for the reader: scroll to this page and open this
       thread on mount (set by canvas p.N chips, consumed by the overlay). */
-  readerJump: { page?: number; threadId?: string; attachmentId?: string } | null;
+  readerJump: ReaderJump | null;
+  readerConversationTurn: ReaderJump['conversationTurn'];
   /** How the reader shows: docked as a column on the canvas's left, the
       canvas and the node panel staying live beside it, or the full-screen
       overlay. Persisted; the dock falls back to the overlay in narrow windows. */
@@ -146,11 +158,11 @@ interface UiState {
   timelineOverviewOpen: boolean;
   setTimelineOverviewOpen: (open: boolean) => void;
   setMemoryManagerOpen: (open: boolean) => void;
-  /** Browser-side API key dialog (the .env-free path in). */
+  /** Workspace preferences and connection setup share one tool card. */
   apiKeyModalOpen: boolean;
-  /** which part the dialog opens on: the interfaces (default), or the judge alone (from the picker's judge row and the memory page) */
-  apiKeyModalSection: 'providers' | 'judge' | 'agents';
-  setApiKeyModalOpen: (open: boolean, section?: 'providers' | 'judge' | 'agents') => void;
+  apiKeyModalSection: SettingsSection;
+  /** Existing setup and OAuth entry points open the answer-model page by default. */
+  setApiKeyModalOpen: (open: boolean, section?: SettingsSection) => void;
   /** Monotonic signal: each bump asks the global model picker to drop open
       (the "look, your models are here" moment after a connect succeeds). */
   modelPickerPing: number;
@@ -188,26 +200,26 @@ interface UiState {
   /** Paradigms and other lab features live behind this switch. */
   advancedMode: boolean;
   setAdvancedMode: (v: boolean) => void;
-  /** Preset the ApiKeyModal should open onto (landing quick-connect). */
+  /** Preset to show on the answer-model settings page (landing quick-connect). */
   apiKeyPresetHint: string | null;
   setApiKeyPresetHint: (id: string | null) => void;
   /** A freshly OAuth-minted OpenRouter key awaiting the user's model
-      confirmation in the ApiKeyModal (consumed on pickup, never stored). */
+      confirmation on the answer-model settings page (consumed on pickup, never stored). */
   oauthMintedKey: string | null;
   setOauthMintedKey: (key: string | null) => void;
   /** Node pulsing a beacon ripple (hovering "continue last thread"). */
   beaconNodeId: string | null;
   setBeaconNodeId: (id: string | null) => void;
-  /** Share dialog: the freshly built read-only link (null = closed). */
-  shareDialogUrl: string | null;
-  setShareDialogUrl: (url: string | null) => void;
+  /** File-sharing options for the active canvas. */
+  shareDialogOpen: boolean;
+  setShareDialogOpen: (open: boolean) => void;
   /** Thought-map export console (structure-only share image). */
   thoughtMapOpen: boolean;
   setThoughtMapOpen: (v: boolean) => void;
   /** Viewer boot failed to decode the #view= hash (truncated link). */
   viewerLoadError: boolean;
   setViewerLoadError: (v: boolean) => void;
-  setReaderNodeId: (id: string | null, jump?: { page?: number; threadId?: string; attachmentId?: string }) => void;
+  setReaderNodeId: (id: string | null, jump?: ReaderJump) => void;
   setReaderMode: (mode: 'dock' | 'full') => void;
   setReaderWidth: (w: number) => void;
   setPanelOpen: (open: boolean, nodeId?: string) => void;
@@ -215,7 +227,7 @@ interface UiState {
   setAgentEffort: (level: AgentEffort) => void;
 }
 
-export const useUiStore = create<UiState>((set, get) => ({
+export const useUiStore = browserRenderStore(create<UiState>((set, get) => ({
   toasts: [],
   confirmRequest: null,
   tutorialOpen: false,
@@ -342,8 +354,10 @@ export const useUiStore = create<UiState>((set, get) => ({
   harnessHost: null,
   setHarnessHost: (h) => set({ harnessHost: h }),
   apiKeyModalOpen: false,
-  apiKeyModalSection: 'providers',
-  setApiKeyModalOpen: (open, section) => set({ apiKeyModalOpen: open, apiKeyModalSection: open ? (section ?? 'providers') : 'providers' }),
+  apiKeyModalSection: 'general',
+  setApiKeyModalOpen: (open, section) => set(open
+    ? { apiKeyModalOpen: true, apiKeyModalSection: section ?? 'providers' }
+    : { apiKeyModalOpen: false }),
   modelPickerPing: 0,
   searchHitIds: null,
   setSearchHitIds: (ids) => set({ searchHitIds: ids }),
@@ -370,8 +384,8 @@ export const useUiStore = create<UiState>((set, get) => ({
   beaconNodeId: null,
   setBeaconNodeId: (id) => set({ beaconNodeId: id }),
   setBackupDialogOpen: (v) => set({ backupDialogOpen: v }),
-  shareDialogUrl: null,
-  setShareDialogUrl: (url) => set({ shareDialogUrl: url }),
+  shareDialogOpen: false,
+  setShareDialogOpen: (open) => set({ shareDialogOpen: open }),
   thoughtMapOpen: false,
   setThoughtMapOpen: (v) => set({ thoughtMapOpen: v }),
   viewerLoadError: false,
@@ -379,8 +393,11 @@ export const useUiStore = create<UiState>((set, get) => ({
   readerNodeId: null,
   readerAttachmentId: null,
   readerJump: null,
+  readerConversationTurn: undefined,
   setReaderNodeId: (id, jump) => set(state => ({ readerNodeId: id, readerJump: id ? (jump ?? null) : null,
-    readerAttachmentId: id ? (jump?.attachmentId ?? (id === state.readerNodeId ? state.readerAttachmentId : null)) : null })),
+    readerConversationTurn: id ? jump?.conversationTurn : undefined,
+    // An explicitly addressed node-body mark must not inherit a previous file selection.
+    readerAttachmentId: id && !jump?.conversationTurn ? (jump?.attachmentId ?? (jump?.rulerMark ? '' : id === state.readerNodeId ? state.readerAttachmentId : null)) : null })),
   readerMode: appSettings.getItem('thoughtdag.readerMode') === 'full' ? 'full' : 'dock',
   readerWidth: (() => { const raw = appSettings.getItem('thoughtdag.readerWidth'); const n = raw ? parseInt(raw, 10) : NaN; return Number.isFinite(n) ? n : 560; })(),
   setReaderMode: (mode) => { appSettings.setItem('thoughtdag.readerMode', mode); set({ readerMode: mode }); },
@@ -413,7 +430,7 @@ export const useUiStore = create<UiState>((set, get) => ({
     else appSettings.removeItem(EFFORT_KEY);
     set({ agentEffort: level });
   },
-}));
+})));
 
 // Debug: expose the UI store for screenshot/e2e scripts (DEV only)
 if (import.meta.env.DEV && typeof window !== 'undefined') {
@@ -422,8 +439,7 @@ if (import.meta.env.DEV && typeof window !== 'undefined') {
 
 let toastCounter = 0;
 
-/** Show a toast (bottom-right). duration 0 = sticky until dismissed.
-    Returns the toast id (dismissToast / updateToast to manage sticky ones). */
+/** Show a toast and return its id for dismissal. A duration of 0 keeps it visible until dismissed. */
 export function toast(kind: ToastItem['kind'], message: string, duration = 5000, action?: ToastItem['action']): string {
   const id = `toast-${++toastCounter}`;
   useUiStore.setState((s) => ({ toasts: [...s.toasts, { id, kind, message, action }] }));
@@ -431,11 +447,6 @@ export function toast(kind: ToastItem['kind'], message: string, duration = 5000,
     setTimeout(() => useUiStore.getState().dismissToast(id), duration);
   }
   return id;
-}
-
-/** Update a sticky toast's message in place (e.g. replay progress). */
-export function updateToast(id: string, message: string) {
-  useUiStore.setState((s) => ({ toasts: s.toasts.map((t) => (t.id === id ? { ...t, message } : t)) }));
 }
 
 /** Promise-style in-app replacement for window.confirm(). */

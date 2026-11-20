@@ -39,7 +39,7 @@ type DocumentRequest = (ManagedFileKey & ManagedFileOperation) | { op: 'probe'; 
 export type HostDocumentRequest = DocumentRequest & { namespace: string };
 export type HostDocumentResponse = ManagedFileState | ManagedFileChange[] | { removed: true } | { missing: true };
 
-function browserNamespace(): string {
+export function browserNamespace(): string {
   const key = 'thoughtdag:managed-document-namespace';
   const existing = localStorage.getItem(key);
   if (existing) return existing;
@@ -55,7 +55,7 @@ async function callHost(request: DocumentRequest): Promise<HostDocumentResponse 
     const response = await fetch('/__thoughtdag_storage', {
       method: 'POST', credentials: 'same-origin', cache: 'no-store',
       headers: { 'content-type': 'application/json', 'x-thoughtdag-storage': '1' },
-      body: JSON.stringify({ op: 'document', namespace, origin: window.location.origin, request }),
+      body: JSON.stringify({ protocol: 3, op: 'document', namespace, origin: window.location.origin, request }),
     });
     if (!response.ok) throw new Error(`Managed document is unavailable (${response.status})`);
     return response.json() as Promise<HostDocumentResponse>;

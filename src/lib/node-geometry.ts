@@ -10,6 +10,7 @@ export interface NodeGeometryPatch {
   y?: number;
   lockAspectRatio?: boolean;
   autoHeight?: boolean;
+  fitContentHeight?: true;
 }
 
 const isMaterial = (node: ThoughtNode) => ['note', 'file', 'link'].includes(node.data.stepKind ?? '');
@@ -53,7 +54,8 @@ export function resizeSelectionBy(nodes: ThoughtNode[], originals: ThoughtNode[]
       else delete patch.width;
     }
     const resized = applySelectionGeometry([node], [node.id], patch)[0];
-    return [node.id, { width: resized.width, height: resized.height, contentHeightIntent: resized.data.contentHeightIntent,
+    return [node.id, { width: resized.width, height: resized.height, fitContentHeight: resized.data.fitContentHeight,
+      contentHeightIntent: resized.data.contentHeightIntent,
       keepOverviewHeight: node.data.keepOverviewHeight || resized.height !== node.height }];
   }));
   let changed = false;
@@ -61,10 +63,11 @@ export function resizeSelectionBy(nodes: ThoughtNode[], originals: ThoughtNode[]
     const size = sizes.get(node.id);
     if (!size || (size.width === node.width && size.height === node.height
       && !!size.keepOverviewHeight === !!node.data.keepOverviewHeight
-      && size.contentHeightIntent === node.data.contentHeightIntent)) return node;
+      && size.contentHeightIntent === node.data.contentHeightIntent && size.fitContentHeight === node.data.fitContentHeight)) return node;
     changed = true;
     return { ...node, width: size.width, height: size.height,
-      data: { ...node.data, keepOverviewHeight: size.keepOverviewHeight || undefined, contentHeightIntent: size.contentHeightIntent } };
+      data: { ...node.data, keepOverviewHeight: size.keepOverviewHeight || undefined, contentHeightIntent: size.contentHeightIntent,
+        fitContentHeight: size.fitContentHeight } };
   });
   return changed ? result : nodes;
 }
@@ -78,6 +81,7 @@ export function applySelectionGeometry(nodes: ThoughtNode[], nodeIds: string[], 
   if ((patch.width !== undefined && patch.width <= 0) || (patch.height !== undefined && patch.height <= 0)) return nodes;
   if (patch.lockAspectRatio !== undefined && typeof patch.lockAspectRatio !== 'boolean') return nodes;
   if (patch.autoHeight !== undefined && typeof patch.autoHeight !== 'boolean') return nodes;
+  if (patch.fitContentHeight !== undefined && patch.fitContentHeight !== true) return nodes;
   const ids = new Set(nodeIds);
   const selected = nodes.filter(node => ids.has(node.id));
   if (!selected.length) return nodes;
@@ -93,7 +97,7 @@ export function applySelectionGeometry(nodes: ThoughtNode[], nodeIds: string[], 
       const current = effectiveNodeGeometry(node);
       const min = nodeGeometryMinimum(node);
       // Natural content height cannot maintain a fixed geometric ratio.
-      const autoHeight = patch.autoHeight === true && !isFrameNode(node);
+      const autoHeight = (patch.autoHeight === true || patch.fitContentHeight === true) && !isFrameNode(node);
       const locked = autoHeight ? false : patch.lockAspectRatio ?? !!node.data.lockAspectRatio;
       const requestedScale = patch.width !== undefined ? patch.width / current.width
         : patch.height !== undefined ? patch.height / current.height : undefined;
@@ -144,6 +148,8 @@ export function applySelectionGeometry(nodes: ThoughtNode[], nodeIds: string[], 
           height = current.height * scale;
         }
       }
+      // Locking a fitted card holds its current ratio across subsequent content changes.
+      if (node.data.fitContentHeight && locked && height === undefined) height = current.height;
       if ((width !== undefined && width !== node.width) || (height !== undefined && height !== node.height)) {
         next = { ...next, ...(width !== undefined ? { width } : {}), ...(height !== undefined ? { height } : {}) };
       }
@@ -152,12 +158,17 @@ export function applySelectionGeometry(nodes: ThoughtNode[], nodeIds: string[], 
         && !isFrameNode(node) && !isMaterial(node)) {
         next = { ...next, data: { ...next.data, contentHeightIntent: { content: contentHeightKey(node.data), height } } };
       }
-      if (autoHeight && (node.height !== undefined || node.style?.height != null || node.data.keepOverviewHeight || node.data.lockAspectRatio)) {
+      if (autoHeight && (node.height !== undefined || node.style?.height != null || node.data.keepOverviewHeight || node.data.lockAspectRatio
+        || node.data.contentHeightIntent || node.data.fitContentHeight !== patch.fitContentHeight)) {
         next = { ...next, height: undefined,
           ...(node.style?.height != null ? { style: { ...node.style, height: undefined } } : {}),
-          data: { ...next.data, keepOverviewHeight: undefined, lockAspectRatio: false, contentHeightIntent: undefined } };
+          data: { ...next.data, keepOverviewHeight: undefined, lockAspectRatio: false, contentHeightIntent: undefined,
+            fitContentHeight: patch.fitContentHeight } };
       } else if (!autoHeight && patch.lockAspectRatio !== undefined && patch.lockAspectRatio !== !!node.data.lockAspectRatio) {
         next = { ...next, data: { ...next.data, lockAspectRatio: patch.lockAspectRatio } };
+      }
+      if (node.data.fitContentHeight && !autoHeight && height !== undefined) {
+        next = { ...next, data: { ...next.data, fitContentHeight: undefined } };
       }
     }
     if (moving.has(node.id)) next = { ...next, position: { x: node.position.x + dx, y: node.position.y + dy } };

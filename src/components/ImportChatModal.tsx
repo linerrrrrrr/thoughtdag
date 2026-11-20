@@ -60,7 +60,7 @@ export default function ImportChatModal({
         </div>
 
         <div className="px-6 py-2 border-b border-line/60">
-          <label className="flex items-center gap-2 text-control text-ink-muted cursor-pointer select-none py-1">
+          <label data-cursor="action" className="flex items-center gap-2 text-control text-ink-muted select-none py-1">
             <input
               type="checkbox"
               checked={allSelected}
@@ -75,7 +75,7 @@ export default function ImportChatModal({
         <ul className="flex-1 overflow-y-auto py-1">
           {conversations.map((c, i) => (
             <li key={i}>
-              <label className="flex items-center gap-3 px-6 py-2 hover:bg-wash transition-colors cursor-pointer select-none">
+              <label data-cursor="action" className="flex items-center gap-3 px-6 py-2 hover:bg-wash transition-colors select-none">
                 <input
                   type="checkbox"
                   checked={checked.has(i)}

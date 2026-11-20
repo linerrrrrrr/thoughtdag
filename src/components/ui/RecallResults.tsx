@@ -181,7 +181,7 @@ export default function RecallResults({ phrase, onOpened, dossiers, onOpenDossie
           const lead = cards[keyOf(g.hits[0])];
           return (
             <div key={g.session} className="border border-line rounded-content bg-card overflow-hidden" data-recall-group={g.kind}>
-              <div className="grid grid-cols-[auto_minmax(0,1fr)_auto_auto] gap-2.5 items-center px-3 py-2 cursor-pointer hover:bg-wash/60" onClick={() => setExpanded((e) => ({ ...e, [g.session]: !open }))} data-recall-group-head>
+              <div data-cursor="action" className="grid grid-cols-[auto_minmax(0,1fr)_auto_auto] gap-2.5 items-center px-3 py-2 hover:bg-wash/60" onClick={() => setExpanded((e) => ({ ...e, [g.session]: !open }))} data-recall-group-head>
                 <span className="text-control font-mono text-ink-faint border border-line rounded-tag px-1 py-px">{g.kind === 'memory' ? 'memory' : g.runner}</span>
                 <div className="min-w-0">
                   <div className="text-control font-medium text-ink truncate">{g.title}</div>

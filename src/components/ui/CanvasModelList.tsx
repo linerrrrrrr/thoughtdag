@@ -1,7 +1,7 @@
-import { useId, useState, type ReactNode } from 'react';
+import { useId, useState } from 'react';
 import { Cable, Check, ChevronDown, Image, Loader2, SquareTerminal } from 'lucide-react';
 import { useT } from '../../i18n';
-import { AGENT_PROVIDER, runtimeLabelOf } from '../../lib/agents/agent-runtime';
+import { groupBySource, modelName } from '../../lib/model-sources';
 import type { ModelInfo } from '../../lib/use-models';
 
 interface CanvasModelListProps {
@@ -9,35 +9,6 @@ interface CanvasModelListProps {
   activeId?: string | null;
   pending?: boolean;
   onPick: (id: string) => void;
-  effortStepFor: string | null;
-  renderEffort: (model: ModelInfo) => ReactNode;
-}
-
-interface ModelSource {
-  key: string;
-  label: string;
-  agent: boolean;
-  models: ModelInfo[];
-}
-
-function groupBySource(models: ModelInfo[]) {
-  const groups = new Map<string, ModelSource>();
-  for (const model of models) {
-    const agent = model.provider === AGENT_PROVIDER;
-    const label = agent ? runtimeLabelOf(model.id) : model.provider;
-    const key = `${agent ? 'agent' : 'api'}/${label}`;
-    const group = groups.get(key);
-    if (group) group.models.push(model);
-    else groups.set(key, { key, label, agent, models: [model] });
-  }
-  return Array.from(groups.values());
-}
-
-function modelName(model: ModelInfo, source: ModelSource) {
-  const suffix = ` (${model.provider})`;
-  const name = model.name.endsWith(suffix) ? model.name.slice(0, -suffix.length) : model.name;
-  const prefix = `${source.label} · `;
-  return source.agent && name.startsWith(prefix) ? name.slice(prefix.length) : name;
 }
 
 function VisionIcon({ kind, label }: { kind: 'source' | 'model'; label: string }) {
@@ -49,7 +20,7 @@ function VisionIcon({ kind, label }: { kind: 'source' | 'model'; label: string }
 
 const rowClass = 'w-full flex items-center gap-2 min-h-8 py-1.5 rounded-control text-left text-control transition-colors focus-visible:outline-2 focus-visible:outline-accent';
 
-export default function CanvasModelList({ models, activeId, pending, onPick, effortStepFor, renderEffort }: CanvasModelListProps) {
+export default function CanvasModelList({ models, activeId, pending, onPick }: CanvasModelListProps) {
   const t = useT();
   const panelId = useId();
   const [chosenSource, setChosenSource] = useState<string | null>();
@@ -79,16 +50,13 @@ export default function CanvasModelList({ models, activeId, pending, onPick, eff
         {expanded && <div id={groupId}>
           {source.models.map(model => {
             const selected = model.id === activeId;
-            return <div key={model.id}>
-              <button type="button" aria-pressed={selected} data-model-option={model.id}
-                onClick={() => onPick(model.id)}
-                className={`${rowClass} pl-8 pr-2 ${selected ? 'bg-accent/10 text-accent font-medium' : 'text-ink hover:bg-wash'}`}>
-                <span className="min-w-0 flex-1 [overflow-wrap:anywhere]">{modelName(model, source)}</span>
-                {!allVision && model.vision && <VisionIcon kind="model" label={t('model.catalogVision')} />}
-                {selected && <Check size={14} strokeWidth={2} className="shrink-0" aria-hidden="true" />}
-              </button>
-              {effortStepFor === model.id && renderEffort(model)}
-            </div>;
+            return <button key={model.id} type="button" aria-pressed={selected} data-model-option={model.id}
+              onClick={() => onPick(model.id)}
+              className={`${rowClass} pl-8 pr-2 ${selected ? 'bg-accent/10 text-accent font-medium' : 'text-ink hover:bg-wash'}`}>
+              <span className="min-w-0 flex-1 [overflow-wrap:anywhere]">{modelName(model, source)}</span>
+              {!allVision && model.vision && <VisionIcon kind="model" label={t('model.catalogVision')} />}
+              {selected && <Check size={14} strokeWidth={2} className="shrink-0" aria-hidden="true" />}
+            </button>;
           })}
         </div>}
       </div>;

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { Loader2 } from 'lucide-react';
 import type { Attachment } from '../types';
 import { loadAttachmentContent } from '../lib/attachment-vault';
@@ -55,18 +55,26 @@ export function NotebookView({ att }: { att: Attachment }) {
       </div>
     );
   }
+  return <NotebookCells notebook={nb} />;
+}
+
+/** The original saved cells and outputs are also the standalone reading view. */
+export function NotebookCells({ notebook: nb, renderMarkdown = source => <Markdown>{source}</Markdown> }: {
+  notebook: ParsedNotebook;
+  renderMarkdown?: (source: string) => ReactNode;
+}) {
   return (
     <div className="max-w-[820px] mx-auto px-8 py-6 space-y-4" data-notebook>
       {nb.cells.map((c, i) => (
         c.kind === 'markdown' ? (
-          <div key={i} className="markdown-body text-body text-ink"><Markdown>{c.source}</Markdown></div>
+          <div key={i} className="markdown-body text-body text-ink">{renderMarkdown(c.source)}</div>
         ) : c.kind === 'raw' ? (
           <pre key={i} className={`${outputBox} text-ink-muted bg-card border-line`}>{c.source}</pre>
         ) : (
           <div key={i} className="space-y-2">
             <div className="flex gap-2">
               <span className="w-9 shrink-0 pt-2.5 text-right text-meta font-mono text-ink-faint select-none">[{c.count ?? ' '}]</span>
-              <div className="flex-1 min-w-0 markdown-body text-body"><Markdown>{fence(c.source, nb.lang)}</Markdown></div>
+              <div className="flex-1 min-w-0 markdown-body text-body">{renderMarkdown(fence(c.source, nb.lang))}</div>
             </div>
             {c.outputs.map((o, j) => (
               <div key={j} className="pl-11"><Output o={o} /></div>

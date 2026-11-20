@@ -71,7 +71,7 @@ function sharedLength(left, right, tolerance = 2) {
 }
 try {
   buildSync({ entryPoints: ['src/lib/edge-path.ts'], bundle: true, platform: 'node', format: 'esm', outfile: bundle,
-    define: { 'import.meta.env': '{}' }, logLevel: 'silent' });
+    define: { 'import.meta.env': '{}' }, loader: { '.css': 'empty' }, logLevel: 'silent' });
   const { routeEdge, createEdgeRoutingContext, normalizeEdgeRoutingSettings } = await import(pathToFileURL(bundle).href);
   const vertical = (cards, routeMode, options) => {
     const [s, t] = cards;
@@ -99,6 +99,21 @@ try {
     assert.deepEqual(vertical(cards, 'auto'), natural);
     assert.deepEqual(vertical(cards, 'curve'), natural);
     clear(natural, cards);
+  });
+  test('unset and legacy auto routes inherit the source layout before the local default', () => {
+    const source = node('s', 0, 0), target = node('t', 240, 400);
+    for (const defaultRoute of ['curve', 'orthogonal']) {
+      for (const sourceRoute of [undefined, 'auto', 'curve', 'orthogonal']) {
+        const cards = [{ ...source, data: { ...source.data, edgeRouteDefault: sourceRoute } }, target];
+        const options = { context: createEdgeRoutingContext(cards, [], { defaultRoute }) };
+        const curve = vertical(cards, 'curve', options), elbow = vertical(cards, 'orthogonal', options);
+        assert.notEqual(curve.path, elbow.path);
+        const expected = (sourceRoute === undefined || sourceRoute === 'auto' ? defaultRoute : sourceRoute) === 'curve' ? curve : elbow;
+        assert.deepEqual(vertical(cards, undefined, options), expected);
+        assert.deepEqual(vertical(cards, 'auto', options), expected);
+        assert.ok(curve.path.includes('C') && elbow.path.includes('Q'));
+      }
+    }
   });
   test('orthogonal mode uses rounded corners even without a blocker', () => {
     const cards = [node('s', 0, 0), node('t', 240, 400)];
@@ -161,15 +176,21 @@ try {
     }
   });
   test('routing preferences normalize invalid and out-of-range restored values', () => {
-    assert.deepEqual(normalizeEdgeRoutingSettings(), { avoidObstacles: true, obstacleClearance: 20, curvature: 0.25 });
+    assert.deepEqual(normalizeEdgeRoutingSettings(), { defaultRoute: 'curve', avoidObstacles: true, obstacleClearance: 20, curvature: 0.25, endpointPerpendicularity: 1 });
     assert.deepEqual(normalizeEdgeRoutingSettings({ avoidObstacles: false, obstacleClearance: NaN }),
-      { avoidObstacles: false, obstacleClearance: 20, curvature: 0.25 });
+      { defaultRoute: 'curve', avoidObstacles: false, obstacleClearance: 20, curvature: 0.25, endpointPerpendicularity: 1 });
+    assert.equal(normalizeEdgeRoutingSettings({ defaultRoute: 'auto' }).defaultRoute, 'curve');
+    assert.equal(normalizeEdgeRoutingSettings({ defaultRoute: 'orthogonal' }).defaultRoute, 'orthogonal');
     assert.equal(normalizeEdgeRoutingSettings({ obstacleClearance: Infinity }).obstacleClearance, 20);
     assert.equal(normalizeEdgeRoutingSettings({ obstacleClearance: -10 }).obstacleClearance, 8);
     assert.equal(normalizeEdgeRoutingSettings({ obstacleClearance: 1000 }).obstacleClearance, 64);
     assert.equal(normalizeEdgeRoutingSettings({ curvature: NaN }).curvature, 0.25);
     assert.equal(normalizeEdgeRoutingSettings({ curvature: -1 }).curvature, 0);
     assert.equal(normalizeEdgeRoutingSettings({ curvature: 2 }).curvature, 1);
+    assert.equal(normalizeEdgeRoutingSettings({ endpointPerpendicularity: NaN }).endpointPerpendicularity, 1);
+    assert.equal(normalizeEdgeRoutingSettings({ endpointPerpendicularity: -1 }).endpointPerpendicularity, 0);
+    assert.equal(normalizeEdgeRoutingSettings({ endpointPerpendicularity: 2 }).endpointPerpendicularity, 1);
+    assert.equal(normalizeEdgeRoutingSettings({ endpointPerpendicularity: 0.375 }).endpointPerpendicularity, 0.375);
   });
   test('continuous curvature changes natural forward curves while preserving endpoint normals', () => {
     const cards = [node('s', 0, 0), node('t', 600, 600)];
@@ -196,12 +217,16 @@ try {
       }
     }
   });
-  test('curvature never changes an orthogonal route or its shared-port lanes', () => {
+  test('curve settings never change an orthogonal route or its shared-port lanes', () => {
     const cards = [node('s', 0, 300, 200, 140), node('a', 1400, 0), node('b', 1400, 600), node('block', 600, 100, 300, 600)];
     const edges = ['a', 'b'].map((target) => ({ id: `s-${target}`, source: 's', target, sourceHandle: 'out-right', targetHandle: 'in-left' }));
-    const route = (edge, curvature) => routeEdge(200, 356, 'right', 1400, cards.find((card) => card.id === edge.target).position.y + 56,
-      'left', 's', edge.target, cards, 'orthogonal', { edgeId: edge.id, context: createEdgeRoutingContext(cards, edges, { curvature }) });
-    for (const edge of edges) assert.deepEqual(route(edge, 0), route(edge, 1));
+    const route = (edge, settings) => routeEdge(200, 356, 'right', 1400, cards.find((card) => card.id === edge.target).position.y + 56,
+      'left', 's', edge.target, cards, 'orthogonal', { edgeId: edge.id, context: createEdgeRoutingContext(cards, edges, settings) });
+    for (const edge of edges) {
+      const original = route(edge);
+      assert.deepEqual(route(edge, { curvature: 0 }), original);
+      assert.deepEqual(route(edge, { curvature: 1, endpointPerpendicularity: 0 }), original);
+    }
   });
   test('every curvature extreme remains safe around tight and reverse-facing endpoint geometry', () => {
     for (const curvature of [0, 0.01, 0.25, 0.9, 1]) {
@@ -475,6 +500,18 @@ try {
       const points = clear(routeEdge(sx, sy, sp, tx, ty, tp, 's', 't', cards, 'curve'), cards);
       assert.deepEqual(points[0], { x: sx, y: sy });
       assert.deepEqual(points.at(-1), { x: tx, y: ty });
+    }
+  });
+  test('overview ruler wires keep their measured tick even on a reversed pair outside the card', () => {
+    const s = node('s', 600, 0), t = node('t', 0, 30);
+    s.data = { ...s.data, response: 'passage', highlights: [{ id: 'a', text: 'passage' }] };
+    const cards = [s, t], edge = { id: 'marked', source: 's', target: 't', sourceHandle: 'ruler/text//a/0', targetHandle: 'in-left' };
+    const context = createEdgeRoutingContext(cards, [edge]);
+    for (const mode of ['curve', 'orthogonal']) {
+      const route = routeEdge(846, 40, 'right', 0, 86, 'left', 's', 't', cards, mode, { context, edgeId: edge.id });
+      const points = clear(route, cards);
+      assert.deepEqual(points[0], { x: 846, y: 40 });
+      assert.deepEqual(points.at(-1), { x: 0, y: 86 });
     }
   });
 } finally {

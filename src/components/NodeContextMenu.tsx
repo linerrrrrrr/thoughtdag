@@ -9,6 +9,7 @@ import { recapToNote } from '../lib/recap';
 import { updateSummaries } from '../lib/ladder-reselect';
 import { useT, fmt, t as ti } from '../i18n';
 import { getNodeDisplayName } from '../lib/node-display-name';
+import { copyText } from '../lib/export';
 import { isImeComposing } from '../utils';
 import { NodeDetailControls } from './CanvasDetailControl';
 import { screenToUi, uiViewport } from '../lib/ui-scale';
@@ -47,7 +48,8 @@ export default function NodeContextMenu({ x, y, nodeId, onClose }: {
   const kind = node.data.stepKind;
   const isContent = !!kind; // note / file / link / frame
   const hasResponse = !isContent && !!node.data.response && !node.data.isLoading;
-  const copyText = isContent
+  const nodeCode = node.data.nodeNumber ? `#${node.data.nodeNumber}` : '';
+  const contentToCopy = isContent
     ? (kind === 'note' || kind === 'link' ? node.data.question : '')
     : node.data.response;
 
@@ -62,9 +64,12 @@ export default function NodeContextMenu({ x, y, nodeId, onClose }: {
   const top = Math.max(8, Math.min(screenToUi(y), viewport.height - MENU_H - 8));
 
   const run = (fn: () => void) => () => { onClose(); fn(); };
+  const copy = (text: string) => run(() => {
+    void copyText(text).catch(() => toast('error', ti('local.copyFailed')));
+  });
 
   return createPortal((
-    <div ref={ref} tabIndex={-1} data-selection-menu onBlur={renaming ? renameDismiss.onBlur : undefined} className="fixed z-[70] bg-card border border-line rounded-overlay shadow-lg py-1 overflow-y-auto animate-fade-in" style={{ left, top, width: MENU_W, maxHeight: Math.max(0, viewport.height - top - 8) }}>
+    <div ref={ref} tabIndex={-1} data-type-surface="portal" data-selection-menu onBlur={renaming ? renameDismiss.onBlur : undefined} className="fixed z-[70] bg-card border border-line rounded-overlay shadow-lg py-1 overflow-y-auto animate-fade-in" style={{ left, top, width: MENU_W, maxHeight: Math.max(0, viewport.height - top - 8) }}>
       {renaming ? (
         <form className="p-3 space-y-2.5" onSubmit={(e) => {
           e.preventDefault();
@@ -84,7 +89,7 @@ export default function NodeContextMenu({ x, y, nodeId, onClose }: {
       ) : <>
       {kind !== 'frame' && <div className="px-3 py-2 border-b border-line mb-1"><NodeDetailControls nodeId={nodeId} /></div>}
       {kind !== 'frame' && (
-        <button className={`${item} disabled:opacity-50 disabled:cursor-not-allowed`} disabled={node.data.isLoading}
+        <button className={`${item} disabled:opacity-50 when-unavailable`} disabled={node.data.isLoading}
           data-tooltip={node.data.isLoading ? t('ctx.renameBusy') : undefined}
           onClick={() => { setRenameDraft(node.data.displayName ?? ''); setRenaming(true); }} data-rename-node>
           <Pencil size={14} strokeWidth={1.75} className={icon} /> {t('ctx.rename')}
@@ -117,10 +122,14 @@ export default function NodeContextMenu({ x, y, nodeId, onClose }: {
           <StickyNote size={14} strokeWidth={1.75} className={icon} /> {t('continue.summarize')}
         </button>
       )}
-      {copyText && (
-        <button className={item} onClick={run(() => {
-          void navigator.clipboard.writeText(copyText).then(() => toast('success', ti('ctx.copied')));
-        })}>
+      {nodeCode && (
+        <button type="button" className={item} data-copy-node-number onClick={copy(nodeCode)}>
+          <ClipboardCopy size={14} strokeWidth={1.75} className={icon} /> {t('ctx.copyNodeNumber')}
+          <span className="ml-auto font-mono text-ink-muted">{nodeCode}</span>
+        </button>
+      )}
+      {contentToCopy && (
+        <button className={item} onClick={copy(contentToCopy)}>
           <ClipboardCopy size={14} strokeWidth={1.75} className={icon} /> {t(isContent ? 'ctx.copyContent' : 'actions.copyResponse')}
         </button>
       )}

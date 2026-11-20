@@ -1,113 +1,13 @@
-/* This sheet travels with the exported HTML. Theme tokens are copied from
-   the source canvas at export time; system fonts keep the file portable. */
-:root {
-  --color-surface: #f4f5f7;
-  --color-card: #fff;
-  --color-wash: #ebeef3;
-  --color-line: #cdd3dd;
-  --color-ink: #202632;
-  --color-ink-muted: #515e70;
-  --color-accent: #6b5ce7;
-  --color-accent-strong: #5a4bd6;
-  font: 100%/1.5 var(--font-sans, system-ui, sans-serif);
-  color: var(--color-ink);
-}
-* { box-sizing: border-box; }
-body { display: flex; margin: 0; height: 100vh; height: 100dvh; overflow: hidden; background: var(--color-surface); }
-button { color: inherit; font: inherit; cursor: pointer; }
-[hidden] { display: none !important; }
-:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
-#canvas { position: relative; isolation: isolate; flex: 1; min-width: 0; }
-#viewport { position: absolute; inset: 0; overflow: clip; touch-action: none; cursor: grab; }
-#viewport.grid { background-image: radial-gradient(var(--color-line) 1px, transparent 1px); background-size: 20px 20px; }
-#viewport.panning, #viewport.panning * { cursor: grabbing; }
-#viewport:focus-visible { outline-offset: -2px; }
-#world { position: absolute; top: 0; left: 0; transform-origin: 0 0; user-select: none; }
-.project-name, .canvas-controls {
-  position: absolute; left: 16px; z-index: 2; background: var(--color-card);
-  border: 1px solid var(--color-line); border-radius: var(--radius-toolbar, 15px);
-  box-shadow: 0 3px 10px rgb(24 35 52 / .08);
-}
-.project-name { top: 16px; max-width: calc(100% - 32px); padding: 8px 16px; }
-h1, h2 { margin: 0; }
-.project-name h1 { font-size: 1rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.canvas-controls { bottom: 16px; display: flex; align-items: center; padding: 5px; gap: 2px; }
-.control {
-  display: grid; place-items: center; flex: none; width: 36px; height: 36px;
-  border: 0; border-radius: var(--radius-control, 6px); background: transparent;
-}
-.control svg, .card-heading svg { width: 18px; height: 18px; flex: none; }
-.control:hover { background: var(--color-wash); }
-#zoom-value { min-width: 3em; text-align: center; color: var(--color-ink-muted); font-size: .875rem; font-variant-numeric: tabular-nums; }
-.canvas-frame, .canvas-node, .edge-label, .wires { position: absolute; }
-.canvas-node {
-  display: flex; flex-direction: column; align-items: stretch; gap: 10px; padding: 16px; overflow: hidden;
-  border: 1.5px solid var(--color-line); border-radius: var(--radius-node, 14px); background: var(--color-card);
-  text-align: start; overflow-wrap: anywhere;
-}
-.canvas-node:hover, .canvas-node[aria-expanded="true"] { border-color: var(--color-accent); }
-.canvas-node.note { background: var(--color-material-note, #fffcf5); border-color: var(--color-material-note-line, #dbceae); }
-.canvas-node.file { border-color: var(--color-material-file-line, #b7c8dc); }
-.canvas-node.paradigm { border-style: dashed; }
-.card-heading { display: flex; flex: none; min-width: 0; align-items: baseline; justify-content: space-between; gap: 12px; }
-.card-heading svg { color: var(--color-ink-muted); align-self: center; }
-.card-title { font-size: calc(1.125rem * var(--heading-scale, 1)); font-weight: 600; line-height: 1.4; }
-.card-title, .card-summary, .card-question, .card-preview {
-  min-width: 0; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
-}
-.card-identity { order: -1; font-size: .75rem; color: var(--color-ink-muted); }
-.card-summary, .card-question, .card-preview { flex-shrink: 0; white-space: pre-line; font-size: 1rem; line-height: 1.65; }
-.card-summary { color: var(--color-ink-muted); -webkit-line-clamp: 3; }
-.card-question { align-self: end; max-width: 90%; padding: 5px 12px; background: var(--conversation-user-bg, var(--color-wash)); color: var(--conversation-user-ink, inherit); border-radius: 8px; }
-.card-preview { -webkit-line-clamp: 15; }
-.card-preview mark { color: var(--color-amber-800, #7a4800); background: var(--color-amber-100, #ffefb0); }
-#world.overview .canvas-node { justify-content: center; }
-#world.overview .canvas-node > :not(.card-heading) { display: none; }
-.canvas-frame {
-  --tone: var(--color-ink-muted);
-  border: 2px dashed color-mix(in srgb, var(--tone) 48%, transparent);
-  border-radius: 8px; background: color-mix(in srgb, var(--tone) 5%, transparent);
-  padding: 8px 14px; overflow: hidden; pointer-events: none; color: var(--color-ink-muted); font-weight: 600;
-  font-size: calc(1rem * var(--heading-scale, 1));
-}
-.canvas-frame.violet { --tone: var(--color-accent); }
-.canvas-frame.amber { --tone: #fbbf24; }
-.canvas-frame.green { --tone: #10b981; }
-.canvas-frame.sky { --tone: #0ea5e9; }
-.canvas-frame.rose { --tone: #fb7185; }
-.wires { width: 1px; height: 1px; overflow: visible; pointer-events: none; }
-.canvas-edge { fill: none; stroke: var(--color-accent); stroke-width: 2; }
-.edge-label {
-  max-width: 240px; width: max-content; padding: 3px 8px; border: 1px solid var(--color-line);
-  border-radius: 4px; background: var(--color-card); font-size: .875rem; overflow-wrap: anywhere;
-  transform: translate(-50%, -50%); pointer-events: none;
-}
-.empty { position: absolute; top: 48%; width: 100%; text-align: center; color: var(--color-ink-muted); }
-#reader {
-  width: clamp(340px, 42vw, 620px); display: flex; flex-direction: column; min-width: 0;
-  background: var(--color-card); border-left: 1px solid var(--color-line);
-}
-#reader > header { display: flex; align-items: start; justify-content: space-between; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--color-line); }
-#reader-title { align-self: center; font-size: 1.125rem; overflow-wrap: anywhere; max-height: 5em; overflow: auto; }
-.reading-content {
-  flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; padding: 18px clamp(16px, 3vw, 32px) 48px;
-  font-size: 1rem; line-height: 1.75; overflow-wrap: anywhere;
-}
-.reading-content :where(p, ul, ol, blockquote, pre, table) { margin-block: .65em 1em; }
-.reading-content :where(h1, h2, h3, h4) { margin-block: 1.4em .5em; line-height: 1.45; }
-.reading-content > :first-child { margin-top: 0; }
-.reading-content a { color: var(--color-accent-strong); }
-.reading-content img { max-width: 100%; height: auto; }
-.reading-content figure { margin: 1em 0; }
-.reading-content code, .reading-content pre { font-family: var(--font-mono, monospace); font-size: .875em; }
-.reading-content pre { overflow-x: auto; padding: 12px; background: var(--color-wash); border-radius: 6px; }
-.reading-content pre code { font-size: 1em; }
-.reading-content table { display: block; overflow-x: auto; border-collapse: collapse; }
-.reading-content :is(td, th) { padding: 4px 8px; border: 1px solid var(--color-line); }
-.reading-content blockquote { margin-inline: 0; padding-inline-start: 12px; border-inline-start: 3px solid var(--color-line); }
-.reading-content summary { cursor: pointer; }
-.reading-summary { color: var(--color-ink-muted); white-space: pre-line; }
-@media (max-width: 700px) {
-  body:has(#reader:not([hidden])) #canvas { display: none; }
-  #reader { width: 100%; border: 0; }
-}
+/* Original canvas styles come from the application. These rules are limited to
+   document material inserted in the reading window and its offline affordances. */
+[data-export-reading-body] .reading-attachment { margin-block: var(--spacing-section-gap); }
+[data-export-reading-body] figure.document-page { margin: var(--spacing-related) 0; }
+[data-export-reading-body] .pdf-document-pages .pdf-document-page-wrap { margin: 0; width: min(900px, 100%); }
+[data-export-reading-body] .document-page, [data-export-reading-body] .pdf-sheet { background: white; }
+[data-export-reading-body] :is(.document-page, .pdf-sheet) img { display: block; width: 100%; height: auto; }
+[data-export-reading-body] .pdf-sheet { position: relative; }
+[data-export-reading-body] .reading-diagram { display: block; margin: 1em auto; }
+[data-export-reading-body] .conversation-question { display: flex; justify-content: flex-end; }
+[data-export-reading-body] .reading-turn .conversation-answer { margin-top: var(--spacing-section-gap); }
+[data-export-reading-body] img { max-width: 100%; }
+.react-flow[data-export-camera] { touch-action: none; }

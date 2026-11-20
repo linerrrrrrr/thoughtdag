@@ -3,19 +3,21 @@
 <head>
 <meta charset="utf-8">
 <title>ThoughtDAG</title>
+<link rel="stylesheet" href="typography.css">
+<link rel="stylesheet" href="../design-system/cursors.css">
 <style>
   html, body { margin: 0; height: 100%; background: #FAF9F7; font-family: -apple-system, "Segoe UI", sans-serif; }
   .wrap { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; }
   .logo { width: 72px; height: 72px; animation: breathe 2.2s ease-in-out infinite; }
   @keyframes breathe { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.75; transform: scale(0.96); } }
-  h1 { margin: 0; font-size: 22px; font-weight: 700; color: #2A2622; letter-spacing: 0.2px; }
-  p { margin: 0; font-size: 12.5px; color: #9B948C; }
+  h1 { margin: 0; font-weight: 700; color: #2A2622; letter-spacing: 0.2px; }
+  p { margin: 0; color: #9B948C; }
   .bar { width: 160px; height: 3px; border-radius: 2px; background: #E8E5E0; overflow: hidden; }
   .bar::after { content: ''; display: block; width: 40%; height: 100%; border-radius: 2px; background: #6B5CE7; animation: slide 1.2s ease-in-out infinite; }
   @keyframes slide { 0% { transform: translateX(-100%); } 100% { transform: translateX(350%); } }
 </style>
 </head>
-<body>
+<body data-type-surface="desktop-startup">
 <div class="wrap">
   <svg class="logo" viewBox="0 0 44 44" xmlns="http://www.w3.org/2000/svg">
     <line x1="19" y1="10" x2="19" y2="18" stroke="#6B5CE7" stroke-width="2.5" stroke-linecap="round"/>

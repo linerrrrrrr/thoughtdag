@@ -62,8 +62,12 @@ export function useReaderDock(): ReaderDock {
     const n = s.nodes.find((x) => x.id === s.selectedNodeId);
     return !!n && !['note', 'file', 'link', 'frame'].includes(n.data.stepKind ?? '');
   });
-  const docked = readerOpen && mode === 'dock' && windowWidth >= DOCK_MIN_WINDOW;
-  const maxWidth = panelShowing
+  return readerDockGeometry(windowWidth, readerOpen && mode === 'dock', readerWidth, panelShowing ? panelWidth : 0);
+}
+
+export function readerDockGeometry(windowWidth: number, preferDock: boolean, readerWidth: number, panelWidth: number): ReaderDock {
+  const docked = preferDock && windowWidth >= DOCK_MIN_WINDOW;
+  const maxWidth = panelWidth > 0
     ? windowWidth - panelWidth - PANEL_GUTTER - CANVAS_MIN_BESIDE_PANEL
     : windowWidth - CANVAS_MIN_WIDTH;
   const collapsed = docked && maxWidth < READER_MIN_WIDTH;

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { chromium } from 'playwright-core';
+import { initNodePickerFixture } from './fixtures/node-picker.mjs';
 
 const executablePath = process.env.CHROME_PATH ?? [
   'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe', '/usr/bin/chromium',
@@ -14,15 +15,14 @@ page.setDefaultTimeout(12000);
 const errors = [], writes = [], checks = [];
 page.on('pageerror', error => errors.push(error.message));
 await page.routeWebSocket('**', socket => socket.close());
+await page.route('**/__thoughtdag_storage**', route => route.fulfill({ status: 404 }));
 await page.route('**/api/**', route => {
   if (!['GET', 'HEAD', 'OPTIONS'].includes(route.request().method())) writes.push(route.request().url());
   return route.fulfill({ json: { models: [], providers: [], sessions: [], topics: [] } });
 });
+await page.addInitScript(initNodePickerFixture);
 await page.addInitScript(() => {
-  localStorage.setItem('thoughtdag.seeded', 'yes');
-  localStorage.setItem('thoughtdag.tutorialDone', '1');
   localStorage.setItem('thoughtdag.canvasDetail', 'full');
-  localStorage.setItem('thoughtdag.lang', 'zh');
 });
 const output = 'local-tests/highlighter';
 await mkdir(output, { recursive: true });
@@ -64,20 +64,24 @@ async function selectText(surface, text) {
 
 try {
   await page.goto(process.env.APP_URL ?? 'http://127.0.0.1:5173', { waitUntil: 'domcontentloaded', timeout: 60000 });
-  await page.waitForFunction(() => window.__rf && window.__ui && window.__store?.persist.hasHydrated());
+  await page.waitForFunction(() => window.__rf && window.__ui && window.__store?.persist.hasHydrated(),
+    undefined, { timeout: 60000 });
   await page.evaluate(() => {
     window.__ui.getState().setTutorialOpen(false);
     window.__ui.getState().setReleaseNotesOpen(false);
     window.__ui.getState().setPanelOpen(false);
     window.__ui.getState().setCanvasDetail('full');
     const response = 'Alpha evidence matters. 第一段用于连续划选。\n\nBeta finding stays visible. 第二段保留阅读节奏。\n\n```js\nconst codeOnly = 42;\n```';
+    const instruction = { id: 'followup', kind: 'user', sourceType: 'userMessage', status: 'completed',
+      text: '请补充 **回归验证**。', startedAt: 1 };
     const base = { responses: [response, `${response}\n\nVersion two.`], response, responseIndex: 0,
       isCollapsed: false, isEditing: false, isEditingResponse: false, isLoading: false,
       tokenCount: 45, highlights: [], highlightMode: 'tag', attachments: [], excludedAttachmentIds: [],
       includedAttachmentIds: [], roleMode: 'inherit', detailLevel: 'full' };
     const nodes = [
       { id: 'highlight-answer', type: 'thought', position: { x: 100, y: 135 }, width: 560,
-        data: { ...base, displayName: '荧光笔交互验收', question: '如何保留阅读中的重点？' } },
+        data: { ...base, displayName: '荧光笔交互验收', question: '如何保留阅读中的重点？请核对 **Version two**。\n\n' + instruction.text,
+          agentActivities: [[instruction], [instruction]] } },
       { id: 'highlight-material', type: 'thought', position: { x: 950, y: 150 },
         data: { ...base, response: '', responses: [], question: 'Material passage one.\n\nMaterial passage two.', stepKind: 'note' } },
       { id: 'highlight-rail', type: 'thought', position: { x: 950, y: 600 },
@@ -218,11 +222,44 @@ try {
   assert.equal(await toggle(card).getAttribute('aria-pressed'), 'false');
   check('editing and switching answer versions exit the highlighter');
 
+  const question = card.locator('.conversation-user-message');
+  const sharedText = 'Version two';
+  const visibleMarks = surface => surface.locator('mark.highlight-mark').allTextContents();
+  const countBeforeQuestion = await count('highlight-answer');
+  await toggle(card).click();
+  const questionDrag = await question.locator('strong').evaluate(element => {
+    const range = document.createRange();
+    range.selectNodeContents(element);
+    const rect = range.getBoundingClientRect();
+    return { start: rect.left + 0.2, end: rect.right - 0.2, y: rect.y + rect.height / 2 };
+  });
+  await page.mouse.move(questionDrag.start, questionDrag.y);
+  await page.mouse.down();
+  await page.mouse.move(questionDrag.end, questionDrag.y, { steps: 12 });
+  await page.mouse.up();
+  await settle();
+  assert.deepEqual(await visibleMarks(question), [sharedText], 'A mouse drag marks the formatted instruction text');
+  assert.ok(!(await visibleMarks(answer)).includes(sharedText));
+  await selectText(question, sharedText);
+  assert.equal(await count('highlight-answer'), countBeforeQuestion + 1);
+  const activity = card.locator('[data-agent-activity]');
+  const supplementary = activity.locator('.activity-user-message');
+  await activity.locator('[data-activity-user-summary]').waitFor();
+  await selectText(supplementary, '回归验证');
+  await activity.locator('[data-activity-history]').click();
+  assert.deepEqual(await visibleMarks(supplementary), ['回归验证']);
+  await selectText(supplementary, '请补充');
+  await activity.locator('[data-activity-history]').click();
+  assert.deepEqual(await visibleMarks(supplementary), ['请补充', '回归验证']);
+  assert.equal(await count('highlight-answer'), countBeforeQuestion + 3);
+  await toggle(card).click();
+  check('canvas marks the user question with a mouse and preserves supplementary instruction marks across history disclosure');
+
   await card.locator('[data-node-details]').click();
   await panel.waitFor();
   await page.evaluate(async () => {
-    (await import('/src/i18n/index.ts')).useI18n.getState().setLang('en');
-    (await import('/src/lib/appearance.ts')).useAppearance.getState().setLighting('dark');
+    (await window.__importLive('/src/i18n/index.ts')).useI18n.getState().setLang('en');
+    (await window.__importLive('/src/lib/appearance.ts')).useAppearance.getState().setLighting('dark');
     window.__ui.setState({ panelWidth: 380 });
   });
   const panelAnswer = panel.locator('.focus-assistant-message');
@@ -235,6 +272,16 @@ try {
   assert.equal(await page.evaluate(() => window.getSelection()?.toString()), '第二段保留阅读节奏。');
   assert.equal(await page.evaluate(() => window.__store.getState().nodes.length), 3);
   await toggle(panel).click();
+  const panelQuestion = panel.locator('[data-conversation-user-message]');
+  assert.deepEqual(await visibleMarks(panelQuestion), [sharedText]);
+  assert.deepEqual(await visibleMarks(panel.locator('.activity-user-message')), ['请补充', '回归验证']);
+  await selectText(panelQuestion, '阅读中的重点');
+  await selectText(panelAnswer, sharedText);
+  await selectText(panelAnswer, sharedText);
+  assert.deepEqual(await visibleMarks(question), ['阅读中的重点', sharedText]);
+  assert.ok((await visibleMarks(answer)).includes(sharedText));
+  assert.equal(await count('highlight-answer'), countBeforeQuestion + 5);
+  check('panel question marks sync to the card and identical question and answer passages are marked independently');
   await selectText(panelAnswer, '第二段保留阅读节奏。');
   assert.ok((await marks('highlight-answer')).some(h => h.text === '第二段保留阅读节奏。'));
   assert.equal(await toggle(panel).getAttribute('aria-pressed'), 'true');
@@ -247,7 +294,7 @@ try {
   await highlightSection(panel).getByRole('button', { name: 'Tag important', exact: true }).click();
   await highlightSection(panel).getByRole('button', { name: 'Reading only', exact: true }).click();
   assert.deepEqual(await marks('highlight-answer'), panelMarks);
-  assert.equal(await panelAnswer.locator('mark.highlight-mark').count(), panelMarks.length);
+  assert.deepEqual(await visibleMarks(panelAnswer), await visibleMarks(answer));
   assert.equal(await highlightSection(panel).evaluate(element => element.scrollWidth > element.clientWidth + 1), false);
   await page.screenshot({ path: `${output}/reading-only-panel-dark-en.png` });
   await disclosure(panel).click();
@@ -260,12 +307,24 @@ try {
   assert.equal(await panel.evaluate(element => element.scrollWidth > element.clientWidth + 1), false);
   check('narrow dark English details share the tool and Escape preserves the panel');
 
+  const instruction = panelMarks.find(mark => mark.source === 'question' && mark.text === '回归验证');
+  await card.locator(`[data-overview-ruler-mark="ruler/text//${instruction.id}/0"]`).press('Enter');
+  assert.equal(await panel.locator('.activity-user-message').evaluate(element => {
+    const highlight = CSS.highlights.get('ruler-destination');
+    return highlight && [...highlight].some(range => element.contains(range.startContainer));
+  }), true, 'The ruler jumps to the supplementary instruction in the open panel');
+  await page.evaluate(() => window.__store.getState().navigateVersion('highlight-answer', 'prev'));
+  await settle();
+  assert.ok((await visibleMarks(panelQuestion)).includes(sharedText));
+  assert.ok(!(await marks('highlight-answer')).some(mark => !mark.source && mark.text === sharedText));
+  check('the ruler locates the instruction, and switching answer versions preserves matching question marks');
+
   await page.evaluate(async () => {
     window.__ui.getState().setPanelOpen(false);
     window.__ui.getState().setReaderMode('full');
     window.__ui.getState().setReaderNodeId('highlight-material', { threadId: 'highlight-rail' });
-    (await import('/src/lib/appearance.ts')).useAppearance.getState().setLighting('light');
-    (await import('/src/i18n/index.ts')).useI18n.getState().setLang('zh');
+    (await window.__importLive('/src/lib/appearance.ts')).useAppearance.getState().setLighting('light');
+    (await window.__importLive('/src/i18n/index.ts')).useI18n.getState().setLang('zh');
   });
   await reader.waitFor();
   const materialToggle = toggle(reader).first();
@@ -279,6 +338,11 @@ try {
   await reader.locator('[data-reader-rail] [data-highlighter-toggle]').click();
   await selectText(rail, 'Rail answer to mark.');
   assert.equal(await count('highlight-rail'), 1);
+  const railQuestion = reader.locator('[data-turn-question="highlight-rail"]');
+  await selectText(railQuestion, 'reading question');
+  assert.deepEqual(await visibleMarks(railQuestion), ['reading question']);
+  assert.deepEqual(await visibleMarks(rail), ['Rail answer to mark.']);
+  assert.equal(await count('highlight-rail'), 2);
   assert.equal(await count('highlight-material'), 1);
   assert.equal(await reader.locator('[data-reader-askbar]').count(), 0);
   assert.equal(await reader.locator('[data-reader-highlight]').count(), 0);
@@ -293,6 +357,7 @@ try {
   await writeFile(`${output}/report.json`, JSON.stringify({ checks, errors, writes }, null, 2));
   console.log(`PASS ${checks.length} highlighter checks; screenshots in ${output}`);
 } catch (error) {
+  if (errors.length) console.error('Browser errors:', errors);
   await page.screenshot({ path: `${output}/failure.png` }).catch(() => {});
   throw error;
 } finally {

@@ -63,6 +63,18 @@ try {
     assert.ok(ctx.includes('Question b') && ctx.includes('Answer b'));
     assert.ok(!ctx.includes('Question a') && !ctx.includes('Answer a') && !ctx.includes('ATTACHMENT EVIDENCE'));
   });
+  test('several ruler marks from one source preserve a single full context contribution', () => {
+    for (const kind of [undefined, 'file']) {
+      const ns = nodes.map(n => n.id === 'b' ? { ...n, data: { ...n.data, stepKind: kind } } : n);
+      for (const isCrossLink of [true, false]) {
+        const base = edge('b', 'c', { isCrossLink });
+        const extra = ['one', 'two'].map(id => ({ ...base, id, sourceHandle: `ruler/text//${id}/0` }));
+        const original = buildContext('c', ns, [parent, base]);
+        assert.deepEqual(buildContext('c', ns, [parent, ...extra]), original);
+        assert.deepEqual(buildContext('c', ns, [parent, base, ...extra]), original);
+      }
+    }
+  });
   test('semantic changes invalidate recorded upstream content while cancellation preserves it', () => {
     const recorded = upstreamFingerprint('c', nodes, edges);
     const continued = change(reference, { relation: 'continue' });

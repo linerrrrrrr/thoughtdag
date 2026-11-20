@@ -11,6 +11,8 @@ interface Props {
   enabled: boolean;
   availableHeight?: number;
   question: ReactNode;
+  questionActions?: ReactNode;
+  questionTools?: ReactNode;
   answer: ReactNode;
 }
 
@@ -25,30 +27,34 @@ interface Drag {
 }
 
 /** Both reading surfaces use the same ratio; a drag persists only on release. */
-export default function ConversationSplit({ nodeId, surface, enabled, availableHeight, question, answer }: Props) {
+export default function ConversationSplit({ enabled, ...props }: Props) {
   return enabled
-    ? <ResizableConversation key={nodeId} nodeId={nodeId} surface={surface} availableHeight={availableHeight} question={question} answer={answer} />
-    : <>{question}{answer}</>;
+    ? <ResizableConversation key={props.nodeId} {...props} />
+    : <>{props.question}{props.questionActions}{props.questionTools}{props.answer}</>;
 }
 
-function ResizableConversation({ nodeId, surface, availableHeight, question, answer }: Omit<Props, 'enabled'>) {
+function ResizableConversation({ nodeId, surface, availableHeight, question, questionActions, questionTools, answer }: Omit<Props, 'enabled'>) {
   const t = useT();
   const id = useId();
   const rootRef = useRef<HTMLDivElement>(null);
   const dividerRef = useRef<HTMLDivElement>(null);
   const questionRef = useRef<HTMLDivElement>(null);
   const answerRef = useRef<HTMLDivElement>(null);
+  const toolsRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<Drag | null>(null);
-  const [contentHeight, setContentHeight] = useState({ question: 0, answer: 0, total: 0 });
+  const [contentHeight, setContentHeight] = useState({ question: 0, answer: 0, tools: 0, total: 0 });
+  // A docked action row needs room for the bubble, the divider and a line of answer.
+  // In a shorter viewport the actions scroll with the question.
+  const dockQuestionActions = contentHeight.total >= 112;
   const [preview, setPreview] = useState<{ nodeId: string; ratio: number; height: number } | null>(null);
   const savedRatio = useStore(s => s.nodes.find(n => n.id === nodeId)?.data.questionHeightRatio);
   const setRatio = useStore(s => s.setQuestionHeightRatio);
   const ratio = preview?.nodeId === nodeId ? preview.ratio : questionHeightRatio(savedRatio);
-  const fullHeight = contentHeight.question + contentHeight.answer + 13;
+  const fullHeight = contentHeight.question + contentHeight.answer + contentHeight.tools + 13;
   const panelHeight = surface === 'panel'
     ? preview?.height ?? Math.min(availableHeight ?? 420, fullHeight)
     : undefined;
-  const available = Math.max(0, Math.min(contentHeight.total - 12, contentHeight.question + contentHeight.answer + 2));
+  const available = Math.max(0, Math.min(contentHeight.total - contentHeight.tools - 12, contentHeight.question + contentHeight.answer + 2));
   const minimum = available ? Math.max(0, 1 - (contentHeight.answer + 1) / available) : 0;
   const maximum = available ? Math.min(1, (contentHeight.question + 1) / available) : 1;
   const effectiveRatio = Math.min(maximum, Math.max(minimum, ratio));
@@ -68,13 +74,15 @@ function ResizableConversation({ nodeId, surface, availableHeight, question, ans
     const measure = () => {
       const question = questionRef.current?.offsetHeight ?? 0;
       const answer = answerRef.current?.offsetHeight ?? 0;
+      const tools = toolsRef.current?.offsetHeight ?? 0;
       const total = rootRef.current?.offsetHeight ?? 0;
-      setContentHeight(current => current.question === question && current.answer === answer && current.total === total
-        ? current : { question, answer, total });
+      setContentHeight(current => current.question === question && current.answer === answer && current.tools === tools && current.total === total
+        ? current : { question, answer, tools, total });
     };
     const observer = new ResizeObserver(measure);
     observer.observe(questionRef.current);
     observer.observe(answerRef.current);
+    if (toolsRef.current) observer.observe(toolsRef.current);
     if (rootRef.current) observer.observe(rootRef.current);
     measure();
     return () => observer.disconnect();
@@ -109,7 +117,7 @@ function ResizableConversation({ nodeId, surface, availableHeight, question, ans
     event.preventDefault();
     event.stopPropagation();
     // Both rectangles are screen-space, so the delta stays correct at any canvas zoom.
-    const height = (rootRef.current?.getBoundingClientRect().height ?? 0) - event.currentTarget.getBoundingClientRect().height;
+    const height = (rootRef.current?.getBoundingClientRect().height ?? 0) - event.currentTarget.getBoundingClientRect().height - (toolsRef.current?.getBoundingClientRect().height ?? 0);
     if (height <= 0) return;
     const next = boundedRatio(drag.startRatio + (event.clientY - drag.startY) / height);
     if (!drag.changed && Math.abs((next - drag.startRatio) * height) < 1) return;
@@ -153,7 +161,12 @@ function ResizableConversation({ nodeId, surface, availableHeight, question, ans
       style={{ '--conversation-natural-height': `${fullHeight}px`, height: panelHeight } as CSSProperties}
       data-conversation-split={surface} data-conversation-node-id={nodeId}>
       <div id={`${id}-question`} className="conversation-split-question nodrag nopan nowheel"
-        data-conversation-split-question style={{ flexGrow: questionGrow, maxHeight: contentHeight.question + 1 }}><div ref={questionRef} className="conversation-split-content">{question}</div></div>
+        data-conversation-split-question style={{ flexGrow: questionGrow, maxHeight: contentHeight.question + 1 }}>
+        <div ref={questionRef} className="conversation-split-content">{question}{!dockQuestionActions && questionActions}</div>
+      </div>
+      {surface === 'node' && <div ref={toolsRef} className="shrink-0" data-split-question-tools>
+        {dockQuestionActions && questionActions}{questionTools}
+      </div>}
       <div ref={dividerRef} role="separator" tabIndex={adjustable ? 0 : -1} aria-orientation="horizontal" aria-label={t('conversation.resize')}
         aria-controls={`${id}-question ${id}-answer`} aria-valuemin={Math.round(minimum * 100)} aria-valuemax={Math.round(maximum * 100)}
         aria-disabled={!adjustable || undefined} data-adjustable={adjustable || undefined}

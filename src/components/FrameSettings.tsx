@@ -9,7 +9,7 @@ import { confirmDialog } from '../lib/ui-store';
 import { isImeComposing } from '../utils';
 import { useT, fmt } from '../i18n';
 
-const actionClass = 'w-full min-h-8 px-2.5 py-1.5 rounded-control text-control text-ink-muted hover:bg-wash transition-colors flex items-center gap-2 text-left focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-40 disabled:cursor-not-allowed';
+const actionClass = 'w-full min-h-8 px-2.5 py-1.5 rounded-control text-control text-ink-muted hover:bg-wash transition-colors flex items-center gap-2 text-left focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-40 when-unavailable';
 const colorLabels = {
   gray: 'frame.colorGray', violet: 'frame.colorViolet', amber: 'frame.colorAmber',
   green: 'frame.colorGreen', sky: 'frame.colorSky', rose: 'frame.colorRose',
@@ -78,7 +78,7 @@ export default function FrameSettings({ frames, children }: { frames: ThoughtNod
     <div className="border-t border-line">{children}</div>
     <section className="px-4 py-3 border-t border-line space-y-3" aria-label={t('frame.settingsMovement')}>
       <h3 className="text-title font-semibold text-ink">{t('frame.settingsMovement')}</h3>
-      <label className="flex items-start gap-2 text-control text-ink-muted cursor-pointer min-h-6 leading-5">
+      <label data-cursor="action" className="flex items-start gap-2 text-control text-ink-muted min-h-6 leading-5">
         <input ref={carryInput} type="checkbox" checked={allCarry} aria-checked={mixedCarry ? 'mixed' : allCarry}
           data-frame-carry onChange={event => useStore.getState().setFrameProperties(ids, { carry: event.target.checked })}
           className="h-3.5 w-3.5 mt-0.5 shrink-0 accent-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent" />

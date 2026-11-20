@@ -8,6 +8,7 @@ export interface DocxZoomSnapshot {
 export interface DocxViewport {
   attach(host: HTMLElement | null): void;
   refresh(): void;
+  beginNavigation(): void;
   engineReady(): void;
   engineZoomChanged(change: { zoom: number; mode: 'manual' | 'fit-width' }): void;
   getSnapshot(): DocxZoomSnapshot;
@@ -127,8 +128,7 @@ export function createDocxViewport(element: HTMLElement, getInstance: () => Supe
       height = rect.height;
       element.style.width = `${width}px`;
       element.style.height = `${height}px`;
-      element.style.transformOrigin = '0 0';
-      element.style.transform = `scale(${1 / outerScale})`;
+      element.style.setProperty('--docx-viewport-compensation', String(1 / outerScale));
     }
     const instance = getInstance();
     if (!instance || instance !== readyInstance) return;
@@ -224,6 +224,12 @@ export function createDocxViewport(element: HTMLElement, getInstance: () => Supe
       refresh();
     },
     refresh,
+    beginNavigation() {
+      // Resolve any pending host resize first. Its old scroll bookmark must
+      // not overwrite an explicit navigation to another page.
+      measureViewport();
+      stopPendingRestore();
+    },
     engineReady() {
       stopGeometry?.();
       readyInstance = getInstance();

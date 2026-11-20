@@ -11,7 +11,7 @@
 //
 // Two faces: ZoomText reads the level off the canvas zoom; LadderMorph takes
 // the level as a prop (the timeline overview's detail slider drives it).
-import { useLayoutEffect, useMemo, useRef } from 'react';
+import { useLayoutEffect, useMemo, useRef, type CSSProperties } from 'react';
 import type { Ladder } from '../types';
 import { LEVEL_FONT, ladderPieces, needsSpace, type LadderLevel } from '../lib/ladder-core';
 import { useLadderLevel } from '../lib/use-map-mode';
@@ -23,16 +23,16 @@ const CLOSING = /^[,.;:!?)\]}”’」』】〕〉》〗〙）］｝。，、；
 /** …or only opening punctuation */
 const OPENING = /^[([{“‘「『【〔〈《〖〘（［｛]+$/;
 
-export function LadderMorph({ ladder, level, fontSize, ink = true, weight = 'font-semibold', className = '' }: { ladder: Ladder; level: LadderLevel; /** css px; defaults to the level's canvas size */ fontSize?: number; ink?: boolean; weight?: string; className?: string }) {
+export function LadderMorph({ ladder, level, detail, ink = true, weight = 'font-semibold', className = '' }: { ladder: Ladder; level: LadderLevel; /** Continuous detail in the timeline overview. */ detail?: number; ink?: boolean; weight?: string; className?: string }) {
   const host = useRef<HTMLDivElement>(null);
   const prev = useRef<{ level: LadderLevel; rects: Map<string, { x: number; y: number; fs: number }>; html: string } | null>(null);
   const levels = useMemo(() => ladderPieces(ladder), [ladder]);
   const items = levels[level];
   const skeleton = level > 0 ? new Set(levels[level - 1].map((p) => p.id)) : null;
-  const fs = fontSize ?? LEVEL_FONT[level];
 
   useLayoutEffect(() => {
     const el = host.current; if (!el) return;
+    const fs = parseFloat(getComputedStyle(el).fontSize);
     const spans = [...el.querySelectorAll<HTMLSpanElement>('[data-id]')];
     const before = prev.current;
     // animate only what the person can see, and only when it is not a wall of words: an offscreen plaque or a very
@@ -54,7 +54,8 @@ export function LadderMorph({ ladder, level, fontSize, ink = true, weight = 'fon
         // the words that leave: a ghost of the previous level, survivors hidden, fading in place
         const ghost = document.createElement('div');
         ghost.innerHTML = before.html;
-        ghost.style.cssText = `position:absolute;left:0;top:0;right:0;pointer-events:none;font-size:${before.rects.values().next().value?.fs ?? fs}px;line-height:1.3`;
+        ghost.className = 'ladder-morph-ghost';
+        ghost.style.setProperty('--ladder-font-size', `${before.rects.values().next().value?.fs ?? fs}px`);
         const keep = new Set(spans.map((s) => s.dataset.id));
         for (const g of ghost.querySelectorAll<HTMLElement>('[data-id]')) if (keep.has(g.dataset.id)) g.style.visibility = 'hidden';
         el.appendChild(ghost);
@@ -65,7 +66,7 @@ export function LadderMorph({ ladder, level, fontSize, ink = true, weight = 'fon
     const rects = new Map<string, { x: number; y: number; fs: number }>();
     for (const s of spans) rects.set(s.dataset.id ?? '', { x: s.offsetLeft, y: s.offsetTop, fs });
     prev.current = { level, rects, html: spans.map((s) => s.outerHTML).join('') };
-  }, [level, fs, ladder]);
+  }, [level, detail, ladder]);
 
   // Spans: a surviving word stays its own span (it slides by id); a run of arriving words becomes ONE span
   // (it only fades), so an abstract of 300 words costs a few dozen spans, not 300.
@@ -87,7 +88,7 @@ export function LadderMorph({ ladder, level, fontSize, ink = true, weight = 'fon
   });
   if (opening) { const last = segments[segments.length - 1]; if (last) last.text += opening; else segments.push({ id: 'open', text: opening, skeleton: true }); }
   return (
-    <div ref={host} className={`relative leading-[1.3] ${weight} ${className}`} style={{ fontSize: fs }} data-zoom-text data-zoom-level={level}>
+    <div ref={host} className={`relative leading-[1.3] ${weight} ${className}`} data-type-surface="timeline-ladder" style={detail == null ? { '--ladder-font-size': `${LEVEL_FONT[level]}px` } as CSSProperties : undefined} data-zoom-text data-zoom-level={level}>
       {segments.map((sg) => <span key={sg.id} data-id={sg.id} className={`inline-block whitespace-pre-wrap will-change-transform ${!ink || sg.skeleton ? 'text-ink' : 'text-ink-muted font-medium'}`}>{sg.text}</span>)}
     </div>
   );

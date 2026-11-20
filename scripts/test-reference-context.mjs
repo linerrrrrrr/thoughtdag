@@ -26,6 +26,7 @@ import { activeSummary } from '../utils';
 export { getContextPath } from '../lib/graph';
 export { ladderContextFor } from '../lib/ladder-context';
 export { compileContextBundle } from '../lib/context-bundle';
+export { questionAttachmentText, questionAttachmentPatch } from '../lib/question-attachment-edit';
 let exportGraph;
 export const setExportGraph = graph => { exportGraph = graph; };
 const useStore = { getState: () => exportGraph };
@@ -61,9 +62,10 @@ const textOf = (result) => result.messages.map((message) => message.content).joi
 try {
   buildSync({ stdin: { contents: `${source}\n${scopeSource}\nexport { partitionContext } from '../lib/graph'; export * from '../lib/node-numbers';`,
     resolveDir: join(root, 'src/store'), loader: 'ts' }, bundle: true, format: 'esm', platform: 'node', outfile: bundle,
-    define: { 'import.meta.env': '{}' }, logLevel: 'silent' });
+    define: { 'import.meta.env': '{}' }, loader: { '.css': 'empty' }, logLevel: 'silent' });
   const { buildContext, buildIncomingContext, referenceBlockContent, upstreamFingerprint, partitionContext, numberCanvasNodes, resolveNodeNumberReferences,
-    getContextPath, collectMapLines, ladderContextFor, contextChainMarkdown, setExportGraph, compileContextBundle } = await import(pathToFileURL(bundle).href);
+    getContextPath, collectMapLines, ladderContextFor, contextChainMarkdown, setExportGraph, compileContextBundle,
+    questionAttachmentText, questionAttachmentPatch } = await import(pathToFileURL(bundle).href);
 
   test('node numbers survive reordering and restore; deleted and duplicated nodes cannot steal references', () => {
     const imported = numberCanvasNodes([node('legacy'), node('file', { nodeNumber: 9 }), node('duplicate', { nodeNumber: 9 }),
@@ -211,6 +213,33 @@ try {
     assert.ok(!text.includes('EXCERPT_SENTINEL') && !text.includes('QUESTION_source_SENTINEL'));
   });
 
+  test('question and answer marks tag and filter only their own speaker, including in references', () => {
+    const question = 'Please explain common words.';
+    const answer = 'These are common words in the answer.';
+    const source = node('source', { question, response: answer, highlightMode: 'tag' });
+    const target = node('target');
+    const questionMark = { id: 'question-mark', source: 'question', text: 'common words' };
+    const answerMark = { id: 'legacy-answer-mark', text: 'common words' };
+    const check = (userText, assistantText) => {
+      const { messages } = buildContext('target', [source, target], [edge('source', 'target')]);
+      assert.deepEqual(messages.slice(0, 2).map(m => [m.role, m.content]), [['user', userText], ['assistant', assistantText]]);
+      assert.ok(referenceBlockContent({ source }).endsWith(`\nQ: ${userText}\nA: ${assistantText}`));
+    };
+    const tagged = '[Important] common words [/Important]';
+    source.data.highlights = [questionMark];
+    check(question.replace('common words', tagged), answer);
+    source.data.highlights = [answerMark];
+    check(question, answer.replace('common words', tagged));
+    source.data.highlightMode = 'filter';
+    check(question, 'common words');
+    source.data.highlights = [questionMark];
+    check('common words', answer);
+    source.data.highlights.push(answerMark);
+    check('common words', 'common words');
+    source.data.highlightMode = 'off';
+    check(question, answer);
+  });
+
   await asyncTest('reading-only highlights leave mainline and reference context, fingerprints and bundles unchanged', async () => {
     for (const isCrossLink of [false, true]) {
       const graph = fixture(); graph.edges.push(edge('source', 'target', { isCrossLink }));
@@ -292,6 +321,24 @@ try {
     return { get };
   };
 
+  await asyncTest('rewriting a question removes obsolete instruction marks and retains matching answers and attachments', async () => {
+    for (const human of [false, true]) {
+      const source = node('source', {
+        stepKind: human ? 'human' : undefined, question: 'Original\n\nKeep **this detail**.', response: 'Original answer',
+        responses: human ? [] : ['Original answer'], highlights: [
+          { id: 'original', source: 'question', text: 'Original' },
+          { id: 'instruction', source: 'question', text: 'this detail' },
+          { id: 'answer', text: 'Original' }, { id: 'file', text: 'Original', attachmentId: 'file' },
+        ],
+      });
+      const store = makeStore({ nodes: [source], edges: [] });
+      const revised = 'Please retain this detail.';
+      if (human) store.get().submitHumanTurn('source', revised);
+      else await store.get().editQuestion('source', revised);
+      assert.deepEqual(store.get().nodes[0].data.highlights.map(mark => mark.id), ['instruction', 'answer', 'file']);
+    }
+  });
+
   test('inherited attachment list matches material/continuation layers and excludes reference files', () => {
     const graph = fixture(); graph.edges.push(edge('source', 'target', { isCrossLink: true }));
     const state = makeStore(graph).get();
@@ -328,6 +375,29 @@ try {
     assert.ok(!text.includes('PARENT_ROLE_SENTINEL'), 'legacy parent roles never enter the generated request');
     assert.equal(text.includes('ATTACHMENT_parent_SENTINEL'), hasParent);
     assert.equal(captured.images.length, hasParent ? 2 : 1);
+  });
+
+  await asyncTest('edited attachment text and image captions reach the first generation', async () => {
+    const captioned = { ...imageAttachment('photo'), extractedText: 'prior caption', extractedBy: 'manual' };
+    const store = makeStore({ nodes: [node('parent', { attachments: [captioned] })], edges: [] });
+    const revise = (attachment, text) => ({ ...attachment, ...questionAttachmentPatch(attachment, attachment.name, text) });
+    const pdf = { id: 'pdf', name: 'doc.pdf', type: 'application/pdf', content: 'BINARY', extractedText: 'old PDF' };
+    const edited = [revise({ ...captioned, id: 'second-photo' }, 'new caption'),
+      revise(textAttachment('text'), '修订'), revise(pdf, '')];
+    await store.get().addQuestion('read these', { parentId: 'parent', initialAttachments: edited });
+    const captured = globalThis.__capturedGeneration;
+    assert.deepEqual(edited.map(questionAttachmentText), ['new caption', '修订', '']);
+    assert.equal(edited[1].size, Buffer.byteLength('修订'));
+    assert.equal(edited[2].content, pdf.content);
+    assert.equal(edited[2].extractedText, pdf.extractedText);
+    assert.ok(captured.messages.some(m => m.content.includes('prior caption')));
+    assert.ok(captured.messages.some(m => m.content.includes('new caption') && m.canvasSource.attachmentId === 'second-photo'));
+    assert.ok(captured.messages.some(m => m.content === '[File: text.txt]\n修订'));
+    assert.ok(captured.messages.some(m => m.content === '[PDF: doc.pdf]\n'));
+    assert.ok(!textOf(captured).includes('old PDF') && !textOf(captured).includes('BINARY'));
+    assert.ok(captured.images.some(image => image.hasCompanion && image.canvasSource.attachmentId === 'second-photo'));
+    await makeStore({ nodes: [], edges: [] }).get().addQuestion('', { initialAttachments: [captioned] });
+    assert.deepEqual(globalThis.__capturedGeneration.messages.at(-1), { role: 'user', content: '' });
   });
 
   await asyncTest('first-generation continuation respects attachment exclusion and ignores retired role options', async () => {

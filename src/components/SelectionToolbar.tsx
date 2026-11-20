@@ -21,7 +21,7 @@ type GeometryField = 'width' | 'height' | 'x' | 'y';
 type GeometryDraft = Partial<Record<GeometryField, string>>;
 const fieldLabels = { width: 'format.width', height: 'format.height', x: 'format.x', y: 'format.y' } as const;
 const numericText = (value: number) => String(Math.round(value * 100) / 100);
-const buttonClass = 'min-h-8 px-2.5 rounded-control text-control text-ink-muted hover:bg-wash transition-colors flex items-center gap-2 text-left focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-40 disabled:cursor-not-allowed';
+const buttonClass = 'min-h-8 px-2.5 rounded-control text-control text-ink-muted hover:bg-wash transition-colors flex items-center gap-2 text-left focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-40 when-unavailable';
 
 /** One reversible edit boundary: Tab moves between fields without committing. */
 function GeometryEditor({ selectedNodes, allowPosition }: { selectedNodes: ThoughtNode[]; allowPosition: boolean }) {
@@ -183,7 +183,7 @@ function GeometryEditor({ selectedNodes, allowPosition }: { selectedNodes: Thoug
       <div className="grid gap-3">{field('width')}{field('height')}</div>
       {error && (error.field === 'width' || error.field === 'height') &&
         <p id={errorId} className="text-control text-danger" role="alert">{error.message}</p>}
-      <label className="flex items-center gap-2 text-control text-ink-muted cursor-pointer w-fit min-h-6">
+      <label data-cursor="action" className="flex items-center gap-2 text-control text-ink-muted w-fit min-h-6">
         <input ref={lock} type="checkbox" checked={allLocked} aria-checked={mixedLock ? 'mixed' : allLocked} data-node-format-lock
           onChange={event => {
             const patch = parsedDraft();

@@ -1,6 +1,7 @@
 import type { Attachment, ThoughtEdge, ThoughtNode } from '../types';
 import { documentCopyText, isEditableDocument } from './document-copy';
 import { highlightFoundIn } from './highlight-match';
+import { isOverviewRulerHandle, overviewRulerMarks, remapOverviewRulerHandle } from './overview-ruler';
 import { buildIncomingContext, upstreamFingerprint } from '../store/context-builder';
 
 /** Find room for another file without moving any existing canvas object. */
@@ -44,20 +45,32 @@ export function splitLegacyFileNodes<T extends { nodes: ThoughtNode[]; edges: Th
     return id;
   };
   const addedBySource = new Map<string, string[]>();
+  const markOwners = new Map<string, Map<string, { source: string; sourceHandle: string }>>();
   const placed = [...graph.nodes];
   let nodes = graph.nodes.flatMap(node => {
     const attachments = node.data.attachments ?? [];
     if (node.data.stepKind !== 'file' || attachments.length < 2) return [node];
+    const owners = new Map<string, { source: string; sourceHandle: string }>();
+    const marks = overviewRulerMarks(node.data);
+    markOwners.set(node.id, owners);
     // A legacy file's optional text followed all of its attachments in
     // context. Keep it after the last split file in the same edge order.
     const first = { ...node, data: { ...node.data, question: '', tokenCount: 0, attachments: [attachments[0]] } };
+    for (const mark of marks) if (mark.attachmentId === attachments[0].id) {
+      owners.set(mark.id, { source: first.id, sourceHandle: mark.id });
+    }
     const added = attachments.slice(1).map((attachment, index): ThoughtNode => {
       const id = uniqueId(`${node.id}~file~${index + 2}`, usedNodeIds);
       const text = attachmentText(attachment);
       // Marks are node-scoped in older data. Retain all originals on the
       // original node, and copy identifiable marks to their document.
-      const highlights = (node.data.highlights ?? []).filter(mark => text && highlightFoundIn(text, mark.text))
+      const originals = (node.data.highlights ?? []).filter(mark => mark.attachmentId ? mark.attachmentId === attachment.id : text && highlightFoundIn(text, mark.text));
+      const highlights = originals
         .map(mark => ({ ...mark, id: `${mark.id}~${id}` }));
+      const highlightIds = new Map(originals.map((mark, i) => [mark.id, highlights[i].id]));
+      for (const mark of marks) if (mark.attachmentId === attachment.id) {
+        owners.set(mark.id, { source: id, sourceHandle: remapOverviewRulerHandle(mark.id, new Map(), highlightIds) });
+      }
       const next: ThoughtNode = {
         ...node,
         id,
@@ -78,12 +91,31 @@ export function splitLegacyFileNodes<T extends { nodes: ThoughtNode[]; edges: Th
     addedBySource.set(node.id, added.map(item => item.id));
     return [first, ...added];
   });
-  const edges = graph.edges.flatMap(edge => [edge, ...(addedBySource.get(edge.source) ?? []).map(source => ({
-    ...edge,
-    id: uniqueId(`${edge.id}~${source}`, usedEdgeIds),
-    source,
-    selected: false,
-  }))]);
+  const generalKey = (source: string, edge: ThoughtEdge) => JSON.stringify([source, edge.target, !!edge.data?.isCrossLink]);
+  const covered = new Set<string>();
+  for (const edge of graph.edges) {
+    const added = addedBySource.get(edge.source);
+    if (!added) continue;
+    const owner = edge.sourceHandle && markOwners.get(edge.source)?.get(edge.sourceHandle);
+    if (owner) covered.add(generalKey(owner.source, edge));
+    else for (const source of [edge.source, ...added]) covered.add(generalKey(source, edge));
+  }
+  const edges = graph.edges.flatMap(edge => {
+    const added = addedBySource.get(edge.source);
+    if (!added) return [edge];
+    const owner = edge.sourceHandle && markOwners.get(edge.source)?.get(edge.sourceHandle);
+    return [edge.source, ...added].flatMap(source => {
+      // The tick follows its own file. Retain the other files as context,
+      // using one ordinary connection for each otherwise disconnected file.
+      if (owner && owner.source === source) return [{ ...edge, ...owner }];
+      const key = generalKey(source, edge);
+      if (owner && covered.has(key)) return [];
+      covered.add(key);
+      const sourceHandle = isOverviewRulerHandle(edge.sourceHandle) ? 'continue' : edge.sourceHandle;
+      if (!owner && source === edge.source) return [sourceHandle === edge.sourceHandle ? edge : { ...edge, sourceHandle }];
+      return [{ ...edge, id: uniqueId(`${edge.id}~${source}`, usedEdgeIds), source, sourceHandle, selected: false }];
+    });
+  });
 
   // The live fingerprint includes source node IDs. Rebase only answers that
   // were current before the split and whose actual input is unchanged; an

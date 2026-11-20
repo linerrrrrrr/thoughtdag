@@ -349,6 +349,35 @@ for (const [pattern, label] of [['both', 'recorded before and after'], ['before'
   check('finishing a stream after split undo preserves its redo choice', a.questionHeightRatio === 0.6 && a.response === 'finished after undo' && !a.isLoading);
 }
 
+// ── selection detail remains one undo step while the selected answers stream ──
+{
+  const c = start([
+    q('a', 'A', '', 0, 0, { isLoading: true, detailLevel: 'compact' }),
+    q('b', 'B', '', 0, 400, { isLoading: true }),
+  ]);
+  c.ops.both(() => c.mutate(nodes => nodes.map(n => ({ ...n, data: { ...n.data, detailLevel: 'summary' } }))));
+  c.patch('a', { response: 'partial answer' });
+  c.s().undo();
+  const [a, b] = c.s().nodes;
+  check('one undo restores both original detail settings during generation and keeps live text',
+    c.s().history.length === 2 && c.s().historyIndex === 0 && a.data.detailLevel === 'compact'
+    && b.data.detailLevel === undefined && a.data.isLoading && a.data.response === 'partial answer');
+
+  for (const id of ['a', 'b']) {
+    const answer = 'finished ' + id;
+    c.patch(id, { isLoading: false, response: answer, responses: [answer], responseIndex: 0 });
+    c.settle(id);
+  }
+  c.s().redo();
+  check('settling both answers after undo preserves the selection detail redo and their complete text',
+    c.s().historyIndex === 1 && c.s().nodes.every(n => n.data.detailLevel === 'summary'
+      && !n.data.isLoading && n.data.response === 'finished ' + n.id));
+  c.s().undo();
+  check('after both answers finish, one undo still restores the individual detail settings',
+    c.s().nodes[0].data.detailLevel === 'compact' && c.s().nodes[1].data.detailLevel === undefined
+    && c.s().nodes.every(n => n.data.response === 'finished ' + n.id));
+}
+
 // ── a streaming answer is never removed or rewritten by undo ────────────
 {
   const c = start([q('a', 'A', 'answer A')]);
