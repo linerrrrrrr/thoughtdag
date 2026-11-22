@@ -6,7 +6,7 @@ import { healLegacyNoteEdges, autoLayout, placeNewNodes, estimateNodeHeight, nod
 import { getDescendantIds, walkUpAncestors } from '../../lib/graph';
 import { referenceBlockContent, upstreamFingerprint, buildContext } from '../context-builder';
 import { pruneHighlights } from '../../lib/highlight-match';
-import { toast } from '../../lib/ui-store';
+import { toast, useUiStore } from '../../lib/ui-store';
 import { t, fmt, type MessageKey } from '../../i18n';
 import type { StoreState, NodeSlice } from '../types';
 import { condenseGuard } from '../../lib/condense-guard';
@@ -20,7 +20,8 @@ import { rulerSourceHandle } from '../../lib/edge-anchors';
 import { resolveRulerHandle, remapOverviewRulerHandle } from '../../lib/overview-ruler';
 import { canvasLayoutInputKey, planCanvasLayout } from '../../lib/canvas-layout';
 import { questionHeightRatio } from '../../lib/conversation-split';
-import { modelExecutionKind, modelMatchesExecution, nodeExecutionKind } from '../../lib/node-execution';
+import { getCachedModels } from '../../lib/use-models';
+import { modelExecutionKind, modelMatchesExecution, nodeExecutionKind, resolveNodeModel, supportedAgentOptions } from '../../lib/node-execution';
 
 /** Do not propagate retired metadata when copying older saved documents. */
 function copiedNodeData(data: ThoughtNode['data']): ThoughtNode['data'] {
@@ -549,15 +550,31 @@ export const createNodeSlice: StateCreator<StoreState, [], [], NodeSlice> = (set
   setNodeModel: (nodeId: string, model: string | undefined) => {
     const node = get().nodes.find(n => n.id === nodeId);
     if (!node || node.data.isLoading || node.data.model === model) return;
-    const kind = model ? modelExecutionKind(model) : undefined;
+    const kind = model ? modelExecutionKind(model) : nodeExecutionKind(node.data);
+    const models = getCachedModels()?.models;
+    const effectiveModel = kind === 'codex'
+      ? resolveNodeModel({ ...node.data, model, executionKind: kind }, useUiStore.getState().selectedModel, models)
+      : undefined;
+    const modelInfo = models?.find(candidate => candidate.id === effectiveModel);
     get().pushHistory();
     set((state) => ({
       nodes: state.nodes.map((n) =>
         n.id === nodeId ? { ...n, data: { ...n.data, model,
-          ...(kind && kind !== nodeExecutionKind(n.data) ? { agentSession: undefined } : {}),
-          ...(kind ? { executionKind: kind === 'legacy-agent' ? undefined : kind } : {}) } } : n
+          ...(kind !== nodeExecutionKind(n.data) ? { agentSession: undefined } : {}),
+          executionKind: kind === 'legacy-agent' ? undefined : kind,
+          agentOptions: kind === 'codex' ? supportedAgentOptions(n.data.agentOptions, modelInfo) : undefined,
+        } } : n
       ),
     }));
+    get().pushHistory();
+  },
+
+  setNodeAgentOptions: (nodeId, agentOptions) => {
+    const node = get().nodes.find(n => n.id === nodeId);
+    if (!node || node.data.isLoading || nodeExecutionKind(node.data) !== 'codex') return;
+    if (node.data.agentOptions?.effort === agentOptions?.effort && node.data.agentOptions?.fast === agentOptions?.fast) return;
+    get().pushHistory();
+    set(state => ({ nodes: state.nodes.map(n => n.id === nodeId ? { ...n, data: { ...n.data, agentOptions } } : n) }));
     get().pushHistory();
   },
 
@@ -569,6 +586,7 @@ export const createNodeSlice: StateCreator<StoreState, [], [], NodeSlice> = (set
       ...n.data, executionKind,
       agentSession: executionKind !== nodeExecutionKind(n.data) ? undefined : n.data.agentSession,
       model: modelMatchesExecution(n.data.model, executionKind) ? n.data.model : undefined,
+      agentOptions: executionKind === 'codex' ? n.data.agentOptions : undefined,
     } } : n) }));
     get().pushHistory();
   },

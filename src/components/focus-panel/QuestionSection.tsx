@@ -1,4 +1,5 @@
 import { useRef } from 'react';
+import type { Attachment } from '../../types';
 import { Check, Pencil, Send, X } from 'lucide-react';
 import { useStore } from '../../store';
 import { isImeComposing } from '../../utils';
@@ -14,7 +15,7 @@ import { useSessionDraft } from '../../lib/use-session-draft';
 import { condenseGuard } from '../../lib/condense-guard';
 import { clipboardFilePaste } from '../../lib/clipboard-files';
 import { importNodeFiles, nodeFilesPending, useNodeFilesPending } from '../../lib/node-file-import';
-import QuestionAttachments, { QuestionFilePicker } from '../QuestionAttachments';
+import QuestionAttachments, { QuestionFilePicker, SentQuestionAttachments } from '../QuestionAttachments';
 
 const isConversationResizeTarget = (target: EventTarget | null) => target instanceof Element
   && !!target.closest('[data-conversation-divider]');
@@ -23,6 +24,7 @@ export default function QuestionSection({
   nodeId,
   question,
   displayQuestion,
+  attachments,
   highlights,
   penActive,
   isEditing,
@@ -38,6 +40,7 @@ export default function QuestionSection({
   question: string;
   /** Reading only; the editor retains the complete canonical question. */
   displayQuestion?: string;
+  attachments?: Attachment[];
   highlights: Set<string>;
   penActive: boolean;
   isEditing: boolean;
@@ -180,6 +183,7 @@ export default function QuestionSection({
         </div>
       ) : (
         <div className="focus-user-turn">
+        <SentQuestionAttachments nodeId={nodeId} files={attachments} />
         <div
           onDoubleClick={penActive ? undefined : handleDoubleClickQuestion}
           data-highlight-turn="question" data-highlighter-active={penActive || undefined}

@@ -58,6 +58,7 @@ check('final command output replaces deltas and retains execution metadata', () 
 start({ id: 'cmd-big', type: 'commandExecution', command: 'noisy', status: 'inProgress' });
 emit('item/commandExecution/outputDelta', { itemId: 'cmd-big', delta: 'x'.repeat(100001) });
 emit('item/commandExecution/outputDelta', { itemId: 'cmd-big', delta: 'more' });
+await new Promise(resolve => setTimeout(resolve, 120));
 check('unbounded command output is explicitly marked as truncated', () => {
   assert.equal(latest('cmd-big').output.length, 100000);
   assert.ok(latest('cmd-big').output.endsWith('more'));
@@ -65,6 +66,30 @@ check('unbounded command output is explicitly marked as truncated', () => {
 });
 complete({ id: 'cmd-big', type: 'commandExecution', command: 'noisy', status: 'failed', aggregatedOutput: 'failure', exitCode: 2 });
 check('nonzero command exit is a failure', () => assert.equal(latest('cmd-big').status, 'failed'));
+
+// A noisy tool and a file edit run concurrently. Retain only the existing
+// log limit, and flush buffered deltas before a completion or interruption.
+const burstEvents = [];
+const burst = createCodexEventProjector({ emit: event => burstEvents.push(event) });
+const write = (kind, itemId, delta) => burst.notification(`item/${kind}/outputDelta`, { itemId, delta });
+let log = '';
+for (let index = 0; index < 1000; index++) {
+  const delta = String(index).padStart(160, 'x');
+  log += delta;
+  write('commandExecution', 'shell', delta);
+  write('fileChange', 'edit', 'y');
+}
+burst.notification('item/completed', { item: { type: 'fileChange', id: 'edit', status: 'completed' } });
+burst.finish('aborted');
+check('stdout bursts cross the renderer bridge as bounded snapshots and retain the terminal tail', () => {
+  assert.deepEqual(burstEvents.map(e => e.item.id), ['shell', 'edit', 'edit', 'shell']);
+  assert.equal(burstEvents[2].item.output, 'y'.repeat(1000));
+  assert.equal(burstEvents[2].item.status, 'completed');
+  const last = burstEvents[3].item;
+  assert.equal(last.status, 'interrupted');
+  assert.equal(last.output, log.slice(-100000));
+  assert.equal(last.truncated, true);
+});
 
 start({ id: 'mcp-1', type: 'mcpToolCall', server: 'local', tool: 'lookup', arguments: { q: 'event' }, status: 'inProgress' });
 emit('item/mcpToolCall/progress', { itemId: 'mcp-1', message: 'Reading the schema' });

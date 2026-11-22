@@ -11,7 +11,13 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const temporary = mkdtempSync(join(tmpdir(), 'tdag-document-copy-'));
 const outfile = join(temporary, 'documents.mjs');
 const stubs = {
-  'idb-keyval': 'const db = new Map(); export const get = async k => db.get(k); export const set = async (k, v) => { db.set(k, v); }; export const del = async k => { db.delete(k); }; export const keys = async () => [...db.keys()];',
+  'idb-keyval': `const db = new Map();
+    export const reads = [];
+    export const get = async k => { reads.push(k); return db.get(k); };
+    export const set = async (k, v) => { db.set(k, v); };
+    export const update = async (k, fn) => { db.set(k, fn(db.get(k))); };
+    export const del = async k => { db.delete(k); };
+    export const keys = async () => [...db.keys()];`,
   'condense-guard': 'export const condenseGuard = () => false;',
   'ui-store': 'export const toast = () => "";',
   i18n: 'export const t = k => k; export const fmt = s => s;',
@@ -22,6 +28,7 @@ try {
       contents: `
         export * from './lib/document-copy';
         export * from './lib/attachment-vault';
+        export { reads } from 'idb-keyval';
         export { attachmentContextKey } from './lib/attachment-fingerprint';
         export { buildContext } from './store/context-builder';
         export { compileContextBundle, graphSnapshotHash } from './lib/context-bundle';
@@ -41,7 +48,7 @@ try {
   });
   const { DOCX_MIME_TYPE, isEditableDocument, hasNativeDocxSource, documentCopyText, internAttachment, loadAttachmentContent,
     loadDocumentContent, saveDocumentRevision, savePdfFileRevision, loadNodePdfFile, attachmentContextKey, gcVault,
-    inlineVaultedContent, internNodes, buildContext, compileContextBundle, graphSnapshotHash, makeStore } = await import(pathToFileURL(outfile).href);
+    inlineVaultedContent, internNodes, buildContext, compileContextBundle, graphSnapshotHash, makeStore, reads } = await import(pathToFileURL(outfile).href);
   const pdf = { id: 'pdf', name: 'original.pdf', type: 'application/pdf', size: 100, content: 'PDF_BINARY_BYTES', extractedText: 'source PDF text' };
   const docx = { id: 'docx', name: 'original.docx', type: DOCX_MIME_TYPE, size: 120, content: 'DOCX_BINARY_BYTES', extractedText: '# Source title\n\nsource DOCX text' };
   const legacy = { id: 'legacy', name: 'old.DOCX', type: 'text/plain', size: 90, content: 'legacy DOCX text' };
@@ -188,6 +195,16 @@ try {
   assert.equal(await loadNodePdfFile(pdfImport.data.attachments[0]), 'UPDATED_PDF_BYTES');
   assert.equal(await loadAttachmentContent(updatedPdf), pdf.content);
   console.log('PASS PDF revisions survive portable backup and keep the import snapshot independent');
+
+  const vaultedPdf = await internAttachment(pdf);
+  reads.length = 0;
+  const originals = await Promise.all([loadNodePdfFile(vaultedPdf), loadAttachmentContent({ ...vaultedPdf })]);
+  assert.deepEqual(originals, [pdf.content, pdf.content]);
+  assert.equal(reads.length, 1, 'parallel readers share the original PDF download');
+  const versions = await Promise.all([loadNodePdfFile(updatedPdf), loadNodePdfFile({ ...updatedPdf }), loadNodePdfFile(vaultedPdf)]);
+  assert.deepEqual(versions, ['UPDATED_PDF_BYTES', 'UPDATED_PDF_BYTES', pdf.content]);
+  assert.equal(reads.length, 3, 'distinct revisions read independently and completed downloads are released');
+  console.log('PASS simultaneous PDF readers share each active vault read');
 } finally {
   assert.ok(resolve(temporary).startsWith(`${resolve(tmpdir())}${sep}`));
   rmSync(temporary, { recursive: true, force: true });

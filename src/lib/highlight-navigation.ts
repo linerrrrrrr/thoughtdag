@@ -62,6 +62,11 @@ export function findHighlightedPassage(scopes: Iterable<HTMLElement>, text: stri
 /** Move only the local reading viewport. DOM rects use screen pixels, while
  * scrollTop/Left use CSS layout units even on a zoomed canvas. */
 export function revealHighlight(scroller: HTMLElement, target: Range | Element): void {
+  centerHighlight(scroller, target);
+  showDestination(target);
+}
+
+function centerHighlight(scroller: HTMLElement, target: Range | Element) {
   const viewport = scroller.getBoundingClientRect();
   const rect = target instanceof Range
     ? Array.from(target.getClientRects()).find(line => line.width > 0 && line.height > 0)
@@ -75,11 +80,10 @@ export function revealHighlight(scroller: HTMLElement, target: Range | Element):
   if (left < 0 || left + rect.width / scaleX > scroller.clientWidth) {
     scroller.scrollLeft += left + rect.width / scaleX / 2 - scroller.clientWidth / 2;
   }
-  showDestination(target);
 }
 
 let clearFeedback: (() => void) | undefined;
-function showDestination(target: Range | Element) {
+function showDestination(target: Range | Element, onClear?: () => void) {
   clearFeedback?.();
   let clear: () => void;
   if (target instanceof Range) {
@@ -91,11 +95,11 @@ function showDestination(target: Range | Element) {
     clear = () => target.removeAttribute('data-ruler-destination');
   }
   const timer = window.setTimeout(() => clearFeedback?.(), 1500);
-  clearFeedback = () => { window.clearTimeout(timer); clear(); clearFeedback = undefined; };
+  clearFeedback = () => { window.clearTimeout(timer); onClear?.(); clear(); clearFeedback = undefined; };
 }
 
-/** A page can exist before its aspect ratio or the column width is known.
- * Only scroll when the addressed rectangle and all preceding pages have settled. */
+/** A distant page has an estimated height until scrolling brings it into view.
+ * Center its mark again when the reader measures the actual page. */
 export function revealMountedPdfHighlight(host: HTMLElement, mark: OverviewRulerMark): boolean {
   if (!mark.attachmentId || !mark.documentMarkId || !mark.page) return false;
   const selector = `[data-pdf-document="${CSS.escape(mark.attachmentId)}"]`;
@@ -111,8 +115,16 @@ export function revealMountedPdfHighlight(host: HTMLElement, mark: OverviewRuler
   if (page) {
     const expected = Math.max(160, Math.min(900, pages.clientWidth - 32));
     if (Math.abs(page.offsetWidth - expected) > 1) return false;
-    for (const pending of pages.querySelectorAll<HTMLElement>('[data-pdf-page]:not([data-pdf-sized])')) {
-      if (Number(pending.dataset.page) <= mark.page) return false;
+    if (!page.hasAttribute('data-pdf-sized')) {
+      centerHighlight(scroller, target);
+      const observer = new ResizeObserver(() => {
+        if (!page.hasAttribute('data-pdf-sized')) return;
+        centerHighlight(scroller, target);
+        observer.disconnect();
+      });
+      observer.observe(page);
+      showDestination(target, () => observer.disconnect());
+      return true;
     }
   }
   revealHighlight(scroller, target);

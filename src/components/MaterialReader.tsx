@@ -10,7 +10,7 @@ import type { Attachment, ThoughtNode } from '../types';
 import { useStore } from '../store';
 import { useUiStore, toast } from '../lib/ui-store';
 import { useModels } from '../lib/use-models';
-import { generateDigest, recognizePdfPages, spawnContentNode, extractImage } from '../lib/content';
+import { generateDigest, recognitionPageCount, recognizePdfPages, spawnContentNode, extractImage } from '../lib/content';
 import { Markdown, HighlightedMarkdown } from './Markdown';
 import { generateId, isImeComposing } from '../utils';
 import { useT, fmt } from '../i18n';
@@ -607,14 +607,19 @@ function ReaderOverlay({ node, onLocate, dock, activeAttachment, conversationTur
   const [recog, setRecog] = useState<'idle' | 'confirm' | 'running'>('idle');
   const [progress, setProgress] = useState<[number, number] | null>(null);
   const cancelRef = useRef(false);
+  const pagesToRecognize = recognitionPageCount(pdfAtt);
   const startRecognize = async () => {
-    if (!pdfAtt?.pageImages?.length) return;
+    if (!pdfAtt || !pagesToRecognize || isViewerMode) return;
     setRecog('running');
     cancelRef.current = false;
-    if (isViewerMode) return;
-    await recognizePdfPages(node.id, pdfAtt.id, (a, b) => setProgress([a, b]), () => cancelRef.current);
-    setRecog('idle');
-    setProgress(null);
+    try {
+      await recognizePdfPages(node.id, pdfAtt.id, (a, b) => setProgress([a, b]), () => cancelRef.current);
+    } catch {
+      toast('error', t('content.extractFailed'));
+    } finally {
+      setRecog('idle');
+      setProgress(null);
+    }
   };
 
   const canMarkBody = !documentAttachment && view === 'text' && !!textBody.trim()
@@ -989,14 +994,14 @@ function ReaderOverlay({ node, onLocate, dock, activeAttachment, conversationTur
               <button
                 data-export-omit="run" onClick={() => (recog === 'confirm' ? void startRecognize() : setRecog('confirm'))}
                 onBlur={() => setRecog((r) => (r === 'confirm' ? 'idle' : r))}
-                disabled={!pdfAtt.pageImages?.length || !hasVisionModel}
+                disabled={!pagesToRecognize || !hasVisionModel}
 
                 className={`flex items-center gap-1.5 text-control px-3 py-1.5 rounded-control border transition-colors shrink-0 disabled:opacity-40 when-unavailable ${
                   recog === 'confirm' ? 'border-amber-400 bg-amber-50 text-amber-700' : 'border-line text-ink-muted hover:bg-wash'
                 }`}
               >
                 <ScanText size={13} strokeWidth={1.75} />
-                {recog === 'confirm' ? fmt(t('reader.recognizeConfirm'), { n: pdfAtt.pageImages?.length ?? 0 }) : t('reader.recognize')}
+                {recog === 'confirm' ? fmt(t('reader.recognizeConfirm'), { n: pagesToRecognize }) : t('reader.recognize')}
               </button>
             )
           )}

@@ -8,7 +8,8 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { build } from 'esbuild';
 
 const require = createRequire(import.meta.url);
-const { createBrowserStorage } = require('../runtime/browser-storage.cjs');
+const { createBrowserStorage, initializeProjectDatabase } = require('../runtime/browser-storage.cjs');
+const database = process.argv.includes('--sqlite');
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const parent = path.join(root, 'local-tests');
 await mkdir(parent, { recursive: true });
@@ -32,7 +33,7 @@ try {
   testWindow.location = new URL('http://localhost:5173/');
   Object.defineProperty(globalThis, 'window', { value: testWindow, configurable: true });
   Object.defineProperty(globalThis, 'navigator', { value: { locks: { request: async (_name, callback) => callback() } }, configurable: true });
-  let handler = createBrowserStorage({ dataRoot: temporary });
+  let handler = createBrowserStorage({ dataRoot: temporary, database });
   let rejectWrites = false;
   let interruptImport = false;
   let importedRows = 0;
@@ -171,7 +172,7 @@ try {
   for (const [key, value] of [['thoughtdag:projects', projectIndex('saved')], ['thoughtdag:project:saved', graph]]) {
     await writeFile(path.join(profile, 'kv', 'k-' + Buffer.from(key).toString('base64url') + '.json'), first.encodeStoredValue(value));
   }
-  handler = createBrowserStorage({ dataRoot: ambiguousRoot });
+  handler = createBrowserStorage({ dataRoot: ambiguousRoot, database });
   // A locator issued by another root must not bring its stale data here.
   globalThis.__testIdb.set('thoughtdag:projects', projectIndex('browser-copy'));
   globalThis.__testIdb.set('thoughtdag:project:browser-copy', { state: { nodes: [], edges: [] }, version: 1 });
@@ -191,6 +192,22 @@ try {
   await explicitImport.initializeDiskStorage(undefined, 'import');
   assert.equal(explicitImport.diskStorageNamespace(), legacyNamespace);
   assert.deepEqual(new Set((await explicitImport.get('thoughtdag:projects')).projects.map(p => p.id)), new Set(['saved', 'browser-copy']));
+  if (database) {
+    const { namespace, records } = await initializeProjectDatabase(ambiguousRoot);
+    assert.equal(namespace, legacyNamespace);
+    const { DatabaseSync } = require('node:sqlite');
+    const db = new DatabaseSync(path.join(ambiguousRoot, 'thoughtdag.sqlite'), { readOnly: true });
+    try {
+      assert.equal(db.prepare('SELECT count(*) AS total FROM records').get().total, records);
+      const index = db.prepare('SELECT value FROM records WHERE space = ? AND key = ?').get('kv', 'thoughtdag:projects');
+      assert.deepEqual(new Set(first.decodeStoredValue(index.value).projects.map(p => p.id)), new Set(['saved', 'browser-copy']));
+      assert.equal(db.prepare('PRAGMA integrity_check').get().integrity_check, 'ok');
+    } finally { db.close(); }
+    // Reopening the database must never resurrect the old on-disk snapshot.
+    await explicitImport.del('thoughtdag:project:saved');
+    await initializeProjectDatabase(ambiguousRoot);
+    assert.equal(await explicitImport.get('thoughtdag:project:saved'), undefined);
+  }
   globalThis.__testIdb = new Map();
   globalThis.__THOUGHTDAG_DISK_STORAGE_REQUIRED__ = true;
   globalThis.fetch = async () => { throw new Error('service offline'); };

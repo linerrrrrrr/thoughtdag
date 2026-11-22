@@ -67,6 +67,8 @@ interface DesktopAgentModel {
   efforts?: string[];
   /** the runtime's own default among them, when it says */
   defaultEffort?: string | null;
+  supportsFast?: boolean;
+  defaultFast?: boolean;
 }
 
 interface DesktopAgentRunRequest {
@@ -92,6 +94,8 @@ interface DesktopAgentRunRequest {
   model?: { provider: string; id: string };
   /** an effort level in the runtime's own words (one it listed for the model); absent or unknown = the runtime's default */
   effort?: string;
+  /** Per-turn speed override for a model that advertises Fast. */
+  fast?: boolean;
   thinkingLevel?: string;
   /** rules this conversation already allowed for good (the `rule` of earlier approvals): a matching ask is allowed without asking, on the record */
   allowRules?: string[];

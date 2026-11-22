@@ -280,6 +280,14 @@ try {
   assert.equal(await node().locator('[data-activity-user-summary]').count(), 0);
   assert.equal(await row(node(), 'import-user').count(), 1);
   check('folding completed work keeps supplementary user input visible without duplicating it on expansion');
+  const longCommand = 'inspect ' + 'a'.repeat(99000);
+  await patch({ agentActivities: [[{ ...failed[0], id: 'long-command', status: 'completed', command: longCommand }]] });
+  await openHistory(node());
+  const longRow = row(node(), 'long-command');
+  assert.ok((await longRow.locator('.activity-command-preview').textContent()).length < 1000);
+  await longRow.locator('button[aria-expanded]').click();
+  assert.equal(await longRow.locator('.activity-command-text').textContent(), longCommand);
+  check('folded commands lay out only a preview and expand to the full original command');
   assert.deepEqual(errors, [], 'No browser runtime errors');
   await writeFile(`${outputDir}/results.json`, JSON.stringify({ appUrl, checks, errors }, null, 2));
   console.log(`ACTIVITY UI PASS (${checks.length} checks)`);

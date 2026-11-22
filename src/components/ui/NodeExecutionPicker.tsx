@@ -14,6 +14,7 @@ export default function NodeExecutionPicker({ nodeId }: { nodeId: string }) {
   const data = useStore(state => state.nodes.find(node => node.id === nodeId)?.data);
   const setKind = useStore(state => state.setNodeExecutionKind);
   const setModel = useStore(state => state.setNodeModel);
+  const setAgentOptions = useStore(state => state.setNodeAgentOptions);
   const globalModel = useUiStore(state => state.selectedModel);
   const models = useModels();
   const editable = !!data && !data.response && !data.responses.length && !data.isLoading && data.stepKind !== 'human';
@@ -23,7 +24,7 @@ export default function NodeExecutionPicker({ nodeId }: { nodeId: string }) {
   }, [editable, kind]);
   if (!editable) return null;
   const choices = availableExecutionModels(models, kind);
-  const inherited = resolveNodeModel({ ...data, model: undefined }, globalModel, choices);
+  const inherited = resolveNodeModel({ ...data, model: undefined, executionKind: kind === 'legacy-agent' ? undefined : kind }, globalModel, choices);
   return (
     <div className="flex flex-wrap items-center gap-2 nodrag nopan" data-node-execution-picker={nodeId}
       onClick={event => event.stopPropagation()} onMouseDown={event => event.stopPropagation()}>
@@ -41,7 +42,10 @@ export default function NodeExecutionPicker({ nodeId }: { nodeId: string }) {
       </div>
       {kind === 'legacy-agent' && <NodeExecutionBadge data={data} />}
       {kind === 'api' || choices.length > 0
-        ? <ModelPicker key={kind} compact value={data.model} execution={{ kind, models: choices, inheritedModel: inherited }}
+        ? <ModelPicker key={kind} compact value={data.model} execution={{
+            kind, models: choices, inheritedModel: inherited, agentOptions: data.agentOptions,
+            onAgentOptionsChange: options => setAgentOptions(nodeId, options),
+          }}
             onChange={model => setModel(nodeId, model)} />
         : kind === 'codex' && !models?.agentsPending
           ? <button type="button" className="h-8 px-2.5 rounded-control text-control text-accent hover:bg-line/50"

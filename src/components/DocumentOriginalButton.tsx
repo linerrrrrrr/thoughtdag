@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Download, Loader2 } from 'lucide-react';
 import type { Attachment } from '../types';
-import { loadAttachmentContent, loadDocumentContent, loadNodePdfFile } from '../lib/attachment-vault';
+import { decodeBytes, loadAttachmentContent, loadDocumentContent, loadNodePdfFile } from '../lib/attachment-vault';
 import { hasNativeDocxSource } from '../lib/document-copy';
 import { toast } from '../lib/ui-store';
 import { useT } from '../i18n';
@@ -19,7 +19,7 @@ export default function DocumentOriginalButton({ attachment, compact = false }: 
       if (!content && (attachment.size > 0 || attachment.contentInVault)) throw new Error('Missing original');
       const binary = attachment.type.startsWith('image/') || attachment.type === 'application/pdf'
         || attachment.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
-      const data = binary ? Uint8Array.from(atob(content), char => char.charCodeAt(0)) : content;
+      const data = binary ? decodeBytes(content) : content;
       const url = URL.createObjectURL(new Blob([data], { type: attachment.type || 'application/octet-stream' }));
       const link = document.createElement('a');
       link.href = url;

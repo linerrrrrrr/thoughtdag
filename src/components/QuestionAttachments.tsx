@@ -3,6 +3,8 @@ import { Loader2, Paperclip, X } from 'lucide-react';
 import { fmt, useT } from '../i18n';
 import type { Attachment } from '../types';
 import { FILE_INPUT_ACCEPT } from '../lib/attachments';
+import { isFileMaterial } from '../lib/node-files';
+import { useUiStore } from '../lib/ui-store';
 import { fileSizeLabel } from '../lib/file-identity';
 import FileIdentity from './FileIdentity';
 import { nodeImportScope, removePendingAttachmentFile, usePendingAttachmentFiles, type PendingAttachmentFile } from '../lib/node-file-import';
@@ -32,7 +34,7 @@ interface TrayProps {
 function QuestionAttachmentTile({ file, onOpen, onRemove }: {
   file: Attachment | PendingAttachmentFile;
   onOpen: (id: string) => void;
-  onRemove: (id: string) => void;
+  onRemove?: (id: string) => void;
 }) {
   const t = useT();
   const attachment = 'content' in file ? file : undefined;
@@ -54,12 +56,12 @@ function QuestionAttachmentTile({ file, onOpen, onRemove }: {
   return <div className="question-attachment" data-question-attachment={attachment?.id}
     data-pending-attachment={attachment ? undefined : file.id}>
     {attachment ? <button type="button" className="question-attachment-face" data-attachment-open data-export-reading-label
-      aria-haspopup="dialog" aria-label={fmt(t('inputRegion.open'), { name: file.name })}
+      aria-haspopup={onRemove ? 'dialog' : undefined} aria-label={fmt(t('inputRegion.open'), { name: file.name })}
       data-tooltip={file.name} onClick={() => onOpen(file.id)}>{contents}</button>
       : <div className="question-attachment-face">{contents}</div>}
-    <button type="button" data-attachment-remove className="question-attachment-remove"
+    {onRemove && <button type="button" data-attachment-remove className="question-attachment-remove"
       aria-label={`${t('actions.removeAttachment')} · ${file.name}`} data-tooltip={t('actions.removeAttachment')}
-      onClick={() => onRemove(file.id)}><X size={13} aria-hidden /></button>
+      onClick={() => onRemove(file.id)}><X size={13} aria-hidden /></button>}
   </div>;
 }
 
@@ -79,6 +81,17 @@ export function QuestionAttachmentTray({ scopeKey, files, pendingFiles = [], onR
     {opened && <QuestionAttachmentDialog key={opened.id} scopeKey={scopeKey} attachment={opened}
       onClose={() => setOpenId(null)} onSave={patch => onSave(opened.id, patch)} />}
   </>;
+}
+
+export function SentQuestionAttachments({ nodeId, files }: { nodeId: string; files?: Attachment[] }) {
+  const t = useT();
+  const materials = files?.filter(isFileMaterial);
+  if (!materials?.length) return null;
+  return <div className="question-attachments question-attachments--sent nodrag nopan nowheel"
+    data-question-attachments role="group" aria-label={t('attach.title')}>
+    {materials.map(file => <QuestionAttachmentTile key={file.id} file={file}
+      onOpen={attachmentId => useUiStore.getState().setReaderNodeId(nodeId, { attachmentId })} />)}
+  </div>;
 }
 
 /** Both question editors edit the same node attachments. */

@@ -1,4 +1,4 @@
-import type { ThoughtData } from '../types';
+import type { AgentTurnOptions, ThoughtData } from '../types';
 
 /** Legacy agent documents keep their original runtime; only API and Codex are new choices. */
 export type NodeExecutionKind = 'api' | 'codex' | 'legacy-agent';
@@ -48,6 +48,16 @@ export function resolveNodeModel(data: NodeData, globalModel?: string | null, mo
   if (modelMatchesExecution(globalModel, kind)) return globalModel ?? undefined;
   return models.find(model => modelMatchesExecution(model.id, kind))?.id
     ?? (kind === 'codex' ? 'codex/codex/default' : undefined);
+}
+
+export function supportedAgentOptions(
+  options: AgentTurnOptions | undefined,
+  model: { efforts?: readonly string[]; supportsFast?: boolean } | undefined,
+): AgentTurnOptions | undefined {
+  if (!options || !model) return options;
+  const effort = options.effort === '' || (options.effort && model.efforts?.includes(options.effort)) ? options.effort : undefined;
+  const fast = model.supportsFast ? options.fast : undefined;
+  return effort !== undefined || fast !== undefined ? { effort, fast } : undefined;
 }
 
 /** New roots snapshot the global execution type; children preserve their parent's type. */

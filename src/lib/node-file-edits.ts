@@ -4,7 +4,7 @@ import { useProjects } from '../store/projects';
 import { saveDocumentRevision, savePdfFileRevision } from './attachment-vault';
 import { DOCX_MIME_TYPE, hasNativeDocxSource } from './document-copy';
 import { DocumentSourceError } from './document-errors';
-import { openPdf, renderPdfPages } from './attachments';
+import { openPdf } from './attachments';
 
 export { fileEditPreview } from './document-edit-preview';
 export { loadNodePdfFile } from './attachment-vault';
@@ -47,9 +47,9 @@ async function pdfRevisionPatch(attachment: Attachment, content: string): Promis
       const page = await doc.getPage(i);
       const text = await page.getTextContent();
       pages.push(text.items.map(item => 'str' in item ? item.str : '').join(' '));
+      page.cleanup();
     }
     const bytes = await doc.getData();
-    const pageImages = attachment.pageImages?.length || pages.every(page => !page.trim()) ? await renderPdfPages(doc) : undefined;
     const saved = attachment.pdfSavedAnnotations ?? [];
     const { readSavedCanvasMarks } = await import('./pdf-annotations');
     const incoming = await readSavedCanvasMarks(bytes, doc, saved);
@@ -58,7 +58,7 @@ async function pdfRevisionPatch(attachment: Attachment, content: string): Promis
       pdfSavedAnnotations: incoming, pdfAnnotations: mergePdfMarks(attachment.pdfAnnotations ?? [], saved, incoming),
       numPages: doc.numPages, extractedText: pages.join('\n\n').trim(), editedText: undefined,
       editedHtml: undefined, extractedBy: undefined, digest: undefined, digestBy: undefined,
-      pageImages, isExtracting: false,
+      pageImages: undefined, isExtracting: false,
     };
   } finally { await doc.destroy(); }
 }

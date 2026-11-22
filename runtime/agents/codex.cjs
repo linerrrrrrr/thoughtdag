@@ -62,17 +62,21 @@ function createCodexEventProjector(run) {
   const items = new Map();
   const messages = new Map();
   const summaries = new Map();
+  const pendingOutput = new Map();
+  let outputTimer = null;
   let serial = 0;
   const put = (id, patch) => {
     const prior = items.get(id);
-    const next = { id, kind: 'unknown', status: 'running', startedAt: Date.now(), ...prior, ...patch };
+    // A completion may replace the buffered output with an authoritative copy.
+    const next = { id, kind: 'unknown', status: 'running', startedAt: Date.now(), ...prior, ...pendingOutput.get(id), ...patch };
+    pendingOutput.delete(id);
     for (const key of ['text', 'output', 'command']) {
       if (typeof next[key] === 'string' && next[key].length > ACTIVITY_LIMIT) {
         next[key] = key === 'output' ? next[key].slice(-ACTIVITY_LIMIT) : next[key].slice(0, ACTIVITY_LIMIT);
         next.truncated = true;
       }
     }
-    if (next.details !== undefined) {
+    if (patch.details !== undefined) {
       const json = JSON.stringify(next.details, (key, value) => /^(encrypted_content|encryptedContent|content|result)$/.test(key) && typeof value === 'string' && value.length > ACTIVITY_LIMIT ? `[${value.length} characters omitted]` : /^(encrypted_content|encryptedContent)$/.test(key) ? undefined : value);
       if (json && json.length > ACTIVITY_LIMIT) { next.details = json.slice(0, ACTIVITY_LIMIT); next.truncated = true; }
       else if (json) next.details = JSON.parse(json);
@@ -81,6 +85,26 @@ function createCodexEventProjector(run) {
     items.set(id, next);
     run.emit({ type: 'activity', item: next });
     return next;
+  };
+  const flushOutput = () => {
+    outputTimer = null;
+    for (const id of pendingOutput.keys()) put(id, {});
+  };
+  const appendOutput = (id, delta, sourceType) => {
+    const prior = items.get(id);
+    if (!prior?.output) {
+      return put(id, { kind: sourceType === 'commandExecution' ? 'command' : 'file', sourceType, output: delta });
+    }
+    // The renderer consumes snapshots. Joining and sending the whole log on
+    // every small stdout fragment can produce megabytes of IPC per frame.
+    const pending = pendingOutput.get(id);
+    const output = (pending?.output ?? prior.output) + delta;
+    // Trim in blocks so retaining the tail doesn't copy 100k for every byte.
+    pendingOutput.set(id, {
+      output: output.length > 2 * ACTIVITY_LIMIT ? output.slice(-ACTIVITY_LIMIT) : output,
+      ...(pending?.truncated || output.length > ACTIVITY_LIMIT ? { truncated: true } : {}),
+    });
+    if (outputTimer === null) outputTimer = setTimeout(flushOutput, 100);
   };
   const syncText = (id) => {
     const text = [...messages.values()].filter((m) => m.phase !== 'commentary').map((m) => m.text).filter(Boolean).join('\n\n');
@@ -120,7 +144,9 @@ function createCodexEventProjector(run) {
     return put(it.id, { ...common, kind: 'unknown', title: it.type, details: it });
   };
   const finish = (how) => {
+    clearTimeout(outputTimer);
     for (const item of items.values()) if (item.status === 'running') put(item.id, { status: item.sourceType === 'turn' && how === 'end' ? 'completed' : how === 'error' || how === 'exit' || how === 'idle' ? 'failed' : 'interrupted' });
+    flushOutput();
   };
   function notification(method, params = {}, emittedAtMs) {
     const id = String(params.itemId ?? '');
@@ -148,8 +174,8 @@ function createCodexEventProjector(run) {
         // Raw reasoning is not a user-facing summary and must not be mixed in.
         if (!old) return put(id, { kind: 'reasoning', sourceType: 'reasoning', text: '' });
         return;
-      case 'item/commandExecution/outputDelta':
-      case 'item/fileChange/outputDelta': return put(id, { kind: method.includes('commandExecution') ? 'command' : 'file', sourceType: method.includes('commandExecution') ? 'commandExecution' : 'fileChange', output: (old?.output ?? '') + String(params.delta ?? '') });
+      case 'item/commandExecution/outputDelta': return appendOutput(id, String(params.delta ?? ''), 'commandExecution');
+      case 'item/fileChange/outputDelta': return appendOutput(id, String(params.delta ?? ''), 'fileChange');
       case 'item/commandExecution/terminalInteraction': return put(id, { kind: 'command', sourceType: 'commandExecution', details: { ...(old?.details && typeof old.details === 'object' ? old.details : {}), terminalInteraction: params } });
       case 'item/fileChange/patchUpdated': return put(id, { kind: 'file', sourceType: 'fileChange', text: (params.changes ?? []).map((c) => c.path).join('\n'), details: { changes: params.changes } });
       case 'item/mcpToolCall/progress': return put(id, { kind: 'tool', sourceType: 'mcpToolCall', text: String(params.message ?? '') });
@@ -424,20 +450,25 @@ function createCodexRuntime({ log } = {}) {
   }
 
   const effortsIn = (m) => (m.supportedReasoningEfforts ?? []).map((e) => (e && typeof e === 'object' ? e.reasoningEffort : e)).filter((e) => typeof e === 'string');
-  const modelEntry = (m) => ({ provider: 'codex', id: m.model ?? m.id, name: m.displayName ?? m.model ?? m.id, reasoning: true, vision: true, efforts: effortsIn(m), defaultEffort: typeof m.defaultReasoningEffort === 'string' ? m.defaultReasoningEffort : null });
-  // model id → the reasoning efforts it advertises, from model/list
-  const effortsByModel = new Map();
-  const noteEfforts = (r) => { for (const m of r?.data ?? []) effortsByModel.set(m.model ?? m.id, effortsIn(m)); };
-  // only a level the model itself advertises, in Codex's own words; anything
-  // else means the model's default
-  const effortFor = (model, word) => { const offered = effortsByModel.get(model); return word && offered && offered.includes(word) ? word : null; };
+  const modelEntry = (m) => ({
+    provider: 'codex', id: m.model ?? m.id, name: m.displayName ?? m.model ?? m.id, reasoning: true, vision: true,
+    efforts: effortsIn(m), defaultEffort: typeof m.defaultReasoningEffort === 'string' ? m.defaultReasoningEffort : null,
+    supportsFast: m.serviceTiers?.some(tier => tier.id === 'priority') === true || m.additionalSpeedTiers?.includes('fast') === true,
+    defaultFast: m.defaultServiceTier === 'priority',
+  });
+  // Only pass settings advertised by this installed runtime for the selected model.
+  const modelsById = new Map();
+  const noteModels = (r) => {
+    modelsById.clear();
+    for (const model of r?.data ?? []) modelsById.set(model.model ?? model.id, modelEntry(model));
+  };
   // the model a run uses when the canvas named none: the server's own
   // default from model/list, not the config file's — a config can name a
   // model this CLI version cannot run, and the list only carries runnable ones
   let defaultModel = null;
   async function defaultModelId() {
     if (defaultModel) return defaultModel;
-    try { const r = await send('model/list', {}); noteEfforts(r); const d = (r?.data ?? []).find((m) => m.isDefault) ?? (r?.data ?? [])[0]; defaultModel = d ? (d.model ?? d.id) : null; } catch { /* leave it to the config */ }
+    try { const r = await send('model/list', {}); noteModels(r); const d = (r?.data ?? []).find((m) => m.isDefault) ?? (r?.data ?? [])[0]; defaultModel = d ? (d.model ?? d.id) : null; } catch { /* leave it to the config */ }
     return defaultModel;
   }
 
@@ -449,7 +480,7 @@ function createCodexRuntime({ log } = {}) {
       if (!found.path) return { installed: false, models: [], default: null, searched: found.searched, failures: found.failures, ...(found.error ? { error: found.error } : {}) };
       await ensureServer(found);
       const r = await send('model/list', {});
-      noteEfforts(r);
+      noteModels(r);
       const configured = await configuredEffort();
       const models = (r?.data ?? []).filter((m) => !m.hidden).map(modelEntry).map((m) => (configured && m.efforts.includes(configured) ? { ...m, defaultEffort: configured } : m));
       const def = (r?.data ?? []).find((m) => m.isDefault);
@@ -486,6 +517,9 @@ function createCodexRuntime({ log } = {}) {
         try {
           const policy = await policyFor(req, cwd);
           const model = (req.model && typeof req.model === 'object' && req.model.id ? req.model.id : null) ?? await defaultModelId();
+          if (model && (req.codexWorkspace || req.effort !== undefined || typeof req.fast === 'boolean') && !modelsById.has(model)) {
+            await send('model/list', {}).then(noteModels).catch(() => {});
+          }
           let thread;
           let continued = false;
           let fresh = false;
@@ -559,8 +593,22 @@ function createCodexRuntime({ log } = {}) {
           const before = req.codexWorkspace ? null : await snapshotDir(cwd).catch(() => null);
           const input = [{ type: 'text', text: String(req.prompt ?? ''), text_elements: [] }];
           for (const img of Array.isArray(req.images) ? req.images : []) if (img && typeof img.data === 'string') input.push({ type: 'image', url: `data:${img.mimeType};base64,${img.data}` });
-          const effort = req.effort && model ? effortFor(model, req.effort) : null;
-          const started = await send('turn/start', { threadId: thread.id, input, summary: 'auto', ...(sandboxPolicy && { sandboxPolicy }), ...(model ? { model } : {}), ...(effort ? { effort } : {}) }, 60 * 1000);
+          const modelInfo = modelsById.get(model);
+          const selectedEffort = modelInfo?.efforts.includes(req.effort) ? req.effort : undefined;
+          // Reasoning effort is sticky on the native thread. A new canvas
+          // question using the default needs to send it on a resumed thread.
+          const useDefaultEffort = !selectedEffort && (req.codexWorkspace || req.effort === '') && modelInfo?.efforts.length;
+          const configured = useDefaultEffort ? await configuredEffort() : null;
+          const effort = selectedEffort ?? (useDefaultEffort
+            ? (modelInfo.efforts.includes(configured) ? configured : modelInfo.defaultEffort)
+            : undefined);
+          const serviceTierForTurn = modelInfo?.supportsFast && typeof req.fast === 'boolean'
+            ? (req.fast ? 'priority' : 'default') : undefined;
+          const started = await send('turn/start', {
+            threadId: thread.id, input, summary: 'auto',
+            ...(sandboxPolicy && { sandboxPolicy }), ...(model ? { model } : {}),
+            ...(effort ? { effort } : {}), ...(serviceTierForTurn ? { serviceTierForTurn } : {}),
+          }, 60 * 1000);
           state.turnId = started?.turn?.id ?? null;
           state.emit({ ...session, turnId: state.turnId });
           if (state.abortRequested && state.turnId) send('turn/interrupt', { threadId: state.threadId, turnId: state.turnId }).catch(() => {});

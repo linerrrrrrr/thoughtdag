@@ -10,6 +10,16 @@
   scrollbar-width: thin;
 }
 
+.question-attachments--sent {
+  width: 100%;
+  justify-content: flex-end;
+}
+.question-attachments--sent .question-attachment-face { padding-inline-end: var(--spacing-related); }
+.conversation-node .conversation-question:has(> .question-attachments--sent) { gap: var(--spacing-related); }
+.conversation-question-body > .conversation-question:has(> .question-attachments--sent) { overflow-y: auto; }
+.conversation-question-body .question-attachments--sent { flex-shrink: 0; }
+.conversation-question-body .question-attachments--sent + .conversation-user-message { flex-shrink: 0; }
+
 .question-attachment {
   position: relative;
   flex: 0 0 min(212px, max(144px, calc((100% - var(--spacing-related)) / 2)));

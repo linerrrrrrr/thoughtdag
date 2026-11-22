@@ -16,28 +16,38 @@ const ROOT = app.isPackaged
   : path.join(__dirname, '..');
 // Read only the local data-location switches; credentials stay with the
 // existing server configuration rather than entering the shell's settings.
-try {
-  for (const line of require('fs').readFileSync(path.join(ROOT, '.env.local'), 'utf8').split('\n')) {
-    const match = line.match(/^\s*(THOUGHTDAG_HOME|THOUGHTDAG_DISK_STORAGE)\s*=\s*(.*?)\s*$/);
-    if (match && !(match[1] in process.env)) process.env[match[1]] = match[2];
-  }
-} catch { /* Optional local deployment configuration. */ }
+for (const envFile of ['.env.local', '.env']) {
+  try {
+    for (const line of require('fs').readFileSync(path.join(ROOT, envFile), 'utf8').split('\n')) {
+      const match = line.match(/^\s*(THOUGHTDAG_HOME|THOUGHTDAG_DISK_STORAGE)\s*=\s*(.*?)\s*$/);
+      if (match && !(match[1] in process.env)) process.env[match[1]] = match[2];
+    }
+  } catch { /* Optional local deployment configuration. */ }
+}
 
 // An explicit test/demo profile always wins. A configured data root also owns
 // the desktop profile, but an existing profile must first be migrated rather
 // than silently opening an empty one under the new location.
 const dataDirArg = process.argv.find((a) => a.startsWith('--user-data-dir='));
 let dataDir = dataDirArg ? path.resolve(dataDirArg.slice('--user-data-dir='.length)) : null;
-if (!dataDir && process.env.THOUGHTDAG_DISK_STORAGE === '1' && process.env.THOUGHTDAG_HOME) {
-  if (!path.isAbsolute(process.env.THOUGHTDAG_HOME)) throw new Error('THOUGHTDAG_HOME must be absolute');
+const { projectStorage } = require(path.join(ROOT, 'runtime', 'project-storage.cjs'));
+const storage = projectStorage(ROOT, process.env, !app.isPackaged && !dataDir);
+process.env.THOUGHTDAG_DISK_STORAGE = storage ? '1' : '0';
+if (storage) process.env.THOUGHTDAG_HOME = storage.dataRoot;
+if (!dataDir && storage) {
   const previous = app.getPath('userData');
-  const next = path.join(process.env.THOUGHTDAG_HOME, 'desktop-profile');
+  const next = path.join(storage.dataRoot, 'desktop-profile');
   const fs = require('fs');
-  if (!fs.existsSync(next) && fs.existsSync(previous) && fs.readdirSync(previous).length) {
+  const hasPriorProfile = !fs.existsSync(next) && fs.existsSync(previous) && fs.readdirSync(previous).length > 0;
+  if (hasPriorProfile && !storage.database) {
     throw new Error('The existing desktop profile must be migrated before changing its data directory');
   }
-  fs.mkdirSync(next, { recursive: true, mode: 0o700 });
-  dataDir = next;
+  // Keep the original IndexedDB available to the renderer for verified import
+  // on upgrades. New canvas saves go to the checkout's database in either case.
+  if (!hasPriorProfile) {
+    fs.mkdirSync(next, { recursive: true, mode: 0o700 });
+    dataDir = next;
+  }
 }
 if (dataDir) {
   app.setPath('userData', dataDir);

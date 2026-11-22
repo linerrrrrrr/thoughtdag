@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useRef, useState, type MouseEvent, type PointerEvent } from 'react';
+import { memo, useEffect, useMemo, useRef, useState, type MouseEvent, type PointerEvent, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
 import { Highlighter, Loader2, MessageSquare, MousePointer2, RefreshCw, Save, Trash2 } from 'lucide-react';
-import type { PDFDocumentProxy, RenderTask } from 'pdfjs-dist';
+import type { PDFDocumentProxy, PDFPageProxy, RenderTask } from 'pdfjs-dist';
 import type { Attachment, PdfAnnotation } from '../types';
 import { documentCopyText } from '../lib/document-copy';
 import { acquirePdfDocument, cachePdfPage, getCachedPdfPage, pdfDocumentKey, peekPdfDocument, releasePdfDocument, type PdfDocumentResource } from '../lib/pdf-document-cache';
@@ -25,6 +25,10 @@ type Mode = 'read' | 'highlight' | 'comment';
 type Anchor = { id: string; question: string; rects: Rect[] };
 type ScreenRect = { left: number; top: number; width: number; height: number };
 type ClipHandler = (pageNo: number, rect: Rect, dataUrl: string, screenRect?: ScreenRect) => void;
+type PageInteraction = {
+  onAnnotate: (page: number, rects: Rect[], text?: string, pointNote?: boolean) => void;
+  clipMode: boolean; onClipped?: ClipHandler;
+};
 const YELLOW = '#f4cc48';
 const clamp = (value: number) => Math.max(0, Math.min(1, value));
 const areaStyle = (rect: Rect) => ({ left: `${rect[0] * 100}%`, top: `${rect[1] * 100}%`, width: `${rect[2] * 100}%`, height: `${rect[3] * 100}%` });
@@ -32,6 +36,16 @@ const pendingKey = (projectId: string | null, nodeId: string, attachmentId: stri
 const commentKey = (projectId: string | null, nodeId: string, attachmentId: string, annotationId: string) => `pdf-comment:${projectId ?? 'default'}:${nodeId}:${attachmentId}:${annotationId}`;
 
 const annotationRevision = (annotations?: PdfAnnotation[]) => annotations?.length ? JSON.stringify(annotations) : undefined;
+const NO_ANNOTATIONS: PdfAnnotation[] = [];
+function annotationsByPage(annotations: PdfAnnotation[]) {
+  const result = new Map<number, PdfAnnotation[]>();
+  for (const mark of annotations) {
+    const page = result.get(mark.page);
+    if (page) page.push(mark);
+    else result.set(mark.page, [mark]);
+  }
+  return result;
+}
 
 /** Render the imported pages and the undoable canvas marks exactly once. */
 export default function PdfDocumentView({ nodeId, attachment, compact = false, actionsHost, statusHost, toolsHost, anchorsByPage, activeThreadId, onAnchorClick, clipMode = false, onClipped, onEditingChange, savedPages }: {
@@ -60,13 +74,59 @@ export default function PdfDocumentView({ nodeId, attachment, compact = false, a
   const [error, setError] = useState<'missing' | 'failed' | null>(null);
   const [retry, setRetry] = useState(0);
   const [width, setWidth] = useState(() => cached?.widths.get(compact ? 'compact' : 'reader') ?? (compact ? 380 : 680));
+  const [nearbyPages, setNearbyPages] = useState<Set<number>>(() => new Set());
+  useEffect(() => {
+    const viewport = pageViewport.current;
+    if (!loaded || !viewport || savedPages !== undefined) return;
+    const nearby = new Set<number>();
+    const selected = new Map<number, Element>();
+    const publish = () => setNearbyPages(new Set([...nearby, ...selected.keys()]));
+    const includesSelection = (sheet: Element) => {
+      const selection = window.getSelection();
+      const layer = sheet.querySelector('.tdag-textlayer');
+      return !!(selection?.rangeCount && !selection.isCollapsed && layer && selection.getRangeAt(0).intersectsNode(layer));
+    };
+    const releaseSelection = () => {
+      const size = selected.size;
+      for (const [page, sheet] of selected) {
+        if (!includesSelection(sheet)) selected.delete(page);
+      }
+      if (size !== selected.size) publish();
+    };
+    const observer = new IntersectionObserver(entries => {
+      let changed = false;
+      for (const entry of entries) {
+        const page = Number((entry.target as HTMLElement).dataset.page);
+        if (entry.isIntersecting === nearby.has(page)) continue;
+        if (entry.isIntersecting) {
+          nearby.add(page);
+          selected.delete(page);
+        } else {
+          nearby.delete(page);
+          // Keep a native selection intact while dragging across page breaks.
+          if (includesSelection(entry.target)) selected.set(page, entry.target);
+        }
+        changed = true;
+      }
+      if (changed) publish();
+    }, { root: compact ? viewport : viewport.closest('[data-reader-body]'), rootMargin: '700px 0px' });
+    viewport.querySelectorAll('[data-pdf-page]').forEach(page => observer.observe(page));
+    document.addEventListener('selectionchange', releaseSelection);
+    return () => {
+      document.removeEventListener('selectionchange', releaseSelection);
+      observer.disconnect();
+      setNearbyPages(new Set());
+    };
+  }, [loaded, compact, savedPages]);
   const selectedCommentAt = useRef(0);
   const anchorDraftKey = pendingKey(projectId, nodeId, attachment.id);
   const pendingRaw = useUiStore(state => state.drafts[anchorDraftKey]);
   const pendingAnnotations = useMemo<PdfAnnotation[]>(() => {
     try { const parsed = pendingRaw ? JSON.parse(pendingRaw) : []; return Array.isArray(parsed) ? parsed : [parsed]; } catch { return []; }
   }, [pendingRaw]);
-  const annotations = attachment.pdfAnnotations ?? [];
+  const annotations = attachment.pdfAnnotations ?? NO_ANNOTATIONS;
+  const marksByPage = useMemo(() => annotationsByPage(annotations), [annotations]);
+  const draftsByPage = useMemo(() => annotationsByPage(pendingAnnotations), [pendingAnnotations]);
   const pending = pendingAnnotations.find(annotation => annotation.id === activeId);
   const active = annotations.find(annotation => annotation.id === activeId) ?? pending;
   const effectiveMode = isViewerMode || clipMode || error || !loaded ? 'read' : mode;
@@ -180,7 +240,9 @@ export default function PdfDocumentView({ nodeId, attachment, compact = false, a
     const text = selection.toString().trim();
     const screenRects = Array.from(range.getClientRects());
     const additions: PdfAnnotation[] = [];
-    for (const page of root.current.querySelectorAll<HTMLElement>('[data-pdf-page]')) {
+    for (const layer of root.current.querySelectorAll<HTMLElement>('.tdag-textlayer')) {
+      if (!range.intersectsNode(layer)) continue;
+      const page = layer.parentElement!;
       const bounds = page.getBoundingClientRect();
       const rects = screenRects.flatMap<Rect>(rect => {
         const left = Math.max(rect.left, bounds.left), top = Math.max(rect.top, bounds.top);
@@ -271,7 +333,7 @@ export default function PdfDocumentView({ nodeId, attachment, compact = false, a
     <div className="pdf-document-controls">
       {toolsHost ? createPortal(toolbar, toolsHost) : toolbar}
       {!isViewerMode && effectiveMode !== 'read' && <p className="pdf-document-mode-hint text-control text-ink-faint">{t(effectiveMode === 'highlight' ? 'pdfDocument.highlightHint' : 'pdfDocument.commentHint')}</p>}
-      {active && loaded && !error && <PdfComment key={active.id} annotation={active} nodeId={nodeId} attachmentId={attachment.id} isNew={pending?.id === active.id} saving={saving}
+      {active && loaded && !error && <PdfComment key={active.id} annotation={active} nodeId={nodeId} attachmentId={attachment.id} isNew={pending?.id === active.id} saving={saving} compact={compact}
         onClose={() => setActiveId(null)} onCancel={() => cancelComment(active)} onSave={comment => saveComment(active, comment)} onDelete={() => removeAnnotation(active)} />}
       {compact && fallbackNotice}
     </div>
@@ -289,18 +351,20 @@ export default function PdfDocumentView({ nodeId, attachment, compact = false, a
           </article>)}
         </section>}
       </div> : !loaded ? <div className="pdf-document-status text-control text-ink-muted"><Loader2 size={16} className="animate-spin" />{t('pdfDocument.loading')}</div>
-        : <div className="pdf-document-pages">{Array.from({ length: loaded.doc.numPages }, (_, index) => (
-          <PdfOriginalPage key={`${attachment.id}:${index + 1}`} doc={loaded.doc} pdfjs={loaded.pdfjs} resource={loaded.resource} pageNo={index + 1} width={width} mode={effectiveMode}
-            annotations={annotations.filter(annotation => annotation.page === index + 1)} pending={pendingAnnotations.filter(annotation => annotation.page === index + 1)}
-            activeId={activeId} onAnnotationClick={setActiveId} onAnnotate={annotate} anchors={anchorsByPage?.get(index + 1)} activeThreadId={activeThreadId}
-            onAnchorClick={onAnchorClick} clipMode={clipMode} onClipped={onClipped} />
-        ))}</div>}
+        : <div className="pdf-document-pages">{Array.from({ length: loaded.doc.numPages }, (_, index) => {
+          const page = index + 1;
+          const nearby = nearbyPages.has(page);
+          return <PdfOriginalPage key={`${attachment.id}:${page}`} doc={loaded.doc} pdfjs={loaded.pdfjs} resource={loaded.resource} pageNo={page} width={width} mode={effectiveMode}
+            annotations={marksByPage.get(page) ?? NO_ANNOTATIONS} pending={draftsByPage.get(page) ?? NO_ANNOTATIONS}
+            activeId={activeId} onAnnotationClick={setActiveId} anchors={anchorsByPage?.get(page)} activeThreadId={activeThreadId}
+            onAnchorClick={onAnchorClick} interaction={nearby ? { onAnnotate: annotate, clipMode, onClipped } : undefined} />;
+        })}</div>}
     </div>
   </div>;
 }
 
-function PdfComment({ annotation, nodeId, attachmentId, isNew, saving, onClose, onCancel, onSave, onDelete }: {
-  annotation: PdfAnnotation; nodeId: string; attachmentId: string; isNew: boolean; saving: boolean;
+function PdfComment({ annotation, nodeId, attachmentId, isNew, saving, compact, onClose, onCancel, onSave, onDelete }: {
+  annotation: PdfAnnotation; nodeId: string; attachmentId: string; isNew: boolean; saving: boolean; compact: boolean;
   onClose: () => void; onCancel: () => void; onSave: (value: string) => Promise<boolean>; onDelete: () => void;
 }) {
   const t = useT();
@@ -313,7 +377,7 @@ function PdfComment({ annotation, nodeId, attachmentId, isNew, saving, onClose, 
     if (isViewerMode || saving || (isNew && !draft.trim())) return;
     if (await onSave(draft)) useUiStore.getState().setDraft(key, '');
   };
-  const dismiss = useInlineEditDismiss({ active: true, ref: boundary, onOutside: onClose, onCancel: cancel });
+  const dismiss = useInlineEditDismiss({ active: true, ref: boundary, onOutside: onClose, onCancel: cancel, independentOutside: compact });
   return <div ref={boundary} onBlur={dismiss.onBlur} className="pdf-document-comment" data-pdf-comment-editor={annotation.id}
     onMouseUp={event => event.stopPropagation()} onKeyDown={event => {
       if (!isImeComposing(event) && (event.ctrlKey || event.metaKey) && event.key === 'Enter') { event.preventDefault(); event.stopPropagation(); save(); }
@@ -331,48 +395,53 @@ function PdfComment({ annotation, nodeId, attachmentId, isNew, saving, onClose, 
   </div>;
 }
 
-function PdfOriginalPage({ doc, pdfjs, resource, pageNo, width, mode, annotations, pending, activeId, onAnnotationClick, onAnnotate, anchors, activeThreadId, onAnchorClick, clipMode, onClipped }: {
+const PdfOriginalPage = memo(function PdfOriginalPage({ doc, pdfjs, resource, pageNo, width, mode, annotations, pending, activeId, onAnnotationClick, anchors, activeThreadId, onAnchorClick, interaction }: {
   doc: PDFDocumentProxy; pdfjs: Pdfjs; resource: PdfDocumentResource; pageNo: number; width: number; mode: Mode;
   annotations: PdfAnnotation[]; pending: PdfAnnotation[]; activeId: string | null;
-  onAnnotationClick: (id: string) => void; onAnnotate: (page: number, rects: Rect[], text?: string, pointNote?: boolean) => void;
-  anchors?: Anchor[]; activeThreadId?: string | null; onAnchorClick?: (id: string) => void; clipMode: boolean; onClipped?: ClipHandler;
+  onAnnotationClick: (id: string) => void; interaction?: PageInteraction;
+  anchors?: Anchor[]; activeThreadId?: string | null; onAnchorClick?: (id: string) => void;
 }) {
   const t = useT();
   const holder = useRef<HTMLDivElement>(null);
+  const [ratio, setRatio] = useState(() => resource.pageRatios.get(pageNo));
+  const height = Math.round(width * (ratio ?? 1.4142));
+  const allAnnotations = [...annotations, ...pending];
+  return <div className="pdf-document-page-wrap">
+    <div className="pdf-document-page-label text-meta text-ink-faint">{fmt(t('pdfDocument.page'), { page: pageNo })}</div>
+    <div ref={holder} data-pdf-page data-page={pageNo} data-cursor="neutral" data-pdf-sized={ratio !== undefined || undefined} className="pdf-document-page" style={{ width, height }}>
+      {interaction ? <PdfPageSurface holder={holder} doc={doc} pdfjs={pdfjs} resource={resource} pageNo={pageNo}
+        width={width} mode={mode} onRatio={setRatio} {...interaction} />
+        : <img className="pdf-document-canvas" data-export-missing-pdf-page alt="" />}
+      {allAnnotations.map(annotation => <div key={annotation.id}>
+        {annotation.rects.map((rect, index) => <button key={index} type="button" data-pdf-annotation={annotation.id}
+          aria-label={annotation.comment || annotation.text || t(pending.some(item => item.id === annotation.id) ? 'pdfDocument.commentDraft' : 'pdfDocument.savedMark')}
+          tabIndex={index === 0 ? 0 : -1} onClick={event => { event.stopPropagation(); onAnnotationClick(annotation.id); }}
+          className={`pdf-document-mark ${activeId === annotation.id ? 'pdf-document-mark-active' : ''} ${pending.some(item => item.id === annotation.id) ? 'pdf-document-mark-draft' : ''}`}
+          style={{ ...areaStyle(rect), backgroundColor: annotation.color || YELLOW, pointerEvents: mode === 'read' ? 'auto' : 'none' }} />)}
+        {annotation.rects[0] && <button type="button" className="pdf-document-comment-pin" data-pdf-comment-pin={annotation.id}
+          style={{ top: `${annotation.rects[0][1] * 100}%` }} aria-label={annotation.comment || t('pdfDocument.savedMark')}
+          onClick={event => { event.stopPropagation(); onAnnotationClick(annotation.id); }}><MessageSquare size={13} /></button>}
+      </div>)}
+      {anchors?.map(anchor => <div key={anchor.id}>{anchor.rects.map((rect, index) => <div key={index} className="pdf-document-thread-mark" style={{ ...areaStyle(rect), opacity: activeThreadId === anchor.id ? .25 : .12 }} />)}
+        <button type="button" className="pdf-document-thread-pin" data-anchor-bubble={anchor.id} style={{ top: `${(anchor.rects[0]?.[1] ?? 0) * 100}%` }}
+          aria-label={anchor.question} onClick={event => { event.stopPropagation(); onAnchorClick?.(anchor.id); }}><MessageSquare size={13} /></button></div>)}
+    </div>
+  </div>;
+});
+
+function PdfPageSurface({ holder, doc, pdfjs, resource, pageNo, width, mode, onRatio, onAnnotate, clipMode, onClipped }: {
+  holder: RefObject<HTMLDivElement | null>; doc: PDFDocumentProxy; pdfjs: Pdfjs; resource: PdfDocumentResource;
+  pageNo: number; width: number; mode: Mode; onRatio: (ratio: number) => void;
+} & PageInteraction) {
+  const t = useT();
   const canvas = useRef<HTMLCanvasElement>(null);
   const textLayer = useRef<HTMLDivElement>(null);
-  const [visible, setVisible] = useState(pageNo <= 2);
-  const [ratio, setRatio] = useState(() => resource.pageRatios.get(pageNo));
   const [hasText, setHasText] = useState<boolean | null>(null);
   const [renderError, setRenderError] = useState(false);
   const [band, setBand] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
   const drag = useRef<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
-  const height = Math.round(width * (ratio ?? 1.4142));
   useDismissableLayer({ open: !!band, refs: [holder], dismissOnOutside: false, onDismiss: () => { drag.current = null; setBand(null); } });
   useEffect(() => {
-    let dead = false;
-    const cachedRatio = resource.pageRatios.get(pageNo);
-    if (cachedRatio !== undefined) queueMicrotask(() => { if (!dead) setRatio(cachedRatio); });
-    else void doc.getPage(pageNo).then(page => {
-      const viewport = page.getViewport({ scale: 1 });
-      if (!dead) {
-        const value = viewport.height / viewport.width;
-        resource.pageRatios.set(pageNo, value);
-        setRatio(value);
-      }
-    }).catch(() => { if (!dead) setRatio(1.4142); });
-    return () => { dead = true; };
-  }, [doc, resource, pageNo]);
-  useEffect(() => {
-    if (visible || !holder.current) return;
-    const observer = new IntersectionObserver(entries => {
-      if (entries.some(entry => entry.isIntersecting)) { setVisible(true); observer.disconnect(); }
-    }, { rootMargin: '700px' });
-    observer.observe(holder.current);
-    return () => observer.disconnect();
-  }, [visible]);
-  useEffect(() => {
-    if (!visible) return;
     let dead = false;
     let render: RenderTask | undefined;
     let layer: InstanceType<Pdfjs['TextLayer']> | undefined;
@@ -386,22 +455,28 @@ function PdfOriginalPage({ doc, pdfjs, resource, pageNo, width, mode, annotation
       textLayer.current.replaceChildren(...Array.from(copy.childNodes));
       textLayer.current.style.setProperty('--scale-factor', String(cachedPage.scale));
       queueMicrotask(() => {
-        if (!dead) { setRatio(cachedPage.ratio); setHasText(cachedPage.hasText); setRenderError(false); }
+        if (!dead) { onRatio(cachedPage.ratio); setHasText(cachedPage.hasText); setRenderError(false); }
       });
       return () => { dead = true; };
     }
     const renderedCanvas = document.createElement('canvas');
     void (async () => {
+      let page: PDFPageProxy | undefined;
       try {
-        const page = await doc.getPage(pageNo);
+        page = await doc.getPage(pageNo);
         if (dead) return;
-        const scale = width / page.getViewport({ scale: 1 }).width;
+        const natural = page.getViewport({ scale: 1 });
+        const ratio = natural.height / natural.width;
+        resource.pageRatios.set(pageNo, ratio);
+        onRatio(ratio);
+        const scale = width / natural.width;
         const viewport = page.getViewport({ scale });
         renderedCanvas.width = Math.ceil(viewport.width * factor); renderedCanvas.height = Math.ceil(viewport.height * factor);
         const context = renderedCanvas.getContext('2d');
         if (!context) return;
         render = page.render({ canvasContext: context, viewport, ...(factor !== 1 ? { transform: [factor, 0, 0, factor, 0, 0] } : {}) });
         await render.promise;
+        if (dead) return;
         const text = await page.getTextContent();
         if (dead || !canvas.current || !textLayer.current) return;
         canvas.current.width = renderedCanvas.width; canvas.current.height = renderedCanvas.height;
@@ -418,10 +493,10 @@ function PdfOriginalPage({ doc, pdfjs, resource, pageNo, width, mode, annotation
         }
       } catch {
         if (!dead) setRenderError(true);
-      }
+      } finally { page?.cleanup(); }
     })();
     return () => { dead = true; render?.cancel(); layer?.cancel(); };
-  }, [visible, width, doc, pdfjs, resource, pageNo]);
+  }, [width, doc, pdfjs, resource, pageNo, onRatio]);
   const fraction = (event: PointerEvent<HTMLDivElement>) => {
     const bounds = holder.current!.getBoundingClientRect();
     return { x: clamp((event.clientX - bounds.left) / bounds.width), y: clamp((event.clientY - bounds.top) / bounds.height) };
@@ -444,33 +519,17 @@ function PdfOriginalPage({ doc, pdfjs, resource, pageNo, width, mode, annotation
       onAnnotate(pageNo, pointNote ? [[Math.min(.97, selection.x0), Math.min(.98, selection.y0), .025, .018]] : [rect], undefined, pointNote);
     } else if (rect[2] >= .01 && rect[3] >= .005) onAnnotate(pageNo, [rect]);
   };
-  const allAnnotations = [...annotations, ...pending];
-  return <div className="pdf-document-page-wrap">
-    <div className="pdf-document-page-label text-meta text-ink-faint">{fmt(t('pdfDocument.page'), { page: pageNo })}</div>
-    <div ref={holder} data-pdf-page data-page={pageNo} data-cursor="neutral" data-pdf-sized={ratio !== undefined || undefined} className="pdf-document-page" style={{ width, height }}
+  return <>
+      <canvas ref={canvas} className="pdf-document-canvas" />
+      <div ref={textLayer} data-type-surface="native-document" data-cursor="neutral" className="tdag-textlayer"
       onClick={event => {
         if (mode !== 'comment' || clipMode || hasText === false || (event.target instanceof Element && event.target.closest('button'))) return;
         const selection = window.getSelection();
         if (selection && !selection.isCollapsed) return;
         const bounds = event.currentTarget.getBoundingClientRect();
         onAnnotate(pageNo, [[Math.min(.97, clamp((event.clientX - bounds.left) / bounds.width)), Math.min(.98, clamp((event.clientY - bounds.top) / bounds.height)), .025, .018]], undefined, true);
-      }}>
-      <canvas ref={canvas} className="pdf-document-canvas" />
-      <div ref={textLayer} data-type-surface="native-document" className="tdag-textlayer" />
+      }} />
       {renderError && <p className="pdf-document-render-error text-control">{t('pdfDocument.failed')}</p>}
-      {allAnnotations.map(annotation => <div key={annotation.id}>
-        {annotation.rects.map((rect, index) => <button key={index} type="button" data-pdf-annotation={annotation.id}
-          aria-label={annotation.comment || annotation.text || t(pending.some(item => item.id === annotation.id) ? 'pdfDocument.commentDraft' : 'pdfDocument.savedMark')}
-          tabIndex={index === 0 ? 0 : -1} onClick={event => { event.stopPropagation(); onAnnotationClick(annotation.id); }}
-          className={`pdf-document-mark ${activeId === annotation.id ? 'pdf-document-mark-active' : ''} ${pending.some(item => item.id === annotation.id) ? 'pdf-document-mark-draft' : ''}`}
-          style={{ ...areaStyle(rect), backgroundColor: annotation.color || YELLOW, pointerEvents: mode === 'read' ? 'auto' : 'none' }} />)}
-        {annotation.rects[0] && <button type="button" className="pdf-document-comment-pin" data-pdf-comment-pin={annotation.id}
-          style={{ top: `${annotation.rects[0][1] * 100}%` }} aria-label={annotation.comment || t('pdfDocument.savedMark')}
-          onClick={event => { event.stopPropagation(); onAnnotationClick(annotation.id); }}><MessageSquare size={13} /></button>}
-      </div>)}
-      {anchors?.map(anchor => <div key={anchor.id}>{anchor.rects.map((rect, index) => <div key={index} className="pdf-document-thread-mark" style={{ ...areaStyle(rect), opacity: activeThreadId === anchor.id ? .25 : .12 }} />)}
-        <button type="button" className="pdf-document-thread-pin" data-anchor-bubble={anchor.id} style={{ top: `${(anchor.rects[0]?.[1] ?? 0) * 100}%` }}
-          aria-label={anchor.question} onClick={event => { event.stopPropagation(); onAnchorClick?.(anchor.id); }}><MessageSquare size={13} /></button></div>)}
       {(clipMode || (hasText === false && mode !== 'read')) && !isViewerMode && <div data-pdf-region-layer data-clip-overlay={clipMode ? pageNo : undefined} className="pdf-document-region-layer"
         onPointerDown={event => {
           if (event.button !== 0) return;
@@ -482,6 +541,5 @@ function PdfOriginalPage({ doc, pdfjs, resource, pageNo, width, mode, annotation
         onPointerUp={finishRegion} onPointerCancel={() => { drag.current = null; setBand(null); }}>
         {band && <div className="pdf-document-region-band" style={areaStyle([Math.min(band.x0, band.x1), Math.min(band.y0, band.y1), Math.abs(band.x1 - band.x0), Math.abs(band.y1 - band.y0)])} />}
       </div>}
-    </div>
-  </div>;
+  </>;
 }

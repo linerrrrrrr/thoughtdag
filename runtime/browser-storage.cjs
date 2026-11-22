@@ -5,7 +5,8 @@
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const crypto = require('node:crypto');
-const { storageLibrary, validId, failure, readOptional } = require('./storage-library.cjs');
+const { storageLibrary, validId, failure } = require('./storage-library.cjs');
+const { fileRecords } = require('./merge-legacy-storage.cjs');
 const { withStorageLock } = require('./storage-lock.cjs');
 
 const PREFIX = '/__thoughtdag_storage';
@@ -39,8 +40,12 @@ async function bodyJson(req) {
   return JSON.parse(Buffer.concat(chunks).toString('utf8'));
 }
 
-function recordPath(base, key) {
+function validateKey(key) {
   if (typeof key !== 'string' || Buffer.byteLength(key) > 4096) throw failure(400, 'Invalid key');
+}
+
+function recordPath(base, key) {
+  validateKey(key);
   const encoded = Buffer.from(key, 'utf8').toString('base64url') || '_';
   const chunks = encoded.match(/.{1,80}/g);
   const parts = chunks.map((part) => `k-${part}`);
@@ -83,17 +88,36 @@ async function listKeys(dir, prefixes = []) {
   return found;
 }
 
-/** Return a Connect-compatible handler; requests outside PREFIX are untouched. */
-function createBrowserStorage({ dataRoot }) {
+function localStorageContext(dataRoot) {
   if (!dataRoot || !path.isAbsolute(dataRoot)) throw new Error('An absolute data root is required');
-  const root = path.join(dataRoot, 'browser-storage');
-  const workspaceRoot = path.join(dataRoot, 'workspaces');
+  return { root: path.join(dataRoot, 'browser-storage'), workspaceRoot: path.join(dataRoot, 'workspaces'),
+    recordPath, listKeys, atomicWrite };
+}
+
+function withLibrary(dataRoot, io, useDatabase, action) {
+  return withStorageLock(io.root, async () => {
+    const database = useDatabase ? require('./project-database.cjs').openProjectDatabase(dataRoot) : null;
+    try { return await action(storageLibrary({ ...io, database }), database); }
+    finally { database?.close(); }
+  });
+}
+
+async function initializeProjectDatabase(dataRoot) {
+  return withLibrary(dataRoot, localStorageContext(dataRoot), true, async (library, database) => {
+    const { namespace } = await library.connect();
+    return { namespace, records: database.count() };
+  });
+}
+
+/** Return a Connect-compatible handler; requests outside PREFIX are untouched. */
+function createBrowserStorage({ dataRoot, database: useDatabase = false }) {
+  const io = localStorageContext(dataRoot);
+  const { workspaceRoot } = io;
   const { createManagedDocuments, ensureCanvasWorkspace } = require('./managed-documents.cjs');
   const documentFile = createManagedDocuments(workspaceRoot);
-  const library = storageLibrary({ root, workspaceRoot, recordPath, listKeys, atomicWrite });
   const revision = raw => raw === null ? null : crypto.createHash('sha256').update(raw).digest('hex');
 
-  async function operate(body, host) {
+  async function operate(body, host, library, database) {
     const { op, namespace, space, key, value, origin } = body;
     const imports = ['beginImport', 'stageSet', 'stageGet', 'finishImport'];
     if (origin !== undefined || ['connect', 'open', 'canvasWorkspace', 'document', ...imports].includes(op)) {
@@ -118,31 +142,31 @@ function createBrowserStorage({ dataRoot }) {
       return documentFile({ ...body.request, namespace });
     }
     if (!['kv', 'settings'].includes(space)) throw failure(400, 'Invalid space');
-    const base = path.join(root, namespace, space);
-    if (op === 'keys') return { keys: await listKeys(base) };
-    const file = recordPath(base, key);
+    const records = database?.records ?? fileRecords(io, namespace);
+    if (op === 'keys') return { keys: await records.keys(space) };
+    validateKey(key);
     if (op === 'get') {
-      const raw = await readOptional(file);
+      const raw = await records.get(space, key);
       return raw === null ? { found: false } : { found: true, value: raw,
         ...(space === 'kv' && key.startsWith('thoughtdag:project:') && { revision: revision(raw) }) };
     }
     if (op === 'compareSet' && typeof value === 'string') {
-      const current = await readOptional(file);
+      const current = await records.get(space, key);
       if (body.expectedRevision !== undefined) {
         const currentRevision = revision(current);
         if (value === current) return { applied: true, revision: currentRevision };
         if (body.expectedRevision !== currentRevision) return { applied: false, revision: currentRevision };
-        await atomicWrite(file, value);
+        await records.set(space, key, value);
         return { applied: true, revision: revision(value) };
       }
       if (body.expected !== current) return { applied: false, value: current };
-      await atomicWrite(file, value);
+      await records.set(space, key, value);
       return { applied: true };
     }
     if (op === 'set' || op === 'delete') {
       if (body.protocol !== 3) throw failure(409, 'Refresh before writing to shared project storage');
-      if (op === 'delete') await fs.rm(file, { force: true });
-      else if (typeof value === 'string') await atomicWrite(file, value);
+      if (op === 'delete') await records.delete(space, key);
+      else if (typeof value === 'string') await records.set(space, key, value);
       else throw failure(400, 'Invalid value');
       return { ok: true };
     }
@@ -152,7 +176,8 @@ function createBrowserStorage({ dataRoot }) {
     const url = new URL(req.url || '/', 'http://localhost');
     if (url.pathname !== PREFIX) return next();
     if (!permitted(req)) return send(res, 403, { error: 'Access denied' });
-    if (req.method === 'GET') return send(res, 200, { service: 'thoughtdag-local-storage', version: 3 });
+    if (req.method === 'GET') return send(res, 200, { service: 'thoughtdag-local-storage', version: 3,
+      ...(useDatabase && { engine: 'sqlite' }) });
     if (req.method !== 'POST' || !String(req.headers['content-type'] || '').startsWith('application/json')) {
       return send(res, 405, { error: 'Unsupported request' });
     }
@@ -160,7 +185,8 @@ function createBrowserStorage({ dataRoot }) {
       const body = await bodyJson(req);
       if (!body || typeof body !== 'object' || Array.isArray(body)) throw failure(400, 'Invalid request');
       if (req.headers.origin && body.origin !== undefined && body.origin !== req.headers.origin) throw failure(403, 'Access denied');
-      const result = await withStorageLock(root, () => operate(body, req.headers.host));
+      const result = await withLibrary(dataRoot, io, useDatabase, (library, database) =>
+        operate(body, req.headers.host, library, database));
       return send(res, 200, result);
     } catch (error) {
       if (!error.status) console.error('[thoughtdag] local storage operation failed:', error.message);
@@ -169,4 +195,4 @@ function createBrowserStorage({ dataRoot }) {
   };
 }
 
-module.exports = { createBrowserStorage };
+module.exports = { createBrowserStorage, initializeProjectDatabase };

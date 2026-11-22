@@ -59,6 +59,7 @@ export const createLlmSlice: StateCreator<StoreState, [], [], LlmSlice> = (set, 
         createdAt: new Date().toISOString(),
         askedAt: new Date().toISOString(),
         ...execution,
+        ...(opts.execution?.executionKind === 'codex' && opts.execution.agentOptions ? { agentOptions: opts.execution.agentOptions } : {}),
         response: '',
         responses: [],
         responseIndex: -1,
@@ -219,6 +220,7 @@ export const createLlmSlice: StateCreator<StoreState, [], [], LlmSlice> = (set, 
         highlights: [], highlightMode: 'tag', attachments: [], excludedAttachmentIds: [], includedAttachmentIds: [],
         model: node.data.model, // sibling keeps the original's model override
         executionKind: node.data.executionKind,
+        agentOptions: node.data.agentOptions,
       },
     };
 

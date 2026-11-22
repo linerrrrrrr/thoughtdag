@@ -33,7 +33,7 @@ function graphValue(encoded) {
   return typeof encoded.value === 'string' ? JSON.parse(encoded.value) : encoded.value;
 }
 
-function repo(ctx, namespace) {
+function fileRecords(ctx, namespace) {
   if (!UUID.test(namespace)) throw new Error('Invalid storage namespace');
   const dir = path.join(ctx.root, namespace);
   const file = (space, key) => ctx.recordPath(path.join(dir, space), key);
@@ -41,6 +41,7 @@ function repo(ctx, namespace) {
     dir,
     get: (space, key) => read(file(space, key)),
     set: (space, key, value) => ctx.atomicWrite(file(space, key), value),
+    delete: (space, key) => fs.rm(file(space, key), { force: true }),
     keys: space => ctx.listKeys(path.join(dir, space)),
   };
 }
@@ -50,7 +51,8 @@ function freshIndex() {
 }
 
 async function catalogue(ctx, profile, recoverOrphans = true) {
-  const storage = repo(ctx, profile.namespace);
+  const storage = fileRecords(ctx, profile.namespace);
+  if (ctx.database && profile.namespace === ctx.namespace) Object.assign(storage, ctx.database.records);
   const rawIndex = await storage.get('kv', INDEX);
   const index = rawIndex === null ? freshIndex() : unpack(rawIndex);
   const projects = index.value?.projects;
@@ -321,4 +323,4 @@ async function mergeLegacyStorage(ctx) {
   }
 }
 
-module.exports = { selectPrimaryNamespace, mergeLegacyStorage };
+module.exports = { selectPrimaryNamespace, mergeLegacyStorage, fileRecords };

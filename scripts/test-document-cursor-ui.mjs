@@ -77,8 +77,16 @@ async function readingSurface(root, body, label) {
   const before = await geometry();
   const textBox = await span.boundingBox(); assert.ok(textBox);
   await page.mouse.move(textBox.x + 2, textBox.y + textBox.height / 2); await page.mouse.down();
-  await page.mouse.move(textBox.x + textBox.width - 2, textBox.y + textBox.height / 2, { steps: 12 }); await page.mouse.up();
+  await page.mouse.move(textBox.x + textBox.width - 2, textBox.y + textBox.height / 2, { steps: 12 });
+  // The reader's ask bar takes focus after mouseup and carries the selected quote.
   assert.match(await page.evaluate(() => window.getSelection()?.toString() ?? ''), /Original PDF/);
+  await page.mouse.up();
+  if (await body.getAttribute('data-reader-body') !== null) {
+    const ask = page.locator('[data-reader-askbar]');
+    await ask.waitFor();
+    assert.match(await ask.textContent(), /Original PDF/);
+    await ask.locator('textarea').press('Escape');
+  }
   assert.deepEqual(await geometry(), before, `${label}: selection must not move the graph`);
   await page.evaluate(() => window.getSelection()?.removeAllRanges());
   // Scroll to the second label so the real inter-page gap is in the viewport.

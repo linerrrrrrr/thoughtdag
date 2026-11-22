@@ -60,6 +60,13 @@
 .activity-spinner { animation: spin 1.2s linear infinite; }
 @media (prefers-reduced-motion: reduce) { .activity-spinner { animation: none; } }
 
+/* Security confirmations use the amber palette for actions and keyboard focus. */
+[data-approval-card][data-question-kind='confirm'] {
+  --color-accent: var(--color-amber-800);
+  --color-action: var(--color-amber-400);
+  --color-action-strong: color-mix(in srgb, var(--color-amber-400) 88%, var(--color-amber-950));
+}
+
 /* ─── Design tokens ─────────────────────────────────────────────
    Single source of truth for the color system. The JS mirror lives in
    src/lib/constants.ts (COLORS) — keep the two in sync.

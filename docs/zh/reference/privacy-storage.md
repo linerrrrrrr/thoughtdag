@@ -2,9 +2,11 @@
 
 ## 哪些内容留在本机
 
-画布、模型凭证、导入文档和本地 session 镜像都保存在你的机器上。默认画布状态使用浏览器 IndexedDB；可选文件夹备份写入 `.thoughtdag.json` 文件。
+从源码项目运行时，画布清单、节点、连线、附件记录和应用设置默认写入项目内的 SQLite 数据库 `local-data/data/thoughtdag.sqlite`。同一项目的本机浏览器入口和 Electron 共用这份数据库。稳定版和推进版各自在自己的项目目录中保存数据。`local-data/` 已排除在 Git 版本管理之外。纯静态网页使用浏览器 IndexedDB，可选文件夹备份生成 `.thoughtdag.json` 文件。
 
-本机部署设置绝对路径 `THOUGHTDAG_HOME` 并启用 `THOUGHTDAG_DISK_STORAGE=1` 后，一个数据目录对应一份画布清单。使用同一目录的 `localhost`、`127.0.0.1` 和不同端口共享画布、附件与设置。测试或另一套项目需要独立数据时，让相应实例使用另一个 `THOUGHTDAG_HOME`。
+本机部署可以通过 `THOUGHTDAG_HOME` 和 `THOUGHTDAG_DISK_STORAGE=1` 显式指定数据根目录。已有的自定义目录继续兼容原有文件存储。使用同一数据目录的本机地址和端口共享画布、附件与设置。
+
+将已有本机项目迁入源码目录时，先关闭使用旧目录的实例，再运行 `node scripts/migrate-project-data.mjs "<旧数据根目录>" "<项目目录>/local-data/data"`。每份旧库分别迁入对应项目。画布的外部文件和可编辑文档位于数据库旁的 `workspaces/` 中，完整备份应包含整个 `local-data/data/` 目录。
 
 首次升级会合并同一数据目录下的旧清单。不同 ID 的同名画布分别保留，空的默认占位画布经核对后可以略过。原清单所在的其他存储目录归入 `browser-storage/legacy-backup/`。以前仅存于浏览器的内容在首次接入时复制并读回校验，原始浏览器记录保留。清除浏览器数据后再次打开会自动连接该项目。本地服务不可用时，页面提供重试。
 

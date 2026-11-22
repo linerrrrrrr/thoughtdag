@@ -281,6 +281,12 @@ export interface Reference {
 
 export type NodeDetailLevel = 'compact' | 'summary' | 'full';
 
+export interface AgentTurnOptions {
+  /** Empty means explicitly restore the default; absent follows existing execution preferences. */
+  effort?: string;
+  fast?: boolean;
+}
+
 export interface ThoughtData extends Record<string, unknown> {
   /** Stable, human-readable reference within this canvas. Frames are spatial regions. */
   nodeNumber?: number;
@@ -316,6 +322,7 @@ export interface ThoughtData extends Record<string, unknown> {
   model?: string; // per-node LLM override; undefined = follow the global picker
   /** Explicit execution lane. Absent on older canvases; infer from their model/session. */
   executionKind?: 'api' | 'codex';
+  agentOptions?: AgentTurnOptions;
   /** Replayable native records aligned with answer versions, independent of display activity. */
   codexHistories?: (import('./lib/agents/codex-history').CodexNativeHistory | null | undefined)[];
   webSearch?: boolean; // may this node's generation use web search? (snapshotted at ask time; undefined = legacy, follow global)

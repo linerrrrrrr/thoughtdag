@@ -56,9 +56,16 @@ export function fillNativeGraphReading(root: HTMLElement, readings: ReadonlyMap<
     }
     for (const img of missingPages) {
       const id = img.closest<HTMLElement>('[data-pdf-document]')?.dataset.pdfDocument;
-      const page = Number(img.closest<HTMLElement>('[data-pdf-page]')?.dataset.page);
-      const src = saved.get(id)?.querySelectorAll<HTMLImageElement>('.pdf-sheet img')[page - 1]?.getAttribute('src');
+      const page = img.closest<HTMLElement>('[data-pdf-page]');
+      const number = Number(page?.dataset.page);
+      const original = saved.get(id)?.querySelector<HTMLImageElement>(`.pdf-sheet[data-page="${number}"] img`);
+      const src = original?.getAttribute('src');
       if (src) img.setAttribute('src', src);
+      if (page && original?.width && original.height && !page.hasAttribute('data-pdf-sized')) {
+        // A page outside the live reading viewport still has its estimated height.
+        page.style.height = `${Math.round(parseFloat(page.style.width) * original.height / original.width)}px`;
+        img.style.height = '100%';
+      }
     }
   }
   for (const draft of root.querySelectorAll('.pdf-document-mark-draft')) {

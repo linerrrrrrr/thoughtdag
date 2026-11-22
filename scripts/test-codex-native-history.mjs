@@ -54,6 +54,12 @@ function harness({ failInjection = false, noFile = false, hold = false } = {}) {
       const request = JSON.parse(line); requests.push(request);
       const answer = (result, error) => queueMicrotask(() => client.stdout.emit('data', Buffer.from(JSON.stringify({ id: request.id, ...(error ? { error: { message: error } } : { result }) }) + '\n')));
       if (request.method === 'initialize') answer({});
+      else if (request.method === 'model/list') answer({ data: [
+        { id: 'test-model', isDefault: true, defaultReasoningEffort: 'low', defaultServiceTier: 'priority',
+          supportedReasoningEfforts: [{ reasoningEffort: 'low' }, { reasoningEffort: 'high' }],
+          serviceTiers: [{ id: 'priority', name: 'Fast' }] },
+        { id: 'standard-model', supportedReasoningEfforts: [] },
+      ] });
       else if (request.method === 'thread/start' || request.method === 'thread/fork') {
         const id = `thread-${++serial}`;
         const file = noFile ? null : path.join(fixture, `${id}-${Date.now()}-${Math.random()}.jsonl`);
@@ -106,8 +112,18 @@ function harness({ failInjection = false, noFile = false, hold = false } = {}) {
 
 const native = harness();
 try {
-  const first = await native.run({ instructions: 'Canvas system instruction' });
+  const first = await native.run({ instructions: 'Canvas system instruction', effort: 'high', fast: true });
   await first.done;
+  const catalog = await native.runtime.models();
+  check('model capabilities govern reasoning and Fast for the current turn', () => {
+    assert.equal(catalog.models[0].supportsFast, true);
+    assert.equal(catalog.models[0].defaultFast, true);
+    assert.equal(catalog.models[1].supportsFast, false);
+    const turn = native.requests.find(r => r.method === 'turn/start').params;
+    assert.equal(turn.effort, 'high');
+    assert.equal(turn.serviceTierForTurn, 'priority');
+    assert.ok(!('serviceTier' in turn), 'Fast does not change the thread default.');
+  });
   const captured = first.events.findLast((e) => e.nativeHistory)?.nativeHistory;
   check('history is injected before the current prompt starts a turn', () => {
     const methods = native.requests.map((r) => r.method);
@@ -131,11 +147,14 @@ try {
   const base = { threadId: session.sessionId, turnId: captured.turnId, checkpoint: captured.checkpoint, sessionFile: session.sessionFile, itemCount: prefix.length };
   const beforeContinue = native.requests.length;
   native.setApproval('check permission scope');
-  const second = await native.run({ prompt: 'next question', allowRules: ['codex:cmd:check permission scope'], codexHistory: history([...prefix, ...suffix], { base }) });
+  const second = await native.run({ prompt: 'next question', effort: '', fast: false, allowRules: ['codex:cmd:check permission scope'], codexHistory: history([...prefix, ...suffix], { base }) });
   await second.done;
   check('matching checkpoints resume and inject only new nodes', () => {
     const reqs = native.requests.slice(beforeContinue);
     assert.ok(reqs.some((r) => r.method === 'thread/resume'));
+    const turn = reqs.find(r => r.method === 'turn/start').params;
+    assert.equal(turn.effort, 'low', 'Reset sends a default even on a resumed thread.');
+    assert.equal(turn.serviceTierForTurn, 'default');
     assert.ok(!reqs.some((r) => r.method === 'thread/start'));
     assert.deepEqual(reqs.find((r) => r.method === 'thread/inject_items').params.items, suffix);
     assert.equal(second.events.findLast((e) => e.nativeHistory).continued, true);
@@ -163,6 +182,21 @@ try {
   const fork = await native.run({ codexHistory: undefined, sessionId: session.sessionId, forkEntryId: captured.turnId });
   await fork.done;
   check('legacy fork forwards the exact completed turn boundary', () => assert.equal(native.requests.slice(beforeFork).find((r) => r.method === 'thread/fork').params.lastTurnId, captured.turnId));
+  const defaultDraft = await native.run({ codexHistory: undefined, sessionId: session.sessionId, codexWorkspace: { permissionMode: 'native' } });
+  await defaultDraft.done;
+  check('a fresh canvas draft uses the default effort on the resumed native thread', () => {
+    const turn = native.requests.findLast(r => r.method === 'turn/start').params;
+    assert.equal(turn.threadId, session.sessionId);
+    assert.equal(turn.effort, 'low');
+    assert.ok(!('serviceTierForTurn' in turn));
+  });
+  const unsupported = await native.run({ model: { id: 'standard-model' }, codexHistory: undefined, effort: 'high', fast: true });
+  await unsupported.done;
+  check('unavailable reasoning and speed overrides do not cross model boundaries', () => {
+    const turn = native.requests.findLast(r => r.method === 'turn/start').params;
+    assert.ok(!('effort' in turn));
+    assert.ok(!('serviceTierForTurn' in turn));
+  });
 } finally { native.runtime.shutdown(); }
 
 const failure = harness({ failInjection: true });

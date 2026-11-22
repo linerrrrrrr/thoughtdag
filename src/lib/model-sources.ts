@@ -1,4 +1,4 @@
-import { AGENT_PROVIDER, runtimeLabelOf } from './agents/agent-runtime';
+import { AGENT_PROVIDER, agentTarget, runtimeLabelOf } from './agents/agent-runtime';
 import type { ModelData, ModelInfo } from './use-models';
 
 export function defaultModelId(data: ModelData | null, selected: string | null) {
@@ -25,9 +25,18 @@ export function groupBySource(models: ModelInfo[]) {
   return Array.from(groups.values());
 }
 
-export function modelName(model: ModelInfo, source: ModelSource) {
+/** Format a UI label while keeping the runtime's routing ID intact. */
+export function displayModelName(id: string, name?: string): string {
+  const target = agentTarget(id);
+  if (target?.runtime !== 'codex') return name ?? id;
+  const label = name ?? target.id;
+  return label.replace(/^Codex\s*·\s*/i, '').replace(/^codex-(?=.)/i, '') || target.id;
+}
+
+export function modelName(model: ModelInfo, source: Pick<ModelSource, 'label' | 'agent'>) {
   const suffix = ` (${model.provider})`;
   const name = model.name.endsWith(suffix) ? model.name.slice(0, -suffix.length) : model.name;
   const prefix = `${source.label} · `;
-  return source.agent && name.startsWith(prefix) ? name.slice(prefix.length) : name;
+  const label = source.agent && name.startsWith(prefix) ? name.slice(prefix.length) : name;
+  return displayModelName(model.id, label);
 }

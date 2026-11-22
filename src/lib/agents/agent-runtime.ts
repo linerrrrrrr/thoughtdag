@@ -20,7 +20,7 @@
 
 import type { ContextMessage, ImageAttachment, StreamCallbacks } from '../api';
 import type { ModelInfo } from '../use-models';
-import type { AgentRuntime, AgentPermissionMode, ThoughtData, ThoughtNode } from '../../types';
+import type { AgentRuntime, AgentPermissionMode, AgentTurnOptions, ThoughtData, ThoughtNode } from '../../types';
 import { toast, useUiStore } from '../ui-store';
 import { useStore } from '../../store';
 import { isAgentActivity } from '../agent-activity';
@@ -89,7 +89,7 @@ export async function agentCatalog(): Promise<{ models: ModelInfo[]; runtimes: P
     const note = r as { searched?: string[]; error?: string } | null;
     runtimes[runtime] = { installed: !!r?.installed, ...(note?.searched ? { searched: note.searched } : {}), ...(note?.error ? { error: note.error } : {}) };
     if (!r?.installed) return; // not installed, or it did not answer: it stays out of the list
-    for (const m of r.models ?? []) models.push({ id: `${def.prefix}${m.provider}/${m.id}`, name: `${def.label} · ${m.name}`, provider: AGENT_PROVIDER, vision: m.vision, efforts: m.efforts ?? [], defaultEffort: m.defaultEffort ?? null });
+    for (const m of r.models ?? []) models.push({ id: `${def.prefix}${m.provider}/${m.id}`, name: `${def.label} · ${m.name}`, provider: AGENT_PROVIDER, vision: m.vision, efforts: m.efforts ?? [], defaultEffort: m.defaultEffort ?? null, supportsFast: m.supportsFast, defaultFast: m.defaultFast });
   });
   return { models, runtimes };
 }
@@ -352,12 +352,15 @@ export async function agentCallStream(
   modelId: string,
   route: AgentRoute | undefined,
   nodeId?: string,
+  options?: AgentTurnOptions,
 ): Promise<string> {
   signal?.throwIfAborted();
   const bridge = window.desktopAgents;
   if (!bridge) throw new Error('agent runtimes need the desktop app');
   const target = agentTarget(modelId);
   if (!target) throw new Error('not an agent model: ' + modelId);
+  const globalEffort = useUiStore.getState().agentEffort || undefined;
+  const codexOptions = target.runtime === 'codex' ? options : undefined;
   const { useProjects } = await import('../../store/projects');
   const canvasId = useProjects.getState().activeId;
   if (target.id === 'default') {
@@ -399,7 +402,7 @@ export async function agentCallStream(
   }
   const ahead = native ? '' : [continuing ? '' : context, materials].filter(Boolean).join('\n\n');
   const prompt = ahead ? `${ahead}\n\n---\n\n${question}` : question;
-  const effort = useUiStore.getState().agentEffort || undefined;
+  const effort = codexOptions?.effort ?? globalEffort;
   const permissionRoute = native ? (native.history.base ? { cwd, continue: true, sessionId: native.history.base.threadId } : { cwd }) : route;
   const allowRules = sessionAllowRules(target.runtime, permissionRoute, useStore.getState().nodes);
   signal?.throwIfAborted();
@@ -427,7 +430,8 @@ export async function agentCallStream(
       }),
       images: (native?.images ?? images ?? []).map((img) => ({ type: 'image' as const, data: img.data, mimeType: img.mimeType })),
       model: { provider: target.provider, id: target.id },
-      ...(effort ? { effort } : {}),
+      ...(effort !== undefined ? { effort } : {}),
+      ...(codexOptions?.fast !== undefined ? { fast: codexOptions.fast } : {}),
       ...(allowRules.length ? { allowRules } : {}),
     }).then((runId) => {
       let ended = false;

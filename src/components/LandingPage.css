@@ -47,24 +47,37 @@
 }
 .landing-composer textarea::placeholder { color: var(--color-ink-faint); }
 .landing-execution, .landing-execution-options { display: flex; align-items: center; gap: 4px; }
-.landing-execution { flex-wrap: wrap; gap: 8px; margin-top: 10px; }
-.landing-execution-options { padding: 2px; border-radius: var(--radius-control); background: var(--color-wash); }
+.landing-execution { min-width: 0; flex-wrap: wrap; gap: 8px; }
+.landing-execution > * { min-width: 0; max-width: 100%; }
+.landing-execution [data-model-picker-trigger] { width: 100%; }
+.landing-execution-options {
+  --segment-inset: 2px;
+  padding: var(--segment-inset);
+  border-radius: var(--radius-control);
+  background: var(--color-wash);
+}
 .landing-execution-options button, .landing-connect {
   padding: 5px 10px;
   border-radius: var(--radius-control);
   color: var(--color-ink-muted);
 }
+.landing-execution-options button {
+  /* The group inset contributes to the compact model picker's py-2 padding. */
+  padding-block: calc(2 * var(--spacing) - var(--segment-inset));
+}
 .landing-execution-options button:hover { color: var(--color-ink); }
 .landing-execution-options button[aria-pressed="true"] { color: var(--color-accent); background: var(--color-card); }
 .landing-connect { color: var(--color-accent); }
 .landing-connect:hover { background: var(--color-wash); }
-.landing-composer-tools { display: flex; align-items: center; gap: 4px; margin-top: 10px; flex-wrap: wrap; }
+.landing-composer-tools { display: flex; align-items: center; gap: 4px; margin-top: 10px; min-height: 36px; flex-wrap: wrap; }
+.landing-composer-actions { display: flex; align-items: flex-end; gap: 8px; margin-top: 10px; }
 .landing-send {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 9px;
   min-height: 36px;
+  flex: none;
   margin-left: auto;
   padding: 6px 14px;
   border-radius: var(--radius-control);

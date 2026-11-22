@@ -1,4 +1,4 @@
-import type { ThoughtNode, ThoughtEdge, Highlight, Attachment, CanvasEvent, CanvasOp, Ladder } from '../types';
+import type { AgentTurnOptions, ThoughtNode, ThoughtEdge, Highlight, Attachment, CanvasEvent, CanvasOp, Ladder } from '../types';
 
 export interface StaleVerdict { fp: string; p: number; changed: string[] }
 export interface Snapshot {
@@ -80,6 +80,7 @@ export interface NodeSlice {
   duplicateFrames: (frameIds: string[], withContents: boolean) => void;
   /** Set/clear a per-node LLM override (undefined = follow the global picker). */
   setNodeModel: (nodeId: string, model: string | undefined) => void;
+  setNodeAgentOptions: (nodeId: string, options: AgentTurnOptions | undefined) => void;
   /** Explicitly choose a node's execution lane without generating. */
   setNodeExecutionKind: (nodeId: string, kind: 'api' | 'codex') => void;
   /** Archive/unarchive nodes: dimmed on canvas, excluded from every context walk (undoable). */
@@ -98,7 +99,7 @@ export interface NodeSlice {
 export interface AddQuestionOptions {
   parentId?: string;
   /** The execution choice for this question takes precedence over inherited settings. */
-  execution?: { executionKind: 'api' | 'codex'; model?: string };
+  execution?: { executionKind: 'api' | 'codex'; model?: string; agentOptions?: AgentTurnOptions };
   initialAttachments?: Attachment[];
   excludeAllInheritedAttachments?: boolean;
   /** @-mentioned node ids: any not already in the new node's context get a

@@ -29,13 +29,14 @@ import NodeConnectionHandles from './NodeConnectionHandles';
 import NodeResizeControls from './NodeResizeControls';
 import { isConversationStart } from '../lib/graph';
 import { getNodeDisplayName, getNodeNameSource } from '../lib/node-display-name';
+import { displayModelName } from '../lib/model-sources';
 import { nodeExecutionKind } from '../lib/node-execution';
 import { availableExecutionModels, useModels } from '../lib/use-models';
 import NodeMetadataEditor from './NodeMetadataEditor';
 import NodeTokenUsage from './NodeTokenUsage';
 import NodeContextSources from './NodeContextSources';
 import NodeInputRegion from './NodeInputRegion';
-import QuestionAttachments, { QuestionFilePicker } from './QuestionAttachments';
+import QuestionAttachments, { QuestionFilePicker, SentQuestionAttachments } from './QuestionAttachments';
 import { CanvasConnectionLayout } from '../lib/edge-routing-context';
 import './ConversationSurface.css';
 import './NodeConnectionLayout.css';
@@ -145,7 +146,7 @@ export default function ThoughtNode({ id, data, selected }: NodeProps<ThoughtNod
   const fitContentHeight = data.fitContentHeight === true && configuredHeight == null;
   const viewHeight = useStableNodeViewHeight(nodeRef, !overview && configuredHeight == null,
     [id, data.question, data.response, data.responseIndex, data.isLoading, overview, connectionLayout, fitContentHeight,
-      isQuestionComposer ? data.attachments?.length : undefined], configuredWidth,
+      data.attachments?.length], configuredWidth,
     !!(metadataEditing || questionEditActive || editingResponseHere), fitContentHeight);
   // Glyph tier: the node collapses to one seal — the thinking's skeleton
   const glyphTier = zoomTier === 'glyph' && zoomedOut;
@@ -376,8 +377,9 @@ export default function ThoughtNode({ id, data, selected }: NodeProps<ThoughtNod
   // Version navigation changes the displayed author. A pin describes the next generation.
   const generatedModel = data.generatedBy?.[data.responseIndex];
   const headerModel = generatedModel ?? data.model;
+  const authorLabel = headerModel && displayModelName(headerModel);
   const modelHint = generatedModel && data.model && generatedModel !== data.model
-    ? `${headerModel}\n${fmt(t('node.pinnedModel'), { m: data.model })}` : headerModel;
+    ? `${authorLabel}\n${fmt(t('node.pinnedModel'), { m: displayModelName(data.model) })}` : authorLabel;
   const takeawayType = data.summaryTypes?.[data.responseIndex] ?? undefined;
   const takeawayConfidence = data.summaryTypeConfidences?.[data.responseIndex] ?? undefined;
   const conclusive = data.summaryConclusiveness?.[data.responseIndex] ?? undefined;
@@ -506,7 +508,7 @@ export default function ThoughtNode({ id, data, selected }: NodeProps<ThoughtNod
             {!isHuman && <NodeExecutionBadge data={data} />}
             {!isHuman && headerModel && <span className="text-meta text-ink-faint" aria-hidden="true">/</span>}
             {headerModel && <span className="text-meta font-mono text-ink truncate" data-tooltip={modelHint}>
-              {headerModel.split('/').pop()}
+              {displayModelName(headerModel, headerModel.split('/').pop())}
             </span>}
           </div>
           <NodeTokenUsage data={data} />
@@ -661,6 +663,7 @@ export default function ThoughtNode({ id, data, selected }: NodeProps<ThoughtNod
             // The split pane owns question scrolling; pending turns retain
             // their original bounded reading area.
             <div className="conversation-question" data-conversation-question>
+              <SentQuestionAttachments nodeId={id} files={data.attachments} />
               <div
                 onDoubleClick={event => { if (highlighter.active) event.stopPropagation(); else handleDoubleClickQuestion(event); }}
                 data-highlight-turn="question" data-highlighter-active={highlighter.active || undefined}

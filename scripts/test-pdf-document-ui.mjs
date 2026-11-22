@@ -184,6 +184,7 @@ try {
   await root().locator(`[data-pdf-comment-pin="${first.id}"]`).click();
   await comment().locator('textarea').fill('');
   await page.mouse.click(1250, 900);
+  await comment().waitFor({ state: 'hidden' });
   await root().locator(`[data-pdf-comment-pin="${first.id}"]`).click();
   assert.equal(await comment().locator('textarea').inputValue(), '');
   await comment().locator('textarea').press('Escape');
@@ -303,6 +304,40 @@ try {
   assert.equal(await missing.locator('[data-pdf-page]').count(), 0);
   assert.match(await missing.locator('[data-pdf-fallback-text]').textContent(), /Original source text/);
   check('missing local PDF originals also disable annotation creation and retain readable fallback text');
+
+  // Keep the last-page ruler handle of the full-height fixture on screen.
+  await page.setViewportSize({ width: 1500, height: 1050 });
+  const longPdf = await PDFDocument.create();
+  for (let i = 1; i <= 530; i++) {
+    const sheet = longPdf.addPage(i === 530 ? [450, 1100] : [450, 600]);
+    sheet.drawText(`Page ${i}`, { x: 40, y: 80 });
+  }
+  const longBytes = Buffer.from(await longPdf.save());
+  await page.evaluate(({ node, content, size }) => {
+    const att = { ...node.data.attachments[0], id: 'long-pdf-att', content, size, numPages: 530,
+      pdfAnnotations: [{ id: 'end-mark', page: 530, kind: 'highlight', rects: [[0.2, 0.8, 0.3, 0.04]], color: '#ffcc00' }] };
+    window.__store.setState({ nodes: [{ ...node, id: 'long-pdf', data: { ...node.data, attachments: [att] } }], edges: [] });
+    window.__rf.setViewport({ x: 0, y: 0, zoom: 1 }, { duration: 0 });
+  }, { node: fixture, size: longBytes.length, content: longBytes.toString('base64') });
+  const book = page.locator('.react-flow__node[data-id="long-pdf"]');
+  await book.locator('[data-page="1"] .tdag-textlayer span').first().waitFor();
+  assert.equal(await book.locator('[data-pdf-page]').count(), 530);
+  assert.ok(await book.locator('[data-pdf-sized]').count() < 12, 'Opening the file must not request 530 page geometries');
+  await book.locator('[data-overview-ruler-mark]').click();
+  await book.locator('[data-page="530"] .tdag-textlayer span').first().waitFor();
+  await page.waitForFunction(() => {
+    const node = document.querySelector('.react-flow__node[data-id="long-pdf"]');
+    const viewport = node.querySelector('.pdf-page-viewport').getBoundingClientRect();
+    const mark = node.querySelector('[data-pdf-annotation="end-mark"]').getBoundingClientRect();
+    return mark.top >= viewport.top && mark.bottom <= viewport.bottom && !node.querySelector('[data-page="1"] canvas');
+  });
+  const loadedPages = await book.locator('[data-pdf-sized]').count();
+  const canvases = await book.locator('.pdf-document-page canvas').count();
+  assert.ok(loadedPages < 16 && canvases < 10, 'A jump to the last page must skip the intervening pages');
+  await book.locator('.pdf-page-viewport').evaluate(viewport => { viewport.scrollTop = 0; });
+  await book.locator('[data-page="1"] .tdag-textlayer span').first().waitFor();
+  assert.equal(await book.locator('[data-page="530"] canvas').count(), 0);
+  check(`530-page PDF jumps to a highlighted area and back with ${loadedPages} measured pages and ${canvases} mounted canvas(es) at the destination`);
   assert.deepEqual(errors, []); assert.deepEqual(writes, []);
   await writeFile(`${output}/results.json`, JSON.stringify({ checks, errors, writes }, null, 2));
 } catch (error) {

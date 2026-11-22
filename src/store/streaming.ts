@@ -25,7 +25,7 @@ import { isViewerMode } from '../lib/viewer';
 import type { Reference } from '../types';
 import type { StoreState } from './types';
 import { settleAgentActivity, upsertAgentActivity } from '../lib/agent-activity';
-import { nodeExecutionKind, resolveNodeModel } from '../lib/node-execution';
+import { nodeExecutionKind, resolveNodeModel, supportedAgentOptions } from '../lib/node-execution';
 import { toolAttachmentsFingerprint, type CodexNativeHistory } from '../lib/agents/codex-history';
 import type { AgentActivityEntry } from '../types';
 
@@ -222,6 +222,11 @@ export async function runNodeGeneration(
   // Resolved ONCE, here: the picker may change while this node runs, and the
   // node must record what it was asked with, not what the picker says later
   const requestedModel = resolveNodeModel(executionData ? { ...executionData, model: pinnedModel } : undefined, useUiStore.getState().selectedModel ?? serverDefaultModel, modelData?.models);
+  const selectedAgentModel = modelData?.models.find(model => model.id === requestedModel);
+  const savedAgentOptions = supportedAgentOptions(executionData?.agentOptions, selectedAgentModel);
+  const defaultAgentEffort = useUiStore.getState().agentEffort;
+  const agentOptions = savedAgentOptions?.effort === '' && selectedAgentModel?.efforts?.includes(defaultAgentEffort)
+    ? { ...savedAgentOptions, effort: defaultAgentEffort } : savedAgentOptions;
   const harnessRoute = await harnessOutbound(nodeId, requestedModel);
   const agentRoute = harnessRoute ? undefined : await agentOutbound(requestedModel, nodeId);
   let harnessSession: string | undefined;
@@ -546,7 +551,7 @@ export async function runNodeGeneration(
       onReasoning: (_chunk, fullSoFar) => {
         pushStream({ reasoning: fullSoFar });
       },
-    }, toolPrefsNow(), pinnedModel, harnessRoute ?? (agentRoute ? { ...agentRoute, nodeId } : undefined));
+    }, toolPrefsNow(), requestedModel, harnessRoute ?? (isAgentModel(requestedModel) ? { ...agentRoute, nodeId, agentOptions } : undefined));
     flushStream();
     if (!isCurrent()) return; // superseded while finishing: drop everything
     activeAbortControllers.delete(nodeId);

@@ -18,7 +18,9 @@ import { getDocument, GlobalWorkerOptions } from 'pdfjs-dist/legacy/build/pdf.mj
 if (process.versions.electron) {
   GlobalWorkerOptions.workerSrc = import.meta.resolve('pdfjs-dist/legacy/build/pdf.worker.mjs');
 }
-import { execSync, execFileSync } from 'child_process';
+import { execSync, execFile } from 'child_process';
+import { promisify } from 'node:util';
+import { setImmediate as yieldToRequests } from 'node:timers/promises';
 import fs from 'fs';
 import path from 'path';
 import { createRequire } from 'node:module';
@@ -592,10 +594,12 @@ app.use(cors({
     cb(null, false);
   },
 }));
-if (process.env.THOUGHTDAG_DISK_STORAGE === '1') {
-  const dataRoot = process.env.THOUGHTDAG_HOME;
-  if (!dataRoot || !path.isAbsolute(dataRoot)) throw new Error('An absolute THOUGHTDAG_HOME is required for local disk storage');
-  app.use(localRequire('./runtime/browser-storage.cjs').createBrowserStorage({ dataRoot }));
+const projectRoot = fileURLToPath(new URL('.', import.meta.url));
+const storage = localRequire('./runtime/project-storage.cjs').projectStorage(projectRoot, process.env);
+if (storage) {
+  process.env.THOUGHTDAG_HOME = storage.dataRoot;
+  process.env.THOUGHTDAG_DISK_STORAGE = '1';
+  app.use(localRequire('./runtime/browser-storage.cjs').createBrowserStorage(storage));
 }
 app.use(express.json({ limit: '50mb' })); // Support image uploads
 
@@ -622,26 +626,19 @@ app.get(/^\/api\/roots(\/.*)?$/, async (req, res) => {
 app.post('/api/pdf-extract', async (req, res) => {
   try {
     const { base64, renderImages = true } = req.body;
-    // dpi is coerced to a bounded integer BEFORE it can reach a subprocess.
-    // Combined with execFileSync (no shell) below, an injection payload here
-    // is impossible — but validating anyway keeps the value sane.
     const dpi = Math.min(300, Math.max(72, Math.round(Number(req.body?.dpi)) || 150));
     if (!base64) return res.status(400).json({ error: 'Missing base64 field' });
     const buffer = Buffer.from(base64, 'base64');
     console.log(`PDF extract: ${buffer.length} bytes, header: ${buffer.slice(0, 5).toString()}`);
 
-    // Save to temp file for pdftoppm
-    const tempRoot = localRequire('./runtime/local-temp.cjs').thoughtdagTempRoot();
-    const tmpDir = fs.mkdtempSync(path.join(tempRoot, 'pdf-'));
-    const pdfPath = path.join(tmpDir, 'input.pdf');
-    fs.writeFileSync(pdfPath, buffer);
-
     // 1. Extract text via pdfjs-dist
     let text = '';
     let numPages = 0;
+    let task;
     try {
       const uint8 = new Uint8Array(buffer);
-      const doc = await getDocument({ data: uint8, verbosity: 0 }).promise;
+      task = getDocument({ data: uint8, verbosity: 0 });
+      const doc = await task.promise;
       numPages = doc.numPages;
       const pageTexts = [];
       for (let i = 1; i <= numPages; i++) {
@@ -649,34 +646,41 @@ app.post('/api/pdf-extract', async (req, res) => {
           const page = await doc.getPage(i);
           const content = await page.getTextContent();
           pageTexts.push(content.items.map(item => item.str).join(' '));
+          page.cleanup();
         } catch { pageTexts.push(''); }
+        // Node runs the PDF worker in this process. Service other requests
+        // between pages, including stop and streamed answer events.
+        await yieldToRequests();
       }
       text = pageTexts.join('\n\n');
     } catch (textErr) {
       console.warn('pdfjs text extraction failed:', textErr.message);
+    } finally {
+      await task?.destroy();
     }
 
     // 2. Render pages as images via pdftoppm (poppler) — much better quality
     const pageImages = [];
     if (renderImages && POPPLER_AVAILABLE) {
+      let tmpDir;
       try {
+        const tempRoot = localRequire('./runtime/local-temp.cjs').thoughtdagTempRoot();
+        tmpDir = await fs.promises.mkdtemp(path.join(tempRoot, 'pdf-'));
+        const pdfPath = path.join(tmpDir, 'input.pdf');
+        await fs.promises.writeFile(pdfPath, buffer);
         const outPrefix = path.join(tmpDir, 'page');
-        // execFileSync (argv array, no shell): the arguments are passed to
-        // pdftoppm directly, so no value here can ever be interpreted as a
-        // shell command. This is the root fix for the command-injection class.
-        execFileSync('pdftoppm', ['-png', '-r', String(dpi), pdfPath, outPrefix], { timeout: 60000 });
-        const files = fs.readdirSync(tmpDir).filter(f => f.startsWith('page-') && f.endsWith('.png')).sort();
+        await promisify(execFile)('pdftoppm', ['-png', '-r', String(dpi), pdfPath, outPrefix], { timeout: 60000, windowsHide: true });
+        const files = (await fs.promises.readdir(tmpDir)).filter(f => f.startsWith('page-') && f.endsWith('.png')).sort();
         for (const f of files) {
-          const imgBuf = fs.readFileSync(path.join(tmpDir, f));
+          const imgBuf = await fs.promises.readFile(path.join(tmpDir, f));
           pageImages.push(imgBuf.toString('base64'));
         }
       } catch (renderErr) {
         console.warn('pdftoppm rendering failed:', renderErr.message);
+      } finally {
+        if (tmpDir) await fs.promises.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
       }
     }
-
-    // Cleanup temp files
-    try { fs.rmSync(tmpDir, { recursive: true }); } catch {}
 
     console.log(`PDF done: ${numPages} pages, ${text.length} chars, ${pageImages.length} images`);
     res.json({

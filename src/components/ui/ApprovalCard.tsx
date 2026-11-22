@@ -53,7 +53,7 @@ export function ApprovalCard({ nodeId, request, compact }: { nodeId: string; req
 
   const stop = (e: React.SyntheticEvent) => e.stopPropagation();
   const btn = compact ? 'text-control px-2.5 py-1' : 'text-control px-3 py-1.5';
-  const primary = `${btn} text-white rounded-control bg-action hover:bg-action-strong transition-colors disabled:opacity-50 whitespace-nowrap`;
+  const primary = `${btn} ${isApproval ? 'text-amber-950' : 'text-white'} rounded-control bg-action hover:bg-action-strong transition-colors disabled:opacity-50 whitespace-nowrap`;
   const secondary = `${btn} text-ink rounded-control border border-line hover:bg-wash transition-colors disabled:opacity-50 whitespace-nowrap`;
 
   if (isApproval && request.toolName === 'codex') {

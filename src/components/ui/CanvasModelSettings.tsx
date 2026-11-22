@@ -3,7 +3,7 @@ import { ChevronRight } from 'lucide-react';
 import { fmt, useT } from '../../i18n';
 import { apiVisionModels } from '../../lib/background-model';
 import { runtimeOf } from '../../lib/agents/agent-runtime';
-import { defaultModelId, groupBySource, modelName } from '../../lib/model-sources';
+import { defaultModelId, displayModelName, groupBySource, modelName } from '../../lib/model-sources';
 import { IN_HARNESS } from '../../lib/embedded';
 import { effectiveProvider, JUDGE_LABELS, judgeConfigured, judgeTripped } from '../../lib/judge';
 import { profileLines } from '../../lib/profile';
@@ -45,7 +45,7 @@ export function DefaultModelSettings() {
         useUiStore.getState().setSelectedModel(id === data?.default ? null : id);
       }}>
       {!active && <option value="" disabled>{t(models.length ? 'settingsAI.chooseModel' : 'model.none')}</option>}
-      {active && !models.some(model => model.id === active) && <option value={active} disabled>{active}</option>}
+      {active && !models.some(model => model.id === active) && <option value={active} disabled>{displayModelName(active)}</option>}
       {sources.map(source => <optgroup key={source.key} label={source.label}>
         {source.models.map(model => <option key={model.id} value={model.id}>{modelName(model, source)}</option>)}
       </optgroup>)}

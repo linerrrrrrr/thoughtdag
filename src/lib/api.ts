@@ -8,7 +8,7 @@ import { setModelsCache } from './use-models';
 import { directProvider, directLlmStream, directLlmCall } from './direct-llm';
 import { errorText } from './error-text';
 import { IN_HARNESS } from './embedded';
-import type { FormAnswer } from '../types';
+import type { AgentTurnOptions, FormAnswer } from '../types';
 
 const API_URL = `${API_BASE}/api/claude`;
 // Providers only travel when configured; undefined keeps .env-only setups
@@ -71,12 +71,12 @@ export interface PdfExtractResult {
   imagesUnavailable?: boolean;
 }
 
-// Extract text + page images from a PDF via the proxy. Throws on HTTP errors.
+// Import needs only the text layer. The reader renders original pages on demand.
 export async function extractPdf(base64: string): Promise<PdfExtractResult> {
   const res = await fetch(PDF_EXTRACT_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ base64 }),
+    body: JSON.stringify({ base64, renderImages: false }),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
@@ -286,7 +286,7 @@ export async function llmCallStream(
   /** Agent lanes only: which working directory the turn runs in, which
       session it continues, or which DSH session+turn anchor it forks from.
       The harness fields are ignored by every non-Harness backend. */
-  harness?: { cwd?: string; session?: string; forkSession?: string; forkAnchor?: string; sessionPath?: string; sessionId?: string; forkEntryId?: string; nodeId?: string; continue?: boolean; permission?: 'auto' | 'allow' },
+  harness?: { cwd?: string; session?: string; forkSession?: string; forkAnchor?: string; sessionPath?: string; sessionId?: string; forkEntryId?: string; nodeId?: string; continue?: boolean; permission?: 'auto' | 'allow'; agentOptions?: AgentTurnOptions },
 ): Promise<string> {
   // On the Workers deployment, OpenRouter models stream straight from the
   // browser — the proxy's CPU allowance can't survive big contexts + heavy
@@ -297,7 +297,7 @@ export async function llmCallStream(
   if (modelId && isAgentModel(modelId)) {
     if (!window.desktopAgents) throw new Error('The local agent connection is unavailable. Start the local server or desktop app and retry.');
     callbacks?.onDispatch?.({ messages: contextMessages, images: images ?? [], model: modelId, toolPrefs: toolPrefs ?? {}, lane: 'proxy' });
-    return agentCallStream(contextMessages, onChunk, signal, images, callbacks, modelId, harness?.cwd ? { cwd: harness.cwd, sessionPath: harness.sessionPath, sessionId: harness.sessionId, forkEntryId: harness.forkEntryId, continue: harness.continue } : undefined, harness?.nodeId);
+    return agentCallStream(contextMessages, onChunk, signal, images, callbacks, modelId, harness?.cwd ? { cwd: harness.cwd, sessionPath: harness.sessionPath, sessionId: harness.sessionId, forkEntryId: harness.forkEntryId, continue: harness.continue } : undefined, harness?.nodeId, harness?.agentOptions);
   }
   contextMessages = contextMessages.map(({ role, content }) => ({ role, content }));
   images = await imagesForModel(modelId, images?.map(({ data, mimeType, hasCompanion }) => ({ data, mimeType, hasCompanion })));

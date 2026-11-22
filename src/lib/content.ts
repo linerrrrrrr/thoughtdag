@@ -1,10 +1,11 @@
-import type { ThoughtData, ThoughtNode } from '../types';
+import type { Attachment, ThoughtData, ThoughtNode } from '../types';
 import { generateId, countTokens } from '../utils';
 import { useStore } from '../store';
 import { triggerParadigmCascade } from '../store/streaming';
 import { placeNewNodes } from './layout';
 import { COLORS } from './constants';
-import { processFile } from './attachments';
+import { openPdf, processFile, renderPdfRecognitionPage } from './attachments';
+import { loadNodePdfFile } from './attachment-vault';
 import { fetchUrlSnapshot, llmCall } from './api';
 import { backgroundCall, apiVisionModels, BACKGROUND_TIMEOUT_MS } from './background-model';
 import { getModelsOnce } from './use-models';
@@ -289,6 +290,33 @@ export async function extractImage(nodeId: string, attId: string): Promise<void>
 /** Marker the reader uses to keep page provenance inside the extracted copy. */
 export const PDF_PAGE_MARK = (n: number) => `<!-- tdag-page:${n} -->`;
 
+export function recognitionPageCount(att?: Attachment) {
+  if (att?.type !== 'application/pdf') return 0;
+  if (att.pageImages?.length) return att.pageImages.length;
+  return att.content || att.contentInVault || att.pdfFileRevision || att.pdfFileContent ? att.numPages ?? 0 : 0;
+}
+
+async function* recognitionImages(att: Attachment, isCancelled: () => boolean) {
+  // Older canvases may have only their saved PNGs.
+  if (att.pageImages?.length) {
+    for (const [index, png] of att.pageImages.entries()) {
+      if (isCancelled()) return;
+      yield { page: index + 1, total: att.pageImages.length, image: await normalizeImageForVision(png, 'image/png') };
+    }
+    return;
+  }
+  const doc = await openPdf(await loadNodePdfFile(att));
+  try {
+    for (let page = 1; page <= doc.numPages; page++) {
+      if (isCancelled()) return;
+      const data = await renderPdfRecognitionPage(doc, page).catch(() => undefined);
+      yield { page, total: doc.numPages, image: data ? { data, mimeType: 'image/jpeg' } : undefined };
+    }
+  } finally {
+    await doc.destroy();
+  }
+}
+
 /**
  * Per-page vision recognition for a PDF attachment: the image-extraction
  * channel applied page by page. Each rendered page image goes through the
@@ -305,23 +333,24 @@ export async function recognizePdfPages(
   isCancelled: () => boolean,
 ): Promise<void> {
   const att = useStore.getState().nodes.find((n) => n.id === nodeId)?.data.attachments?.find((a) => a.id === attId);
-  if (!att || att.type !== 'application/pdf' || !att.pageImages?.length) return;
+  if (!att || !recognitionPageCount(att)) return;
+  const project = useStore.persist.getOptions().name;
+  const stopped = () => isCancelled() || project !== useStore.persist.getOptions().name;
 
   const data = await getModelsOnce();
   const vision = apiVisionModels(data?.models ?? []);
   if (vision.length === 0) return; // no vision model: the capabilities panel explains
   const candidates = rankVision(vision);
 
-  const pages = att.pageImages;
   const parts: string[] = [];
   let winner: string | undefined; // sticky: once a model works, keep it for the rest
-  for (let i = 0; i < pages.length; i++) {
-    if (isCancelled()) return;
-    const image = await normalizeImageForVision(pages[i], 'image/png');
+  for await (const { page, total, image } of recognitionImages(att, stopped)) {
+    if (stopped()) return;
     const order = winner ? [...candidates].sort((a, b) => (b.id === winner ? 1 : 0) - (a.id === winner ? 1 : 0)) : candidates;
     let pageMd: string | null = null;
     for (const model of order) {
-      if (isCancelled()) return;
+      if (!image) break;
+      if (stopped()) return;
       try {
         pageMd = (await llmCall([{ role: 'user', content: t('content.pdfPagePrompt') }], [image], model.id, { timeoutMs: BACKGROUND_TIMEOUT_MS })).trim();
         winner = model.id;
@@ -331,10 +360,10 @@ export async function recognizePdfPages(
         if (/api.?key|unauthorized|forbidden|401|403|invalid/i.test(msg)) extractionAuthFailed.add(model.id);
       }
     }
-    parts.push(`${PDF_PAGE_MARK(i + 1)}\n\n${pageMd ?? `*${fmt(t('reader.pageFail'), { n: i + 1 })}*`}`);
-    onProgress(i + 1, pages.length);
+    parts.push(`${PDF_PAGE_MARK(page)}\n\n${pageMd ?? `*${fmt(t('reader.pageFail'), { n: page })}*`}`);
+    onProgress(page, total);
   }
-  if (isCancelled()) return;
+  if (stopped()) return;
   if (!winner) {
     toast('error', t('content.extractFailed'));
     return;

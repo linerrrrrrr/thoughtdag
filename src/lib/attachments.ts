@@ -3,7 +3,8 @@ import type { PDFDocumentProxy } from 'pdfjs-dist';
 import { generateId } from '../utils';
 import { extractPdf } from './api';
 import { PDF_VISION_PAGE_THRESHOLD } from './constants';
-import { internAttachment } from './attachment-vault';
+import { decodeBytes, internAttachment } from './attachment-vault';
+import { loadPdfjs } from './pdf-document-cache';
 import { NOTEBOOK_EXTENSION, NOTEBOOK_FIGURE_THRESHOLD, NOTEBOOK_TYPE, isNotebook, notebookMaterial, parseNotebook } from './notebook';
 import { toast } from './ui-store';
 import { fmt, t } from '../i18n';
@@ -116,45 +117,35 @@ export function readFileToAttachment(file: File, id = generateId()): Promise<Att
   });
 }
 
-// Open a base64 PDF with pdfjs in the browser (worker configured by the import).
-export async function openPdf(base64: string): Promise<PDFDocumentProxy> {
-  const [m, worker] = await Promise.all([
-    import('pdfjs-dist'),
-    import('pdfjs-dist/build/pdf.worker.min.mjs?url'),
-  ]);
-  m.GlobalWorkerOptions.workerSrc = worker.default;
-  const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
-  return m.getDocument({ data: bytes, verbosity: 0 }).promise;
+// A file import already has bytes; saved originals come from the vault as base64.
+export async function openPdf(source: string | Uint8Array): Promise<PDFDocumentProxy> {
+  const pdfjs = await loadPdfjs();
+  const task = pdfjs.getDocument({ data: typeof source === 'string' ? decodeBytes(source) : source, verbosity: 0 });
+  try {
+    return await task.promise;
+  } catch (error) {
+    await task.destroy();
+    throw error;
+  }
 }
 
-const PAGE_RENDER_DPI = 150; // matches the proxy's pdftoppm default
-
-// Render every page to a base64 PNG in the browser — the local stand-in for
-// the proxy's poppler when it is absent (the desktop app inherits a GUI PATH
-// that hides Homebrew; the public demo has no backend at all). Same shape
-// the proxy returns; the reader and Recognize consume both interchangeably.
-export async function renderPdfPages(doc: PDFDocumentProxy): Promise<string[]> {
-  const scale = PAGE_RENDER_DPI / 72; // PDF user units are 72/inch
-  const images: string[] = [];
-  for (let i = 1; i <= doc.numPages; i++) {
-    const canvas = document.createElement('canvas');
-    try {
-      const page = await doc.getPage(i);
-      const viewport = page.getViewport({ scale });
-      canvas.width = Math.ceil(viewport.width);
-      canvas.height = Math.ceil(viewport.height);
-      const ctx = canvas.getContext('2d');
-      if (!ctx) throw new Error('no 2d context');
-      await page.render({ canvasContext: ctx, viewport }).promise;
-    } catch {
-      // keep page numbering intact for (p.N) anchors and Recognize: a failed
-      // page becomes a blank frame instead of shifting every page after it
-      canvas.width = 8;
-      canvas.height = 8;
-    }
-    images.push(canvas.toDataURL('image/png').split(',')[1]);
+// The vision model consumes one bounded image at a time, even for a whole book.
+export async function renderPdfRecognitionPage(doc: PDFDocumentProxy, number: number): Promise<string> {
+  const page = await doc.getPage(number);
+  const canvas = document.createElement('canvas');
+  try {
+    const size = page.getViewport({ scale: 1 });
+    const viewport = page.getViewport({ scale: Math.min(150 / 72, 1568 / Math.max(size.width, size.height)) });
+    canvas.width = Math.ceil(viewport.width);
+    canvas.height = Math.ceil(viewport.height);
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error('No 2D context');
+    await page.render({ canvasContext: ctx, viewport, background: '#fff' }).promise;
+    return canvas.toDataURL('image/jpeg', 0.92).split(',')[1];
+  } finally {
+    canvas.width = canvas.height = 0;
+    page.cleanup();
   }
-  return images;
 }
 
 export interface ProcessFileCallbacks {
@@ -237,51 +228,37 @@ export async function processFile(file: File, cb: ProcessFileCallbacks, id?: str
     // failure it is so the browser fallback below takes over.
     if (!data.numPages && !data.text?.trim()) throw new Error('empty extraction result');
     const numPages = data.numPages || 0;
-    // The proxy answers without images when poppler is missing (minimal
-    // installs; a desktop launch never sees Homebrew's PATH). Pages matter —
-    // Recognize and the digest for scanned PDFs dead-end without them — so
-    // render them right here instead.
-    let images = data.images;
-    if (!images?.length) {
-      try {
-        const doc = await openPdf(att.content);
-        images = await renderPdfPages(doc);
-        void doc.destroy();
-      } catch { images = undefined; }
-    }
     cb.update(att.id, {
       extractedText: data.text,
-      pageImages: images?.length ? images : undefined,
       numPages,
       renderMode: numPages > PDF_VISION_PAGE_THRESHOLD ? 'text-only' : 'full',
       isExtracting: false,
     });
   } catch {
-    // No extraction backend at all (the public demo has none): extract the
-    // text layer and render the pages in the browser instead. Summaries,
-    // digests, the text view and Recognize all keep working.
+    // The public demo has no extraction backend. Read the same text layer
+    // with the browser worker and leave scanned pages in the original.
+    let doc: PDFDocumentProxy | undefined;
     try {
-      const doc = await openPdf(att.content);
+      doc = await openPdf(new Uint8Array(await file.arrayBuffer()));
       const pages: string[] = [];
       for (let i = 1; i <= doc.numPages; i++) {
         try {
           const page = await doc.getPage(i);
           const content = await page.getTextContent();
           pages.push(content.items.map((it) => ('str' in it ? it.str : '')).join(' '));
+          page.cleanup();
         } catch { pages.push(''); }
       }
-      let images: string[] | undefined;
-      try { images = await renderPdfPages(doc); } catch { images = undefined; }
-      void doc.destroy();
       cb.update(att.id, {
         extractedText: pages.join('\n\n').trim(),
-        pageImages: images?.length ? images : undefined,
         numPages: doc.numPages,
         renderMode: doc.numPages > PDF_VISION_PAGE_THRESHOLD ? 'text-only' : 'full',
         isExtracting: false,
       });
     } catch {
       cb.update(att.id, { isExtracting: false });
+    } finally {
+      await doc?.destroy();
     }
   }
 }

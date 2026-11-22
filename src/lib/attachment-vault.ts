@@ -22,6 +22,18 @@ const REVISION_PREFIX = 'att-docx-revision:';
 const revisionKey = (revision: string) => `${REVISION_PREFIX}${revision}`;
 const pdfRevisionKey = (revision: string) => `att-pdf-revision:${revision}`;
 
+// The reader and managed-file sync can request the same immutable document
+// together. Share the download and decoding only while the read is in flight.
+const pendingReads = new Map<string, Promise<string>>();
+function readVaultContent(key: string): Promise<string> {
+  let read = pendingReads.get(key);
+  if (!read) {
+    read = idbGet<string>(key).then(content => content ?? '').finally(() => pendingReads.delete(key));
+    pendingReads.set(key, read);
+  }
+  return read;
+}
+
 export type DocumentRevisionPatch = Pick<Attachment,
   'editedDocxRevision' | 'editedDocxContent' | 'editedDocxSavedAt'>;
 
@@ -33,6 +45,17 @@ export function encodeBytes(bytes: Uint8Array): string {
   return btoa(binary);
 }
 
+export function decodeBytes(base64: string): Uint8Array<ArrayBuffer> {
+  const native = (Uint8Array as Uint8ArrayConstructor & {
+    fromBase64?: (source: string) => Uint8Array<ArrayBuffer>;
+  }).fromBase64;
+  if (native) return native(base64);
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < bytes.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+
 export async function savePdfFileRevision(content: string): Promise<string> {
   const id = crypto.randomUUID();
   await idbSet(pdfRevisionKey(id), content);
@@ -41,7 +64,7 @@ export async function savePdfFileRevision(content: string): Promise<string> {
 
 export async function loadNodePdfFile(att: Attachment): Promise<string> {
   if (att.pdfFileContent !== undefined) return att.pdfFileContent;
-  if (att.pdfFileRevision) return (await idbGet<string>(pdfRevisionKey(att.pdfFileRevision))) ?? '';
+  if (att.pdfFileRevision) return readVaultContent(pdfRevisionKey(att.pdfFileRevision));
   return loadAttachmentContent(att);
 }
 
@@ -97,7 +120,7 @@ export async function internAttachment(att: Attachment): Promise<Attachment> {
     missing (cleared storage) — callers surface their own error state. */
 export async function loadAttachmentContent(att: Attachment): Promise<string> {
   if (!att.contentInVault) return att.content;
-  return (await idbGet<string>(vaultKey(att.contentVaultId ?? att.id))) ?? '';
+  return readVaultContent(vaultKey(att.contentVaultId ?? att.id));
 }
 
 /** Read the latest explicitly saved DOCX. A missing revision must surface as
@@ -105,7 +128,7 @@ export async function loadAttachmentContent(att: Attachment): Promise<string> {
  * Legacy HTML copies deliberately do not overwrite the native source. */
 export async function loadDocumentContent(att: Attachment): Promise<string> {
   if (att.editedDocxContent !== undefined) return att.editedDocxContent;
-  if (att.editedDocxRevision) return (await idbGet<string>(revisionKey(att.editedDocxRevision))) ?? '';
+  if (att.editedDocxRevision) return readVaultContent(revisionKey(att.editedDocxRevision));
   return loadAttachmentContent(att);
 }
 

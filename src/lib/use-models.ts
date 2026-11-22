@@ -3,6 +3,7 @@ import { useSyncExternalStore } from 'react';
 import { API_BASE } from './constants';
 import { storedProviders, pushProviders, refreshStoredProviders } from './runtime-providers';
 import { agentCatalog, AGENT_PROVIDER, AGENT_RUNTIMES, agentTarget, isAgentModel, runtimeOf, type RuntimeStatus } from './agents/agent-runtime';
+import { displayModelName } from './model-sources';
 import { modelMatchesExecution, type NodeExecutionKind } from './node-execution';
 import type { AgentRuntime } from '../types';
 import { t, fmt } from '../i18n';
@@ -17,6 +18,8 @@ export interface ModelInfo {
   efforts?: string[];
   /** the runtime's own default among them, when it says */
   defaultEffort?: string | null;
+  supportsFast?: boolean;
+  defaultFast?: boolean;
 }
 
 export interface Capabilities {
@@ -127,25 +130,26 @@ function resolvedNames(): Record<string, string> {
 function withResolvedNames(models: ModelInfo[]): ModelInfo[] {
   const names = resolvedNames();
   return models.map((m) => {
-    const r = m.provider === AGENT_PROVIDER ? names[m.id] : undefined;
-    if (!r || m.id.endsWith('/' + r) || m.name.includes(r)) return m;
+    const resolved = m.provider === AGENT_PROVIDER ? names[m.id] : undefined;
+    if (!resolved || m.id.endsWith('/' + resolved)) return m;
+    const r = displayModelName(m.id, resolved);
+    if (displayModelName(m.id, m.name).includes(r)) return m;
     return { ...m, name: `${m.name} · ${fmt(t('models.resolvedLast'), { r })}` };
   });
 }
 
-/** A model id as the record should read: an agent model in full (runtime ·
- *  model, the resolved name once known, the effort the version ran at); an
- *  API model by its bare name. Pure: reads only the local caches. */
-export function describeModel(id: string | null | undefined, effort?: string | null, opts?: { /** the card form: runtime · model · effort, without the resolved name */ compact?: boolean }): string {
+/** Display the recorded model with its resolved alias and the effort used for that version. */
+export function describeModel(id: string | null | undefined, effort?: string | null, opts?: { /** omit the resolved alias on compact cards */ compact?: boolean }): string {
   if (!id) return '';
   const target = agentTarget(id);
   if (!target) return id.split('/').pop() ?? id;
   let remembered: ModelInfo[] = [];
   try { remembered = JSON.parse(appSettings.getItem(AGENT_CACHE_KEY) ?? '[]'); } catch { remembered = []; }
   const entry = remembered.find((m) => m && m.id === id);
-  const base = entry?.name ?? `${AGENT_RUNTIMES[target.runtime].label} · ${target.id}`;
+  const base = displayModelName(id, entry?.name ?? `${AGENT_RUNTIMES[target.runtime].label} · ${target.id}`);
   const resolved = opts?.compact ? undefined : resolvedNames()[id];
-  const withName = resolved && !base.includes(resolved) ? `${base} · ${resolved}` : base;
+  const alias = resolved && displayModelName(id, resolved);
+  const withName = alias && !base.includes(alias) ? `${base} · ${alias}` : base;
   return effort ? `${withName} · ${effort}` : withName;
 }
 

@@ -192,6 +192,7 @@ export default function FocusPanel({ nodeId, onFocusNode, snapshotNode }: { node
                 nodeId={nodeId!}
                 base={data.agentSession?.cwd ?? data.importSource?.cwd}
                 question={data.question}
+                attachments={data.attachments}
                 highlights={questionHighlights}
                 penActive={highlighter.active}
                 displayQuestion={originalQuestionBeforeInstructions(data.question, activeAgentActivity(data))}

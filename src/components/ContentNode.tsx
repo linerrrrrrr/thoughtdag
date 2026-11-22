@@ -118,6 +118,9 @@ export default function ContentNode({ id, data, selected }: NodeProps<ThoughtNod
   const [commentingDocumentId, setCommentingDocumentId] = useState<string | null>(null);
   const [activeNativeDocumentId, setActiveNativeDocumentId] = useState<string | null>(null);
   const [documentActionsHost, setDocumentActionsHost] = useState<HTMLDivElement | null>(null);
+  const onAnnotationEditingChange = useCallback((attachmentId: string, active: boolean) => {
+    setCommentingDocumentId(current => active ? attachmentId : current === attachmentId ? null : current);
+  }, []);
   const onNativeEditingChange = useCallback((attachmentId: string, active: boolean) => {
     setActiveNativeDocumentId(current => active ? attachmentId : current === attachmentId ? null : current);
   }, []);
@@ -454,8 +457,8 @@ export default function ContentNode({ id, data, selected }: NodeProps<ThoughtNod
                   actionsHost={documentActionsHost}
                   fill={attachments.length === 1}
                   short={shortCard}
-                  onAnnotationEditingChange={active => setCommentingDocumentId(current => active ? att.id : current === att.id ? null : current)}
-                  onRemove={() => removeAttachment(id, att.id)} />
+                  onAnnotationEditingChange={onAnnotationEditingChange}
+                  onRemove={removeAttachment} />
               ) : att.type.startsWith('image/') ? (
                 // Pasted images live on the canvas as the image itself —
                 // resize the card (right edge) to scale it

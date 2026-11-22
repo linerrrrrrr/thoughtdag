@@ -151,10 +151,11 @@ try {
 
   const longCatalog = { ...catalog, models: [catalog.models[0], ...Array.from({ length: 24 }, (_, i) => ({
     id: `codex/codex/test-model-${i + 1}`, name: `Codex · test-model-${i + 1}`, provider: '__agent__', vision: false,
-    ...(i === 23 ? { efforts: ['low', 'high'], defaultEffort: 'low' } : {}),
+    ...(i === 23 ? { efforts: ['low', 'high'], defaultEffort: 'low', supportsFast: true } : {}),
   }))] };
   await page.evaluate(installNodeAgentCatalog, longCatalog.models);
   await page.evaluate(async () => (await window.__importLive('/src/lib/use-models.ts')).recheckAgents());
+  await panel().locator('[data-agent-model-list]').click();
   const lastLong = panel().getByRole('button', { name: 'test-model-24', exact: true });
   await lastLong.waitFor({ state: 'attached' });
   assert.equal(await panel().evaluate(el => el.scrollHeight > el.clientHeight), true);
@@ -170,6 +171,10 @@ try {
   await lastLong.click();
   assert.equal((await nodeData()).model, 'codex/codex/test-model-24');
   assert.equal((await nodeData()).isEditing, true);
+  await panel().getByRole('slider').press('End');
+  await panel().locator('[data-agent-fast]').click();
+  assert.deepEqual((await nodeData()).agentOptions, { effort: 'high', fast: true });
+  await page.keyboard.press('Escape');
   assert.equal(await panel().count(), 0);
   assert.equal(await page.evaluate(() => window.__ui.getState().agentEffort), previousEffort);
   assert.equal(await card().locator('[data-canvas-question-editor]').inputValue(), 'Unsent draft');
@@ -186,10 +191,14 @@ try {
   const readerTrigger = reader.locator('[data-node-execution-picker] [data-model-picker-trigger]');
   await readerTrigger.click();
   await assertAnchored(readerTrigger);
+  assert.equal(await panel().getByRole('slider').getAttribute('aria-valuetext'), 'High');
+  assert.equal(await panel().locator('[data-agent-fast]').getAttribute('aria-pressed'), 'true');
+  await panel().locator('[data-agent-model-list]').click();
   await panel().getByRole('button', { name: 'test-model-1', exact: true }).click();
+  assert.equal((await nodeData()).agentOptions, undefined);
+  assert.equal(await panel().locator('[data-agent-fast]').count(), 0);
   assert.equal((await nodeData()).model, 'codex/codex/test-model-1');
   assert.equal(await reader.locator('[data-conversation-question] textarea').inputValue(), 'Unsent draft');
-  await readerTrigger.click();
   await page.mouse.click(750, 850);
   assert.equal(await panel().count(), 0);
   assert.equal(await reader.locator('[data-conversation-question] textarea').inputValue(), 'Unsent draft');

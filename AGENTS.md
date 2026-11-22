@@ -17,7 +17,7 @@ npm run lint
 ## 架构
 
 - `server.mjs` — 唯一后端文件：Express 代理，用 Vercel AI SDK（`ai` + `@ai-sdk/openai-compatible` + `zhipu-ai-provider`）调 LLM；含 agentic 网页搜索 + 行内引用（搜索后保证有综合回答）。
-- `src/store/` — zustand 全局状态；持久化用 idb-keyval（IndexedDB）。
+- `src/store/` — Zustand 全局状态。本机源码项目默认通过 `src/lib/disk-storage.ts` 读写项目内的 `local-data/data/thoughtdag.sqlite`，纯静态网页使用 IndexedDB。
 - `src/components/` — 画布基于 `@xyflow/react`（React Flow）：`ThoughtNode`、`ThoughtEdgeView`、`SelectionToolbar`（框选可切换节点/线条；多选节点可整组改尺寸，位置不变；对齐直接执行并可撤销）、`focus-panel/`。
 - `src/lib/api.ts` — 前端到 server.mjs 的调用层。
 - `src/i18n/` — 中英双语。

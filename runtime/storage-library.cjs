@@ -2,7 +2,7 @@
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { randomUUID } = require('node:crypto');
-const { selectPrimaryNamespace, mergeLegacyStorage } = require('./merge-legacy-storage.cjs');
+const { selectPrimaryNamespace, mergeLegacyStorage, fileRecords } = require('./merge-legacy-storage.cjs');
 
 const UUID = /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i;
 const validId = value => typeof value === 'string' && UUID.test(value);
@@ -17,16 +17,20 @@ async function readJson(file) {
 }
 
 function storageLibrary(io) {
-  const { root, recordPath, atomicWrite, listKeys } = io;
+  const { root, recordPath, atomicWrite, listKeys, database } = io;
   const pointer = path.join(root, 'library.json');
   const newManifest = (kind, origin) => ({ version: 1, kind, origin, ready: kind === 'library', createdAt: new Date().toISOString() });
-  const save = state => atomicWrite(pointer, JSON.stringify(state));
+  const save = state => database ? database.saveState(state) : atomicWrite(pointer, JSON.stringify(state));
   async function stateOnDisk() {
-    const raw = await readOptional(pointer);
+    const raw = database?.readState() ?? await readOptional(pointer);
     if (raw === null) return null;
     const state = JSON.parse(raw);
     if (!state || state.version !== 1 || !validId(state.namespace) || !Array.isArray(state.sources)) {
       throw failure(500, 'Invalid project storage manifest');
+    }
+    if (database && database.readState() === null) {
+      if (!await readOptional(path.join(root, state.namespace, 'manifest.json'))) throw failure(503, 'Project storage is missing');
+      await database.adopt(state, fileRecords(io, state.namespace));
     }
     return state;
   }
@@ -79,7 +83,7 @@ function storageLibrary(io) {
     let state = await stateOnDisk();
     const initialize = !state;
     if (state) {
-      if (!await readOptional(path.join(root, state.namespace, 'manifest.json'))) throw failure(503, 'Project storage is missing');
+      if (!database && !await readOptional(path.join(root, state.namespace, 'manifest.json'))) throw failure(503, 'Project storage is missing');
       await finishPending(state);
       await archive(state);
     }
@@ -91,6 +95,7 @@ function storageLibrary(io) {
         await atomicWrite(path.join(root, namespace, 'manifest.json'), JSON.stringify(newManifest('library', null)));
       }
       state = { version: 1, namespace, sources: [] };
+      if (database) await database.adopt(state, fileRecords(io, namespace));
     }
     const fresh = profiles.filter(profile => !state.sources.some(source => source.namespace === profile.namespace));
     if (fresh.length) state.pending = await Promise.all(fresh.map(receipt));
@@ -101,7 +106,7 @@ function storageLibrary(io) {
   async function active() {
     const state = await stateOnDisk();
     if (!state || state.pending) throw failure(409, 'Reconnect to the project storage');
-    if (!await readOptional(path.join(root, state.namespace, 'manifest.json'))) throw failure(503, 'Project storage is missing');
+    if (!database && !await readOptional(path.join(root, state.namespace, 'manifest.json'))) throw failure(503, 'Project storage is missing');
     return state;
   }
   function migrated(state, body) {

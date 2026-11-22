@@ -2,9 +2,11 @@
 
 ## What stays local
 
-Canvases, model credentials, imported documents, and local session mirrors stay on your machine. Canvas state defaults to browser IndexedDB; optional folder backup writes `.thoughtdag.json` files.
+When running from a source checkout, the canvas catalog, nodes, edges, attachment records, and application settings default to the SQLite database at `local-data/data/thoughtdag.sqlite`. The checkout's local browser and Electron entry points share this database. Separate checkouts retain independent libraries. Git ignores `local-data/`. A static web deployment uses browser IndexedDB. Optional folder backup writes `.thoughtdag.json` files.
 
-A local installation with an absolute `THOUGHTDAG_HOME` and `THOUGHTDAG_DISK_STORAGE=1` uses one canvas library per data directory. Localhost, loopback IP addresses, and different ports share the same canvases, attachments, and settings when they use that directory. Point a test instance at a separate `THOUGHTDAG_HOME` for an independent library.
+Local installations can select a data root explicitly with an absolute `THOUGHTDAG_HOME` and `THOUGHTDAG_DISK_STORAGE=1`. Existing custom directories retain file storage compatibility. Local addresses and ports that use the same data directory share canvases, attachments, and settings.
+
+To migrate an existing installation into its checkout, close the instances using the old directory and run `node scripts/migrate-project-data.mjs "<old data root>" "<checkout>/local-data/data"`. Migrate each library into its own checkout. External files and editable documents live in `workspaces/` beside the database. Include the entire `local-data/data/` directory in a complete backup.
 
 The first upgrade merges the catalogs from earlier local addresses. Canvases with distinct IDs keep their own entries even when their names match. Verified empty default canvases can be skipped. Retired storage directories are preserved under `browser-storage/legacy-backup/`. The first connection also copies and verifies any eligible browser-only records and retains their originals. Reopening the app after clearing browser data reconnects to the same library. The page offers a retry if the local service is unavailable.
 

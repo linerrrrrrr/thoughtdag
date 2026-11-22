@@ -1,6 +1,6 @@
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 import type { Attachment } from '../types';
-import { loadNodePdfFile } from './attachment-vault';
+import { decodeBytes, loadNodePdfFile } from './attachment-vault';
 
 type Pdfjs = typeof import('pdfjs-dist');
 type PdfTask = ReturnType<Pdfjs['getDocument']>;
@@ -57,7 +57,7 @@ export const pdfDocumentKey = (projectId: string | null, nodeId: string, attachm
 export async function readPdfPageBytes(attachment: Attachment): Promise<Uint8Array> {
   const content = await loadNodePdfFile(attachment);
   if (!content) throw new Error('PDF source missing');
-  const bytes = Uint8Array.from(atob(content), character => character.charCodeAt(0));
+  const bytes = decodeBytes(content);
   if (!attachment.pdfSavedAnnotations?.length) return bytes;
   const { canvasPdfPages } = await import('./pdf-annotations');
   return canvasPdfPages(bytes, attachment.pdfSavedAnnotations);

@@ -99,8 +99,8 @@ const ActivityRow = memo(function ActivityRow({ entry, compact, base, questionHi
   const Icon = entry.kind === 'command' ? SquareTerminal : entry.kind === 'reasoning' ? Brain : entry.kind === 'plan' ? ListTodo : entry.kind === 'file' ? FileDiff : entry.kind === 'commentary' || entry.kind === 'message' ? MessageSquare : entry.kind === 'tool' ? Wrench : Activity;
   const title = entry.title || (entry.sourceType === 'turn' ? t('activity.turn') : entry.sourceType === 'thread/tokenUsage/updated' ? t('activity.usage') : entry.sourceType === 'thread/status/changed' ? t('activity.session') : entry.sourceType === 'contextCompaction' ? t('activity.compaction') : entry.sourceType === 'autoApprovalReview' ? t('activity.review') : entry.kind === 'reasoning' ? t('activity.reasoning') : entry.kind === 'command' ? t('activity.command') : entry.kind === 'file' ? t('activity.file') : entry.kind === 'plan' ? t('activity.plan') : entry.kind === 'tool' ? t('activity.tool') : t('activity.event'));
   const status = isRunning ? t('activity.running') : entry.status === 'failed' ? t('activity.failed') : entry.status === 'interrupted' ? t('activity.interrupted') : t('activity.done');
-  const details = entry.details == null ? '' : formatDetails(entry.details);
-  const hasBody = !!(entry.text || entry.output || entry.command || details);
+  const hasDetails = entry.details != null && entry.details !== '';
+  const hasBody = !!(entry.text || entry.output || entry.command || hasDetails);
 
   return (
     <li className={`activity-row activity-${entry.kind}`} data-activity-id={entry.id} data-activity-kind={entry.kind} data-activity-status={entry.status}>
@@ -121,7 +121,7 @@ const ActivityRow = memo(function ActivityRow({ entry, compact, base, questionHi
             {hasBody && (open ? <ChevronDown size={12} className="shrink-0" /> : <ChevronRight size={12} className="shrink-0" />)}
           </button>
           {!open && entry.text && <p className="activity-preview">{preview(entry.text)}</p>}
-          {!open && entry.command && <code className="activity-command-preview">{entry.command}</code>}
+          {!open && entry.command && <code className="activity-command-preview">{entry.command.length > 512 ? entry.command.slice(0, 512) + '…' : entry.command}</code>}
           {open && <div className="activity-body">
             {entry.text && <div className="activity-text markdown-body"><Markdown base={base} diagrams={compact ? 'placeholder' : undefined}>{entry.text}</Markdown></div>}
             {entry.command && <pre className="activity-command-text"><code>{entry.command}</code></pre>}
@@ -132,7 +132,7 @@ const ActivityRow = memo(function ActivityRow({ entry, compact, base, questionHi
               {entry.durationMs != null && <span>{(entry.durationMs / 1000).toFixed(1)} s</span>}
             </div>}
             <StructuredDetails entry={entry} base={base} />
-            {details && <details className="activity-details"><summary>{t('activity.details')}</summary><pre tabIndex={0}>{details}</pre></details>}
+            {hasDetails && <details className="activity-details"><summary>{t('activity.details')}</summary><pre tabIndex={0}>{formatDetails(entry.details)}</pre></details>}
           </div>}
         </>}
         {entry.truncated && <p className="activity-truncated">{t('activity.truncated')}</p>}
