@@ -78,14 +78,13 @@ try {
     window.__store.setState({ nodes, edges: [], selectedNodeId: null, selectedNodeIds: [], history: [{ nodes, edges: [] }], historyIndex: 0 });
     const ui = window.__ui.getState();
     ui.setTutorialOpen(false); ui.setReleaseNotesOpen(false); ui.setPanelOpen(false); ui.setReaderMode('full');
-    window.__rf.setViewport({ x: 20, y: 0, zoom: 0.95 }, { duration: 0 });
   }, fixtures);
+  await root(1).waitFor();
+  // Off-screen nodes are virtualized. Frame all three after the initial camera animation.
+  await page.waitForTimeout(700);
+  await page.evaluate(() => window.__rf.setViewport({ x: 20, y: 0, zoom: 0.95 }, { duration: 0 }));
   for (let index = 1; index <= 3; index++) await page.locator(`[data-superdoc-editor="superdoc-att-${index}"][data-superdoc-ready="true"]`).waitFor();
   timings.threeEditorsReadyMs = Math.round(performance.now() - started);
-  await page.waitForTimeout(500);
-  // App centers newly inserted nodes after 100 ms + its camera animation.
-  // Establish the test viewport after that existing insertion behavior settles.
-  await page.evaluate(() => window.__rf.setViewport({ x: 20, y: 0, zoom: 0.95 }, { duration: 0 }));
   assert.equal(await page.locator('[data-superdoc-editor]').count(), 3);
   await screenshot('three-documents-light');
   check('Three native DOCX nodes stay mounted as editable documents');
@@ -151,7 +150,7 @@ try {
 
   await page.evaluate(() => window.__ui.getState().setReaderNodeId('superdoc-node-1', { attachmentId: 'superdoc-att-1' }));
   await page.waitForFunction(() => document.querySelectorAll('[data-superdoc-editor="superdoc-att-1"]').length === 2);
-  assert.equal(await page.locator('[data-docx-toolbar] .native-document-toolbar-name').textContent(), '版式验证-1.docx');
+  assert.match(await page.locator('[data-docx-toolbar]').getAttribute('aria-label'), /版式验证-1\.docx$/);
   assert.equal(await page.locator('[data-superdoc-scroll="superdoc-att-1"]').count(), 1);
   assert.equal(await page.evaluate(() => window.__docxTestSessions[0].instance === window.__superdocTestInstances[0]), true);
   assert.ok((await documentText(1)).includes('ALPHA-EDIT'));
@@ -165,12 +164,13 @@ try {
   const originalPath = `${output}/${fixtures[0].data.attachments[0].name}`;
   await writeFile(originalPath, sources[0].buffer);
   await page.evaluate(() => { window.showOpenFilePicker = () => { throw new Error('Unexpected external file request'); }; });
-  await canvasNode(1).locator('[data-superdoc-save]').click();
+  await scroll.click({ position: { x: 180, y: 160 } });
+  await page.locator('[data-docx-save]').click();
   await page.waitForFunction(() => !!window.__store.getState().nodes.find(node => node.id === 'superdoc-node-1').data.attachments[0].editedDocxRevision);
   assert.ok(await page.evaluate(() => window.__store.getState().nodes.find(node => node.id === 'superdoc-node-1').data.attachments[0].editedText?.includes('ALPHA-EDIT')));
   assert.equal(await root(1).getAttribute('data-superdoc-ready'), 'true');
   assert.deepEqual(await readFile(originalPath), sources[0].buffer);
-  const [editedDownload] = await Promise.all([page.waitForEvent('download'), canvasNode(1).locator('[data-superdoc-export]').click()]);
+  const [editedDownload] = await Promise.all([page.waitForEvent('download'), page.locator('[data-docx-export]').click()]);
   const editedFile = `${output}/edited-1.docx`;
   await editedDownload.saveAs(editedFile);
   await verifyExport(editedFile, sources[0], 'ALPHA-EDIT');
@@ -196,6 +196,7 @@ try {
   check('Shared font-size and bold controls act on the current document without changing the other document');
 
   const tinyPng = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
+  await page.locator('[data-docx-tab="insert"]').click();
   const [fileChooser] = await Promise.all([page.waitForEvent('filechooser'), page.locator('[data-docx-insert-image]').click()]);
   await fileChooser.setFiles({ name: 'inserted-local-image.png', mimeType: 'image/png', buffer: tinyPng });
   await page.waitForFunction(() => !document.querySelector('[data-docx-insert-image]')?.disabled);
@@ -208,8 +209,7 @@ try {
   await page.locator('[data-docx-command-panel]').waitFor({ state: 'hidden' });
   await page.keyboard.type('INSERTED CELL', { delay: 40 });
   await page.waitForFunction(() => window.__docxTestSessions[1].element.innerText.includes('INSERTED CELL'));
-  // The active floating toolbar can cover this node's header; use its export
-  // action while inserting document content.
+  // Export from the toolbar of the document that received the table.
   const [secondDownload] = await Promise.all([page.waitForEvent('download'), page.locator('[data-docx-toolbar] [data-docx-export]').click()]);
   const secondFile = `${output}/edited-2.docx`;
   await secondDownload.saveAs(secondFile);
@@ -249,6 +249,7 @@ try {
   await page.waitForFunction(() => document.querySelectorAll('[data-superdoc-editor="superdoc-att-2"]').length === 2);
   const readerEngine = page.locator('[data-superdoc-scroll="superdoc-att-2"]');
   await readerEngine.click({ position: { x: 150, y: 90 } });
+  await page.locator('[data-docx-tab="insert"]').click();
   await page.locator('[data-docx-insert-table]').click();
   const panelInput = page.locator('[data-docx-command-panel="table"] input').first();
   await panelInput.fill('4');

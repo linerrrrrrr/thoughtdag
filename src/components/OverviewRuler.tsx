@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties } from 'react';
 import { Handle, Position, useStore as useFlowStore, useUpdateNodeInternals } from '@xyflow/react';
 import type { ThoughtData } from '../types';
 import { fmt, useT } from '../i18n';
@@ -10,6 +10,8 @@ import { findRichHighlightRange, savedDocumentHighlights } from '../lib/document
 import { useUiStore } from '../lib/ui-store';
 import { isDocxDocument } from '../lib/document-copy';
 import { useStore } from '../store';
+import { subscribeDocxHighlights } from '../lib/docx-highlight-drafts';
+import { liveDocxRulerData } from '../lib/docx-ruler-data';
 import './OverviewRuler.css';
 
 function revealConversationTurn(host: Element, turn: 'question' | 'response', mark: OverviewRulerMark) {
@@ -45,7 +47,7 @@ function jumpToHighlight(id: string, data: ThoughtData, mark: OverviewRulerMark,
         const scroller = rich?.closest<HTMLElement>('[data-content-body]');
         const saved = data.attachments.find(att => att.id === mark.attachmentId)?.documentHighlights?.find(item => item.id === mark.documentMarkId);
         const range = rich && saved && findRichHighlightRange(rich, saved);
-        if (range && scroller?.clientHeight) { revealHighlight(scroller, range); return; }
+        if (range && scroller?.clientHeight) { revealHighlight(scroller, range, true); return; }
       }
     } else if (conversationTurn) {
       if (revealConversationTurn(card, conversationTurn, mark)) return;
@@ -62,7 +64,8 @@ function jumpToHighlight(id: string, data: ThoughtData, mark: OverviewRulerMark,
 /** Every tick is a measured canvas port, including ticks outside the current reading viewport. */
 export default function OverviewRuler({ id, data, textSurface }: { id: string; data: ThoughtData; textSurface?: RulerTextSurface }) {
   const t = useT();
-  const marks = useMemo(() => overviewRulerMarks(data), [data]);
+  const rulerData = useSyncExternalStore(subscribeDocxHighlights, () => liveDocxRulerData(data), () => data);
+  const marks = useMemo(() => overviewRulerMarks(rulerData), [rulerData]);
   const rulerRef = useRef<HTMLDivElement>(null);
   const [layout, setLayout] = useState<RulerLayout>();
   useLayoutEffect(() => {

@@ -21,6 +21,7 @@
     "src/components/DocumentEditPreview.tsx": ["DocumentEditPreview", "markReplacement"],
     "src/components/DocumentOriginalButton.tsx": ["DocumentOriginalButton"],
     "src/components/DocumentRichBody.tsx": ["DocumentRichBody"],
+    "src/components/DocxHighlighterButton.tsx": ["DocxHighlighterButton"],
     "src/components/EdgeAvoidancePreview.tsx": ["EdgeAvoidancePreview"],
     "src/components/EdgeCurvePreview.tsx": ["EdgeCurvePreview"],
     "src/components/EdgeInspectorControls.tsx": ["EdgeRelationOptions", "EdgeRouteOptions"],

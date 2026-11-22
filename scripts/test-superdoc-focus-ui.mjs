@@ -1,6 +1,7 @@
 // Exercise the native DOCX caret with real pointer and keyboard events.
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
+import { mkdir } from 'node:fs/promises';
 import { chromium } from 'playwright-core';
 import { createSuperdocFixture } from './fixtures/superdoc-fixture.mjs';
 
@@ -11,7 +12,7 @@ const executablePath = process.env.CHROME_PATH ?? [
 ].find(existsSync);
 assert.ok(executablePath, 'Set CHROME_PATH to an installed Chromium browser.');
 const browser = await chromium.launch({ executablePath, headless: true });
-const context = await browser.newContext({ viewport: { width: 1920, height: 1080 }, reducedMotion: 'reduce' });
+const context = await browser.newContext({ viewport: { width: 1920, height: 1080 }, deviceScaleFactor: 2, hasTouch: true, reducedMotion: 'reduce' });
 const page = await context.newPage();
 page.setDefaultTimeout(30000);
 const errors = [], writes = [];
@@ -92,6 +93,73 @@ try {
 
   await engine(1).getByText('FOCUS-A original document', { exact: true }).first().click();
   await page.locator('[data-docx-toolbar]').waitFor();
+  const pen = page.locator('[data-docx-highlighter]');
+  const palette = page.locator('[data-docx-pen-palette]');
+  const dock = page.locator('[data-superdoc-toolbar]');
+  const penWidth = (await pen.boundingBox()).width;
+  const output = 'local-tests/superdoc-toolbar';
+  await mkdir(output, { recursive: true });
+  for (const viewport of [{ x: 160, y: 250, zoom: 0.6 }, { x: 300, y: 180, zoom: 1.25 }]) {
+    await page.evaluate(viewport => window.__rf.setViewport(viewport, { duration: 0 }), viewport);
+    await page.waitForFunction(() => {
+      const node = document.querySelector('.react-flow__node[data-id="focus-node-1"]').getBoundingClientRect();
+      const dock = document.querySelector('[data-superdoc-toolbar]').getBoundingClientRect();
+      return Math.abs(dock.left - node.left) < 2 && Math.abs(dock.right - node.right) < 2
+        && dock.bottom < node.top && node.top - dock.bottom < 12;
+    });
+    assert.equal((await page.locator('[data-docx-highlighter]').boundingBox()).width, penWidth,
+      'Zooming the canvas must keep the toolbar controls at interface size');
+  }
+  await page.evaluate(() => window.__rf.setViewport({ x: 200, y: 280, zoom: 0.15 }, { duration: 0 }));
+  const strip = dock.locator('.native-document-format-scroll');
+  await dock.locator('.native-document-format-scroll[data-can-right]').waitFor();
+  const fieldPositions = () => dock.evaluate(el => {
+    const toolbar = el.getBoundingClientRect();
+    return [...el.querySelectorAll('[data-docx-font], [data-docx-size]')].map(field => {
+      const rect = field.getBoundingClientRect();
+      return [rect.x - toolbar.x, rect.y - toolbar.y, rect.width, rect.height];
+    });
+  });
+  const fixedFields = await fieldPositions();
+  const camera = await page.evaluate(() => window.__rf.getViewport());
+  await strip.hover();
+  await page.mouse.wheel(0, 600);
+  await page.waitForFunction(() => !!document.querySelector('.native-document-format-scroll[data-can-left]:not([data-can-right])'));
+  assert.equal(await strip.evaluate(el => getComputedStyle(el).scrollbarWidth), 'none');
+  assert.deepEqual(await fieldPositions(), fixedFields, 'Horizontal scrolling keeps both fields fixed within the toolbar');
+  assert.deepEqual(await page.evaluate(() => window.__rf.getViewport()), camera);
+  assert.equal((await pen.boundingBox()).width, penWidth, 'The smallest toolbar still has full-sized actions');
+  await dock.screenshot({ path: `${output}/narrow.png` });
+  await dock.locator('[data-docx-tab="text"]').press('ArrowRight');
+  assert.equal(await dock.locator('[data-docx-tab="paragraph"]').getAttribute('aria-selected'), 'true');
+  await dock.locator('[data-docx-command="text-align"]').first().waitFor();
+  await dock.locator('[data-docx-tab="paragraph"]').press('Home');
+  await page.evaluate(async () => {
+    const { useAppearance } = await import('/src/lib/appearance.ts');
+    useAppearance.getState().setLighting('dark');
+    window.__rf.setViewport({ x: 180, y: 210, zoom: 0.72 }, { duration: 0 });
+  });
+  await page.waitForFunction(() => {
+    const node = document.querySelector('.react-flow__node[data-id="focus-node-1"]').getBoundingClientRect();
+    const dock = document.querySelector('[data-superdoc-toolbar]').getBoundingClientRect();
+    return dock.width > 450 && Math.abs(node.right - dock.right) < 1 && dock.bottom < node.top;
+  });
+  await engine(1).getByText('FOCUS-A original document', { exact: true }).first().click();
+  await pen.click();
+  await palette.waitFor();
+  const toolbarRect = await dock.boundingBox();
+  const paletteRect = await palette.boundingBox();
+  const clipTop = Math.floor(Math.min(toolbarRect.y, paletteRect.y)) - 5;
+  await page.screenshot({ path: `${output}/canvas-hover.png`, clip: {
+    x: Math.floor(toolbarRect.x) - 5, y: clipTop, width: Math.ceil(toolbarRect.width) + 10,
+    height: Math.ceil(Math.max(toolbarRect.y + toolbarRect.height, paletteRect.y + paletteRect.height) - clipTop) + 5,
+  } });
+  await page.keyboard.press('Escape');
+  assert.equal(await pen.getAttribute('aria-pressed'), 'true');
+  await page.keyboard.press('Escape');
+  assert.equal(await pen.getAttribute('aria-pressed'), 'false');
+  console.log('PASS responsive toolbar alignment, fixed font controls, overflow fades, keyboard tabs and canvas zoom');
+  await page.evaluate(() => window.__rf.setViewport({ x: 80, y: 30, zoom: 0.85 }, { duration: 0 }));
   await page.locator('.react-flow__node[data-id="focus-node-1"] .material-header .material-label').click();
   assert.equal(await page.locator('[data-docx-toolbar]').count(), 1, 'Clicking within the same node must keep the toolbar.');
   await engine(1).getByText('FOCUS-A original document', { exact: true }).first().click();
@@ -159,6 +227,7 @@ try {
   assert.equal((await snapshot(1)).selection.quotedText, phrase, 'Toolbar actions must restore the retained selection.');
   await page.keyboard.press('ArrowRight');
   await expectCaret(1, 'visible');
+  await page.locator('[data-docx-tab="insert"]').click();
   await page.locator('[data-docx-insert-table]').click();
   await page.locator('[data-docx-command-panel="table"] input').first().focus();
   assert.equal(await page.locator('[data-docx-toolbar]').count(), 1, 'The insertion panel belongs to the toolbar boundary.');
@@ -173,11 +242,11 @@ try {
   await engine(2).getByText('FOCUS-B original document', { exact: true }).first().click();
   await expectCaret(1, 'hidden', 'Only the focused document may show a caret.');
   await expectCaret(2, 'visible');
-  assert.equal(await page.locator('[data-docx-toolbar] .native-document-toolbar-name').textContent(), 'focus-2.docx');
+  assert.match(await page.locator('[data-docx-toolbar]').getAttribute('aria-label'), /focus-2\.docx$/);
   await engine(1).getByText('UNSAVED', { exact: false }).first().click();
-  assert.equal(await page.locator('[data-docx-toolbar] .native-document-toolbar-name').textContent(), 'focus-1.docx');
+  assert.match(await page.locator('[data-docx-toolbar]').getAttribute('aria-label'), /focus-1\.docx$/);
   await engine(2).getByText('FOCUS-B original document', { exact: true }).first().click();
-  assert.equal(await page.locator('[data-docx-toolbar] .native-document-toolbar-name').textContent(), 'focus-2.docx', 'Switching documents must immediately activate the new toolbar.');
+  assert.match(await page.locator('[data-docx-toolbar]').getAttribute('aria-label'), /focus-2\.docx$/, 'Switching documents must immediately activate the new toolbar.');
   await page.locator('[data-docx-font]').focus();
   assert.equal((await snapshot(2)).focused, false);
   await expectCaret(2, 'hidden', 'Keyboard focus in the toolbar is outside the document.');
@@ -200,6 +269,7 @@ try {
   await page.waitForFunction(() => document.querySelectorAll('[data-superdoc-editor="focus-att-1"]').length === 2);
   await engine(1).getByText('UNSAVED', { exact: false }).first().click();
   await expectCaret(1, 'visible');
+  assert.equal(await page.locator('[data-reader-body] [data-docx-reader-toolbar] [data-docx-toolbar]').count(), 1);
   const readerClick = await emptyCanvasPoint();
   await page.mouse.click(readerClick.x, readerClick.y);
   await expectCaret(1, 'hidden', 'The same focus rule applies in the docked reader.');
@@ -210,6 +280,18 @@ try {
   await page.locator('[data-material-reader] [role="dialog"][aria-modal="true"]').waitFor();
   await engine(1).getByText('UNSAVED', { exact: false }).first().click();
   await page.locator('[data-docx-toolbar]').waitFor();
+  await pen.tap();
+  await palette.waitFor();
+  await page.waitForTimeout(250); // Touch release must not start the mouse-leave timer.
+  await palette.locator('[data-docx-ink="#ff0000"]').tap();
+  await palette.waitFor({ state: 'detached' });
+  assert.equal(await pen.getAttribute('aria-pressed'), 'true', 'A portaled color choice keeps the reader and pen active');
+  await pen.hover();
+  await palette.waitFor();
+  await page.keyboard.press('Escape');
+  assert.equal(await pen.getAttribute('aria-pressed'), 'true', 'The palette owns Escape inside a modal reader');
+  await page.keyboard.press('Escape');
+  assert.equal(await pen.getAttribute('aria-pressed'), 'false');
   await page.locator('[data-reader-material-picker] button').first().click();
   assert.equal(await page.locator('[data-docx-toolbar]').count(), 0, 'Outside clicks in the expanded reader close its toolbar.');
   assert.equal(await page.locator('[data-material-reader] [role="dialog"][aria-modal="true"]').count(), 1);

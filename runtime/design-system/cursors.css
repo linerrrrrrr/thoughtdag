@@ -77,7 +77,8 @@ body.tdag-connecting .overview-ruler .overview-ruler-mark.connectingfrom { curso
 .conversation-divider[data-adjustable] { cursor: row-resize; }
 .conversation-split--dragging, .conversation-split--dragging * { cursor: row-resize !important; }
 .pdf-document-region-layer { cursor: crosshair; }
-[data-highlighter-active], [data-highlighter-active] * { cursor: crosshair !important; }
+[data-highlighter-active], [data-highlighter-active] *,
+[data-docx-highlighter-active] .superdoc-page, [data-docx-highlighter-active] .superdoc-page * { cursor: crosshair !important; }
 
 /* Specialized actions and their availability states. */
 .canvas-layout-choice input[data-connection-layout-choice], .canvas-layout-choice span,

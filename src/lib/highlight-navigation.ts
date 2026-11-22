@@ -1,6 +1,7 @@
 import type { OverviewRulerMark } from './overview-ruler';
 
 const BLOCK = /^(?:P|DIV|BLOCKQUOTE|LI|PRE|TABLE|TR|TD|TH|H[1-6]|BR)$/;
+const excludedPassageElements = 'script, style, button, .katex-mathml, [hidden]';
 
 function indexScope(scope: HTMLElement) {
   const pieces: string[] = [];
@@ -13,7 +14,7 @@ function indexScope(scope: HTMLElement) {
       append(node.data);
       if (!code && length > start) chunks.push({ node, start, end: length });
     } else if (node instanceof Element) {
-      if (node.matches('script, style, button, .katex-mathml, [hidden]')) return;
+      if (node.matches(excludedPassageElements)) return;
       const block = BLOCK.test(node.tagName);
       if (block) append(' ');
       for (const child of node.childNodes) walk(child, code || node.tagName === 'PRE');
@@ -59,11 +60,28 @@ export function findHighlightedPassage(scopes: Iterable<HTMLElement>, text: stri
   return null;
 }
 
+/** The DOM between two passage endpoints can contain controls, duplicate math,
+ * or a code block. Native rich-document formatting can explicitly mark code. */
+export function highlightedTextRuns(range: Range, nativeFormatting: boolean) {
+  const root = range.commonAncestorContainer;
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  const excluded = nativeFormatting ? excludedPassageElements : `pre, ${excludedPassageElements}`;
+  const runs: { text: Text; from: number; to: number }[] = [];
+  for (let node: Node | null = root instanceof Text ? root : walker.nextNode(); node; node = walker.nextNode()) {
+    const text = node as Text;
+    if (!range.intersectsNode(text) || text.parentElement?.closest(excluded)) continue;
+    const from = text === range.startContainer ? range.startOffset : 0;
+    const to = text === range.endContainer ? range.endOffset : text.length;
+    if (from < to) runs.push({ text, from, to });
+  }
+  return runs;
+}
+
 /** Move only the local reading viewport. DOM rects use screen pixels, while
  * scrollTop/Left use CSS layout units even on a zoomed canvas. */
-export function revealHighlight(scroller: HTMLElement, target: Range | Element): void {
+export function revealHighlight(scroller: HTMLElement, target: Range | Element, nativeFormatting = false): void {
   centerHighlight(scroller, target);
-  showDestination(target);
+  showDestination(target, nativeFormatting);
 }
 
 function centerHighlight(scroller: HTMLElement, target: Range | Element) {
@@ -83,12 +101,19 @@ function centerHighlight(scroller: HTMLElement, target: Range | Element) {
 }
 
 let clearFeedback: (() => void) | undefined;
-function showDestination(target: Range | Element, onClear?: () => void) {
+function showDestination(target: Range | Element, nativeFormatting = false, onClear?: () => void) {
   clearFeedback?.();
   let clear: () => void;
   if (target instanceof Range) {
     if (!globalThis.CSS?.highlights || typeof Highlight === 'undefined') return;
-    CSS.highlights.set('ruler-destination', new Highlight(target));
+    const highlight = new Highlight();
+    for (const { text, from, to } of highlightedTextRuns(target, nativeFormatting)) {
+      const fragment = text.ownerDocument.createRange();
+      fragment.setStart(text, from);
+      fragment.setEnd(text, to);
+      highlight.add(fragment);
+    }
+    CSS.highlights.set('ruler-destination', highlight);
     clear = () => CSS.highlights.delete('ruler-destination');
   } else {
     target.setAttribute('data-ruler-destination', '');
@@ -123,7 +148,7 @@ export function revealMountedPdfHighlight(host: HTMLElement, mark: OverviewRuler
         observer.disconnect();
       });
       observer.observe(page);
-      showDestination(target, () => observer.disconnect());
+      showDestination(target, false, () => observer.disconnect());
       return true;
     }
   }

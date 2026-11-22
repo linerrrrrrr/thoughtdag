@@ -81,9 +81,10 @@ try {
   const originalPath = `local-tests/file-node-layout/${attachment.name}`;
   await writeFile(originalPath, source.buffer);
   await page.evaluate(() => { window.showOpenFilePicker = () => { throw new Error('Unexpected external file request'); }; });
-  await node().locator('.material-header [data-superdoc-save]').click();
+  assert.equal(await node().locator('.material-header [data-superdoc-save]').count(), 0, 'The active toolbar owns Save');
+  await page.locator('[data-docx-save]').click();
   await page.waitForFunction(() => !!window.__store.getState().nodes.find(n => n.id === 'document')?.data.attachments[0].editedDocxRevision);
-  const [download] = await Promise.all([page.waitForEvent('download'), node().locator('.material-header [data-superdoc-export]').click()]);
+  const [download] = await Promise.all([page.waitForEvent('download'), page.locator('[data-docx-export]').click()]);
   assert.match(download.suggestedFilename(), /\.docx$/i);
   console.log('PASS document status, explicit save and export');
 

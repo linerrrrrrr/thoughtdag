@@ -28,7 +28,7 @@ import { basenameOf, localTargetOf, rehypeLocalFiles } from './local-target';
 import { docxPagePictures, htmlPagePictures } from './canvas-html-document-pages';
 import { remarkFileCitations } from './remark-file-citations';
 import { remarkSourceListNumbers } from './remark-source-list-numbers';
-import { findHighlightedPassage } from './highlight-navigation';
+import { findHighlightedPassage, highlightedTextRuns } from './highlight-navigation';
 import { findRichHighlightRange } from './document-highlights';
 import { overviewRulerMarks } from './overview-ruler';
 import { attachmentHighlights, conversationHighlightTexts } from './highlight-match';
@@ -267,17 +267,8 @@ function conversation(data: ThoughtData): string {
 }
 
 /** Mark each text run separately so formatted passages can span links or table cells. */
-function anchorReadingRange(range: Range, index: number, color?: string) {
-  const root = range.commonAncestorContainer;
-  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-  const runs: { text: Text; from: number; to: number }[] = [];
-  for (let node: Node | null = root instanceof Text ? root : walker.nextNode(); node; node = walker.nextNode()) {
-    const text = node as Text;
-    if (!range.intersectsNode(text)) continue;
-    const from = text === range.startContainer ? range.startOffset : 0;
-    const to = text === range.endContainer ? range.endOffset : text.length;
-    if (from < to) runs.push({ text, from, to });
-  }
+function anchorReadingRange(range: Range, index: number, color?: string, nativeFormatting = false) {
+  const runs = highlightedTextRuns(range, nativeFormatting);
   const anchor = document.createElement('span');
   anchor.dataset.rulerTarget = String(index);
   if (!runs.length) { range.collapse(true); range.insertNode(anchor); return; }
@@ -348,9 +339,9 @@ export async function renderNodeReadingHtml({ id, data }: ThoughtNode, isParadig
     }
     const file = mark.documentMarkId && data.attachments?.find(att => att.id === mark.attachmentId);
     const saved = file ? file.documentHighlights?.find(item => item.id === mark.documentMarkId) : undefined;
-    const range = (saved && findRichHighlightRange(scope, saved))
-      || findHighlightedPassage([scope.querySelector<HTMLElement>('[data-pdf-text]') ?? scope], mark.text, mark.occurrence);
-    if (range) anchorReadingRange(range, index, mark.color);
+    const nativeRange = saved && findRichHighlightRange(scope, saved);
+    const range = nativeRange || findHighlightedPassage([scope.querySelector<HTMLElement>('[data-pdf-text]') ?? scope], mark.text, mark.occurrence);
+    if (range) anchorReadingRange(range, index, mark.color, !!nativeRange);
   });
   return template.innerHTML;
 }

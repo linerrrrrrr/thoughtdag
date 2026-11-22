@@ -7,6 +7,7 @@ import { t } from '../i18n';
 import { EXPORT_FORMAT_VERSION, activeProjectName } from './export';
 import { isViewerMode } from './viewer';
 import { inlineVaultedContent } from './attachment-vault';
+import { savedDocxRulerEdges } from './docx-ruler-data';
 import { normalizeConversationGraph } from './normalize-graph';
 
 // Automatic local backup via the File System Access API (Chromium): the user
@@ -81,7 +82,7 @@ async function backupPayload(): Promise<{ name: string; json: string } | null> {
     instantiatedFrom: activeMeta?.instantiatedFrom,
     nodes: stripTransient(nodes),
     lastNodeNumber,
-    edges,
+    edges: savedDocxRulerEdges(rawNodes, edges),
     events,
   }));
   return { name, json };

@@ -3,3 +3,7 @@
 html[data-type-surface="document-frame"] > body[data-fit-to-column] {
   zoom: var(--document-fit-zoom) !important;
 }
+
+.tdag-textlayer[data-type-surface="native-document"] span[role="presentation"] {
+  font-size: var(--pdf-run-font-size);
+}

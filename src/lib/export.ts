@@ -6,6 +6,7 @@ import { useProjects, projectStorageKey, adoptImportedProject } from '../store/p
 import { detectFormat, listConversations, type ImportableConversation } from './import-chat';
 import { isParadigmFile } from './paradigm';
 import { getContextPath } from './graph';
+import { savedDocxRulerEdges } from './docx-ruler-data';
 import { normalizeConversationEdge } from './normalize-graph';
 import { countTokens } from '../utils';
 import { confirmDialog, toast, useUiStore } from './ui-store';
@@ -61,7 +62,7 @@ export async function exportActiveProjectHtml(): Promise<void> {
     progress = toast('info', t('richDocument.exporting'), 0);
     const { buildCanvasHtml } = await import('./canvas-html');
     checkProject();
-    const html = await buildCanvasHtml(name, nodes, edges, project?.kind);
+    const html = await buildCanvasHtml(name, nodes, savedDocxRulerEdges(nodes, edges), project?.kind);
     checkProject();
     downloadFile(`${sanitizeFilename(name)}.html`, html, 'text/html;charset=utf-8');
     toast('success', fmt(t('toast.exported'), { name }));
@@ -100,7 +101,7 @@ export async function exportActiveProjectJson(opts?: { sharedReadonly?: boolean 
     ...(opts?.sharedReadonly ? { sharedReadonly: true } : {}),
     nodes: stripTransient(nodes),
     lastNodeNumber,
-    edges: edges.map(normalizeConversationEdge),
+    edges: savedDocxRulerEdges(rawNodes, edges).map(normalizeConversationEdge),
     events,
   });
   downloadFile(`${sanitizeFilename(name)}.thoughtdag.json`, payload, 'application/json');
@@ -116,7 +117,7 @@ export async function exportActiveParadigm(): Promise<void> {
   const { nodes: rawNodes, edges, lastNodeNumber } = useStore.getState();
   const nodes = await inlineVaultedContent(rawNodes);
   const name = activeProjectName();
-  const payload = JSON.stringify({ kind: 'thoughtdag-paradigm', version: 1, name, lastNodeNumber, nodes: stripTransient(nodes), edges: edges.map(normalizeConversationEdge) });
+  const payload = JSON.stringify({ kind: 'thoughtdag-paradigm', version: 1, name, lastNodeNumber, nodes: stripTransient(nodes), edges: savedDocxRulerEdges(rawNodes, edges).map(normalizeConversationEdge) });
   downloadFile(`${sanitizeFilename(name)}.paradigm.json`, payload, 'application/json');
   toast('success', fmt(t('toast.exported'), { name }));
 }

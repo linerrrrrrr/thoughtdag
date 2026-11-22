@@ -1,5 +1,5 @@
 import { appSettings } from './lib/disk-storage';
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import {
   ReactFlow,
   Background,
@@ -42,6 +42,8 @@ import { useContextInspection } from './lib/context-inspection';
 import { CanvasQuickLayoutContext, quickCanvasLayout } from './lib/canvas-layout-preferences';
 import { createEdgeAnchorResolver, positionNodeAtConnectionEnd, supportsFixedPorts } from './lib/edge-anchors';
 import { createEdgeRoutingContext } from './lib/edge-path';
+import { docxHighlightsVersion, subscribeDocxHighlights } from './lib/docx-highlight-drafts';
+import { liveDocxRulerNode } from './lib/docx-ruler-data';
 import { CanvasConnectionLayout, CanvasEdgeRouting } from './lib/edge-routing-context';
 import { useConnectionLayoutPreferences } from './lib/connection-layout-preferences';
 import { useEdgeRoutingPreferences } from './lib/edge-routing-preferences';
@@ -624,7 +626,7 @@ function Canvas() {
         }
         const handles = rfInstance.current?.getInternalNode(id)?.internals.handleBounds?.target;
         if (!node.measured?.width || !node.measured.height || !handles?.length) continue;
-        const position = positionNodeAtConnectionEnd(parent, node, pending.end, handles, fixedLayout, pending.sourceHandle);
+        const position = positionNodeAtConnectionEnd(liveDocxRulerNode(parent), node, pending.end, handles, fixedLayout, pending.sourceHandle);
         next = next.map(item => item.id === id ? { ...item, position } : item);
         settled.set(pending.node, position);
         pendingConnectionDrops.current.delete(id);
@@ -1197,16 +1199,18 @@ function Canvas() {
     return base;
   }, [edges, themePalette, focusSets]);
 
+  const highlightsVersion = useSyncExternalStore(subscribeDocxHighlights, docxHighlightsVersion);
+  const routingNodes = useMemo(() => displayNodes.map(node => liveDocxRulerNode(node, highlightsVersion)), [displayNodes, highlightsVersion]);
   const displayEdges = useMemo(() => {
     anchorResolver.current.prune(highlightedEdges);
-    const lookup = new Map(displayNodes.map((node) => [node.id, node]));
+    const lookup = new Map(routingNodes.map((node) => [node.id, node]));
     return highlightedEdges.map((edge) => {
       const anchors = anchorResolver.current.resolve(edge, lookup, undefined, fixedLayout);
       return anchors ? { ...edge, sourceHandle: anchors.sourceHandle, targetHandle: anchors.targetHandle } : edge;
     });
-  }, [highlightedEdges, displayNodes, fixedLayout]);
+  }, [highlightedEdges, routingNodes, fixedLayout]);
   const edgeRoutingSettings = useEdgeRoutingPreferences(state => state.settings);
-  const routingContext = useMemo(() => createEdgeRoutingContext(displayNodes, displayEdges, edgeRoutingSettings), [displayNodes, displayEdges, edgeRoutingSettings]);
+  const routingContext = useMemo(() => createEdgeRoutingContext(routingNodes, displayEdges, edgeRoutingSettings), [routingNodes, displayEdges, edgeRoutingSettings]);
 
   // The panel is an overlay — the canvas never resizes. When it opens (or
   // the selection moves while it is open) and the selected node would be

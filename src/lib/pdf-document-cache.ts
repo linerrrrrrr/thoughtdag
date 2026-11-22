@@ -8,7 +8,6 @@ type PdfTask = ReturnType<Pdfjs['getDocument']>;
 export interface CachedPdfPage {
   width: number;
   pixelRatio: number;
-  scale: number;
   ratio: number;
   hasText: boolean;
   canvas: HTMLCanvasElement;

@@ -24,7 +24,22 @@
 .docx-workspace--compact .docx-edit-preview { top: 0; }
 .docx-edit-preview-body { position: relative; overflow: auto; min-height: 0; }
 .docx-edit-preview-body mark { background: var(--color-material-file-wash); color: var(--color-material-file-ink); white-space: pre-wrap; }
-.docx-toolbar-dock { position: fixed; z-index: 120; top: 76px; left: 50%; transform: translateX(-50%); width: min(1120px, calc(100 * var(--ui-vw) - 32px)); }
+.docx-toolbar-dock {
+  position: fixed;
+  z-index: 25;
+  visibility: hidden;
+  width: max(188px, var(--docx-node-width, 0px));
+  border-radius: var(--radius-panel);
+  box-shadow: var(--shadow-md);
+}
+.docx-toolbar-dock .native-document-toolbar { max-height: inherit; overflow-y: auto; overscroll-behavior: contain; }
 .docx-toolbar-inline { min-width: 0; }
-.docx-toolbar-inline .native-document-toolbar { border: 0; border-bottom: 1px solid var(--color-line); border-radius: 0; }
-@media (max-width: 720px) { .docx-toolbar-dock { top: 68px; } .docx-workspace:not(.docx-workspace--compact) { height: 70vh; } }
+.docx-toolbar-inline .native-document-toolbar {
+  max-height: calc(40 * var(--ui-dvh));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: 0;
+  border-bottom: 1px solid var(--color-line);
+  border-radius: 0;
+}
+@media (max-width: 720px) { .docx-workspace:not(.docx-workspace--compact) { height: 70vh; } }

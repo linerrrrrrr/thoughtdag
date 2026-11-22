@@ -117,7 +117,8 @@ function markNativeNode(element: HTMLElement, node: ThoughtNode) {
   const indices = new Map(marks.map((mark, index) => [mark.id, index]));
   for (const tick of element.querySelectorAll<HTMLElement>('[data-overview-ruler-mark]')) {
     const index = indices.get(tick.dataset.overviewRulerMark!);
-    if (index !== undefined) tick.dataset.rulerIndex = String(index);
+    if (index === undefined) tick.remove();
+    else tick.dataset.rulerIndex = String(index);
   }
   for (const button of element.querySelectorAll('button[aria-label]')) {
     if (button.getAttribute('aria-label') === t('reader.open')) button.setAttribute('data-open-export-reader', node.id);

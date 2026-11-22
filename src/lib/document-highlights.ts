@@ -10,6 +10,7 @@ function collectHighlights(previous: readonly DocumentHighlight[]) {
   let offset = 0;
   const spans: Span[] = [];
   return {
+    get length() { return offset; },
     append(text: string, color?: string) {
       if (!text) return;
       if (color) {
@@ -52,6 +53,59 @@ const WORD_COLORS: Record<string, string> = {
   lightGray: '#c0c0c0', darkGray: '#808080', green: '#00ff00',
 };
 
+export function wordHighlightColor(highlight?: string | null, fill?: string | null) {
+  if (highlight) return highlight === 'none' ? undefined : WORD_COLORS[highlight] ?? highlight;
+  if (!fill) return;
+  const hex = fill.replace(/^#/, '');
+  return /^[0-9a-f]{6}$/i.test(hex) ? '#' + hex : undefined;
+}
+
+// Character formatting in DOCX can merge two adjacent strokes. Node metadata retains
+// their individual anchors when the saved bytes still contain both excerpts.
+function preserveDocxAnchors(saved: DocumentHighlight[], previous: readonly DocumentHighlight[], length: number) {
+  if (!previous.some(mark => mark.anchor)) return saved;
+  const used = new Set<string>();
+  return saved.flatMap(span => {
+    let best: DocumentHighlight[] = [];
+    let sameId: DocumentHighlight | undefined;
+    let hasSplit = false;
+    let distance = Infinity;
+    for (let i = 0; i < previous.length; i++) {
+      const first = previous[i];
+      if (!first.anchor || used.has(first.id) || !span.text.startsWith(first.text)) continue;
+      let end = first.anchor.start, covered = 0;
+      const group: DocumentHighlight[] = [];
+      for (let j = i; j < previous.length && covered < span.text.length; j++) {
+        const candidate = previous[j];
+        if (candidate.anchor?.blockId !== first.anchor.blockId || candidate.anchor.start !== end
+          || used.has(candidate.id) || !span.text.startsWith(candidate.text, covered)) break;
+        group.push(candidate);
+        covered += candidate.text.length;
+        end = candidate.anchor.end;
+      }
+      if (covered !== span.text.length) continue;
+      if (group.length > 1) hasSplit = true;
+      else if (first.id === span.id) sameId = first;
+      const center = (first.fraction + group[group.length - 1].fraction) / 2;
+      const delta = Math.abs(center - span.fraction);
+      if (delta < distance) { best = group; distance = delta; }
+    }
+    if (!hasSplit && sameId) best = [sameId];
+    if (!best.length) {
+      const id = used.has(span.id) ? generateId() : span.id;
+      used.add(id);
+      return [{ ...span, id }];
+    }
+    let offset = span.fraction * length - span.text.length / 2;
+    return best.map(mark => {
+      used.add(mark.id);
+      const fraction = (offset + mark.text.length / 2) / length;
+      offset += mark.text.length;
+      return { ...mark, color: span.color, fraction };
+    });
+  });
+}
+
 /** Read direct text highlighting from the saved main story. Table and paragraph
  * fills and point comments are separate Word features and have no ruler socket. */
 export async function docxHighlights(source: ArrayBuffer | string, previous: readonly DocumentHighlight[] = []) {
@@ -71,8 +125,7 @@ export async function docxHighlights(source: ArrayBuffer | string, previous: rea
           .find(child => child.namespaceURI === ns && child.localName === name)?.getAttributeNS(ns, attr);
         const highlight = value('highlight', 'val');
         const fill = value('shd', 'fill');
-        color = highlight ? (highlight === 'none' ? undefined : WORD_COLORS[highlight] ?? highlight)
-          : fill && /^[0-9a-f]{6}$/i.test(fill) ? '#' + fill : undefined;
+        color = wordHighlightColor(highlight, fill);
       }
       if (el.localName === 't') { collected.append(el.textContent ?? '', color); return; }
       if (el.localName === 'tab' || el.localName === 'br') { collected.append(' ', color); return; }
@@ -81,7 +134,7 @@ export async function docxHighlights(source: ArrayBuffer | string, previous: rea
     if (el.namespaceURI === ns && el.localName === 'p') collected.append('\n');
   };
   visit(doc.documentElement);
-  return collected.finish();
+  return preserveDocxAnchors(collected.finish(), previous, collected.length);
 }
 
 /** Use one reading order for indexing rich text and locating it again in the DOM. */

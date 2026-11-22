@@ -29,6 +29,8 @@ import { useReaderDock, READER_MIN_WIDTH, READER_DEFAULT_WIDTH, READER_STRIP_WID
 import { screenToUi, uiToScreen, uiViewport } from '../lib/ui-scale';
 import { findHighlightedPassage, revealHighlight, revealMountedPdfHighlight } from '../lib/highlight-navigation';
 import { findRichHighlightRange } from '../lib/document-highlights';
+import { readPdfTextSelection } from '../lib/pdf-text-selection';
+import { formatAnchorPages } from '../lib/pdf-mark';
 
 // MaterialReader: the reading overlay — a VIEW onto a material node, never a
 // container. Select a passage (in the original PDF's text layer, or in the
@@ -91,6 +93,7 @@ export default function MaterialReader({ onLocate }: { onLocate: (id: string) =>
 }
 
 type ExportReaderBody = { extra: string; fileId?: string; fileHtml?: string; imageSrc?: string; original?: boolean; textHtml?: string };
+type SelectionGeometry = Pick<NonNullable<ThoughtNode['data']['anchor']>, 'rects' | 'additionalPages'>;
 
 // Keep the first material on its native reading surface. Saved annotations,
 // alternate text and additional attachments remain available in the same sheet.
@@ -137,13 +140,6 @@ function ReaderOverlay({ node, onLocate, dock, activeAttachment, conversationTur
   const projectId = useProjects(s => s.activeId) ?? 'default';
   const draftPrefix = `reader:${projectId}:${node.id}`;
   const layerRef = useRef<HTMLDivElement>(null);
-  // The active document's tools live in a body portal but belong to this reader's focus boundary.
-  const documentToolbarRef = useMemo(() => ({
-    get current() {
-      return layerRef.current?.querySelector('[data-superdoc-active="true"]')
-        ? document.querySelector<HTMLElement>('[data-superdoc-toolbar]') : null;
-    },
-  }), []);
   const data = node.data;
   const documentAttachment = activeAttachment && isEditableDocument(activeAttachment) ? activeAttachment : undefined;
   const editableAttachment = documentAttachment && isDocxDocument(documentAttachment) ? documentAttachment : undefined;
@@ -279,7 +275,8 @@ function ReaderOverlay({ node, onLocate, dock, activeAttachment, conversationTur
   };
   // ── selection → ask bar ──
   const bodyRef = useRef<HTMLDivElement>(null);
-  const [ask, setAsk] = useState<{ text: string; page: number | null; x: number; y: number; targetNodeId?: string; rects?: [number, number, number, number][] } | null>(null);
+  const [ask, setAsk] = useState<{ text: string; page: number | null; x: number; y: number; targetNodeId?: string; geometry?: SelectionGeometry } | null>(null);
+  const askPages = ask?.page != null ? formatAnchorPages(ask.page, ask.geometry?.additionalPages) : null;
   const [draft, setDraft] = useSessionDraft(`${draftPrefix}:selection`);
   const askRef = useRef<HTMLDivElement>(null);
   useDismissableLayer({ open: !!ask, refs: [askRef], onDismiss: () => setAsk(null) });
@@ -311,26 +308,25 @@ function ReaderOverlay({ node, onLocate, dock, activeAttachment, conversationTur
           return;
         }
       }
+      const pdfPages = pdfAtt && view === 'original' && bodyRef.current.querySelector<HTMLElement>('[data-pdf-document] .pdf-document-pages');
+      if (pdfPages) {
+        const pages = readPdfTextSelection(pdfPages, range);
+        const text = pages.map(passage => passage.text).join('\n\n');
+        if (!pages.length || text.length < 2) { setAsk(null); return; }
+        const [first, ...rest] = pages;
+        const additionalPages = rest.map(({ page, rects }) => ({ page, rects }));
+        setAsk({ text, page: first.page, x: event.clientX, y: event.clientY,
+          geometry: { rects: first.rects, ...(additionalPages.length && { additionalPages }) } });
+        return;
+      }
       const raw = sel.toString();
-      // PDF text-layer spans carry hard breaks; the reading order is what matters
       const text = (view === 'original' ? raw.replace(/\s+/g, ' ') : raw).trim();
       if (text.length < 2) return;
       const rect = range.getBoundingClientRect();
       const el = range.startContainer instanceof Element ? range.startContainer : range.startContainer.parentElement;
       const pageEl = el?.closest('[data-page]') as HTMLElement | null;
       const page = pageEl?.getAttribute('data-page');
-      // selection rectangles in page-fraction space → durable anchors that
-      // survive zoom, reflow and future re-renders. Original view only: the
-      // text view's sections are reflowed Markdown, their geometry says
-      // nothing about the printed page
-      let rects: [number, number, number, number][] | undefined;
-      if (pageEl && view === 'original') {
-        const pb = pageEl.getBoundingClientRect();
-        rects = Array.from(range.getClientRects()).slice(0, 8)
-          .filter((r) => r.width > 2 && r.height > 2)
-          .map((r) => [(r.left - pb.left) / pb.width, (r.top - pb.top) / pb.height, r.width / pb.width, r.height / pb.height]);
-      }
-      setAsk({ text, page: page ? Number(page) : null, x: rect.left + rect.width / 2, y: rect.bottom, rects });
+      setAsk({ text, page: page ? Number(page) : null, x: rect.left + rect.width / 2, y: rect.bottom });
     }, 0);
   };
 
@@ -347,7 +343,7 @@ function ReaderOverlay({ node, onLocate, dock, activeAttachment, conversationTur
     const q = draft.trim();
     if (!q || !ask) return;
     // p.N provenance rides inside the quoted passage (document selections only)
-    const passage = ask.targetNodeId ? ask.text : (ask.page != null ? `(p.${ask.page}) ${ask.text}` : ask.text);
+    const passage = askPages && !ask.targetNodeId ? `(p.${askPages}) ${ask.text}` : ask.text;
     const prevSelected = useStore.getState().selectedNodeId;
     const question = passage.trim() ? `${passage.split('\n').map(line => `> ${line}`).join('\n')}\n\n${q}` : q;
     useStore.getState().addQuestion(question, { parentId: ask.targetNodeId ?? node.id });
@@ -358,7 +354,7 @@ function ReaderOverlay({ node, onLocate, dock, activeAttachment, conversationTur
     // document selections remember the page they came from (both views);
     // original-view ones additionally leave a mark on that page
     if (!ask.targetNodeId && ask.page != null && freshId) {
-      const anchor = { page: ask.page, ...(documentAttachment ? { attId: documentAttachment.id } : {}), ...(ask.rects?.length ? { rects: ask.rects } : {}) };
+      const anchor = { page: ask.page, ...ask.geometry, ...(documentAttachment && { attId: documentAttachment.id }) };
       useStore.setState((s) => ({
         nodes: s.nodes.map((n) => (n.id === freshId ? { ...n, data: { ...n.data, anchor } } : n)),
       }));
@@ -419,7 +415,7 @@ function ReaderOverlay({ node, onLocate, dock, activeAttachment, conversationTur
     if (ask.page != null || srcAttId) {
       const anchor = {
         page: ask.page ?? 1,
-        ...(ask.rects?.length ? { rects: ask.rects } : {}),
+        ...ask.geometry,
         ...(srcAttId ? { attId: srcAttId } : {}),
       };
       useStore.setState((s) => ({
@@ -671,9 +667,11 @@ function ReaderOverlay({ node, onLocate, dock, activeAttachment, conversationTur
       if (!a?.rects?.length) continue;
       if (documentAttachment && (a.attId ? a.attId !== documentAttachment.id
         : documentAttachment.id !== data.attachments?.find(isEditableDocument)?.id)) continue;
-      const list = map.get(a.page) ?? [];
-      list.push({ id: c.id, question: c.data.question, rects: a.rects });
-      map.set(a.page, list);
+      for (const { page, rects } of [{ page: a.page, rects: a.rects }, ...(a.additionalPages ?? [])]) {
+        const list = map.get(page) ?? [];
+        list.push({ id: c.id, question: c.data.question, rects });
+        map.set(page, list);
+      }
     }
     return map;
   }, [children, nodes, attachments, documentAttachment, data.attachments]);
@@ -771,7 +769,7 @@ function ReaderOverlay({ node, onLocate, dock, activeAttachment, conversationTur
           : findHighlightedPassage(body.querySelectorAll<HTMLElement>('[data-reader-highlight-content], [data-document-rich-body]'), mark.text, mark.occurrence);
       }
       if (!target) return false;
-      if (mark) revealHighlight(body, target);
+      if (mark) revealHighlight(body, target, !!mark.documentMarkId);
       else if (target instanceof Element) target.scrollIntoView({ block: 'start' });
       setLanding(null);
       return true;
@@ -803,7 +801,7 @@ function ReaderOverlay({ node, onLocate, dock, activeAttachment, conversationTur
   // Docked reading is a workspace: canvas clicks keep it open. Child
   // editors and selection popups own their own Escape before this layer.
   useDismissableLayer({
-    open: !docked || !!threadId, refs: [layerRef, documentToolbarRef], dismissOnOutside: false, modal: !docked,
+    open: !docked || !!threadId, refs: [layerRef], dismissOnOutside: false, modal: !docked,
     onDismiss: () => { if (threadId) setThreadId(null); else close(); },
   });
 
@@ -1021,12 +1019,12 @@ function ReaderOverlay({ node, onLocate, dock, activeAttachment, conversationTur
           </button>
         </div>
 
-        {nativeDocx && view === 'text' && <div data-docx-reader-toolbar className="shrink-0" />}
         {/* body: document column + (optional) thread view — beside the text
             in the overlay, stacked under it in the docked column */}
         <div className={`flex-1 min-h-0 flex ${docked ? 'flex-col' : ''}`}>
         <div ref={bodyRef} data-cursor={view === 'original' && pdfAtt ? 'neutral' : 'native'} onMouseUp={handleMouseUp} onScroll={(e) => scrollMemory.set(scrollKey, e.currentTarget.scrollTop)}
           className={`flex-1 min-w-0 min-h-0 overscroll-contain bg-wash/60 ${exportBody === undefined && nativeDocx && view === 'text' ? 'flex flex-col overflow-hidden' : 'overflow-y-auto'}`} data-reader-body>
+          {nativeDocx && view === 'text' && <div data-docx-reader-toolbar className="shrink-0" />}
           {exportBody !== undefined ? <div data-export-reading-body>
             {exportBody.textHtml && <div className="max-w-[820px] mx-auto px-surface-inset py-6" data-reader-highlight-surface>
               <div dangerouslySetInnerHTML={{ __html: exportBody.textHtml }} />
@@ -1283,7 +1281,7 @@ function ReaderOverlay({ node, onLocate, dock, activeAttachment, conversationTur
         >
           <div className="text-control text-ink-faint leading-snug mb-1.5 line-clamp-2 border-l-2 border-warm pl-2">
             “{ask.text.slice(0, 120)}{ask.text.length > 120 ? '…' : ''}”
-            {ask.page != null && <span className="font-mono"> · p.{ask.page}</span>}
+            {askPages && <span className="font-mono"> · p.{askPages}</span>}
           </div>
           <div className="flex items-end gap-1.5">
             <textarea

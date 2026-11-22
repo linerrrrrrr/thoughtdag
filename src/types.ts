@@ -2,6 +2,8 @@ import type { Node, Edge } from '@xyflow/react';
 
 export interface PdfAnnotation {
   id: string;
+  /** Native PDF annotations belong to a page. One comment may cover several. */
+  commentGroupId?: string;
   kind?: 'note' | 'highlight';
   page: number;
   rects: [number, number, number, number][];
@@ -63,6 +65,10 @@ export interface Attachment {
 }
 
 export interface DocumentHighlight {
+  /** Adjacent paragraphs selected by one native highlighter gesture share one canvas endpoint. */
+  strokeId?: string;
+  /** Body paragraph and UTF-16 range for a native editing session. Older files use text and fraction. */
+  anchor?: { blockId: string; start: number; end: number };
   id: string;
   text: string;
   color: string;
@@ -470,7 +476,9 @@ export interface ThoughtData extends Record<string, unknown> {
       the canvas p.N chip — text-view selections have no page-box geometry). */
   anchor?: {
     page: number;
-    rects?: [number, number, number, number][];
+    rects?: PdfAnnotation['rects'];
+    /** Further pages of the same selection, each in its own page coordinates. */
+    additionalPages?: Pick<PdfAnnotation, 'page' | 'rects'>[];
     /** The attachment this anchor points into. Lets edge-less clip nodes
         (notes/images extracted from a document) keep their provenance —
         the reader shows their marks and the p.N chip finds its way back

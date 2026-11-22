@@ -16,6 +16,7 @@ import { createEventSlice } from './slices/events';
 import { recoverInterruptedAgentRun, settleAgentActivity } from '../lib/agent-activity';
 import { t } from '../i18n';
 import { normalizeConversationNode, normalizeConversationEdge } from '../lib/normalize-graph';
+import { savedDocxRulerEdges } from '../lib/docx-ruler-data';
 import { splitLegacyFileNodes } from '../lib/single-file-nodes';
 import { numberCanvasNodes } from '../lib/node-numbers';
 
@@ -96,7 +97,7 @@ export const useStore = browserRenderStore(create<StoreState>()(persist(withNode
   partialize: (state): PersistedState => ({
     nodes: stripTransient(state.nodes),
     lastNodeNumber: state.lastNodeNumber,
-    edges: state.edges.map(normalizeConversationEdge).map((e) => (e.selected ? { ...e, selected: false } : e)),
+    edges: savedDocxRulerEdges(state.nodes, state.edges).map(normalizeConversationEdge).map((e) => (e.selected ? { ...e, selected: false } : e)),
     events: state.events,
   }),
   merge: (persisted, current) => {

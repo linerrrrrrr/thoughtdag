@@ -1,16 +1,18 @@
-import { useCallback, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type { SuperDoc } from 'superdoc';
 import type { CommandId, SelectionCapture } from 'superdoc/ui';
 import {
-  AlignCenter, AlignJustify, AlignLeft, AlignRight, Bold, ChevronDown, Columns3,
-  Download, Eraser, Highlighter, ImagePlus, IndentDecrease, IndentIncrease, Italic,
-  Link2, List, ListOrdered, Loader2, Merge, Minus, Plus, Redo2, Rows3, Save, Split,
-  Strikethrough, Table2, Trash2, Type, Underline, Undo2, X, type LucideIcon,
+  AlignCenter, AlignJustify, AlignLeft, AlignRight, Bold, Columns3,
+  FileDown, Eraser, ImagePlus, IndentDecrease, IndentIncrease, Italic,
+  Link2, List, ListOrdered, Loader2, Merge, Minus, MoveHorizontal, Plus, Redo2, Rows3, Save, Split,
+  Strikethrough, Table2, Trash2, Type, Underline, Undo2, type LucideIcon,
 } from 'lucide-react';
 import { useT, type MessageKey } from '../i18n';
 import { toast } from '../lib/ui-store';
 import { useDismissableLayer } from '../lib/use-dismissable-layer';
+import { attachDocxHighlighter } from '../lib/docx-highlighter';
 import type { createDocxViewport } from '../lib/docx-viewport';
+import DocxHighlighterButton from './DocxHighlighterButton';
 import './SuperDocToolbar.css';
 
 type Props = {
@@ -26,6 +28,39 @@ type Props = {
 };
 
 const TOGGLE_COMMANDS = new Set(['bold', 'italic', 'underline', 'strikethrough', 'bullet-list', 'numbered-list']);
+const tabs = ['text', 'paragraph', 'insert'] as const;
+type Tab = typeof tabs[number];
+
+function useFormatScroll(tab: Tab) {
+  const ref = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const strip = ref.current;
+    if (!strip) return;
+    strip.scrollLeft = 0;
+    const showEdges = () => {
+      strip.toggleAttribute('data-can-left', strip.scrollLeft > 1);
+      strip.toggleAttribute('data-can-right', strip.scrollWidth - strip.clientWidth - strip.scrollLeft > 1);
+    };
+    const wheel = (event: WheelEvent) => {
+      if (event.ctrlKey || event.metaKey || event.shiftKey || event.deltaX || !event.deltaY || strip.scrollWidth <= strip.clientWidth) return;
+      const unit = event.deltaMode === WheelEvent.DOM_DELTA_LINE ? 16 : event.deltaMode === WheelEvent.DOM_DELTA_PAGE ? strip.clientWidth : 1;
+      strip.scrollLeft += event.deltaY * unit;
+      event.preventDefault();
+    };
+    showEdges();
+    const observer = new ResizeObserver(showEdges);
+    observer.observe(strip);
+    if (strip.firstElementChild) observer.observe(strip.firstElementChild);
+    strip.addEventListener('scroll', showEdges, { passive: true });
+    strip.addEventListener('wheel', wheel, { passive: false });
+    return () => {
+      observer.disconnect();
+      strip.removeEventListener('scroll', showEdges);
+      strip.removeEventListener('wheel', wheel);
+    };
+  }, [tab]);
+  return ref;
+}
 
 function useSnapshot<T,>(handle: { observe: (listener: (value: T) => void) => () => void; getSnapshot: () => T }): T {
   return useSyncExternalStore(
@@ -68,11 +103,22 @@ export default function SuperDocToolbar({ instance, viewport, name, dirty, savin
   const [columns, setColumns] = useState('3');
   const [url, setUrl] = useState('');
   const [uploading, setUploading] = useState(false);
+  const [penActive, setPenActive] = useState(false);
+  const [penColor, setPenColor] = useState('#ffff00');
+  const [tab, setTab] = useState<Tab>('text');
+  const tabsId = useId();
+  const formatScroll = useFormatScroll(tab);
+  const selectTab = (next: Tab) => { setPanel(null); setTab(next); };
+  const penEnabled = !saving && snapshot.context !== 'viewing';
+  useEffect(() => {
+    if (penActive && penEnabled) return attachDocxHighlighter(instance, penColor, () => setPenActive(false));
+  }, [instance, penActive, penColor, penEnabled]);
   useDismissableLayer({
     open: true, refs: [toolbarRef, editorRootRef],
     // Other non-modal canvas panels must not shield this document from outside clicks.
     independentOutside: !(instance.element instanceof HTMLElement && instance.element.closest('[aria-modal="true"]')),
     onDismiss: reason => {
+      if (reason === 'escape' && penActive) { setPenActive(false); return; }
       if (reason === 'outside' && instance.element instanceof HTMLElement
         && document.activeElement instanceof HTMLElement && instance.element.contains(document.activeElement)) {
         document.activeElement.blur();
@@ -157,9 +203,11 @@ export default function SuperDocToolbar({ instance, viewport, name, dirty, savin
   };
 
   return <div ref={toolbarRef} className="native-document-toolbar nodrag nopan nowheel" data-docx-toolbar
-    role="region" aria-label={t('nativeDocument.toolbar')} onPointerDownCapture={capture}
+    role="region" aria-label={`${t('nativeDocument.toolbar')} · ${name}`}
+    onPointerDownCapture={event => { if (toolbarRef.current?.contains(event.target as Node)) capture(); }}
     onFocusCapture={event => {
-      if (!(event.relatedTarget instanceof Node) || !toolbarRef.current?.contains(event.relatedTarget)) {
+      if (toolbarRef.current?.contains(event.target) && !(event.relatedTarget instanceof Element
+        && (toolbarRef.current.contains(event.relatedTarget) || event.relatedTarget.closest('[data-docx-pen-palette]')))) {
         selection.current = { instance, capture: ui.selection.capture() };
       }
     }}
@@ -169,27 +217,50 @@ export default function SuperDocToolbar({ instance, viewport, name, dirty, savin
       if (event.key !== 'Escape' && event.key !== 'Tab') event.stopPropagation();
     }}>
     <div className="native-document-toolbar-header">
-      <div className="native-document-toolbar-name" data-tooltip={name} data-tooltip-overflow>{name}</div>
-      <span className="native-document-toolbar-status" data-dirty={dirty} role="status">
-        {t(saving ? 'richDocument.saving' : dirty ? 'docx.unsaved' : 'nativeDocument.saved')}
-      </span>
+      <div className="native-document-tabs" role="tablist" aria-label={t('nativeDocument.toolbar')}>
+        {tabs.map((item, index) => <button key={item} type="button" role="tab" id={`${tabsId}-${item}`}
+          data-docx-tab={item} aria-controls={`${tabsId}-panel`} aria-selected={tab === item} tabIndex={tab === item ? 0 : -1}
+          onPointerDown={event => event.preventDefault()} onClick={() => selectTab(item)}
+          onKeyDown={event => {
+            if (event.nativeEvent.isComposing) return;
+            let next: Tab;
+            switch (event.key) {
+              case 'ArrowRight': next = tabs[(index + 1) % tabs.length]; break;
+              case 'ArrowLeft': next = tabs[(index + tabs.length - 1) % tabs.length]; break;
+              case 'Home': next = tabs[0]; break;
+              case 'End': next = tabs[tabs.length - 1]; break;
+              default: return;
+            }
+            event.preventDefault();
+            selectTab(next);
+            document.getElementById(`${tabsId}-${next}`)?.focus();
+          }}>{t(`nativeDocument.${item}Tab`)}</button>)}
+      </div>
       <div className="native-document-toolbar-actions">
-        <button type="button" className="native-document-text-action" disabled={saving || uploading}
-          onClick={onExport} data-docx-export><Download size={15} />{t('richDocument.exportDocx')}</button>
-        <button type="button" className="native-document-text-action native-document-save" disabled={!dirty || !canSave || saving || uploading}
-          onClick={onSave} data-docx-save data-tooltip={t('document.saveNode')}>
-          {saving ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />}
-          {t(saving ? 'richDocument.saving' : 'common.save')}
+        <DocxHighlighterButton active={penActive} disabled={!penEnabled} color={penColor}
+          onColorChange={setPenColor} onToggle={() => setPenActive(enabled => !enabled)} />
+        <button type="button" className="native-document-tool" disabled={!dirty || !canSave || saving || uploading}
+          aria-label={t('common.save')} data-tooltip={t('document.saveNode')} onClick={onSave} data-docx-save>
+          {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
         </button>
-        <button type="button" className="native-document-tool" onClick={onHide}
-          aria-label={t('nativeDocument.hideTools')} data-tooltip={t('nativeDocument.hideTools')}><X size={16} /></button>
+        <button type="button" className="native-document-tool" disabled={saving || uploading}
+          aria-label={t('richDocument.exportDocx')} data-tooltip={t('richDocument.exportDocx')} onClick={onExport} data-docx-export>
+          <FileDown size={16} />
+        </button>
+        <label className="native-document-tool native-document-fit" data-tooltip={t('nativeDocument.fitWidth')}>
+          <MoveHorizontal size={16} aria-hidden="true" />
+          <select className="native-document-zoom" aria-label={t('nativeDocument.fitWidth')}
+            value={zoom.mode === 'fit-width' ? 'fit' : String(Math.round(zoom.value))}
+            onChange={event => viewport.setZoom(event.target.value === 'fit' ? 'fit-width' : Number(event.target.value))}>
+            <option value="fit">{t('nativeDocument.fitWidth')}</option>
+            {[...new Set([50, 75, 100, 125, 150, 200, Math.round(zoom.value)])].filter(n => n > 0).sort((a, b) => a - b)
+              .map(n => <option key={n} value={n}>{n}%</option>)}
+          </select>
+        </label>
       </div>
     </div>
-    <div className="native-document-toolbar-controls">
-      <div className="native-document-tool-group">
-        {tool('undo', 'richDocument.undo', Undo2)}{tool('redo', 'richDocument.redo', Redo2)}
-      </div>
-      <div className="native-document-tool-group">
+    <div className="native-document-format-row" role="tabpanel" id={`${tabsId}-panel`} aria-labelledby={`${tabsId}-${tab}`}>
+      {tab === 'text' && <div className="native-document-fonts">
         <select className="native-document-select native-document-font" aria-label={t('richDocument.font')}
           value={font} disabled={!available('font-family')} onFocus={capture}
           onChange={event => { void run('font-family', event.target.value); }} data-docx-font>
@@ -202,69 +273,63 @@ export default function SuperDocToolbar({ instance, viewport, name, dirty, savin
           {!size && <option value="">{t('richDocument.fontSize')}</option>}
           {sizes.map(option => <option key={option} value={option}>{option}</option>)}
         </select>
-        {tool('bold', 'richDocument.bold', Bold)}{tool('italic', 'richDocument.italic', Italic)}
-        {tool('underline', 'richDocument.underline', Underline)}{tool('strikethrough', 'richDocument.strike', Strikethrough)}
-        <label className="native-document-tool native-document-color" data-tooltip={t('richDocument.color')}>
-          <Type size={16} strokeWidth={1.75} />
-          <span style={{ background: asHex(value('text-color'), '#202632') }} />
-          <input type="color" aria-label={t('richDocument.color')} value={asHex(value('text-color'), '#202632')}
-            disabled={!available('text-color')} onFocus={capture} onChange={event => { void run('text-color', event.target.value); }} />
-        </label>
-        <label className="native-document-tool native-document-color" data-tooltip={t('richDocument.highlight')}>
-          <Highlighter size={16} strokeWidth={1.75} />
-          <span style={{ background: asHex(value('highlight-color'), '#fff19a') }} />
-          <input type="color" aria-label={t('richDocument.highlight')} value={asHex(value('highlight-color'), '#fff19a')}
-            disabled={!available('highlight-color')} onFocus={capture} onChange={event => { void run('highlight-color', event.target.value); }} />
-        </label>
-        {tool('clear-formatting', 'richDocument.clearFormat', Eraser)}
-      </div>
-      <div className="native-document-tool-group">
-        {tool('text-align', 'richDocument.alignLeft', AlignLeft, 'left', alignment === 'left')}
-        {tool('text-align', 'richDocument.alignCenter', AlignCenter, 'center', alignment === 'center')}
-        {tool('text-align', 'richDocument.alignRight', AlignRight, 'right', alignment === 'right')}
-        {tool('text-align', 'richDocument.alignJustify', AlignJustify, 'justify', alignment === 'justify')}
-        {tool('bullet-list', 'richDocument.bulletList', List)}{tool('numbered-list', 'richDocument.numberedList', ListOrdered)}
-        {tool('indent-decrease', 'richDocument.outdent', IndentDecrease)}{tool('indent-increase', 'richDocument.indent', IndentIncrease)}
-      </div>
-      <div className="native-document-tool-group">
-        <button type="button" className="native-document-tool" disabled={!available('link')}
-          aria-label={t('richDocument.link')} data-tooltip={t('richDocument.link')} aria-expanded={panel === 'link'}
-          data-docx-panel-trigger="link"
-          onPointerDown={event => event.preventDefault()} onClick={() => setPanel(panel === 'link' ? null : 'link')}><Link2 size={16} /></button>
-        <button type="button" className="native-document-tool" disabled={uploading || !available('image')}
-          aria-label={t('richDocument.insertImage')} data-tooltip={t('richDocument.insertImage')} data-docx-insert-image
-          onPointerDown={event => event.preventDefault()} onClick={() => fileRef.current?.click()}>
-          {uploading ? <Loader2 size={16} className="animate-spin" /> : <ImagePlus size={16} />}
-        </button>
-        <input type="file" ref={fileRef} className="native-document-file" accept="image/png,image/jpeg,image/gif,image/webp"
-          tabIndex={-1} aria-hidden onChange={event => {
-            const file = event.target.files?.[0]; event.target.value = '';
-            if (file) void insertImage(file);
-          }} />
-        <button type="button" className="native-document-tool native-document-insert-table" disabled={!available('table-insert')}
-          aria-label={t('richDocument.insertTable')} data-tooltip={t('richDocument.insertTable')} data-docx-insert-table
-          data-docx-panel-trigger="table"
-          aria-expanded={panel === 'table'} onPointerDown={event => event.preventDefault()}
-          onClick={() => setPanel(panel === 'table' ? null : 'table')}><Table2 size={16} /><ChevronDown size={10} /></button>
-        <select className="native-document-select native-document-zoom" aria-label={t('nativeDocument.fitWidth')}
-          value={zoom.mode === 'fit-width' ? 'fit' : String(Math.round(zoom.value))}
-          onChange={event => {
-            viewport.setZoom(event.target.value === 'fit' ? 'fit-width' : Number(event.target.value));
-          }}>
-          <option value="fit">{t('nativeDocument.fitWidth')}</option>
-          {[...new Set([50, 75, 100, 125, 150, 200, Math.round(zoom.value)])].filter(n => n > 0).sort((a, b) => a - b)
-            .map(n => <option key={n} value={n}>{n}%</option>)}
-        </select>
+      </div>}
+      <div ref={formatScroll} className="native-document-format-scroll">
+        <div className="native-document-tool-group">
+          {tab === 'text' && <>
+            {tool('bold', 'richDocument.bold', Bold)}{tool('italic', 'richDocument.italic', Italic)}
+            {tool('underline', 'richDocument.underline', Underline)}{tool('strikethrough', 'richDocument.strike', Strikethrough)}
+            <label className="native-document-tool native-document-color" data-tooltip={t('richDocument.color')}>
+              <Type size={16} strokeWidth={1.75} />
+              <span className="native-document-ink-line" style={{ backgroundColor: asHex(value('text-color'), '#202632') }} />
+              <input type="color" aria-label={t('richDocument.color')} value={asHex(value('text-color'), '#202632')}
+                disabled={!available('text-color')} onFocus={capture} onChange={event => { void run('text-color', event.target.value); }} />
+            </label>
+            {tool('clear-formatting', 'richDocument.clearFormat', Eraser)}
+            <span className="native-document-divider" aria-hidden="true" />
+            {tool('undo', 'richDocument.undo', Undo2)}{tool('redo', 'richDocument.redo', Redo2)}
+          </>}
+          {tab === 'paragraph' && <>
+            {tool('text-align', 'richDocument.alignLeft', AlignLeft, 'left', alignment === 'left')}
+            {tool('text-align', 'richDocument.alignCenter', AlignCenter, 'center', alignment === 'center')}
+            {tool('text-align', 'richDocument.alignRight', AlignRight, 'right', alignment === 'right')}
+            {tool('text-align', 'richDocument.alignJustify', AlignJustify, 'justify', alignment === 'justify')}
+            <span className="native-document-divider" aria-hidden="true" />
+            {tool('bullet-list', 'richDocument.bulletList', List)}{tool('numbered-list', 'richDocument.numberedList', ListOrdered)}
+            {tool('indent-decrease', 'richDocument.outdent', IndentDecrease)}{tool('indent-increase', 'richDocument.indent', IndentIncrease)}
+          </>}
+          {tab === 'insert' && <>
+            <button type="button" className="native-document-tool" disabled={!available('link')}
+              aria-label={t('richDocument.link')} data-tooltip={t('richDocument.link')} aria-expanded={panel === 'link'}
+              data-docx-panel-trigger="link" onPointerDown={event => event.preventDefault()}
+              onClick={() => setPanel(panel === 'link' ? null : 'link')}><Link2 size={16} /></button>
+            <button type="button" className="native-document-tool" disabled={uploading || !available('image')}
+              aria-label={t('richDocument.insertImage')} data-tooltip={t('richDocument.insertImage')} data-docx-insert-image
+              onPointerDown={event => event.preventDefault()} onClick={() => fileRef.current?.click()}>
+              {uploading ? <Loader2 size={16} className="animate-spin" /> : <ImagePlus size={16} />}
+            </button>
+            <button type="button" className="native-document-tool" disabled={!available('table-insert')}
+              aria-label={t('richDocument.insertTable')} data-tooltip={t('richDocument.insertTable')} data-docx-insert-table
+              data-docx-panel-trigger="table" aria-expanded={panel === 'table'} onPointerDown={event => event.preventDefault()}
+              onClick={() => setPanel(panel === 'table' ? null : 'table')}><Table2 size={16} /></button>
+            {inTable && <>
+              <span className="native-document-divider" aria-hidden="true" />
+              <Rows3 size={15} aria-hidden />
+              {tool('table-add-row-after', 'richDocument.addRow', Plus)}{tool('table-delete-row', 'richDocument.deleteRow', Minus)}
+              <Columns3 size={15} aria-hidden />
+              {tool('table-add-column-after', 'richDocument.addColumn', Plus)}{tool('table-delete-column', 'richDocument.deleteColumn', Minus)}
+              {tool('table-merge-cells', 'richDocument.mergeCells', Merge)}{tool('table-split-cell', 'richDocument.splitCell', Split)}
+              {tool('table-delete', 'richDocument.deleteTable', Trash2)}
+            </>}
+          </>}
+        </div>
       </div>
     </div>
-    {inTable && <div className="native-document-table-tools">
-      <Rows3 size={15} aria-hidden />
-      {tool('table-add-row-after', 'richDocument.addRow', Plus)}{tool('table-delete-row', 'richDocument.deleteRow', Minus)}
-      <Columns3 size={15} aria-hidden />
-      {tool('table-add-column-after', 'richDocument.addColumn', Plus)}{tool('table-delete-column', 'richDocument.deleteColumn', Minus)}
-      {tool('table-merge-cells', 'richDocument.mergeCells', Merge)}{tool('table-split-cell', 'richDocument.splitCell', Split)}
-      {tool('table-delete', 'richDocument.deleteTable', Trash2)}
-    </div>}
+    <input type="file" ref={fileRef} className="native-document-file" accept="image/png,image/jpeg,image/gif,image/webp"
+      tabIndex={-1} aria-hidden onChange={event => {
+        const file = event.target.files?.[0]; event.target.value = '';
+        if (file) void insertImage(file);
+      }} />
     {panel && <div ref={panelRef} className="native-document-command-panel" data-docx-command-panel={panel}>
       {panel === 'table' ? <>
         <label>{t('nativeDocument.tableRows')}<input type="number" min={1} max={50} value={rows}

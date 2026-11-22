@@ -87,6 +87,17 @@ try {
   await page.locator('[data-superdoc-toolbar]').waitFor();
   assert.equal(await root.getAttribute('data-superdoc-dirty'), 'true');
   checks.push('Real keyboard input edits the canvas document and activates its shared toolbar');
+  const pen = page.locator('[data-docx-highlighter]');
+  await pen.hover();
+  await page.locator('[data-docx-ink="#ff00ff"]').click();
+  assert.equal(await pen.getAttribute('aria-pressed'), 'false');
+  await pen.click();
+  assert.equal(await pen.getAttribute('aria-pressed'), 'true');
+  await page.keyboard.press('Escape');
+  await canvasNode.locator('[data-docx-hide-tools]').click();
+  await page.locator('[data-superdoc-toolbar]').waitFor({ state: 'detached' });
+  assert.ok(await canvasNode.locator('[data-superdoc-save]').isEnabled());
+  checks.push('Hover chooses ink independently of pen mode; closing the toolbar returns Save to the edited document');
   await roots.nth(1).getByText('BRAVO original document', { exact: true }).first().click();
   await page.keyboard.press('Control+Home');
   await page.keyboard.type('SECOND-EDIT ', { delay: 50 });

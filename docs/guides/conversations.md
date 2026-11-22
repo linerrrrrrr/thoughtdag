@@ -45,7 +45,7 @@ Drag a connection from the source node to empty canvas, then enter and send a qu
 
 Turn on the pen in **Highlights**, then select a passage in your question, a follow-up instruction, or the answer. Releasing the mouse saves the highlight for that speaker. Press Esc to put the pen away and resume ordinary text selection.
 
-When a document or conversation has highlights, an **overview ruler** appears to the right of its node. Each tick marks a passage's position in the full text. Click a tick to jump to its highlight. Drag a tick to another node to connect them, or to empty canvas to start a connected question. Send the question when you're ready. DOCX highlights appear when you save the document.
+When a document or conversation has highlights, an **overview ruler** appears to the right of its node. Each tick marks a passage's position in the full text. Click a tick to jump to its highlight. Drag a tick to another node to connect them, or to empty canvas to start a connected question. Send the question when you're ready. In a DOCX, switch on the highlighter in the document toolbar and drag across a passage. Its tick appears when you release the pointer. Hover over the pen to choose a color. Click the pen again or press Esc to stop marking. Save writes your highlights and text edits to the node document.
 
 ## Edit a node
 

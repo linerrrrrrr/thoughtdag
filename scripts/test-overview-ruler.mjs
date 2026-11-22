@@ -1,9 +1,13 @@
 import assert from 'node:assert/strict';
 import { build } from 'esbuild';
 
-const bundle = await build({ entryPoints: ['src/lib/overview-ruler.ts'], bundle: true, platform: 'node', format: 'esm',
-  loader: { '.css': 'text' }, write: false });
-const { overviewRulerMarks, overviewRulerTicks, isOverviewRulerHandle, resolveRulerHandle, remapOverviewRulerHandle } =
+const bundle = await build({ stdin: { resolveDir: process.cwd(), contents: `
+  export * from './src/lib/overview-ruler.ts';
+  export * from './src/lib/docx-ruler-data.ts';
+  export { setDraftDocxHighlights } from './src/lib/docx-highlight-drafts.ts';
+` }, bundle: true, platform: 'node', format: 'esm', loader: { '.css': 'text' }, write: false });
+const { overviewRulerMarks, overviewRulerTicks, isOverviewRulerHandle, resolveRulerHandle, remapOverviewRulerHandle,
+  liveDocxRulerData, savedDocxRulerEdges, setDraftDocxHighlights } =
   await import(`data:text/javascript;base64,${Buffer.from(bundle.outputFiles[0].contents).toString('base64')}`);
 const base = { question: '', response: '', attachments: [], highlights: [] };
 const mark = { id: 'id/含%20', text: 'read here' };
@@ -99,4 +103,29 @@ assert.deepEqual(native.map(item => item.attachmentId), [pdf.id, docx.id]);
 const pdfCopy = overviewRulerMarks({ ...base, attachments: [{ ...pdf, id: 'copy/pdf' }] })[0];
 assert.equal(pdfCopy.id, remapOverviewRulerHandle(area.id, new Map([[pdf.id, 'copy/pdf']]), new Map()));
 assert.equal(remapOverviewRulerHandle('source-right', new Map(), new Map()), 'source-right');
-console.log('PASS overview ruler text positions, PDF and native document marks, attachment scopes and copied endpoints');
+const source = { id: 'source', data: { ...base, stepKind: 'file', attachments: [docx] } };
+const [saved] = overviewRulerMarks(source.data);
+const draft = { id: 'new/stroke', text: 'Later mark', fraction: .8, color: 'yellow' };
+setDraftDocxHighlights(docx, [...docx.documentHighlights, draft]);
+const [, live] = overviewRulerMarks(liveDocxRulerData(source.data));
+const edges = [saved, live].map(mark => ({ source: source.id, sourceHandle: mark.id }));
+assert.equal(resolveRulerHandle(liveDocxRulerData(source.data), live.id), live.id);
+assert.deepEqual(savedDocxRulerEdges([source], edges).map(e => e.sourceHandle), [saved.id, 'continue']);
+assert.equal(edges[1].sourceHandle, live.id, 'Persistence must not change the live wire');
+const committed = { ...source, data: { ...source.data, attachments: [{ ...docx, documentHighlights: [...docx.documentHighlights, draft] }] } };
+assert.deepEqual(savedDocxRulerEdges([committed], edges), edges);
+const across = { ...docx, documentHighlights: [saved, draft].map((part, index) => ({
+  id: 'part' + index, text: part.text, fraction: part.fraction, strokeId: 'both/paragraphs',
+})) };
+const acrossNode = { ...source, data: { ...source.data, attachments: [across] } };
+const acrossMarks = overviewRulerMarks(acrossNode.data);
+assert.equal(acrossMarks.length, 1, 'One cross-paragraph gesture owns one port');
+assert.equal(acrossMarks[0].documentMarkId, 'part0', 'Navigate to the first native range');
+assert.equal(acrossMarks[0].text, saved.text + '\n' + draft.text);
+const acrossWire = { source: source.id, sourceHandle: acrossMarks[0].id };
+assert.deepEqual(savedDocxRulerEdges([acrossNode], [acrossWire]), [acrossWire]);
+setDraftDocxHighlights(docx, []);
+assert.deepEqual(overviewRulerMarks(liveDocxRulerData(source.data)), []);
+setDraftDocxHighlights(docx, undefined);
+assert.equal(liveDocxRulerData(source.data), source.data);
+console.log('PASS overview ruler positions, PDF and DOCX marks, attachment scopes, and draft/saved wire endpoints');

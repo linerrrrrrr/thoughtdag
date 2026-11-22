@@ -1,4 +1,6 @@
 import type { SuperDoc } from 'superdoc';
+import type { SelectionInfo } from 'superdoc/ui';
+import { createDocxHighlightIndex } from './docx-live-highlights';
 import type { Attachment } from '../types';
 import { useStore } from '../store';
 import { useProjects } from '../store/projects';
@@ -30,6 +32,7 @@ export interface DocxSession {
   started: boolean;
   generation: number;
   stopObserve?: () => void;
+  highlights?: ReturnType<typeof createDocxHighlightIndex>;
   releaseTimer?: ReturnType<typeof setTimeout>;
 }
 
@@ -67,6 +70,8 @@ function scheduleRelease(session: DocxSession) {
     session.generation++;
     session.stopObserve?.();
     session.stopObserve = undefined;
+    session.highlights?.dispose();
+    session.highlights = undefined;
     session.viewport.dispose();
     session.instance?.destroy();
     session.instance = null;
@@ -168,6 +173,8 @@ export async function startDocxSession(session: DocxSession, reload = false) {
   const generation = ++session.generation;
   session.stopObserve?.();
   session.stopObserve = undefined;
+  session.highlights?.dispose();
+  session.highlights = undefined;
   session.instance?.destroy();
   session.instance = null;
   session.element.replaceChildren();
@@ -201,10 +208,12 @@ export async function startDocxSession(session: DocxSession, reload = false) {
         session.revision = session.attachment.editedDocxRevision;
         applyOwnerMode(session);
         session.viewport.engineReady();
+        session.highlights = createDocxHighlightIndex(superdoc, session.attachment);
         session.stopObserve = superdoc.ui.document.observe(state => {
           if (generation !== session.generation) return;
           if (session.dirty === state.dirty) return;
           session.dirty = state.dirty;
+          if (!state.dirty) session.highlights?.clean();
           scheduleRelease(session);
           emit();
         });
@@ -232,7 +241,14 @@ export async function startDocxSession(session: DocxSession, reload = false) {
   }
 }
 
+export function recordDocxHighlightStroke(instance: SuperDoc, info: SelectionInfo) {
+  for (const session of sessions.values()) {
+    if (session.instance === instance) { session.highlights?.stroke(info); return; }
+  }
+}
+
 export function updateDocxAttachment(session: DocxSession, attachment: Attachment) {
+  session.highlights?.setAttachment(attachment);
   session.attachment = attachment;
   if (session.revision === attachment.editedDocxRevision || !session.started) {
     if (session.conflict) { session.conflict = false; emit(); }
@@ -274,9 +290,15 @@ export async function saveDocxSession(session: DocxSession) {
     };
     if (!session.dirty) return;
     assertCurrent();
+    const liveMarks = await session.highlights?.flush();
+    const liveIds = new Set(liveMarks?.map(mark => mark.id));
+    const documentHighlights = liveMarks && [
+      ...liveMarks, ...(attachment.documentHighlights ?? []).filter(mark => !liveIds.has(mark.id)),
+    ];
+    assertCurrent();
     const blob = await instance.export({ exportType: ['docx'], triggerDownload: false });
     const [patch, bytes, { saveNodeFile }] = await Promise.all([
-      docxRevisionPatch(attachment, blob), blob.arrayBuffer(), import('./node-files'),
+      docxRevisionPatch(documentHighlights ? { ...attachment, documentHighlights } : attachment, blob), blob.arrayBuffer(), import('./node-files'),
     ]);
     assertCurrent();
     await saveNodeFile(session.projectId, session.nodeId, attachment, encodeBytes(new Uint8Array(bytes)), assertCurrent, revision => {
@@ -287,6 +309,7 @@ export async function saveDocxSession(session: DocxSession) {
       useStore.getState().setAttachmentData(session.nodeId, attachmentId, patch);
       useStore.getState().pushHistory();
       instance.ui.document.markClean(version);
+      session.highlights?.saved(session.attachment);
       session.conflict = false;
     });
   } finally {
@@ -317,6 +340,6 @@ window.addEventListener('beforeunload', beforeUnload);
 
 if (import.meta.hot) import.meta.hot.dispose(() => {
   window.removeEventListener('beforeunload', beforeUnload);
-  sessions.forEach(session => { cancelRelease(session); session.generation++; session.stopObserve?.(); session.viewport.dispose(); session.instance?.destroy(); });
+  sessions.forEach(session => { cancelRelease(session); session.generation++; session.stopObserve?.(); session.highlights?.dispose(); session.viewport.dispose(); session.instance?.destroy(); });
   sessions.clear();
 });

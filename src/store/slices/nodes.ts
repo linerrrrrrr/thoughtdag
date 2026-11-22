@@ -17,6 +17,7 @@ import { fitFrameNodes, frameContentIds, isFrameNode, nodesRect } from '../../li
 import { applySelectionGeometry } from '../../lib/node-geometry';
 import { applyEdgeSettings, applyBatchEdgeSettings } from '../../lib/edge-edit';
 import { rulerSourceHandle } from '../../lib/edge-anchors';
+import { liveDocxRulerData, savedDocxRulerEdges } from '../../lib/docx-ruler-data';
 import { resolveRulerHandle, remapOverviewRulerHandle } from '../../lib/overview-ruler';
 import { canvasLayoutInputKey, planCanvasLayout } from '../../lib/canvas-layout';
 import { questionHeightRatio } from '../../lib/conversation-split';
@@ -228,6 +229,8 @@ export const createNodeSlice: StateCreator<StoreState, [], [], NodeSlice> = (set
       dragHandle: '.drag-handle',
       data: {
         ...copiedNodeData(node.data),
+        // A duplicate shares saved bytes, but opens its own document editing session.
+        attachments: (node.data.attachments ?? []).map(attachment => ({ ...attachment })),
         isCollapsed: true,
         isEditing: false,
         isEditingResponse: false,
@@ -254,8 +257,9 @@ export const createNodeSlice: StateCreator<StoreState, [], [], NodeSlice> = (set
     if (!src || !tgt || sourceId === targetId) return;
     const markId = rulerSourceHandle(sourceHandle);
     const pair = edges.filter(e => e.source === sourceId && e.target === targetId);
-    if (markId && resolveRulerHandle(src.data, markId) !== markId) return;
-    if (pair.some(e => resolveRulerHandle(src.data, e.sourceHandle) === markId)) return;
+    const rulerData = liveDocxRulerData(src.data);
+    if (markId && resolveRulerHandle(rulerData, markId) !== markId) return;
+    if (pair.some(e => resolveRulerHandle(rulerData, e.sourceHandle) === markId)) return;
     // MATERIAL sources wire SOLID by default. A dashed reference carries a
     // node's Q/A transcript — a material has none, so a dashed wire from a
     // material is a nearly-empty gesture that LOOKS like "file connected"
@@ -813,7 +817,7 @@ export const createNodeSlice: StateCreator<StoreState, [], [], NodeSlice> = (set
     // Edges INSIDE the selection are copied; edges crossing the boundary are
     // cut — the copy has no wires to the original graph, so its stale check
     // (lastContextHash vs. the now-empty upstream) flags it naturally.
-    const innerEdges: ThoughtEdge[] = edges
+    const innerEdges: ThoughtEdge[] = savedDocxRulerEdges(originals, edges)
       .filter((e) => selected.has(e.source) && selected.has(e.target))
       .map((e) => ({
         ...e,

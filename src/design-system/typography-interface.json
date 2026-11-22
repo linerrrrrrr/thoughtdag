@@ -49,6 +49,9 @@
       "[data-pdf-save-status]": "portal",
       ".tdag-textlayer": "native-document"
     },
+    "src/components/DocxHighlighterButton.tsx": {
+      "[data-docx-pen-palette]": "portal"
+    },
     "src/components/QuestionAttachmentDialog.tsx": {
       ".question-attachment-backdrop": "portal"
     },
@@ -66,6 +69,7 @@
     },
     "src/components/SuperDocEditor.tsx": {
       "[data-superdoc-toolbar]": "portal",
+      "[data-docx-hide-tools]": "portal",
       "[data-superdoc-save]": "portal",
       "[data-superdoc-export]": "portal",
       "[data-superdoc-save-status]": "portal",

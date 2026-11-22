@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
-import { useStoreApi } from '@xyflow/react';
-import { Download, Loader2, Save } from 'lucide-react';
+import { useStore as useFlowStore } from '@xyflow/react';
+import { FileDown, Loader2, Save, X } from 'lucide-react';
 import type { Attachment } from '../types';
 import { useProjects } from '../store/projects';
 import { useT, fmt } from '../i18n';
@@ -9,6 +9,7 @@ import { toast } from '../lib/ui-store';
 import { documentWriteError } from '../lib/document-errors';
 import { useFileEditPreview } from '../lib/document-edit-preview';
 import { docxHighlightAddress, registerDocxRulerHost } from '../lib/docx-ruler-navigation';
+import { anchorDocxToolbar } from '../lib/docx-toolbar-position';
 import type { OverviewRulerMark } from '../lib/overview-ruler';
 import DocumentEditPreview from './DocumentEditPreview';
 import {
@@ -21,16 +22,11 @@ import 'superdoc/style.layered.css';
 import './SuperDocEditor.css';
 
 function CanvasDocxViewportSync({ viewport }: { viewport: ReturnType<typeof getDocxSession>['viewport'] }) {
-  const { subscribe } = useStoreApi();
-  useEffect(() => {
-    // Canvas transforms do not resize the host's CSS layout box. Subscribe to
-    // their source as well as DOM geometry so every zoom frame is synchronized.
-    const unsubscribe = subscribe((state, previous) => {
-      if (state.transform[2] !== previous.transform[2]) viewport.refresh();
-    });
+  const zoom = useFlowStore(state => state.transform[2]);
+  useLayoutEffect(() => {
+    // Sample after React Flow commits the zoom transform so hit testing follows the painted paper.
     viewport.refresh();
-    return unsubscribe;
-  }, [subscribe, viewport]);
+  }, [viewport, zoom]);
   return null;
 }
 
@@ -96,7 +92,12 @@ function LiveDocxEditor({ nodeId, attachment, compact, readOnly, onEditingChange
     onEditingChange?.(attachment.id, protectsWorkingCard);
     return () => onEditingChange?.(attachment.id, false);
   }, [attachment.id, onEditingChange, protectsWorkingCard]);
-  const readerToolbar = !compact ? host?.closest('[data-material-reader]')?.querySelector('[data-docx-reader-toolbar]') : null;
+  const readerToolbar = !compact ? host?.closest('[data-reader-body]')?.querySelector('[data-docx-reader-toolbar]') : null;
+  const toolbarRef = useRef<HTMLDivElement>(null);
+  const toolbarInstance = active ? readyInstance : null;
+  useLayoutEffect(() => {
+    if (compact && toolbarInstance && host && toolbarRef.current) return anchorDocxToolbar(host, toolbarRef.current);
+  }, [compact, toolbarInstance, host]);
   const save = () => { void saveDocxSession(session).catch(error => toast('error', t(documentWriteError(error)))); };
   const exportFile = () => { void exportDocxSession(session).catch(() => toast('error', t('richDocument.exportFailed'))); };
   const hasNativeRevision = !!(attachment.editedDocxRevision || attachment.editedDocxSavedAt)
@@ -121,11 +122,14 @@ function LiveDocxEditor({ nodeId, attachment, compact, readOnly, onEditingChange
     finally { setExportingPrevious(false); }
   };
   const status = <span data-superdoc-save-status data-type-surface="portal" role="status">{t(session.saving ? 'richDocument.saving' : needsSave ? 'docx.unsaved' : 'nativeDocument.saved')}</span>;
-  const actions = <>
+  const showToolbar = !!toolbarInstance && (compact || !!readerToolbar);
+  const hideToolbar = () => activateDocx(null);
+  const actions = showToolbar ? <button type="button" data-type-surface="portal" data-export-omit="files" data-docx-hide-tools
+    aria-label={t('nativeDocument.hideTools')} data-tooltip={t('nativeDocument.hideTools')} onClick={hideToolbar}><X size={15} /></button> : <>
     {!readOnly && <button type="button" data-type-surface="portal" data-superdoc-save disabled={session.saving || session.conflict || session.status !== 'ready' || !needsSave}
       onClick={save} aria-label={t('common.save')} data-tooltip={t('document.saveNode')}><Save size={15} /></button>}
     <button type="button" data-type-surface="portal" data-superdoc-export disabled={session.status !== 'ready'} onClick={exportFile}
-      aria-label={t('richDocument.exportDocx')} data-tooltip={t('richDocument.exportDocx')}><Download size={15} /></button>
+      aria-label={t('richDocument.exportDocx')} data-tooltip={t('richDocument.exportDocx')}><FileDown size={15} /></button>
   </>;
   return <div className={`docx-workspace nodrag nopan nowheel ${compact ? 'docx-workspace--compact' : ''}`}
     data-superdoc-editor={attachment.id} data-superdoc-ready={session.status === 'ready'}
@@ -153,9 +157,9 @@ function LiveDocxEditor({ nodeId, attachment, compact, readOnly, onEditingChange
     {session.status === 'loading' && <div className="docx-load-state text-control"><Loader2 size={18} className="animate-spin" />{t('richDocument.loading')}</div>}
     {session.status === 'error' && <div className="docx-load-state text-control" role="alert">{t('document.originalUnavailable')}
       <button type="button" onClick={() => void startDocxSession(session, true)}>{t('docx.retry')}</button></div>}
-    {active && session.instance && createPortal(<div className={`${readerToolbar ? 'docx-toolbar-inline' : 'docx-toolbar-dock'} nodrag nopan nowheel`} data-type-surface="portal" data-superdoc-toolbar>
-      <SuperDocToolbar key={session.instance.superdocId} instance={session.instance} viewport={session.viewport} name={attachment.name} dirty={needsSave} saving={session.saving} canSave={!session.conflict}
-        onSave={save} onExport={exportFile} onHide={() => activateDocx(null)} />
+    {toolbarInstance && showToolbar && createPortal(<div ref={toolbarRef} className={`${compact ? 'docx-toolbar-dock' : 'docx-toolbar-inline'} nodrag nopan nowheel`} data-type-surface="portal" data-superdoc-toolbar>
+      <SuperDocToolbar key={toolbarInstance.superdocId} instance={toolbarInstance} viewport={session.viewport} name={attachment.name} dirty={needsSave} saving={session.saving} canSave={!session.conflict}
+        onSave={save} onExport={exportFile} onHide={hideToolbar} />
     </div>, readerToolbar ?? document.body)}
   </div>;
 }

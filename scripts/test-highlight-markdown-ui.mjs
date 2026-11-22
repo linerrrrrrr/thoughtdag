@@ -142,16 +142,26 @@ try {
     { id: 'table', response: '| First cell | Second cell |\n| --- | --- |\n| A | B |', first: 'First cell', last: 'Second cell', visible: 'FirstcellSecondcell' },
     { id: 'cross-code', response: 'Before text\n\n```js\nconst answer = 42;\n```\n\nAfter text', first: 'Before text', last: 'After text', visible: 'BeforetextAftertext' },
   ]) {
-    const { answer } = await fixture('shared', test.response);
+    const { card, answer } = await fixture('shared', test.response);
     const before = await answer.textContent();
     const selected = await selectBetween(answer, test.first, test.last);
+    await card.locator('[data-overview-ruler-mark]').first().press('Enter');
+    const located = await page.evaluate(() => [...CSS.highlights.get('ruler-destination')].map(range => range.toString()).join(''));
+    assert.equal(located.replace(/\s+/g, ''), test.visible, `${test.id}: ruler feedback matches the marked text`);
     const result = await page.evaluate(async ({ id, source }) => {
       const node = window.__store.getState().nodes.find(item => item.id === id);
       const { highlightFoundIn } = await import('/src/lib/highlight-match.ts');
-      return { saved: node.data.highlights.map(item => item.text), found: highlightFoundIn(source, node.data.highlights[0]?.text ?? '') };
+      const { renderNodeReadingHtml } = await import('/src/lib/canvas-html-content.tsx');
+      const html = await renderNodeReadingHtml(node, false, { embed: async () => {} });
+      const exported = new DOMParser().parseFromString(html, 'text/html').querySelector('[data-reading-answer]');
+      return { saved: node.data.highlights.map(item => item.text), found: highlightFoundIn(source, node.data.highlights[0]?.text ?? ''),
+        exportedInk: [...exported.querySelectorAll('mark')].map(mark => mark.textContent).join('').replace(/\s+/g, ''),
+        exportedAnchor: !!exported.querySelector('[data-ruler-target]') };
     }, { id: 'shared', source: test.response });
     assert.deepEqual(result.saved, [selected]);
     assert.equal(result.found, true, `${test.id}: source match`);
+    assert.equal(result.exportedAnchor, true, `${test.id}: offline ruler target`);
+    assert.equal(result.exportedInk, test.visible, `${test.id}: exported ink matches the reading surface`);
     assert.equal((await answer.locator('mark.highlight-mark').allTextContents()).join('').replace(/\s+/g, ''), test.visible);
     assert.equal(await answer.locator('pre mark.highlight-mark').count(), 0);
     assert.equal(await answer.textContent(), before, `${test.id}: original rendering preserved`);

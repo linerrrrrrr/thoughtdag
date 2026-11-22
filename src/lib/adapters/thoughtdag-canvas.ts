@@ -7,6 +7,7 @@ import { fragmentTag, sessionKey, urlArtifact, EXCERPT_CHARS } from '../events/p
 import { THOUGHTDAG_MANIFEST } from '../events/manifests';
 import { normalizeConversationGraph } from '../normalize-graph';
 import { documentCopyText, isEditableDocument } from '../document-copy';
+import { formatAnchorPages } from '../pdf-mark';
 
 // The canvas is ThoughtDAG's own record — a backup (.thoughtdag.json) is
 // its source file. This adapter projects it onto the same contract the
@@ -147,11 +148,12 @@ export function canvasToEvents(backup: CanvasBackup, opts: { file: string; sourc
 
     // materials: attachments the person placed (the runner's tool trail is not a material)
     const excluded = new Set(d.excludedAttachmentIds ?? []);
+    const locator = d.anchor && { pages: formatAnchorPages(d.anchor.page, d.anchor.additionalPages) };
     for (const att of d.attachments ?? []) {
       if (att.name.startsWith('tool: ') || att.op) continue;
       const artifact: ArtifactRef = {
         id: `thoughtdag:attachment/${att.id}`, observedPath: att.name,
-        ...(d.anchor && d.anchor.attId === att.id ? { locator: { pages: String(d.anchor.page) } } : {}),
+        ...(d.anchor?.attId === att.id && { locator }),
       };
       const e: ArtifactAttached = {
         id: `${tid}/att:${att.id}`, kind: 'artifact.attached', ...base, ...(att.addedAt ? { at: att.addedAt } : {}), source: src(`${n.id}:attachment:${att.id}`), ...OBS_FULL,
@@ -163,7 +165,7 @@ export function canvasToEvents(backup: CanvasBackup, opts: { file: string; sourc
     if (d.anchor?.attId && !(d.attachments ?? []).some((a) => a.id === d.anchor?.attId)) {
       const e: ArtifactAttached = {
         id: `${tid}/anchor`, kind: 'artifact.attached', ...base, source: src(`${n.id}:anchor`), ...OBS_FULL,
-        artifact: { id: `thoughtdag:attachment/${d.anchor.attId}`, locator: { pages: String(d.anchor.page) } }, via: 'anchor', inContext: 'unknown',
+        artifact: { id: `thoughtdag:attachment/${d.anchor.attId}`, locator }, via: 'anchor', inContext: 'unknown',
       };
       out.push(e);
     }

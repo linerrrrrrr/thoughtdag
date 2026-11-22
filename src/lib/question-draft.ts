@@ -7,6 +7,8 @@ import { placeNewNodes } from './layout';
 import { useUiStore } from './ui-store';
 import { inheritedNodeExecution } from './node-execution';
 import { positionNodeAtConnectionEnd, rulerSourceHandle } from './edge-anchors';
+import { liveDocxRulerNode } from './docx-ruler-data';
+import { resolveRulerHandle } from './overview-ruler';
 import type { ConnectionLayout } from './connection-layout-preferences';
 
 export interface QuestionDraftOptions {
@@ -25,6 +27,9 @@ export function createQuestionDraft(options: QuestionDraftOptions = {}): string 
   const state = useStore.getState();
   const parent = options.parentId ? state.nodes.find((node) => node.id === options.parentId) : undefined;
   if (options.parentId && (!parent || parent.data.stepKind === 'frame')) return null;
+  const rulerParent = parent && liveDocxRulerNode(parent);
+  const mark = rulerSourceHandle(options.sourceHandle);
+  if (mark && (!rulerParent || resolveRulerHandle(rulerParent.data, mark) !== mark)) return null;
   const id = generateId();
   const node: ThoughtNode = {
     id, type: 'thought', position: options.position ?? { x: 0, y: 0 }, dragHandle: '.drag-handle', selected: true,
@@ -41,12 +46,12 @@ export function createQuestionDraft(options: QuestionDraftOptions = {}): string 
   };
   const edge: ThoughtEdge | undefined = parent ? {
     id: `edge-${parent.id}-${id}`, source: parent.id, target: id,
-    sourceHandle: rulerSourceHandle(options.sourceHandle) ?? 'continue', targetHandle: 'top',
+    sourceHandle: mark ?? 'continue', targetHandle: 'top',
     type: 'smoothstep', style: { stroke: COLORS.accent, strokeWidth: 2 }, animated: false,
     markerEnd: { type: 'arrowclosed', color: COLORS.accent, ...EDGE_ARROW_GEOMETRY },
     data: {},
   } : undefined;
-  if (parent && options.connectionEnd) node.position = positionNodeAtConnectionEnd(parent, node, options.connectionEnd, undefined, options.connectionLayout, options.sourceHandle);
+  if (rulerParent && options.connectionEnd) node.position = positionNodeAtConnectionEnd(rulerParent, node, options.connectionEnd, undefined, options.connectionLayout, options.sourceHandle);
   const deselectedEdges = state.edges.map((existing) => existing.selected ? { ...existing, selected: false } : existing);
   const edges = edge ? [...deselectedEdges, edge] : deselectedEdges;
   const nodes = [...state.nodes.map((existing) => existing.selected ? { ...existing, selected: false } : existing), node];

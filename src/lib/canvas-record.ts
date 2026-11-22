@@ -3,6 +3,7 @@ import { useProjects, beforeSwitchHooks } from '../store/projects';
 import { EXPORT_FORMAT_VERSION, activeProjectName } from './export';
 import { isViewerMode } from './viewer';
 import type { ThoughtNode } from '../types';
+import { savedDocxRulerEdges } from './docx-ruler-data';
 import { normalizeConversationGraph } from './normalize-graph';
 import { documentCopyText, isEditableDocument } from './document-copy';
 
@@ -50,7 +51,7 @@ export function canvasRecordPayload(): { projectId: string; json: string } | nul
     record: 'thoughtdag-canvas-record',
     instantiatedFrom: meta?.instantiatedFrom,
     nodes: stripTransient(nodes).map(slimNode),
-    edges,
+    edges: savedDocxRulerEdges(nodes, edges),
     events,
   }));
   return { projectId: activeId, json };

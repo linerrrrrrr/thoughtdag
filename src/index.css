@@ -832,9 +832,14 @@ body.tdag-connecting, body.tdag-connecting * {
   line-height: 1;
   text-align: initial;
   forced-color-adjust: none;
+  text-size-adjust: none;
+  transform-origin: 0 0;
   caret-color: transparent;
   z-index: 2;
 }
+.tdag-textlayer[data-main-rotation="90"] { transform: rotate(90deg) translateY(-100%); }
+.tdag-textlayer[data-main-rotation="180"] { transform: rotate(180deg) translate(-100%, -100%); }
+.tdag-textlayer[data-main-rotation="270"] { transform: rotate(270deg) translateX(-100%); }
 .tdag-textlayer span,
 .tdag-textlayer br {
   position: absolute;

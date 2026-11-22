@@ -105,9 +105,19 @@ function attachmentText(attachment: Attachment): string {
 function documentMarks(att: Attachment): OverviewRulerMark[] {
   const prefix = `${PREFIX}mark/${encode(att.id)}/`;
   const marks: OverviewRulerMark[] = [];
+  // The native format stores separate paragraph ranges. One pen gesture owns one port.
+  const strokes = new Map<string, OverviewRulerMark>();
   for (const mark of att.documentHighlights ?? []) {
-    if (Number.isFinite(mark.fraction)) marks.push({ ...mark, id: prefix + encode(mark.id), documentMarkId: mark.id,
-      fraction: clamp(mark.fraction), attachmentId: att.id });
+    if (!Number.isFinite(mark.fraction)) continue;
+    const earlier = mark.strokeId && strokes.get(mark.strokeId);
+    if (earlier) {
+      earlier.text += '\n' + mark.text;
+      continue;
+    }
+    const tick = { ...mark, id: prefix + encode(mark.strokeId ?? mark.id), documentMarkId: mark.id,
+      fraction: clamp(mark.fraction), attachmentId: att.id };
+    marks.push(tick);
+    if (mark.strokeId) strokes.set(mark.strokeId, tick);
   }
   const annotations = att.pdfAnnotations ?? [];
   const pages = annotations.reduce((count, mark) => Number.isInteger(mark.page) ? Math.max(count, mark.page) : count,

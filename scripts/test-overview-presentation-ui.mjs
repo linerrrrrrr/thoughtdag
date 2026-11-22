@@ -261,7 +261,7 @@ try {
   await zoom(.7);
   // The floating toolbar may overlap the canvas header at this viewport.
   if (await page.locator('[data-docx-toolbar]').count()) {
-    await page.locator('[data-docx-toolbar]').getByRole('button', { name: /收起工具栏|Hide toolbar/ }).click();
+    await root('native-real').locator('[data-docx-hide-tools]').click();
   }
   await root('native-real').locator('[data-superdoc-save]').click();
   await expectDetail('native-real', 'compact');

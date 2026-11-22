@@ -1,6 +1,7 @@
 import type { SuperDoc, TextAddress } from 'superdoc';
 import type { Attachment } from '../types';
 import type { OverviewRulerMark } from './overview-ruler';
+import { draftDocxHighlights } from './docx-highlight-drafts';
 
 type Reveal = (mark: OverviewRulerMark) => void;
 const hosts = new WeakMap<HTMLElement, Reveal>();
@@ -26,7 +27,7 @@ export function revealMountedDocxHighlight(card: HTMLElement, mark: OverviewRule
 /** Resolve against model text, including virtualized pages. The native query
  * carries exact block ranges and run formatting without changing selection. */
 export async function docxHighlightAddress(instance: SuperDoc, attachment: Attachment, id: string, signal: AbortSignal) {
-  const saved = attachment.documentHighlights ?? [];
+  const saved = draftDocxHighlights(attachment) ?? attachment.documentHighlights ?? [];
   const mark = saved.find(item => item.id === id);
   const doc = instance.activeEditor?.doc;
   if (!mark?.text || !doc) return;
@@ -39,6 +40,10 @@ export async function docxHighlightAddress(instance: SuperDoc, attachment: Attac
     for (const item of result.items) {
       if (item.matchKind !== 'text' || item.blocks.length !== 1) continue;
       const block = item.blocks[0];
+      const anchor = mark.anchor;
+      if (anchor && block.blockId === anchor.blockId && block.range.start === anchor.start && block.range.end === anchor.end) {
+        return { kind: 'text' as const, blockId: block.blockId, range: block.range };
+      }
       if (block.runs.length && block.runs.every(run => run.styles.highlight && run.styles.highlight !== 'none')) {
         colored.push({ kind: 'text', blockId: block.blockId, range: block.range });
       }
@@ -59,6 +64,10 @@ export async function docxHighlightAddress(instance: SuperDoc, attachment: Attac
   let distance = Infinity;
   for (const block of body.blocks) {
     const text = block.text.replace(/[\t\n\r\v]/g, ' ');
+    const anchor = mark.anchor;
+    if (anchor && anchor.blockId === block.nodeId && text.slice(anchor.start, anchor.end) === mark.text) {
+      return { kind: 'text' as const, blockId: block.nodeId, range: { start: anchor.start, end: anchor.end } };
+    }
     for (let i = text.indexOf(mark.text); i >= 0; i = text.indexOf(mark.text, i + mark.text.length)) {
       const delta = Math.abs(start + i + mark.text.length / 2 - mark.fraction * length);
       if (delta < distance) {
