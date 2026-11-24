@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import { useDismissableLayer } from '../../lib/use-dismissable-layer';
-import { Archive, ArchiveRestore, ClipboardCopy, Files, Ellipsis, FileDown, GitFork, MessageSquarePlus, RefreshCw, Square, Trash2, Undo2 } from 'lucide-react';
+import { Archive, ArchiveRestore, ClipboardCopy, ExternalLink, Files, Ellipsis, FileDown, GitFork, MessageSquarePlus, RefreshCw, Square, Trash2, Undo2 } from 'lucide-react';
 import { useStore } from '../../store';
 import { contextChainMarkdown, downloadMarkdown, copyText } from '../../lib/export';
 import { NodeExecutionBadge } from '../ui/NodeExecutionPicker';
@@ -9,6 +9,8 @@ import { useT } from '../../i18n';
 import { canSteerAgentNode } from '../../lib/agents/agent-runtime';
 import AgentInstructionInput from './AgentInstructionInput';
 import { uiRect, uiViewport } from '../../lib/ui-scale';
+import { displayedCodexThreadId } from '../../lib/codex-thread-link';
+import { openOriginalCodexThread } from '../../lib/source-navigation';
 
 // The reading header keeps the model and menu; answer actions live below the prose.
 
@@ -53,6 +55,7 @@ export default function HeaderActions({ nodeId, isLoading }: { nodeId: string; i
   const menuRef = useRef<HTMLDivElement>(null);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
   const canSteer = isLoading && canSteerAgentNode(nodeId);
+  const threadId = nodeData && displayedCodexThreadId(nodeData);
 
   const openInstructions = () => {
     const rect = menuButtonRef.current ? uiRect(menuButtonRef.current) : null;
@@ -86,6 +89,9 @@ export default function HeaderActions({ nodeId, isLoading }: { nodeId: string; i
         </button>
         {menuOpen && (
           <div className="absolute right-0 top-full mt-1 bg-card border border-line rounded-overlay shadow-lg py-1 w-[210px] z-30 animate-fade-in">
+            {threadId && <button type="button" className={menuItem} onClick={() => { setMenuOpen(false); void openOriginalCodexThread(threadId); }}>
+              <ExternalLink size={15} strokeWidth={1.75} /> {t('ctx.openCodexThread')}
+            </button>}
             {canSteer && <button className={menuItem} data-agent-instruction-trigger onClick={openInstructions}>
               <MessageSquarePlus size={15} strokeWidth={1.75} /> {t('agent.addInstructions')}
             </button>}

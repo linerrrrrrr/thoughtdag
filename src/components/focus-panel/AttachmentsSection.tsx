@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback } from 'react';
-import { ChevronRight, FileText, Loader2, Paperclip, X, BookOpen } from 'lucide-react';
+import { AlertTriangle, BookOpen, Check, ChevronRight, Loader2, Minus, Paperclip, X } from 'lucide-react';
+import { fileIconFor } from '../../lib/content-icons';
 import { useUiStore } from '../../lib/ui-store';
 import { FILE_INPUT_ACCEPT } from '../../lib/attachments';
 import { importNodeFiles } from '../../lib/node-file-import';
@@ -105,12 +106,13 @@ export default function AttachmentsSection({
           {attachments.length > 0 && (
             <div className="space-y-1.5">
               <span className="text-control text-ink-faint font-medium">{t('attach.thisNode')}</span>
-              {attachments.map((att) => (
-                <div key={att.id} className="flex items-center gap-2 bg-wash rounded-content px-3 py-2 group">
+              {attachments.map((att) => {
+                const Icon = fileIconFor(att.name, att.type);
+                return <div key={att.id} className="flex items-center gap-2 bg-wash rounded-content px-3 py-2 group">
                   {att.thumbnailUrl ? (
                     <img src={att.thumbnailUrl} className="w-8 h-8 rounded-content object-cover shrink-0" alt={att.name} />
                   ) : (
-                    <span className="w-8 h-8 rounded-tag bg-line flex items-center justify-center text-control text-ink-muted shrink-0"><FileText size={16} strokeWidth={1.75} /></span>
+                    <span className="w-8 h-8 rounded-tag bg-line flex items-center justify-center text-control text-ink-muted shrink-0"><Icon size={16} strokeWidth={1.75} /></span>
                   )}
                   <div className="min-w-0 flex-1">
                     <p className="text-control text-ink truncate">{att.name}</p>
@@ -123,7 +125,7 @@ export default function AttachmentsSection({
                     {/* Render mode toggle for PDFs with >10 pages */}
                     {att.type === 'application/pdf' && att.numPages != null && att.numPages > 10 && !att.isExtracting && (
                       <div className="mt-1 flex items-center gap-1.5">
-                        <span className="text-control text-amber-600">{fmt(t('attach.pagesWarning'), { n: att.numPages, tok: (att.numPages * 1500).toLocaleString() })}</span>
+                        <span className="inline-flex items-center gap-1 text-control text-amber-600"><AlertTriangle size={13} strokeWidth={1.75} aria-hidden />{fmt(t('attach.pagesWarning'), { n: att.numPages, tok: (att.numPages * 1500).toLocaleString() })}</span>
                         <button
                           data-export-omit="edit" onClick={() => setAttachmentRenderMode(nodeId, att.id, att.renderMode === 'full' ? 'text-only' : 'full')}
                           className={`text-control px-2 py-0.5 rounded-tag transition-colors ${
@@ -165,12 +167,13 @@ export default function AttachmentsSection({
                   )}
                   {!isViewerMode && <button
                     data-export-omit="edit" onClick={() => removeAttachment(nodeId, att.id)}
+                    aria-label={t('actions.removeAttachment')}
                     className="text-ink-faint hover:text-red-500 transition-colors shrink-0 opacity-0 group-hover:opacity-100"
                   >
                     <X size={14} strokeWidth={1.75} />
                   </button>}
-                </div>
-              ))}
+                </div>;
+              })}
             </div>
           )}
 
@@ -183,12 +186,13 @@ export default function AttachmentsSection({
                 const includeSet = new Set(includedAttachmentIds);
                 const isOverridden = includeSet.has(att.id); // re-included despite ancestor exclusion
                 const isEffectivelyExcluded = isExcludedSelf || (excludedByAncestor && !isOverridden);
+                const Icon = fileIconFor(att.name, att.type);
                 return (
                   <div key={att.id} className={`flex items-center gap-2 rounded-content px-3 py-2 transition-all ${isEffectivelyExcluded ? 'bg-red-50/50 opacity-50' : 'bg-wash'}`}>
                     {att.thumbnailUrl ? (
                       <img src={att.thumbnailUrl} className="w-8 h-8 rounded-content object-cover shrink-0" alt={att.name} />
                     ) : (
-                      <span className="w-8 h-8 rounded-tag bg-line flex items-center justify-center text-control text-ink-muted shrink-0"><FileText size={16} strokeWidth={1.75} /></span>
+                      <span className="w-8 h-8 rounded-tag bg-line flex items-center justify-center text-control text-ink-muted shrink-0"><Icon size={16} strokeWidth={1.75} /></span>
                     )}
                     <div className="min-w-0 flex-1">
                       <p className={`text-control truncate ${isEffectivelyExcluded ? 'text-ink-faint line-through' : 'text-ink'}`}>{att.name}</p>
@@ -210,7 +214,8 @@ export default function AttachmentsSection({
                     )}
                     <button
                       data-export-omit="edit" onClick={() => toggleExcludeAttachment(nodeId, att.id, excludedByAncestor)}
-                      className={`text-control px-2 py-1 rounded-control transition-colors shrink-0 ${
+                      aria-pressed={!isEffectivelyExcluded}
+                      className={`inline-flex items-center gap-1 text-control px-2 py-1 rounded-control transition-colors shrink-0 ${
                         isEffectivelyExcluded
                           ? 'bg-red-100 text-red-500 hover:bg-red-200'
                           : isOverridden
@@ -219,6 +224,7 @@ export default function AttachmentsSection({
                       }`}
                       data-tooltip={excludedByAncestor && !isOverridden ? t('attach.titleExcludedUpstream') : isOverridden ? t('attach.titleReIncluded') : isExcludedSelf ? t('attach.titleInclude') : t('attach.titleExclude')}
                     >
+                      {isEffectivelyExcluded ? <Minus size={14} aria-hidden /> : <Check size={14} aria-hidden />}
                       {excludedByAncestor && !isOverridden && !isExcludedSelf ? t('attach.btnUpstream') : isOverridden ? t('attach.btnReIncluded') : isExcludedSelf ? t('attach.btnExcluded') : t('attach.btnIncluded')}
                     </button>
                   </div>

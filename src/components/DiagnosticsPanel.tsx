@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useDismissableLayer } from '../lib/use-dismissable-layer';
 import { useCanvasPanelPosition } from '../lib/use-canvas-panel-position';
 import { useCanvasToolCard } from '../lib/use-canvas-tool-card';
-import { Crosshair, Stethoscope, Trash2 } from 'lucide-react';
+import { LocateFixed, Stethoscope, Trash2 } from 'lucide-react';
 import { useStore } from '../store';
 import { runDiagnostics, type Finding } from '../lib/diagnostics';
 import { useT, fmt } from '../i18n';
@@ -77,7 +77,7 @@ export default function DiagnosticsPanel({ onLocate, openPing = 0, showTrigger =
             aria-label={t('diag.locate')}
             className="w-6 h-6 rounded-control text-ink-faint hover:text-accent hover:bg-wash flex items-center justify-center transition-colors"
           >
-            <Crosshair size={13} strokeWidth={1.75} />
+            <LocateFixed size={13} strokeWidth={1.75} />
           </button>
         )}
         {f.fixable && (

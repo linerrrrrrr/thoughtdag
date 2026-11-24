@@ -1,5 +1,5 @@
 import { useId, useState } from 'react';
-import { ShieldAlert, MessageCircleQuestion, ChevronDown, ChevronRight } from 'lucide-react';
+import { Ban, Check, ChevronDown, ChevronRight, CircleMinus, MessageCircleQuestion, Shield, ShieldAlert, Undo2 } from 'lucide-react';
 import { useT } from '../../i18n';
 import { isImeComposing } from '../../utils';
 import { useStore } from '../../store';
@@ -231,6 +231,11 @@ function FormQuestions({ questions, compact, busy, onSubmit, onSkip }: { questio
   );
 }
 
+const outcomeIcons = {
+  'allowed-once': Check, 'allowed-session': Check, answered: Check,
+  rejected: Ban, cancelled: Undo2, unavailable: CircleMinus,
+} satisfies Record<ApprovalRecord['outcome'], typeof Check>;
+
 /** The decided questions of a turn, one line each — the record the canvas keeps. */
 export function ApprovalRecords({ records }: { records: ApprovalRecord[] }) {
   const t = useT();
@@ -238,13 +243,14 @@ export function ApprovalRecords({ records }: { records: ApprovalRecord[] }) {
   const label = (r: ApprovalRecord) => r.outcome === 'allowed-once' ? t('approval.allowed') : r.outcome === 'allowed-session' ? (r.auto ? t('approval.autoAllowed') : t('approval.allowedSession')) : r.outcome === 'rejected' ? t('approval.rejected') : r.outcome === 'answered' ? t('approval.answered') : r.outcome === 'cancelled' ? t('approval.cancelled') : t('approval.unavailable');
   return (
     <ul className="mt-2 space-y-1" data-approval-records>
-      {records.map((r) => (
-        <li key={r.id} className="text-control text-ink-faint flex items-baseline gap-1.5 min-w-0">
-          <span className="shrink-0">{r.outcome === 'allowed-once' || r.outcome === 'allowed-session' || r.outcome === 'answered' ? '✅' : '⛔'}</span>
+      {records.map((r) => {
+        const Icon = outcomeIcons[r.outcome] ?? CircleMinus;
+        return <li key={r.id} className="text-control text-ink-faint flex items-baseline gap-1.5 min-w-0">
+          <Icon size={13} className="shrink-0 self-center" aria-hidden />
           <span className="shrink-0">{label(r)}</span>
           <span className="font-mono text-ink-muted truncate">{r.name}{r.value ? ` → ${r.value}` : r.query ? ` · ${r.query}` : ''}</span>
-        </li>
-      ))}
+        </li>;
+      })}
     </ul>
   );
 }
@@ -260,10 +266,11 @@ export function DecisionsDisclosure({ records }: { records: ApprovalRecord[] }) 
       <button
         onClick={(e) => { e.stopPropagation(); setOpen((v) => !v); }}
         className="flex items-center gap-1 text-control text-ink-faint hover:text-ink-muted transition-colors"
-        data-decisions-toggle
+        data-decisions-toggle aria-expanded={open}
       >
         {open ? <ChevronDown size={12} strokeWidth={1.75} /> : <ChevronRight size={12} strokeWidth={1.75} />}
-        <span>🛡 {t('approval.decisions')} · {good}/{records.length}</span>
+        <Shield size={13} strokeWidth={1.75} aria-hidden />
+        <span>{t('approval.decisions')} · {good}/{records.length}</span>
       </button>
       {open && <div className="mt-1 px-3 py-1.5 bg-wash/70 rounded-content"><ApprovalRecords records={records} /></div>}
     </div>

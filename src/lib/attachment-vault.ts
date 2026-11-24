@@ -144,6 +144,7 @@ export async function inlineVaultedContent(nodes: ThoughtNode[]): Promise<Though
       const rest = { ...a };
       if (a.contentInVault) {
         rest.content = await loadAttachmentContent(a);
+        if (!rest.content) throw new Error(`Original attachment is missing: ${a.name}`);
         delete rest.contentInVault;
         delete rest.contentVaultId;
       }

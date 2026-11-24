@@ -9,7 +9,12 @@
 </head>
 <body data-type-surface="authorization" style="font-family:system-ui;display:grid;place-items:center;height:100vh;margin:0;background:#FAF9F7;color:#1f1d1a">
   <div style="text-align:center;line-height:1.7">
-    <div class="status-icon">✓</div>
+    <div class="status-icon" aria-hidden="true">
+      <svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="10"></circle>
+        <path d="m9 12 2 2 4-4"></path>
+      </svg>
+    </div>
     <h2 style="margin:8px 0 4px">授权完成 · Authorized</h2>
     <p style="color:#6b6558">回到 ThoughtDAG 应用即可，本页可以关闭。<br>Return to the ThoughtDAG app; this tab can be closed.</p>
   </div>

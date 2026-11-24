@@ -1,4 +1,5 @@
-import { Blocks, Brain, Cpu, Monitor, PanelsTopLeft, Spline, SquareTerminal } from 'lucide-react';
+import { Blocks, Monitor, PanelsTopLeft, Spline } from 'lucide-react';
+import { AgentSourceIcon, JudgeIcon, ModelIcon } from '../../lib/ui-icons';
 import { useT } from '../../i18n';
 import type { SettingsSection } from '../../lib/ui-store';
 
@@ -7,8 +8,8 @@ const groups = [
     { id: 'general', icon: Monitor }, { id: 'nodes', icon: PanelsTopLeft }, { id: 'edges', icon: Spline },
   ] },
   { title: 'settings.execution', items: [
-    { id: 'providers', icon: Cpu }, { id: 'agents', icon: SquareTerminal },
-    { id: 'judge', icon: Brain }, { id: 'tools', icon: Blocks },
+    { id: 'providers', icon: ModelIcon }, { id: 'agents', icon: AgentSourceIcon },
+    { id: 'judge', icon: JudgeIcon }, { id: 'tools', icon: Blocks },
   ] },
 ] as const;
 

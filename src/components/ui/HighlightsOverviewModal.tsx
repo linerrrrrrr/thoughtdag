@@ -3,7 +3,7 @@ import { useSessionDraft } from '../../lib/use-session-draft';
 import { useProjects } from '../../store/projects';
 import { useRef, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { FileDown, Highlighter, Trash2, X } from 'lucide-react';
+import { FileDown, Highlighter, Trash2, LocateFixed, X } from 'lucide-react';
 import { useStore } from '../../store';
 import { useUiStore } from '../../lib/ui-store';
 import { downloadMarkdown } from '../../lib/export';
@@ -134,7 +134,7 @@ export default function HighlightsOverviewModal({ onLocate }: { onLocate: (nodeI
                   )}
                   {sort === 'node' && (
                     <button className={chip} onClick={() => { close(); onLocate(e.nodeId); }} data-tooltip={t('hlov.locateTitle')} aria-label={t('hlov.locateTitle')}>
-                      ↦
+                      <LocateFixed size={14} strokeWidth={1.75} aria-hidden="true" />
                     </button>
                   )}
                   {e.at && <span className="shrink-0 text-meta text-ink-faint font-mono mt-0.5">{e.at.slice(5, 10)}</span>}

@@ -80,13 +80,23 @@ async function action(command) {
   assert.equal(await page.evaluate(() => window.__ui.getState().confirmRequest), null);
   await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
 }
-async function menuFits() {
-  const box = await menu().boundingBox(), viewport = page.viewportSize();
-  assert.ok(box && box.x >= 0 && box.y >= 0 && box.x + box.width <= viewport.width && box.y + box.height <= viewport.height);
+async function assertMenuPlacement() {
+  const opener = panel().locator('button[aria-expanded="true"][aria-haspopup="menu"]');
+  const box = await menu().boundingBox(), anchor = await opener.boundingBox(), viewport = page.viewportSize();
+  assert.ok(box && anchor);
+  assert.ok(box.x >= 0 && box.y >= 0 && box.x + box.width <= viewport.width && box.y + box.height <= viewport.height);
+  const below = viewport.height - anchor.y - anchor.height >= anchor.y;
+  const gap = below ? box.y - anchor.y - anchor.height : anchor.y - box.y - box.height;
+  const scale = await page.evaluate(() => parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--ui-scale')));
+  assert.ok(Math.abs(gap - 6 * scale) < 2, `Open menu must stay attached on the side with more room: ${JSON.stringify({ anchor, box, gap })}`);
 }
 const hit = () => page.evaluate(() => {
-  const { x, y, zoom } = window.__rf.getViewport();
-  return document.elementsFromPoint(x + 300 * zoom, y + 350 * zoom).find(element => element.matches('.react-flow__node'))?.getAttribute('data-id');
+  const bounds = [...document.querySelectorAll('.react-flow__node')].map(node => node.getBoundingClientRect());
+  const left = Math.max(...bounds.map(rect => rect.left)), right = Math.min(...bounds.map(rect => rect.right));
+  const top = Math.max(...bounds.map(rect => rect.top)), bottom = Math.min(...bounds.map(rect => rect.bottom));
+  if (right <= left || bottom <= top) throw new Error('Layer fixture requires an overlap shared by all four rendered cards.');
+  return document.elementsFromPoint((left + right) / 2, (top + bottom) / 2)
+    .find(element => element.matches('.react-flow__node'))?.getAttribute('data-id');
 });
 
 try {
@@ -139,16 +149,19 @@ try {
   const cardBox = await panel().boundingBox();
   await page.locator('[data-selection-align]').click();
   await page.locator('[data-arrange-action="left"]').waitFor();
+  await assertMenuPlacement();
   await openLayers();
+  await assertMenuPlacement();
   assert.equal(await page.locator('[data-arrange-action]').count(), 0);
   assert.equal(await page.locator('[data-layer-action]').count(), 4);
   assert.deepEqual(await panel().boundingBox(), cardBox);
   await page.locator('[data-selection-align]').click();
   assert.equal(await page.locator('[data-layer-action]').count(), 0);
   assert.equal(await page.locator('[data-arrange-action]').count(), 8);
+  await assertMenuPlacement();
   await page.keyboard.press('Escape');
   await openLayers();
-  await menuFits();
+  await assertMenuPlacement();
   await page.screenshot({ path: `${output}/desktop.png` });
   await menu().screenshot({ path: `${output}/menu.png` });
   await page.keyboard.press('Escape');
@@ -180,7 +193,7 @@ try {
   await page.keyboard.press('Escape');
   await select(['b']);
   await openLayers();
-  await menuFits();
+  await assertMenuPlacement();
   assert.equal(await page.getByRole('menuitem', { name: 'Bring forward', exact: true }).count(), 1);
   await page.screenshot({ path: `${output}/english-dark.png` });
   await page.keyboard.press('Escape');
@@ -191,7 +204,7 @@ try {
   await page.setViewportSize({ width: 390, height: 844 });
   await select(['b']);
   await openLayers();
-  await menuFits();
+  await assertMenuPlacement();
   await page.screenshot({ path: `${output}/mobile.png` });
   check('Chinese, English, light, dark and narrow layouts keep all four commands accessible');
 

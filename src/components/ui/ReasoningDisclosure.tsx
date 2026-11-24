@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ChevronDown, ChevronRight } from 'lucide-react';
+import { Brain, ChevronDown, ChevronRight } from 'lucide-react';
 import { useT } from '../../i18n';
 
 // The thinking behind an answer, folded by default: the card's face is the
@@ -14,10 +14,11 @@ export default function ReasoningDisclosure({ text }: { text: string }) {
       <button
         onClick={(e) => { e.stopPropagation(); setOpen((v) => !v); }}
         className="flex items-center gap-1 text-control text-ink-faint hover:text-ink-muted transition-colors"
-        data-reasoning-toggle
+        data-reasoning-toggle aria-expanded={open}
       >
         {open ? <ChevronDown size={12} strokeWidth={1.75} /> : <ChevronRight size={12} strokeWidth={1.75} />}
-        <span>💭 {t('node.reasoning')}</span>
+        <Brain size={13} strokeWidth={1.75} aria-hidden />
+        <span>{t('node.reasoning')}</span>
       </button>
       {open && (
         <div data-cursor="text" className="mt-1.5 px-3 py-2 bg-wash/70 rounded-content text-body text-ink-faint italic whitespace-pre-wrap break-words max-h-[240px] overflow-y-auto nowheel nodrag" data-reasoning-body>

@@ -10,6 +10,8 @@ import { normalizeConversationEdge } from './normalize-graph';
 import { countTokens } from '../utils';
 import { confirmDialog, toast, useUiStore } from './ui-store';
 import { inlineVaultedContent, internNodes } from './attachment-vault';
+import { captureImportedCodexVisuals } from './codex-visual-host';
+import { ensureAgentHost } from './agents/host';
 import { t, fmt } from '../i18n';
 import type { ThoughtNode } from '../types';
 import type { ProjectMeta, ProjectPlacement } from '../store/projects';
@@ -175,7 +177,9 @@ export async function importChatConversations(convs: ImportableConversation[]): 
   let firstId: string | null = null;
   let total = 0;
   for (const conv of convs) {
-    const { nodes, edges } = conv.build();
+    const graph = conv.build();
+    const { edges } = graph;
+    const nodes = conv.source === 'codex' ? await captureImportedCodexVisuals(graph.nodes, ensureAgentHost) : graph.nodes;
     if (nodes.length === 0) continue;
     // Arrive at the working tail, not a bird's-eye column of 200 turns —
     // the canvas consumes this once on its next mount.

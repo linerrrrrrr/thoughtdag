@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { ChevronDown, ChevronUp, X } from 'lucide-react';
+import { ChevronDown, ChevronRight, X } from 'lucide-react';
 import { useStore } from '../store';
 import { useT, fmt } from '../i18n';
 import { useCanvasPanelPosition } from '../lib/use-canvas-panel-position';
@@ -51,7 +51,7 @@ export default function SelectionInspector({ getViewportRect, withDetails, onClo
         onKeyDown={event => { if (isImeComposing(event) && (event.key === 'Enter' || event.key === ' ')) event.preventDefault(); }}>
         <span className="min-w-0 flex-1"><span className="block text-title font-semibold">{t('selection.properties')}</span>
           <span className="block mt-1 text-control text-ink-muted" data-selection-summary>{summary}</span></span>
-        {collapse.collapsed ? <ChevronDown size={16} className="shrink-0 mt-1" /> : <ChevronUp size={16} className="shrink-0 mt-1" />}
+        {collapse.collapsed ? <ChevronRight size={16} className="shrink-0 mt-1" /> : <ChevronDown size={16} className="shrink-0 mt-1" />}
       </button>
       <button type="button" className="edge-inspector-icon shrink-0 mr-2 mt-2" aria-label={t('common.close')}
         data-selection-properties-close onClick={onClose}><X size={17} /></button>

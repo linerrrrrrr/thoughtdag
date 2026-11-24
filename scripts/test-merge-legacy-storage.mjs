@@ -28,16 +28,18 @@ const put = (profile, space, key, value) => atomicWrite(file(profile, space, key
 const get = async (profile, space, key) => JSON.parse(await readFile(file(profile, space, key), 'utf8')).value;
 const meta = (id, name) => ({ id, name, createdAt: 1, updatedAt: 1 });
 const INDEX = 'thoughtdag:projects', GRAPH = 'thoughtdag:project:';
-const index = (profile, projects) => put(profile, 'kv', INDEX, { projects, activeId: projects[0].id });
+const index = (profile, projects, folders) => put(profile, 'kv', INDEX, { projects, activeId: projects[0].id, ...(folders && { folders }) });
 const graph = (text, attachments = []) => ({ state: { nodes: [{ id: 'n', data: { question: text, attachments } }], edges: [] }, version: 1 });
 const doc = createManagedDocuments(workspaceRoot);
 
 try {
-  await index(main, [meta('same', 'Main'), meta('two', 'Second'), meta('three', 'Third')]);
+  await index(main, [meta('same', 'Main'), meta('two', 'Second'), meta('three', 'Third')], [{ id: 'f', name: 'Existing' }]);
   await index(empty, [meta('placeholder', 'My Canvas')]);
   await put(empty, 'kv', GRAPH + 'placeholder', { state: { nodes: [], edges: [], events: [], provenanceSessions: [] } });
   await ensureCanvasWorkspace(workspaceRoot, empty.namespace, 'placeholder');
-  await index(source, [meta('same', 'Another canvas'), meta('unique', 'Other')]);
+  await index(source, [{ ...meta('same', 'Another canvas'), folderId: 'f' }, meta('unique', 'Other')], [
+    { id: 'f', name: 'Imported' }, { id: 'empty-folder', name: 'Empty folder' },
+  ]);
   await put(main, 'kv', GRAPH + 'same', graph('primary'));
   const attachment = { id: 'a', contentInVault: true, editedDocxRevision: 'rev', pdfFileRevision: 'pdf' };
   await put(source, 'kv', GRAPH + 'same', JSON.stringify(graph('conflict', [attachment])));
@@ -71,6 +73,9 @@ try {
   const merged = await get(main, 'kv', INDEX);
   assert.equal(merged.projects.length, 6);
   assert.equal(merged.activeId, 'same');
+  assert.deepEqual(merged.folders.map(folder => folder.name), ['Existing', 'Imported', 'Empty folder']);
+  assert.notEqual(merged.folders[1].id, 'f');
+  assert.equal(merged.projects.find(project => project.name === 'Another canvas').folderId, merged.folders[1].id);
   assert.equal(merged.projects.some(p => p.id === 'placeholder'), false);
   assert.equal(merged.projects.some(p => p.id === 'removed'), false);
   assert.equal((await get(main, 'kv', GRAPH + 'removed')).state.nodes[0].data.question, 'removed from the catalogue');

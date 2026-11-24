@@ -41,7 +41,8 @@ try {
   } };
   const navigationFile = join(temp, 'navigation.mjs');
   const backupFile = join(temp, 'backup.mjs');
-  for (const [entry, outfile] of [['source-navigation', navigationFile], ['local-backup', backupFile]]) {
+  const threadFile = join(temp, 'thread.mjs');
+  for (const [entry, outfile] of [['source-navigation', navigationFile], ['local-backup', backupFile], ['codex-thread-link', threadFile]]) {
     await build({ entryPoints: [join(root, `src/lib/${entry}.ts`)], outfile,
       bundle: true, platform: 'node', format: 'esm', logLevel: 'silent', plugins: [plugin] });
   }
@@ -62,7 +63,29 @@ try {
     desktopAgents: { pickCwd: async () => 'D:/backups', backupJson: async (...args) => { writes.push(args); return { file: args[1] }; } },
   };
 
-  const { openWhyLink } = await import(pathToFileURL(navigationFile).href);
+  const { openWhyLink, openOriginalCodexThread } = await import(pathToFileURL(navigationFile).href);
+  const { displayedCodexThreadId } = await import(pathToFileURL(threadFile).href);
+  const node = { responses: ['old', 'new'], responseIndex: 0, question: 'q',
+    agentSession: { runtime: 'codex', sessionId: id2 },
+    source: { question: 'q', response: 'old' }, importSource: { runner: 'codex', sessionId: id1 } };
+  assert.equal(displayedCodexThreadId(node), id1);
+  assert.equal(displayedCodexThreadId({ ...node, responseIndex: 1 }), null);
+  assert.equal(displayedCodexThreadId({ ...node, codexHistories: [{ threadId: id2 }] }), id2);
+  assert.equal(displayedCodexThreadId({ ...node, codexThreadIds: [null, id2] }), null);
+  assert.equal(displayedCodexThreadId({ ...node, generatedBy: ['some-api'] }), null);
+  assert.equal(displayedCodexThreadId({ ...node, isLoading: true }), null);
+  assert.equal(displayedCodexThreadId({ ...node, isLoading: true, liveCodexThreadId: id2 }), id2);
+  const desktopCalls = [], protocolCalls = [];
+  window.desktopSessions.openCodexThread = async id => { desktopCalls.push(id); return true; };
+  window.location = { assign: url => protocolCalls.push(url) };
+  await openOriginalCodexThread(id1);
+  await openOriginalCodexThread(id1 + '\n');
+  await openOriginalCodexThread('codex://settings');
+  assert.deepEqual(desktopCalls, [id1]);
+  delete window.desktopSessions.openCodexThread;
+  await openOriginalCodexThread(id2);
+  await openOriginalCodexThread('../new?prompt=x');
+  assert.deepEqual(protocolCalls, [`codex://threads/${id2}`]);
   assert.equal(await openWhyLink(`thoughtdag://open?canvas=${id2}&node=node-1`), true);
   assert.equal(projects.activeId, id2);
   assert.equal(globalThis.focus, 'node-1');

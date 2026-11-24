@@ -168,6 +168,7 @@ const spawn = () => {
     const request = JSON.parse(line);
     const answer = (result) => queueMicrotask(() => client.stdout.emit('data', Buffer.from(JSON.stringify({ id: request.id, result }) + '\n')));
     if (request.method === 'initialize') answer({});
+    if (request.method === 'model/list') answer({ data: [{ id: 'fixture-model', model: 'fixture-model' }] });
     if (request.method === 'thread/start') {
       requestedThread = request.params;
       answer({ thread: { id: 'transport-thread', path: null }, sandbox: { type: 'workspaceWrite', writableRoots: [existingRoot], networkAccess: false } });
@@ -233,6 +234,7 @@ check('transport emits structured activity and exactly one terminal event', () =
   assert.equal(transportEvents.filter((e) => e.type === 'run_end').length, 1);
 });
 check('the runtime explicitly requests available public reasoning summaries', () => assert.equal(requestedSummary, 'auto'));
+check('canvas sessions advertise the native inline preview format', () => assert.ok(requestedThread.developerInstructions.includes('\uE200visualize\uE202')));
 check('native permissions retain cwd, approval defaults and existing writable roots when a canvas file is attached', () => {
   assert.equal(requestedThread.cwd, fixtureDir);
   assert.equal(requestedThread.approvalPolicy, undefined);

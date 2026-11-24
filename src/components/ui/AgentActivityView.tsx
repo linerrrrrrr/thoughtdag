@@ -1,16 +1,16 @@
 import { memo, useEffect, useRef, useState } from 'react';
 import { Activity, Brain, Check, ChevronDown, ChevronRight, CirclePause, FileDiff, ListTodo, Loader2, MessageSquare, SquareTerminal, Wrench, X } from 'lucide-react';
-import type { AgentActivityEntry } from '../../types';
+import type { AgentActivityEntry, ThoughtData } from '../../types';
 import { fmt, useT } from '../../i18n';
-import { Markdown } from '../Markdown';
+import { AnswerMarkdown, Markdown } from '../Markdown';
 import { ConversationLink } from '../ConversationLink';
 import './AgentActivityView.css';
 
 // The ordered runtime transcript is a reading surface, separate from the
 // answer used as context. Finished runs keep their process behind a disclosure.
-export function AgentActivityView({ entries, running = false, compact = false, base, failed: runFailed = false, questionHighlights, penActive }: {
+export function AgentActivityView({ entries, running = false, compact = false, base, failed: runFailed = false, questionHighlights, penActive, answerData }: {
   entries: AgentActivityEntry[]; running?: boolean; compact?: boolean; base?: string; failed?: boolean;
-  questionHighlights?: Set<string>; penActive?: boolean;
+  questionHighlights?: Set<string>; penActive?: boolean; answerData?: ThoughtData;
 }) {
   const t = useT();
   const [expanded, setExpanded] = useState<boolean | null>(null);
@@ -64,6 +64,7 @@ export function AgentActivityView({ entries, running = false, compact = false, b
         }}>
         <ol className="activity-list" role="log" aria-live="off">
           {shown.map((entry) => <ActivityRow key={entry.id} entry={entry} compact={compact} base={base}
+            answerData={entry.kind === 'message' ? answerData : undefined}
             questionHighlights={entry.kind === 'user' ? questionHighlights : undefined} penActive={entry.kind === 'user' && penActive} />)}
         </ol>
         {running && !current && <div className="activity-between" role="status"><Loader2 size={12} className="activity-spinner" />{t('activity.thinking')}</div>}
@@ -87,8 +88,8 @@ function formatDetails(value: unknown): string {
   try { return JSON.stringify(value, null, 2) ?? ''; } catch { return String(value); }
 }
 
-const ActivityRow = memo(function ActivityRow({ entry, compact, base, questionHighlights, penActive }: {
-  entry: AgentActivityEntry; compact: boolean; base?: string; questionHighlights?: Set<string>; penActive?: boolean;
+const ActivityRow = memo(function ActivityRow({ entry, compact, base, questionHighlights, penActive, answerData }: {
+  entry: AgentActivityEntry; compact: boolean; base?: string; questionHighlights?: Set<string>; penActive?: boolean; answerData?: ThoughtData;
 }) {
   const t = useT();
   const [expanded, setExpanded] = useState<boolean | null>(null);
@@ -108,9 +109,10 @@ const ActivityRow = memo(function ActivityRow({ entry, compact, base, questionHi
       <div className="min-w-0 flex-1">
         {isText ? <div className={`markdown-body ${entry.kind === 'user' ? 'activity-user-message' : entry.kind === 'message' ? 'activity-answer' : 'activity-commentary'}`}
           data-highlight-turn={isInstruction ? 'question' : undefined} data-highlighter-active={(isInstruction && penActive) || undefined}>
+          {answerData && entry.text ? <AnswerMarkdown data={answerData} text={entry.text} diagrams={compact ? 'placeholder' : undefined} /> :
           <Markdown base={base} diagrams={compact ? 'placeholder' : undefined} highlights={isInstruction ? questionHighlights : undefined}>
             {entry.text || (isRunning ? t('activity.working') : '')}
-          </Markdown>
+          </Markdown>}
         </div> : <>
           <button type="button" className="activity-item-heading" aria-expanded={open} disabled={!hasBody} onClick={(event) => { event.stopPropagation(); setExpanded(!open); }}>
             <span className="activity-item-title">{title}</span>

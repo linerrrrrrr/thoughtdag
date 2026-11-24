@@ -1,4 +1,5 @@
 import type { StateCreator } from 'zustand';
+import { visualsAfterResponseEdit } from '../../lib/codex-visuals';
 import type { ThoughtNode, ThoughtEdge } from '../../types';
 import { generateId, countTokens } from '../../utils';
 import { COLORS, FRAME_COLORS } from '../../lib/constants';
@@ -11,6 +12,7 @@ import { t, fmt, type MessageKey } from '../../i18n';
 import type { StoreState, NodeSlice } from '../types';
 import { condenseGuard } from '../../lib/condense-guard';
 import { activeAbortControllers } from '../streaming';
+import { codexVersionThreadIds } from '../../lib/codex-thread-link';
 import { arrangeNodes } from '../../lib/arrange-selection';
 import { reorderNodeLayers } from '../../lib/node-layer';
 import { fitFrameNodes, frameContentIds, isFrameNode, nodesRect } from '../../lib/frames';
@@ -149,6 +151,7 @@ export const createNodeSlice: StateCreator<StoreState, [], [], NodeSlice> = (set
                 ...n.data,
                 response,
                 responses: n.data.responses.map((r, i) => (i === n.data.responseIndex ? response : r)),
+                codexVisuals: visualsAfterResponseEdit(n.data, response),
                 // a hand-edited answer invalidates its auto summary
                 summaries: n.data.summaries?.map((s, i) => (i === n.data.responseIndex ? undefined : s)),
                 summaryTypes: n.data.summaryTypes?.map((s, i) => (i === n.data.responseIndex ? undefined : s)),
@@ -514,6 +517,8 @@ export const createNodeSlice: StateCreator<StoreState, [], [], NodeSlice> = (set
             reasoningTokens: n.data.reasoningTokens?.filter((_, i) => i !== versionIndex),
             agentActivities: n.data.agentActivities?.filter((_, i) => i !== versionIndex),
             codexHistories: n.data.codexHistories?.filter((_, i) => i !== versionIndex),
+            codexThreadIds: codexVersionThreadIds(n.data)?.filter((_, i) => i !== versionIndex),
+            codexVisuals: n.data.codexVisuals?.filter((_, i) => i !== versionIndex),
             agentActivity: undefined,
             generatedAts: n.data.generatedAts?.filter((_, i) => i !== versionIndex),
             editedAts: n.data.editedAts?.filter((_, i) => i !== versionIndex),

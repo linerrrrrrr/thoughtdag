@@ -1,12 +1,10 @@
 import { useState, useRef, useEffect, useLayoutEffect, useContext } from 'react';
 import { conclusionOf } from '../lib/turn-insight';
+import { codexVisualCaption, isCodexVisualAnswer } from '../lib/codex-visuals';
 import { useReactFlow, useUpdateNodeInternals, type NodeProps } from '@xyflow/react';
-import { AlertTriangle, Archive, BookOpen, Check, ChevronDown, ChevronRight, Globe, Hourglass, Minimize2, RefreshCw, Send, Square, Trash2, UserRound, X, Pencil } from 'lucide-react';
+import { AlertTriangle, Archive, BookOpen, Brain, Check, ChevronDown, ChevronRight, Globe, Hourglass, Loader2, Minimize2, RefreshCw, Send, Square, Trash2, UserRound, X, Pencil } from 'lucide-react';
 import 'katex/dist/katex.min.css';
 
-/** A tool's status line standing in for the answer while it runs (see
- *  store/streaming.ts onToolCall): an icon, the query, an ellipsis. */
-const TOOL_PLACEHOLDER = /^(?:🔍|📚|🎓|🔧) [\s\S]*…$/;
 import type { ThoughtNode as ThoughtNodeType } from '../types';
 import { useStore } from '../store';
 import { staleHiddenByJudge, currentStaleVerdict } from '../lib/stale-judge';
@@ -19,8 +17,9 @@ import { canHighlightConversation, hasConversationHighlightText, useConversation
 import NodeHighlightsSection from './NodeHighlightsSection';
 import { useUiStore, toast } from '../lib/ui-store';
 import SearchToggles from './ui/SearchToggles';
+import ToolProgressLine from './ui/ToolProgressLine';
 import NodeExecutionPicker, { NodeExecutionBadge } from './ui/NodeExecutionPicker';
-import { Markdown, HighlightedMarkdown } from './Markdown';
+import { AnswerMarkdown, Markdown } from './Markdown';
 import ReasoningDisclosure from './ui/ReasoningDisclosure';
 import NodeOverview from './NodeOverview';
 import OverviewRuler from './OverviewRuler';
@@ -366,7 +365,12 @@ export default function ThoughtNode({ id, data, selected }: NodeProps<ThoughtNod
     rf.setCenter(cited.position.x + 260, cited.position.y + 110, { zoom: rf.getZoom(), duration: 300 });
   };
   // The canvas overview leads with a name; summaries are quiet close-range previews.
-  const versionSummary = data.displaySummary ?? activeSummary(data);
+  const generatedSummary = activeSummary(data);
+  const hasVisual = data.response.includes('\uE200visualize\uE202') && isCodexVisualAnswer(data);
+  // Old imports sometimes saved a truncated file reference as their plaque.
+  const versionSummary = data.displaySummary ?? (hasVisual && generatedSummary?.includes('\uE200visualize\uE202') ? undefined : generatedSummary);
+  const previewText = versionSummary === undefined && hasVisual
+    ? codexVisualCaption(data.response) || t('md.interactivePreview') : data.response;
   const namingData = isAwaitingAsk ? { ...data, question: editValue } : data;
   const nameFallback = t(isAwaitingAsk ? 'node.unsentQuestion' : 'panel.question');
   const nodeName = getNodeDisplayName(namingData, nameFallback);
@@ -483,7 +487,7 @@ export default function ThoughtNode({ id, data, selected }: NodeProps<ThoughtNod
             source={nodeNameSource}
             compact
             variant={isStart ? 'start' : 'thought'}
-            icon={data.generationFailed ? <AlertTriangle className="text-red-600" /> : data.isLoading ? <Hourglass /> : data.digestOf ? <BookOpen /> : glyphSeal ? <span role="img" aria-label={badgeTitle} className={glyphSeal.cls}>{glyphSeal.glyph}</span> : undefined}
+            icon={data.generationFailed ? <AlertTriangle className="text-red-600" /> : data.isLoading ? <Loader2 className="animate-spin" /> : data.digestOf ? <BookOpen /> : glyphSeal ? <span role="img" aria-label={badgeTitle} className={glyphSeal.cls}>{glyphSeal.glyph}</span> : undefined}
           />
         </div>
       ) : (
@@ -578,7 +582,7 @@ export default function ThoughtNode({ id, data, selected }: NodeProps<ThoughtNod
       </div>
 
       <NodeMetadataEditor id={id} data={data} name={nodeNameSource}
-        preview={versionSummary ?? (data.importSource ? conclusionOf(data.response) : data.response)}
+        preview={versionSummary ?? (data.importSource ? conclusionOf(previewText) : previewText)}
         overview={zoomedOut || isCollapsed} open={metadataEditing} onOpenChange={setMetadataEditing} />
 
       {!isCollapsed && !zoomedOut && (hasConversationHighlightText(data) || data.highlights.length > 0) && (
@@ -651,7 +655,7 @@ export default function ThoughtNode({ id, data, selected }: NodeProps<ThoughtNod
                     disabled={!editValue.trim() || filesPending}
                     className="text-control bg-warm hover:opacity-85 disabled:opacity-30 when-unavailable text-white px-4 py-1.5 rounded-control transition-all flex items-center gap-1.5"
                   >
-                    <Send size={12} strokeWidth={1.75} /> {t('paradigm.start')}
+                    <Check size={12} strokeWidth={2.25} /> {t('paradigm.start')}
                   </button>
                 </div>
               )}
@@ -724,7 +728,7 @@ export default function ThoughtNode({ id, data, selected }: NodeProps<ThoughtNod
             </div>
           ) : data.isLoading ? (
             activity.length > 0 ? (
-              <AgentActivityView entries={activity} running compact base={data.agentSession?.cwd ?? data.importSource?.cwd} />
+              <AgentActivityView entries={activity} running compact base={data.agentSession?.cwd ?? data.importSource?.cwd} answerData={data} />
             ) : data.agentTrace && data.agentTrace.length > 0 && (!data.response || data.restreaming) ? (
               // An agent's steps and, between them, the model's thinking: the
               // trace alone reads as a tool log; the thinking says what it is
@@ -733,7 +737,7 @@ export default function ThoughtNode({ id, data, selected }: NodeProps<ThoughtNod
                 <AgentTrace entries={data.agentTrace} compact />
                 {data.reasoning && (
                   <div className="px-3 py-2 bg-wash/70 rounded-content max-h-[96px] overflow-hidden flex flex-col justify-end" data-node-reasoning-live>
-                    <div className="text-control text-ink-faint mb-0.5">💭 {t('node.reasoningLive')}</div>
+                    <div className="flex items-center gap-1 text-control text-ink-faint mb-0.5"><Brain size={13} strokeWidth={1.75} aria-hidden />{t('node.reasoningLive')}</div>
                     <div className="text-body text-ink-muted italic whitespace-pre-wrap break-words">
                       {data.reasoning.length > 200 ? '…' + data.reasoning.slice(-200) : data.reasoning}
                     </div>
@@ -742,35 +746,23 @@ export default function ThoughtNode({ id, data, selected }: NodeProps<ThoughtNod
               </div>
             ) : data.response && !data.restreaming ? (
               // Fitted cards grow with the stream; other cards show its live tail.
-              // While the "response" is still a tool's placeholder line
-              // (the answer has not started), the thinking that led to the
-              // tool stays visible beneath it.
-              <div className="flex flex-col gap-1.5">
-                <div data-conversation-answer className={`conversation-answer text-body text-ink flex flex-col justify-end whitespace-pre-wrap break-words ${fitContentHeight ? '' : 'max-h-[180px] overflow-hidden'}`}>
-                  {!fitContentHeight && data.response.length > 400 ? '…' + data.response.slice(-400) : data.response}
-                  <span className="inline-block w-2 h-4 bg-accent animate-pulse rounded-none" />
-                </div>
-                {data.reasoning && TOOL_PLACEHOLDER.test(data.response) && (
-                  <div className="px-3 py-2 bg-wash/70 rounded-content max-h-[96px] overflow-hidden flex flex-col justify-end" data-node-reasoning-live>
-                    <div className="text-control text-ink-faint mb-0.5">💭 {t('node.reasoningLive')}</div>
-                    <div className="text-body text-ink-muted italic whitespace-pre-wrap break-words">
-                      {data.reasoning.length > 200 ? '…' + data.reasoning.slice(-200) : data.reasoning}
-                    </div>
-                  </div>
-                )}
+              <div data-conversation-answer className={`conversation-answer text-body text-ink flex flex-col justify-end whitespace-pre-wrap break-words ${fitContentHeight ? '' : 'max-h-[180px] overflow-hidden'}`}>
+                {!fitContentHeight && data.response.length > 400 ? '…' + data.response.slice(-400) : data.response}
+                <span className="inline-block w-2 h-4 bg-accent animate-pulse rounded-none" />
               </div>
-            ) : data.reasoning ? (
-              // Reasoning models think before they answer — show the live
-              // tail of the thinking, visually quieter than an answer
-              <div className="px-3 py-2.5 bg-wash/70 rounded-content max-h-[140px] overflow-hidden flex flex-col justify-end" data-node-reasoning-live>
-                <div className="text-control text-ink-faint mb-1">💭 {t('node.reasoningLive')}</div>
-                <div className="text-body text-ink-muted italic whitespace-pre-wrap break-words">
-                  {data.reasoning.length > 300 ? '…' + data.reasoning.slice(-300) : data.reasoning}
-                </div>
+            ) : data.toolProgress || data.reasoning ? (
+              <div className="flex flex-col gap-1.5">
+                {data.toolProgress && <ToolProgressLine progress={data.toolProgress} />}
+                {data.reasoning && <div className="px-3 py-2.5 bg-wash/70 rounded-content max-h-[140px] overflow-hidden flex flex-col justify-end" data-node-reasoning-live>
+                  <div className="flex items-center gap-1 text-control text-ink-faint mb-1"><Brain size={13} strokeWidth={1.75} aria-hidden />{t('node.reasoningLive')}</div>
+                  <div className="text-body text-ink-muted italic whitespace-pre-wrap break-words">
+                    {data.reasoning.length > 300 ? '…' + data.reasoning.slice(-300) : data.reasoning}
+                  </div>
+                </div>}
               </div>
             ) : (
               <div className="flex items-center gap-2 text-body text-ink-muted">
-                <span className="animate-pulse text-accent">●</span> {t('common.thinking')}
+                <Loader2 size={14} className="animate-spin text-accent" aria-hidden /> {t('common.thinking')}
               </div>
             )
           ) : editingResponseHere ? (
@@ -798,11 +790,7 @@ export default function ThoughtNode({ id, data, selected }: NodeProps<ThoughtNod
               data-highlighter-active={highlighter.active || undefined}
               data-cursor="text" className={`conversation-answer markdown-body text-body text-ink ${!splitEnabled && fixedHeight == null ? 'max-h-[400px] overflow-y-auto' : ''} nopan nodrag nowheel`}
             >
-              {highlightedTexts.size > 0 ? (
-                <HighlightedMarkdown base={data.agentSession?.cwd ?? data.importSource?.cwd} content={data.response} highlights={highlightedTexts} diagrams="placeholder" />
-              ) : (
-                <Markdown base={data.agentSession?.cwd ?? data.importSource?.cwd} diagrams="placeholder">{data.response}</Markdown>
-              )}
+              <AnswerMarkdown data={data} highlights={highlightedTexts} diagrams="placeholder" />
             </div>
             </>
           )}
@@ -875,8 +863,8 @@ export default function ThoughtNode({ id, data, selected }: NodeProps<ThoughtNod
                 </button>
               )}
               {data.gatewaySearches?.[data.responseIndex] && (
-                <span className="text-meta text-ink-faint ml-1 shrink-0"  data-gateway-searched>
-                  🌐 {t('node.gatewaySearched')}
+                <span className="inline-flex items-center gap-1 text-meta text-ink-faint ml-1 shrink-0" data-gateway-searched>
+                  <Globe size={12} strokeWidth={1.75} aria-hidden />{t('node.gatewaySearched')}
                 </span>
               )}
               {data.generatedAts?.[data.responseIndex] && (

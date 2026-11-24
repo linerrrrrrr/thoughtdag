@@ -37,6 +37,8 @@ export function stripTransient(nodes: ThoughtNode[]): ThoughtNode[] {
         questionEditor: undefined,
         responseEditor: undefined,
         restreaming: undefined,
+        toolProgress: undefined,
+        liveCodexThreadId: undefined,
         pendingApprovals: undefined,
         agentTrace: undefined,
         agentActivity: settleAgentActivity(data.agentActivity, 'interrupted'),

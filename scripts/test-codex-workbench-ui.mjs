@@ -5,8 +5,14 @@ import { chromium } from 'playwright-core';
 
 const output = 'local-tests/codex-workbench';
 await mkdir(output, { recursive: true });
+const appUrl = process.env.APP_URL ?? 'http://127.0.0.1:5186';
+const storage = await fetch(new URL('/__thoughtdag_storage', appUrl), { headers: { 'x-thoughtdag-storage': '1' } });
+if (storage.headers.get('content-type')?.includes('application/json')) {
+  assert.notEqual((await storage.json()).service, 'thoughtdag-local-storage', 'Run the fixture against Vite in test mode.');
+}
 const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH ?? 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe', headless: true });
 const context = await browser.newContext({ viewport: { width: 1720, height: 1080 }, locale: 'zh-CN', reducedMotion: 'reduce' });
+await context.route('**/__thoughtdag_storage', route => route.fulfill({ status: 404 }));
 const page = await context.newPage();
 page.setDefaultTimeout(15000);
 const errors = [], checks = [];
@@ -50,6 +56,7 @@ await page.addInitScript(() => {
     answer: async (runId, id, answer) => { window.__calls.push({ type: 'answer', runId, id, answer }); return true; },
   };
   window.desktopSessions = { roots: async () => [], list: async () => [], watchStart: async () => true, onSessionsChanged: () => {},
+    openCodexThread: async id => { window.__calls.push({ type: 'openCodex', id }); return true; },
     openInCli: async (runner, cwd, sessionId) => { window.__calls.push({ type: 'cli', runner, cwd, sessionId }); return { opened: true }; } };
   window.desktopLocal = { open: async path => ({ ok: true, path }), reveal: async () => ({ ok: true }), read: async path => ({ ok: true, path, text: 'export const enabled = true;\n'.repeat(30), truncated: false }) };
 });
@@ -65,7 +72,7 @@ const openInstruction = async () => {
 };
 const calls = type => page.evaluate(type => window.__calls.filter(call => call.type === type), type);
 try {
-  await page.goto(process.env.APP_URL ?? 'http://127.0.0.1:5186', { waitUntil: 'networkidle' });
+  await page.goto(appUrl, { waitUntil: 'networkidle' });
   await page.waitForFunction(() => window.__store?.persist.hasHydrated());
   await page.evaluate(async () => {
     // Follow Vite's exact module identity after HMR instead of creating a
@@ -104,7 +111,14 @@ try {
   assert.equal(await panel().locator('[data-agent-stop]').count(), 0);
   await panel().getByRole('button', { name: '更多操作', exact: true }).click();
   assert.equal(await panel().locator('[data-agent-instruction-trigger]').count(), 0);
+  const openOriginal = () => page.getByRole('button', { name: '在 Codex 中打开原对话', exact: true });
+  await openOriginal().waitFor();
   await page.keyboard.press('Escape');
+  assert.equal((await calls('openCodex')).length, 0);
+  await node('source').locator('.drag-handle').first().click({ button: 'right' });
+  await openOriginal().click();
+  assert.equal((await calls('openCodex'))[0].id, '00000000-1111-2222-3333-444444444444');
+  check('the source thread opens from the node menu; dismissing the reading menu does not launch it');
   check('completed cards and reading panels contain no follow-up composer, settings, or active-run controls');
 
   await panel().locator('[data-activity-history]').click();
@@ -202,6 +216,9 @@ try {
   await page.waitForFunction(() => !window.__store.getState().nodes.some(node => node.data.isLoading));
   await instruction().waitFor({ state: 'detached' });
   assert.equal(await panel().locator('textarea, [data-agent-stop]').count(), 0);
+  await panel().getByRole('button', { name: '更多操作', exact: true }).click();
+  await openOriginal().click();
+  assert.equal((await calls('openCodex')).length, 2, 'The interrupted turn keeps its acknowledged thread');
   assert.ok(await panel().locator('[data-activity-kind="user"]').count(), 'Completed collapsed process retains user instructions');
   check('header Stop reaches the active runtime and removes temporary execution controls');
   await page.evaluate(async () => {

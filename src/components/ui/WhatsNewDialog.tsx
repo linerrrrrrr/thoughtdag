@@ -1,4 +1,5 @@
 import { appSettings } from '../../lib/disk-storage';
+import { ExternalLink, Star } from 'lucide-react';
 import { useDismissableLayer } from '../../lib/use-dismissable-layer';
 import { useEffect, useRef, useState } from 'react';
 import { useI18n, useT, fmt } from '../../i18n';
@@ -73,9 +74,9 @@ export function WhatsNewItems({ items, lang }: { items: WhatsNewItem[]; lang: La
                 href={it.link.href}
                 target="_blank"
                 rel="noreferrer"
-                className="inline-block mt-1.5 text-control font-medium text-accent hover:underline"
+                className="inline-flex items-center gap-1 mt-1.5 text-control font-medium text-accent hover:underline"
               >
-                {it.link.label[lang]} →
+                {it.link.label[lang]}<ExternalLink size={13} strokeWidth={1.75} aria-hidden="true" />
               </a>
             )}
           </div>
@@ -144,8 +145,8 @@ export default function WhatsNewDialog() {
             </button>
             <span className="text-ink-faint" aria-hidden>｜</span>
             {/* the one ask, at the one moment it fits: a person who just read what the update brought */}
-            <a href={REPO_URL} target="_blank" rel="noreferrer" className="font-medium text-accent hover:underline whitespace-nowrap" data-whats-new-star>
-              {t('whatsNew.starLink')} ⭐？
+            <a href={REPO_URL} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-medium text-accent hover:underline whitespace-nowrap" data-whats-new-star>
+              <Star size={14} strokeWidth={1.75} aria-hidden="true" /><span>{t('whatsNew.starLink')}？</span>
             </a>
           </div>
           <button

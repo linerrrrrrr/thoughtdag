@@ -8,9 +8,11 @@ import { resetMemoryWriteCaps } from '../lib/memory';
 import { buildRuleOutRuleIn } from '../lib/paradigms/rule-out-rule-in';
 import { toast } from '../lib/ui-store';
 import { t } from '../i18n';
-import type { AgentPermissionMode } from '../types';
+import type { AgentPermissionMode, ThoughtData } from '../types';
 import { normalizeConversationGraph } from '../lib/normalize-graph';
 import { ensureCanvasWorkspace } from '../lib/canvas-workspace';
+import { captureImportedCodexVisuals } from '../lib/codex-visual-host';
+import { ensureAgentHost } from '../lib/agents/host';
 
 // Project layer: each canvas persists under its own storage key; this
 // module owns the metadata list and the switching choreography.
@@ -117,6 +119,27 @@ export async function prepareCanvasFolders(projects: ReadonlyArray<Pick<ProjectM
 // legacy key. A crash between steps re-runs the migration harmlessly.
 let bootPromise: Promise<void> | null = null;
 
+/** Older canvases may only contain native file references. Reconcile in the
+ * background, without overwriting edits or writing across a project switch. */
+async function restoreProjectVisuals(id: string) {
+  const original = useStore.getState().nodes;
+  const restored = await captureImportedCodexVisuals(original, ensureAgentHost);
+  const project = useProjects.getState();
+  if (restored === original || project.activeId !== id || project.switching) return;
+  const updated = new Map<string, { before: ThoughtData; after: ThoughtData }>();
+  restored.forEach((node, i) => {
+    if (node !== original[i]) updated.set(node.id, { before: original[i].data, after: node.data });
+  });
+  useStore.setState(state => ({
+    nodes: state.nodes.map(node => {
+      const change = updated.get(node.id);
+      if (!change || node.data.responses !== change.before.responses || node.data.isLoading
+          || node.data.codexVisuals !== change.before.codexVisuals) return node;
+      return { ...node, data: { ...node.data, codexVisuals: change.after.codexVisuals } };
+    }),
+  }));
+}
+
 export function bootProjects(): Promise<void> {
   bootPromise ??= (async () => {
     // The graph store also imports project helpers. Subscribe once both modules are initialized.
@@ -138,7 +161,7 @@ export function bootProjects(): Promise<void> {
     useProjects.setState({ projects: meta.projects, folders: meta.folders ?? [], activeId: meta.activeId });
     useStore.persist.setOptions({ name: projectStorageKey(meta.activeId) });
     await useStore.persist.rehydrate(); // fires onFinishHydration → App gate opens
-
+    void restoreProjectVisuals(meta.activeId).catch(error => console.warn('[thoughtdag] preview recovery failed:', error));
     await prepareCanvasFolders(meta.projects);
     window.addEventListener('focus', () => { void refreshProjectIndex().catch(() => undefined); });
   })().catch(async (e) => {
@@ -190,7 +213,7 @@ export async function switchProject(id: string): Promise<void> {
     // a canvas the user just switched to is back in the working set —
     // whether opened from the canvas menu or a source link.
     useProjects.setState({ activeId: id });
-
+    void restoreProjectVisuals(id).catch(error => console.warn('[thoughtdag] preview recovery failed:', error));
   } finally {
     suppressTouch = false;
     useProjects.setState({ switching: false });

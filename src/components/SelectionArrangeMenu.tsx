@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from 'react';
+import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useDismissableLayer } from '../lib/use-dismissable-layer';
 import { create } from 'zustand';
@@ -15,7 +15,7 @@ import type { ArrangeAction, ArrangeReference, ArrangeRect } from '../lib/arrang
 import { arrangementUnitCount } from '../lib/arrange-selection';
 import { canReorderNodeLayer, type NodeLayerAction } from '../lib/node-layer';
 import { navigateActionMenu } from '../lib/menu-keyboard';
-import { uiRect, uiViewport } from '../lib/ui-scale';
+import { followAnchoredMenu } from '../lib/anchored-menu';
 
 export type ViewportRectGetter = () => ArrangeRect | undefined;
 const useArrangeReference = create<{ reference: ArrangeReference; setReference: (reference: ArrangeReference) => void }>((set) => ({
@@ -89,41 +89,31 @@ function SelectionActionPopover({ kind, label, icon: Icon, ids, getViewportRect,
   ids: string[]; getViewportRect: ViewportRectGetter; open: boolean; onOpenChange: (open: boolean) => void;
 }) {
   const menuId = useId();
-  const [position, setPosition] = useState<{ left: number; top?: number; bottom?: number; maxHeight: number } | null>(null);
   const button = useRef<HTMLButtonElement>(null);
   const menu = useRef<HTMLDivElement>(null);
   const close = () => { onOpenChange(false); button.current?.focus(); };
   useDismissableLayer({ dismissOnFocusOutside: true, open, refs: [menu, button], onDismiss: () => onOpenChange(false) });
+  useLayoutEffect(() => {
+    if (!open || !button.current || !menu.current) return;
+    const stop = followAnchoredMenu(button.current, menu.current, 'end');
+    menu.current.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus({ preventScroll: true });
+    return stop;
+  }, [open]);
   useEffect(() => {
-    if (!open || !position) return;
-    menu.current?.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus();
+    if (!open) return;
     const resize = () => onOpenChange(false);
     window.addEventListener('resize', resize);
     return () => { window.removeEventListener('resize', resize); };
-  }, [open, position, onOpenChange]);
+  }, [open, onOpenChange]);
   return <>
     <button type="button" ref={button} aria-haspopup="menu" aria-expanded={open} aria-controls={open ? menuId : undefined} aria-label={label}
       data-selection-align={kind === 'align' ? '' : undefined} data-selection-layers={kind === 'layers' ? '' : undefined}
       className={`h-8 px-2.5 rounded-control transition-colors flex items-center gap-1.5 text-control whitespace-nowrap shrink-0 focus-visible:outline-2 focus-visible:outline-accent ${open ? 'bg-accent/10 text-accent' : 'bg-wash hover:bg-line text-ink-muted'}`}
-      onClick={() => {
-        if (open) { close(); return; }
-        const rect = uiRect(button.current!);
-        const viewport = uiViewport();
-        const below = Math.max(0, viewport.height - rect.bottom - 14);
-        const above = Math.max(0, rect.top - 14);
-        const upward = below < Math.min(360, above);
-        setPosition({
-          left: Math.max(8, Math.min(rect.right - 280, viewport.width - 288)),
-          ...(upward ? { bottom: viewport.height - rect.top + 6 } : { top: rect.bottom + 6 }),
-          maxHeight: upward ? above : below,
-        });
-        onOpenChange(true);
-      }}>
+      onClick={() => { if (open) close(); else onOpenChange(true); }}>
       <Icon size={14} strokeWidth={1.75} aria-hidden="true" />{label}<ChevronDown size={12} aria-hidden="true" />
     </button>
-    {open && position && createPortal(<div ref={menu} id={menuId} role="menu" data-type-surface="portal" data-selection-menu aria-label={label} onKeyDown={(event) => navigateActionMenu(event, close)}
-      className="fixed z-[70] w-[280px] max-w-[calc(100*var(--ui-vw)-16px)] rounded-overlay border border-line bg-card shadow-lg p-1 overflow-y-auto"
-      style={position}>
+    {open && createPortal(<div ref={menu} id={menuId} role="menu" data-type-surface="portal" data-selection-menu aria-label={label} onKeyDown={(event) => navigateActionMenu(event, close)}
+      className="fixed z-[70] w-[280px] max-w-[calc(100*var(--ui-vw)-16px)] max-h-(--menu-available-height) rounded-overlay border border-line bg-card shadow-lg p-1 overflow-y-auto">
       {kind === 'align' ? <ArrangeItems ids={ids} getViewportRect={getViewportRect} onClose={close} /> : <LayerItems ids={ids} onClose={close} />}
     </div>, document.body)}
   </>;

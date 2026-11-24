@@ -364,6 +364,8 @@ function setupAgentSessions() {
   for (const action of ['open', 'reveal', 'read', 'image']) {
     ipcMain.handle(`local:${action}`, (_e, raw) => localFiles[action](raw));
   }
+  ipcMain.handle('local:codex-visual', (event, request) =>
+    win && event.senderFrame === win.webContents.mainFrame ? localFiles.codexVisual(request) : null);
 
   // The canvas's own source record for the why layer: one slim JSON per
   // project under <thoughtdag home>/canvases/, private (0700/0600), written
@@ -626,6 +628,12 @@ function codexAppServer() {
     return codexRpc;
   } catch { codexRpc = 'dead'; return null; }
 }
+ipcMain.handle('codex:thread-open', async (event, threadId) => {
+  if (!win || event.senderFrame !== win.webContents.mainFrame || typeof threadId !== 'string' ||
+      threadId.length !== 36 || !/^[\da-f]{8}-(?:[\da-f]{4}-){3}[\da-f]{12}$/i.test(threadId)) return false;
+  await shell.openExternal(`codex://threads/${threadId}`);
+  return true;
+});
 ipcMain.handle('codex:thread-read', async (_e, threadId) => {
   if (typeof threadId !== 'string' || !/^[A-Za-z0-9-]{8,}$/.test(threadId)) return null;
   const c = codexAppServer();

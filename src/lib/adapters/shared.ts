@@ -3,6 +3,7 @@ import { makeNode } from '../import-chat';
 import { autoLayout } from '../layout';
 import { generateId } from '../../utils';
 import { conclusionOf } from '../turn-insight';
+import { codexVisualCaption } from '../codex-visuals';
 
 // Shared projection pieces for runner session adapters. Every runner's
 // collector reduces its native format to this Turn shape; everything
@@ -118,7 +119,8 @@ export function markImporterNote(note: ThoughtNode): void {
  *  "let me look at…" and closes with what it found — the reader looking
  *  back needs the close. */
 export function seedPlaque(node: ThoughtNode): void {
-  const line = conclusionOf(node.data.response, 90);
+  const prose = node.data.importSource?.runner === 'codex' ? codexVisualCaption(node.data.response) : node.data.response;
+  const line = conclusionOf(prose, 90);
   if (line) node.data.summaries = [line];
 }
 

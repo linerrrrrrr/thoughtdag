@@ -9,7 +9,7 @@ import type { ThoughtNode } from '../types';
 
 export interface SearchHit {
   nodeId: string;
-  kind: 'qa' | 'note' | 'file' | 'link' | 'frame' | 'distill';
+  kind: NonNullable<ThoughtNode['data']['stepKind']> | 'qa' | 'distill';
   archived: boolean;
   /** total occurrences across all searched fields of this node */
   count: number;
@@ -20,11 +20,11 @@ export interface SearchHit {
   matchLen: number;
 }
 
-function kindOf(n: ThoughtNode): SearchHit['kind'] {
+export function canvasNodeKind(n: ThoughtNode): SearchHit['kind'] {
   const k = n.data.stepKind;
   if (k === 'note' || k === 'file' || k === 'link' || k === 'frame') return k;
   if (n.data.condensedFrom?.length) return 'distill';
-  return 'qa';
+  return k === 'human' || k === 'prompt' ? k : 'qa';
 }
 
 function countIn(haystack: string, needle: string): number {
@@ -77,7 +77,7 @@ export function searchCanvas(nodes: ThoughtNode[], rawQuery: string): SearchHit[
     const { snippet, matchStart } = snippetAround(first.text, first.at, q.length);
     hits.push({
       nodeId: n.id,
-      kind: kindOf(n),
+      kind: canvasNodeKind(n),
       archived: !!d.archived,
       count,
       snippet,

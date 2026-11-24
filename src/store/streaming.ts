@@ -11,6 +11,8 @@ import { countTokens, activeSummary } from '../utils';
 import { toast, useUiStore } from '../lib/ui-store';
 import { availableExecutionModels, getCachedModels, getModelsOnce, reconcileModelId, describeModel } from '../lib/use-models';
 import { contextLengthFor } from '../lib/runtime-providers';
+import { parseApiConnectionModelId } from '../../runtime/api-model-sources.mjs';
+import { displayModelName } from '../lib/model-sources';
 import { memoryContextBlock, judgeMemory } from '../lib/memory';
 import { fetchRecallItems, recallContextBlock } from '../lib/recall';
 import { fillCards } from '../lib/recall-cards';
@@ -27,6 +29,9 @@ import type { StoreState } from './types';
 import { settleAgentActivity, upsertAgentActivity } from '../lib/agent-activity';
 import { nodeExecutionKind, resolveNodeModel, supportedAgentOptions } from '../lib/node-execution';
 import { toolAttachmentsFingerprint, type CodexNativeHistory } from '../lib/agents/codex-history';
+import type { CodexVisualSnapshot } from '../lib/codex-visuals';
+import { captureCodexVisuals } from '../lib/codex-visual-host';
+import { codexThreadId, codexVersionThreadIds } from '../lib/codex-thread-link';
 import type { AgentActivityEntry } from '../types';
 
 // Background summary generation — fire and forget. Display channel ONLY:
@@ -184,13 +189,17 @@ export async function runNodeGeneration(
   set((state) => ({
     nodes: state.nodes.map((n) =>
       n.id === nodeId
-        ? { ...n, data: { ...n.data, generationFailed: undefined, reasoning: undefined, agentActivity: [], restreaming: n.data.response ? true : undefined } }
+        ? { ...n, data: { ...n.data, generationFailed: undefined, reasoning: undefined, toolProgress: undefined, agentActivity: [], liveCodexThreadId: undefined,
+            codexThreadIds: codexVersionThreadIds(n.data),
+            restreaming: n.data.response ? true : undefined } }
         : n
     ),
   }));
 
   let references: Reference[] | undefined;
   let capturedForRun: CodexNativeHistory | undefined;
+  let visualSnapshots: CodexVisualSnapshot[] | undefined;
+  let runThreadId: string | null = null;
 
   // Model provenance: pinned override, else the global pick, else the
   // server default. A pin that isn't reachable here (imported canvas,
@@ -202,15 +211,18 @@ export async function runNodeGeneration(
   let pinnedModel = pinnedRaw;
   // A verified local catalog is enough to start an Agent even if the API list is still loading.
   const cachedModels = getCachedModels();
-  const localAgentReady = nodeExecutionKind(executionData) === 'codex'
-    && availableExecutionModels(cachedModels, 'codex').length > 0;
+  const executionKind = nodeExecutionKind(executionData);
+  const localAgentReady = executionKind !== 'api' && availableExecutionModels(cachedModels, executionKind)
+    .some(model => !pinnedRaw || model.id === pinnedRaw);
   const modelData = localAgentReady ? cachedModels : await getModelsOnce();
   const serverDefaultModel: string | null = modelData?.default ?? null;
-  if (pinnedRaw && !isAgentModel(pinnedRaw) && modelData && modelData.models.length > 0) {
+  if (pinnedRaw && !isAgentModel(pinnedRaw) && !parseApiConnectionModelId(pinnedRaw) && modelData && modelData.models.length > 0) {
     const r = reconcileModelId(pinnedRaw, modelData.models);
     if (r !== pinnedRaw) {
       pinnedModel = r ?? undefined;
-      toast('info', fmt(t(r ? 'node.pinnedModelRemapped' : 'node.pinnedModelUnavailable'), r ? { m: pinnedRaw, r } : { m: pinnedRaw }), 7000);
+      if (!r || displayModelName(r) !== pinnedRaw) {
+        toast('info', fmt(t(r ? 'node.pinnedModelRemapped' : 'node.pinnedModelUnavailable'), r ? { m: pinnedRaw, r: displayModelName(r) } : { m: pinnedRaw }), 7000);
+      }
     }
   }
 
@@ -251,7 +263,7 @@ export async function runNodeGeneration(
         // so repeated retries don't stack failure entries.
         const failText = new Set([t('node.failedPlaceholder'), t('node.emptyResponse')]);
         const kept = versionMode === 'append' || failed || activityStatus === 'interrupted'
-          ? n.data.responses.map((r, i) => ({ r, q: n.data.questions?.[i], by: n.data.generatedBy?.[i], rs: n.data.reasonings?.[i], rt: n.data.reasoningTokens?.[i], at: n.data.generatedAts?.[i], ed: n.data.editedAts?.[i], gw: n.data.gatewaySearches?.[i], ef: n.data.generatedEfforts?.[i], ac: n.data.agentActivities?.[i], ch: n.data.codexHistories?.[i] })).filter(({ r, ac }) => r && !(failed && failText.has(r) && !ac?.length))
+          ? n.data.responses.map((r, i) => ({ r, q: n.data.questions?.[i], by: n.data.generatedBy?.[i], rs: n.data.reasonings?.[i], rt: n.data.reasoningTokens?.[i], at: n.data.generatedAts?.[i], ed: n.data.editedAts?.[i], gw: n.data.gatewaySearches?.[i], ef: n.data.generatedEfforts?.[i], ac: n.data.agentActivities?.[i], ch: n.data.codexHistories?.[i], threadId: n.data.codexThreadIds?.[i] ?? n.data.codexHistories?.[i]?.threadId, visuals: n.data.codexVisuals?.[i] })).filter(({ r, ac }) => r && !(failed && failText.has(r) && !ac?.length))
           : [];
         const now = new Date().toISOString();
         const responses = [...kept.map(({ r }) => r), response];
@@ -270,7 +282,11 @@ export async function runNodeGeneration(
         const agentActivities = [...kept.map(({ ac }) => ac), settleAgentActivity(n.data.agentActivity, activityStatus)];
         const native = !failed && activityStatus === 'completed' && modelUsed?.startsWith('codex/') ? capturedForRun : undefined;
         const codexHistories = [...kept.map(({ ch }) => ch), native];
-        return { ...n, data: { ...n.data, response, responses, questions, generatedBy, gatewaySearches, generatedEfforts, reasonings, reasoningTokens, generatedAts, editedAts, agentActivities, codexHistories, agentActivity: undefined, reasoning: undefined, restreaming: undefined, pendingApprovals: undefined, agentTrace: undefined, responseIndex: responses.length - 1, isLoading: false, tokenCount, generationFailed: failed || undefined, references, highlights: pruneHighlights(n.data.highlights, response), lastContextHash: contextHash, lastContextParts: contextParts, lastGeneratedAt: now } };
+        const codexThreadIds = runThreadId || n.data.codexThreadIds || kept.some(v => v.threadId)
+          ? [...kept.map(v => codexThreadId(v.threadId)), runThreadId] : undefined;
+        const codexVisuals = visualSnapshots || kept.some(v => v.visuals?.length)
+          ? [...kept.map(v => v.visuals), visualSnapshots] : undefined;
+        return { ...n, data: { ...n.data, response, responses, questions, generatedBy, gatewaySearches, generatedEfforts, reasonings, reasoningTokens, generatedAts, editedAts, agentActivities, codexHistories, codexThreadIds, codexVisuals, liveCodexThreadId: undefined, agentActivity: undefined, reasoning: undefined, toolProgress: undefined, restreaming: undefined, pendingApprovals: undefined, agentTrace: undefined, responseIndex: responses.length - 1, isLoading: false, tokenCount, generationFailed: failed || undefined, references, highlights: pruneHighlights(n.data.highlights, response), lastContextHash: contextHash, lastContextParts: contextParts, lastGeneratedAt: now } };
       }),
     }));
   };
@@ -362,7 +378,7 @@ export async function runNodeGeneration(
     if (windowLimit) {
       const est = countTokens(messages.map((m) => m.content).join('\n'));
       if (est >= windowLimit) {
-        throw new Error(fmt(t('toast.contextOverWindow'), { est: est.toLocaleString(), model: effectiveModel!, limit: windowLimit.toLocaleString() }));
+        throw new Error(fmt(t('toast.contextOverWindow'), { est: est.toLocaleString(), model: displayModelName(effectiveModel!), limit: windowLimit.toLocaleString() }));
       }
     }
     // Stream frames arrive at 100+/s on the direct lane (DeepSeek flash
@@ -381,7 +397,7 @@ export async function runNodeGeneration(
         nodes: state.nodes.map((n) =>
           n.id === nodeId
             ? { ...n, data: { ...n.data,
-                ...(patch.response !== undefined ? { response: patch.response, restreaming: undefined } : {}),
+                ...(patch.response !== undefined ? { response: patch.response, restreaming: undefined, toolProgress: undefined } : {}),
                 ...(patch.reasoning !== undefined ? { reasoning: patch.reasoning } : {}),
                 ...(patch.agentActivity !== undefined ? { agentActivity: patch.agentActivity } : {}) } }
             : n
@@ -416,6 +432,13 @@ export async function runNodeGeneration(
         ...(shown.length ? { m: shown.join(',') } : {}), ...(members.length > shown.length ? { more: true } : {}),
       });
     };
+    const reportToolProgress = (name: string, query?: string) => {
+      if (streamLatest?.response) return;
+      set(state => ({
+        nodes: state.nodes.map(n => n.id === nodeId && n.data.isLoading && (!n.data.response || n.data.restreaming)
+          ? { ...n, data: { ...n.data, toolProgress: { name, query } } } : n),
+      }));
+    };
     let toolsSettled = false;
     const response = await llmCallStream(messages, (_chunk, fullSoFar) => {
       pushStream({ response: fullSoFar });
@@ -447,28 +470,12 @@ export async function runNodeGeneration(
           }));
           return;
         }
-        // Show what's being searched while the answer hasn't started streaming
-        const icon = name === 'arxiv_search' ? '📚' : name === 'semantic_scholar' ? '🎓' : name.startsWith('mcp:') ? '🔧' : '🔍';
-        set((state) => ({
-          nodes: state.nodes.map((n) =>
-            n.id === nodeId && !n.data.response
-              ? { ...n, data: { ...n.data, response: `${icon} ${query}…` } }
-              : n
-          ),
-        }));
+        reportToolProgress(name, query);
       },
       onGatewaySearch: () => {
         if (!isCurrent()) return;
         gatewaySearched = true;
-        // Same pattern as tool pings: a placeholder line while the answer
-        // has not started streaming — the gateway searches in silence.
-        set((state) => ({
-          nodes: state.nodes.map((n) =>
-            n.id === nodeId && !n.data.response
-              ? { ...n, data: { ...n.data, response: `🌐 ${t('node.gatewaySearching')}` } }
-              : n
-          ),
-        }));
+        reportToolProgress('web_search');
       },
       onSources: (sources) => { references = sources; },
       onHarnessSession: (session) => { harnessSession = session; },
@@ -492,6 +499,7 @@ export async function runNodeGeneration(
       },
       onAgentSession: (session) => {
         if (!isCurrent()) return;
+        if (session.runtime === 'codex') runThreadId = codexThreadId(session.sessionId) ?? runThreadId;
         if (session.nativeHistory) capturedForRun = session.nativeHistory;
         const continued = session.continued ?? !!agentRoute?.continue;
         // a later session event (the file found, the effort read) adds to the record, never wipes it
@@ -500,6 +508,7 @@ export async function runNodeGeneration(
           approvals: session.runtime === 'codex' && n.data.agentSession?.sessionId !== session.sessionId
             ? n.data.approvals?.map((approval) => approval.outcome === 'allowed-session' && approval.rule?.startsWith('codex:') ? { ...approval, rule: null } : approval)
             : n.data.approvals,
+          liveCodexThreadId: runThreadId ?? undefined,
           agentSession: { ...n.data.agentSession, ...session, nativeHistory: session.nativeHistory, continued } } } : n) }));
       },
       onAgentChanges: (changes) => {
@@ -554,7 +563,6 @@ export async function runNodeGeneration(
     }, toolPrefsNow(), requestedModel, harnessRoute ?? (isAgentModel(requestedModel) ? { ...agentRoute, nodeId, agentOptions } : undefined));
     flushStream();
     if (!isCurrent()) return; // superseded while finishing: drop everything
-    activeAbortControllers.delete(nodeId);
     if (!response.trim()) {
       // The stream closed cleanly but the model sent nothing (upstream
       // hiccup, tool-only turn) — silent emptiness reads as a hang, so
@@ -572,6 +580,8 @@ export async function runNodeGeneration(
     if (capturedForRun) {
       capturedForRun = { ...capturedForRun, toolAttachmentsFingerprint: await toolAttachmentsFingerprint(get().nodes.find((n) => n.id === nodeId)) };
     }
+    if (runThreadId) visualSnapshots = await captureCodexVisuals(response, runThreadId, [], abortController.signal);
+    if (!isCurrent()) return;
     writeFinal(response);
     // Record the completed harness turn on its node.
     if (harnessRoute) {
@@ -596,7 +606,6 @@ export async function runNodeGeneration(
   } catch (err) {
     flushStream();
     if (!isCurrent()) return; // superseded: the abort was ours to swallow
-    activeAbortControllers.delete(nodeId);
     const current = get().nodes.find((n) => n.id === nodeId)?.data;
     const partial = current?.restreaming ? '' : current?.response || '';
     const isAbort = err instanceof DOMException && err.name === 'AbortError';
@@ -623,6 +632,7 @@ export async function runNodeGeneration(
     }
     get().settleNode(nodeId);
   } finally {
+    if (activeAbortControllers.get(nodeId) === abortController) activeAbortControllers.delete(nodeId);
     flushStream();
   }
 }

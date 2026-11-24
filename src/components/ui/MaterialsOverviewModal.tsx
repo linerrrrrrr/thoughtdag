@@ -1,7 +1,8 @@
 import { useDismissableLayer } from '../../lib/use-dismissable-layer';
 import { useRef, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { BookOpen, FileText, Image as ImageIcon, Link2, Paperclip, StickyNote, X } from 'lucide-react';
+import { BookOpen, Paperclip, LocateFixed, X } from 'lucide-react';
+import { fileIconFor, nodeKindIcons } from '../../lib/content-icons';
 import { useStore } from '../../store';
 import { useUiStore } from '../../lib/ui-store';
 import { useT, fmt } from '../../i18n';
@@ -16,6 +17,7 @@ interface Entry {
   key: string;
   name: string;
   icon: 'pdf' | 'img' | 'txt' | 'note' | 'link';
+  mime?: string;
   sizeKB?: number;
   at?: string;
   nodeId: string;
@@ -23,14 +25,6 @@ interface Entry {
   canOpen: boolean;
   showGroup?: boolean;
 }
-
-const ICONS = {
-  pdf: FileText,
-  img: ImageIcon,
-  txt: FileText,
-  note: StickyNote,
-  link: Link2,
-} as const;
 
 export default function MaterialsOverviewModal({ onLocate }: { onLocate: (nodeId: string) => void }) {
   const open = useUiStore((s) => s.materialsOverviewOpen);
@@ -57,7 +51,7 @@ export default function MaterialsOverviewModal({ onLocate }: { onLocate: (nodeId
       for (const a of n.data.attachments || []) {
         const icon = a.type === 'application/pdf' ? 'pdf' : a.type.startsWith('image/') ? 'img' : 'txt';
         out.push({
-          key: a.id, name: a.name, icon,
+          key: a.id, name: a.name, icon, mime: a.type,
           sizeKB: a.size / 1024, at: a.addedAt,
           nodeId: n.id, nodeTitle: holder,
           canOpen: icon === 'pdf',
@@ -109,7 +103,7 @@ export default function MaterialsOverviewModal({ onLocate }: { onLocate: (nodeId
         <div className="flex-1 min-h-0 overflow-y-auto px-5 py-3">
           {entries.length === 0 && <p className="text-control text-ink-faint italic py-2">{t('matov.empty')}</p>}
           {entries.map((e) => {
-            const Icon = ICONS[e.icon];
+            const Icon = e.icon === 'note' || e.icon === 'link' ? nodeKindIcons[e.icon] : fileIconFor(e.name, e.mime);
             return (
               <div key={e.key}>
                 {e.showGroup && (
@@ -135,7 +129,7 @@ export default function MaterialsOverviewModal({ onLocate }: { onLocate: (nodeId
                   )}
                   {sort === 'node' && (
                     <button className={chip} onClick={() => { close(); onLocate(e.nodeId); }} data-tooltip={t('hlov.locateTitle')} aria-label={t('hlov.locateTitle')}>
-                      ↦
+                      <LocateFixed size={14} strokeWidth={1.75} aria-hidden="true" />
                     </button>
                   )}
                   {e.canOpen && (

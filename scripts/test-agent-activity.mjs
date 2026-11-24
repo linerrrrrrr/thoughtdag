@@ -38,7 +38,7 @@ const stubs = {
 try {
   const bundle = join(temp, 'activity.mjs');
   await build({
-    stdin: { contents: `export * from './lib/agent-activity'; export {agentCallStream} from './lib/agents/agent-runtime'; export {installAgentsHttpBridge} from './lib/agents/http-bridge'; export {runNodeGeneration} from './store/streaming';`, resolveDir: join(root, 'src'), loader: 'ts' },
+    stdin: { contents: `export * from './lib/agent-activity'; export * from './lib/codex-visuals'; export {captureImportedCodexVisuals} from './lib/codex-visual-host'; export {agentCallStream} from './lib/agents/agent-runtime'; export {installAgentsHttpBridge} from './lib/agents/http-bridge'; export {runNodeGeneration} from './store/streaming';`, resolveDir: join(root, 'src'), loader: 'ts' },
     bundle: true, platform: 'node', format: 'esm', outfile: bundle, logLevel: 'silent',
     plugins: [{ name: 'isolated-host', setup(b) {
       b.onResolve({ filter: /.*/ }, (args) => {
@@ -60,7 +60,7 @@ try {
     } }],
   });
   globalThis.window = { location: { origin: 'http://localhost' }, setTimeout, addEventListener() {}, dispatchEvent() {} };
-  const { activeAgentActivity, originalQuestionBeforeInstructions, upsertAgentActivity, settleAgentActivity, recoverInterruptedAgentRun, agentCallStream, installAgentsHttpBridge, runNodeGeneration } = await import(pathToFileURL(bundle));
+  const { activeAgentActivity, originalQuestionBeforeInstructions, upsertAgentActivity, settleAgentActivity, recoverInterruptedAgentRun, agentCallStream, installAgentsHttpBridge, runNodeGeneration, captureImportedCodexVisuals, activeCodexVisuals } = await import(pathToFileURL(bundle));
   const item = (id, extra = {}) => ({ id, kind: 'command', status: 'running', command: 'npm run build', startedAt: 100, ...extra });
   const ordered = upsertAgentActivity(upsertAgentActivity([], item('a')), item('b'));
   assert.deepEqual(upsertAgentActivity(ordered, item('a', { output: 'ready', status: 'completed' })).map(x => x.id), ['a', 'b']);
@@ -138,6 +138,27 @@ try {
   });
   assert.equal(stopped().agentActivities[0][0].status, 'interrupted');
   assert.equal(stopped().generationFailed, undefined);
+  const stoppedSearch = await generate(async (_messages, _chunk, _signal, _images, callbacks) => {
+    callbacks.onToolCall('arxiv_search', 'example query');
+    throw new DOMException('Stopped', 'AbortError');
+  });
+  assert.deepEqual(stoppedSearch().responses, ['node.stoppedPlaceholder'], 'stopping a search never saves its query as an answer');
+  assert.equal(stoppedSearch().toolProgress, undefined);
+  const failedGateway = await generate(async (_messages, _chunk, _signal, _images, callbacks) => {
+    callbacks.onGatewaySearch();
+    throw new Error('transport lost');
+  });
+  assert.deepEqual(failedGateway().responses, ['node.failedPlaceholder']);
+  assert.equal(failedGateway().toolProgress, undefined);
+  const literalAnswer = '🔍 example query…';
+  const completedSearch = await generate(async (_messages, chunk, _signal, _images, callbacks) => {
+    callbacks.onToolCall('web_search', 'example query');
+    chunk(literalAnswer, literalAnswer);
+    callbacks.onGatewaySearch();
+    return literalAnswer;
+  });
+  assert.deepEqual(completedSearch().responses, [literalAnswer], 'an answer resembling an old status line stays verbatim');
+  assert.equal(completedSearch().toolProgress, undefined);
   const rerun = stateFor();
   Object.assign(rerun.nodes[0].data, { response: 'old answer', responses: ['old answer'], responseIndex: 0 });
   const rerunStopped = await generate(async () => { throw new DOMException('Stopped', 'AbortError'); }, rerun);
@@ -161,6 +182,40 @@ try {
   assert.equal(activeAgentActivity(complete())[0].status, 'completed');
   const empty = await generate(async (_messages, _chunk, _signal, _images, callbacks) => { callbacks.onAgentActivity(item('only-tool', { status: 'completed' })); return ''; });
   assert.equal(empty().agentActivities[0][0].id, 'only-tool', 'tool-only runs retain their activity');
+
+  const previewPath = 'D:/fixture/preview.html';
+  const marker = '\uE200visualize\uE202' + JSON.stringify({ path: previewPath }) + '\uE201';
+  const sessionId = '00000000-1111-2222-3333-444444444444';
+  let original = '<input type="range" value="1">';
+  let reads = 0;
+  window.desktopLocal = { codexVisual: async request => {
+    assert.deepEqual(request, { threadId: sessionId, path: previewPath });
+    reads++;
+    return original;
+  } };
+  const visualStream = async (_messages, _chunk, _signal, _images, callbacks) => {
+    callbacks.onAgentSession({ runtime: 'codex', sessionId, cwd: 'D:/fixture' });
+    return 'Preview\n\n' + marker;
+  };
+  const v1 = (await generate(visualStream))();
+  original = '<input type="range" value="2">';
+  const previous = stateFor();
+  previous.nodes[0].data = { ...v1, isLoading: true };
+  const v2 = (await generate(visualStream, previous, { versionMode: 'append' }))();
+  assert.match(v2.codexVisuals[0][0].html, /value="1"/);
+  assert.match(activeCodexVisuals(v2)[0].html, /value="2"/);
+  assert.deepEqual(v2.responses, [v1.response, v1.response], 'native answer references stay intact');
+  const oldImport = { id: 'import', data: { ...v1, codexThreadIds: undefined, codexVisuals: undefined,
+    agentSession: undefined, importSource: { runner: 'codex', sessionId, itemIds: [] }, source: { question: 'q', response: v1.response } } };
+  const captured = await captureImportedCodexVisuals([oldImport]);
+  assert.deepEqual(captured[0].data.codexVisuals, [[{ path: previewPath, html: original }]]);
+  assert.equal(oldImport.data.codexVisuals, undefined, 'hydration does not mutate existing snapshots');
+  original = null;
+  const reopened = JSON.parse(JSON.stringify(captured));
+  assert.equal(await captureImportedCodexVisuals(reopened), reopened);
+  assert.equal(reads, 3, 'a saved answer opens without contacting its original source');
+  delete window.desktopLocal;
+  console.log('PASS: native HTML captured on generation and import, distinct revisions preserved, source-free reload.');
 
   delete window.desktopAgents;
   let source;

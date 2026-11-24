@@ -52,6 +52,7 @@ export async function buildViewerLink(nodes: ThoughtNode[], edges: ThoughtEdge[]
       data: {
         ...n.data,
         isLoading: false, isEditing: false, isEditingResponse: false, reasoning: undefined,
+        codexVisuals: undefined,
         // Heavy asset bytes stay home: original PDF bytes, rendered page
         // images, a notebook's JSON and figures, and full-size image
         // originals would blow the URL past what address bars and share

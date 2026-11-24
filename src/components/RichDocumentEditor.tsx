@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { EditorContent, useEditor, useEditorState, type Editor } from '@tiptap/react';
 import {
-  AlignCenter, AlignJustify, AlignLeft, AlignRight, Bold, Columns3, Download,
+  AlignCenter, AlignJustify, AlignLeft, AlignRight, Bold, Columns3, FileDown,
   Highlighter, ImagePlus, IndentDecrease, IndentIncrease, Italic, Link2, List,
   ListOrdered, Loader2, Merge, Minus, Plus, Redo2, Rows3, Split, Strikethrough,
   Table2, Trash2, Type, Underline, Undo2, Unlink, Eraser, type LucideIcon,
@@ -299,7 +299,7 @@ function RichDocumentBody({ nodeId, attachment, onClose, compact = false, initia
     <div className="flex items-center gap-2 flex-wrap">
       <button type="button" onClick={() => void exportDocx()} disabled={exporting || saving}
         className="flex items-center gap-1.5 px-3 py-1.5 rounded-control text-control text-ink-muted hover:bg-wash disabled:opacity-40" data-rich-export>
-        {exporting ? <Loader2 size={15} className="animate-spin" /> : <Download size={15} strokeWidth={1.75} />}
+        {exporting ? <Loader2 size={15} className="animate-spin" /> : <FileDown size={15} strokeWidth={1.75} />}
         {t(exporting ? 'richDocument.exporting' : 'richDocument.exportDocx')}
       </button>
       <div className="flex-1" />

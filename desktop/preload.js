@@ -26,6 +26,7 @@ contextBridge.exposeInMainWorld('desktopSessions', {
   read: (rootKey, rel) => ipcRenderer.invoke('sessions:read', rootKey, rel),
   openInCli: (runner, cwd, sessionId, mode) => ipcRenderer.invoke('sessions:open-in-cli', runner, cwd, sessionId, mode),
   codexThreadRead: (threadId) => ipcRenderer.invoke('codex:thread-read', threadId),
+  openCodexThread: (threadId) => ipcRenderer.invoke('codex:thread-open', threadId),
 });
 
 contextBridge.exposeInMainWorld('desktopNavigation', {
@@ -80,6 +81,7 @@ contextBridge.exposeInMainWorld('desktopWhy', {
 });
 
 contextBridge.exposeInMainWorld('desktopLocal', {
+  codexVisual: (request) => ipcRenderer.invoke('local:codex-visual', request),
   open: (p) => ipcRenderer.invoke('local:open', p),
   reveal: (p) => ipcRenderer.invoke('local:reveal', p),
   read: (p) => ipcRenderer.invoke('local:read', p),

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useReactFlow, useUpdateNodeInternals, type NodeProps } from '@xyflow/react';
-import { BookOpen, ExternalLink, FolderOpen, Link2, Loader2, Paperclip, Pencil, RefreshCw, StickyNote, Trash2 } from 'lucide-react';
+import { BookOpen, ChevronDown, ChevronRight, ExternalLink, FolderOpen, Loader2, Pencil, RefreshCw, Trash2 } from 'lucide-react';
+import { nodeKindIcons } from '../lib/content-icons';
 import type { Attachment, ThoughtNode as ThoughtNodeType } from '../types';
 import { useStore } from '../store';
 import { useNodeDetail } from '../lib/node-detail';
@@ -182,11 +183,9 @@ export default function ContentNode({ id, data, selected }: NodeProps<ThoughtNod
   };
   const linkDomain = (() => { try { return new URL(data.linkUrl ?? '').hostname; } catch { return data.linkUrl ?? ''; } })();
 
-  const headerIcon = kind === 'note'
-    ? <StickyNote size={14} strokeWidth={1.75} className="text-amber-600 shrink-0" />
-    : kind === 'link'
-      ? <Link2 size={14} strokeWidth={1.75} className="text-accent shrink-0" />
-      : <Paperclip size={14} strokeWidth={1.75} className="text-ink-muted shrink-0" />;
+  const KindIcon = nodeKindIcons[kind];
+  const headerIcon = <KindIcon size={14} strokeWidth={1.75}
+    className={`shrink-0 ${kind === 'note' ? 'text-amber-600' : kind === 'link' ? 'text-accent' : 'text-ink-muted'}`} />;
 
   const nodeName = getNodeDisplayName(data, t(kind === 'file' ? 'glyph.file' : kind === 'link' ? 'glyph.link' : 'glyph.note'));
   const nodeNameSource = getNodeNameSource(data, nodeName);
@@ -469,11 +468,12 @@ export default function ContentNode({ id, data, selected }: NodeProps<ThoughtNod
                         onClick={(e) => { e.stopPropagation(); setOpenExtract(openExtract === att.id ? null : att.id); }}
                         data-extract-toggle={att.id}
                         aria-expanded={openExtract === att.id}
-                        className="text-control text-ink-muted hover:bg-wash px-2 py-1 rounded-control"
+                        className="inline-flex items-center gap-1 text-control text-ink-muted hover:bg-wash px-2 py-1 rounded-control"
                       >
                         {useUiStore.getState().drafts[`extraction:${id}:${att.id}`] !== undefined
                           ? t('content.resumeDraft')
-                          : <>{t('content.extracted')}{att.extractedBy ? ` · ${att.extractedBy}` : ''}</>} ▾
+                          : <>{t('content.extracted')}{att.extractedBy ? ` · ${att.extractedBy}` : ''}</>}
+                        {openExtract === att.id ? <ChevronDown size={12} aria-hidden /> : <ChevronRight size={12} aria-hidden />}
                       </button>
                     ) : (
                       <button

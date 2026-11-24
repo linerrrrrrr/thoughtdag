@@ -202,10 +202,10 @@ function rewriteVault(raw, remapped, sourceKeys) {
 
 // Preserve optional fields stored by the structured clone codec when combining
 // two metadata arrays. Project metadata consists of plain values and arrays.
-function appendProject(dest, source, from, id, projectIndexes) {
+function appendProject(dest, source, from, project, id, projectIndexes) {
   const index = dest.value.projects.length;
   projectIndexes.set(from, index);
-  dest.value.projects.push({ ...source.value.projects[from], id });
+  dest.value.projects.push({ ...project, id });
   for (const item of source.special) {
     if (item.path[0] !== 'projects' || item.path[1] !== from) continue;
     const path = ['projects', index, ...item.path.slice(2)];
@@ -214,6 +214,24 @@ function appendProject(dest, source, from, id, projectIndexes) {
     if (item.target[0] !== 'projects' || targetIndex === undefined) throw new Error('Unsupported shared canvas metadata');
     dest.special.push({ ...item, path, target: ['projects', targetIndex, ...item.target.slice(2)] });
   }
+}
+
+function mergeProjectFolders(index, source, namespace) {
+  const mapping = new Map();
+  for (const folder of source.value.folders ?? []) {
+    if (!folder?.id || typeof folder.id !== 'string' || typeof folder.name !== 'string' || mapping.has(folder.id)) {
+      throw new Error('Invalid canvas folder catalogue');
+    }
+    const folders = index.value.folders ??= [];
+    let id = folder.id;
+    let collision = 0;
+    while (folders.some(existing => existing.id === id && existing.name !== folder.name)) {
+      id = stableId(namespace, 'folder', folder.id, collision++);
+    }
+    if (!folders.some(existing => existing.id === id)) folders.push({ id, name: folder.name });
+    mapping.set(folder.id, id);
+  }
+  return mapping;
 }
 
 async function archiveEmptyWorkspace(ctx, namespace, id) {
@@ -262,7 +280,10 @@ async function mergeLegacyStorage(ctx) {
     const settings = (await source.storage.keys('settings')).filter(key => !chatKeys.has(key));
     await copyValues(source.storage, dest, 'settings', settings);
     const projectIndexes = new Map();
-    for (const [i, project] of source.index.value.projects.entries()) {
+    const folderIds = mergeProjectFolders(index, source.index, profile.namespace);
+    for (const [i, original] of source.index.value.projects.entries()) {
+      const project = original.folderId && folderIds.has(original.folderId)
+        ? { ...original, folderId: folderIds.get(original.folderId) } : original;
       if (index.value.projects.length && await placeholder(ctx, source, project, fileNamespace)) {
         await archiveEmptyWorkspace(ctx, fileNamespace, project.id);
         continue;
@@ -286,7 +307,7 @@ async function mergeLegacyStorage(ctx) {
       if (raw !== null && previous === null) await dest.set('kv', GRAPH + id, raw);
       if (chat !== null) await dest.set('settings', CHAT + id, chat);
       const position = index.value.projects.findIndex(p => p.id === id);
-      if (position < 0) appendProject(index, source.index, i, id, projectIndexes);
+      if (position < 0) appendProject(index, source.index, i, project, id, projectIndexes);
       else projectIndexes.set(i, position);
       const ref = { namespace: fileNamespace, canvasId: project.id };
       const paths = canvasFilePaths(ctx.workspaceRoot, fileNamespace, project.id);

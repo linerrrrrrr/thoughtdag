@@ -28,7 +28,7 @@ import { intendedContentHeight, pixelDimension } from '../../lib/node-content-he
 // follow the content they were written from.
 
 /** Set while the app works, never by the person: a snapshot never brings them back. */
-const TRANSIENT: (keyof ThoughtData)[] = ['isLoading', 'isEditing', 'isEditingResponse', 'questionEditor', 'responseEditor', 'restreaming', 'pendingApprovals', 'agentTrace', 'agentActivity', 'reasoning', 'recallProgress'];
+const TRANSIENT: (keyof ThoughtData)[] = ['isLoading', 'isEditing', 'isEditingResponse', 'questionEditor', 'responseEditor', 'restreaming', 'pendingApprovals', 'agentTrace', 'agentActivity', 'liveCodexThreadId', 'reasoning', 'recallProgress'];
 /** Choices for the next ask (its model, search, recall): settings, not steps; they stay as the person last set them. */
 const SETTINGS: (keyof ThoughtData)[] = ['model', 'webSearch', 'scholarSearch', 'recall', 'recallReach', 'recallScale'];
 /** Written from a node's content (plaques, ladders, counts): they follow that content. */
@@ -38,7 +38,7 @@ const VERSION: (keyof ThoughtData)[] = ['question', 'questions', 'responses', 'r
 /** Attachment fields the app fills in (extraction, digests, the vault); extracted text is the person's once edited by hand. */
 const ATT_MACHINE = new Set<string>(['isExtracting', 'extractedText', 'extractedBy', 'digest', 'digestBy', 'pageImages', 'figures', 'numPages', 'thumbnailUrl', 'content', 'contentInVault']);
 const NODE_VIEW = new Set<string>(['selected', 'dragging', 'measured', 'resizing', 'data']);
-const SKIP_DATA = new Set<string>([...TRANSIENT, ...SETTINGS, ...DERIVED, 'attachments'] as string[]);
+const SKIP_DATA = new Set<string>([...TRANSIENT, ...SETTINGS, ...DERIVED, 'attachments', 'codexVisuals'] as string[]);
 
 function same(a: unknown, b: unknown): boolean {
   if (a === b) return true;
@@ -130,7 +130,7 @@ export function sameGraph(a: Snapshot, b: Snapshot): boolean {
   return sameById(a.nodes, b.nodes, sameNode) && sameById(a.edges, b.edges, sameEdge);
 }
 
-const QUIET: Partial<ThoughtData> = { isLoading: false, isEditing: false, isEditingResponse: false, questionEditor: undefined, responseEditor: undefined, restreaming: undefined, pendingApprovals: undefined, agentTrace: undefined, agentActivity: undefined, reasoning: undefined, recallProgress: undefined };
+const QUIET: Partial<ThoughtData> = { isLoading: false, isEditing: false, isEditingResponse: false, questionEditor: undefined, responseEditor: undefined, restreaming: undefined, pendingApprovals: undefined, agentTrace: undefined, agentActivity: undefined, liveCodexThreadId: undefined, reasoning: undefined, recallProgress: undefined };
 
 function restoreData(target: ThoughtData, live: ThoughtData | undefined): ThoughtData {
   if (!live) {
@@ -144,6 +144,7 @@ function restoreData(target: ThoughtData, live: ThoughtData | undefined): Though
   for (const k of [...TRANSIENT, ...SETTINGS]) data[k] = cur[k];
   if (target.question === live.question && target.response === live.response && same(target.responses, live.responses)) {
     for (const k of DERIVED) data[k] = cur[k];
+    if (same(target.generatedAts, live.generatedAts) && same(target.codexThreadIds, live.codexThreadIds)) data.codexVisuals = live.codexVisuals;
   }
   const liveAtts = new Map((live.attachments ?? []).map((a) => [a.id, a]));
   data.attachments = (target.attachments ?? []).map((a) => {

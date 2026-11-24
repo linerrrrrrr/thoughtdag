@@ -1,6 +1,7 @@
 import { type NodeProps } from '@xyflow/react';
 import { useRef, useState } from 'react';
-import { Globe, GraduationCap, MessageCircleQuestion, SquareTerminal, Trash2 } from 'lucide-react';
+import { Globe, GraduationCap, Trash2, type LucideIcon } from 'lucide-react';
+import { nodeKindIcons } from '../lib/content-icons';
 import type { ThoughtNode as ThoughtNodeType, ThoughtData } from '../types';
 import { useStore } from '../store';
 import { useT } from '../i18n';
@@ -18,9 +19,9 @@ import { pixelDimension } from '../lib/node-content-height';
 //            applied to whatever flows in from upstream nodes.
 // Connections define the flow between these steps. No model runs in this view.
 
-const KINDS: { kind: 'human' | 'prompt'; icon: typeof SquareTerminal; labelKey: string }[] = [
-  { kind: 'human', icon: MessageCircleQuestion, labelKey: 'paradigm.kind.human' },
-  { kind: 'prompt', icon: SquareTerminal, labelKey: 'paradigm.kind.prompt' },
+const KINDS: { kind: 'human' | 'prompt'; icon: LucideIcon; labelKey: string }[] = [
+  { kind: 'human', icon: nodeKindIcons.human, labelKey: 'paradigm.kind.human' },
+  { kind: 'prompt', icon: nodeKindIcons.prompt, labelKey: 'paradigm.kind.prompt' },
 ];
 
 const KIND_STYLES: Record<'human' | 'prompt', string> = {

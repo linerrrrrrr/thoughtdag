@@ -17,7 +17,7 @@ export function QuestionFilePicker({ onAttach }: { onAttach: (files: File[]) => 
   const t = useT();
   return <>
     <button type="button" className="question-attach-button" onClick={() => input.current?.click()}
-      aria-label={t('landing.attach')} data-tooltip={t('landing.attach')}><Paperclip size={17} aria-hidden /></button>
+      aria-label={t('landing.attach')} data-tooltip={t('landing.attach')}><Paperclip size={17} strokeWidth={1.75} aria-hidden /></button>
     <input ref={input} hidden type="file" multiple accept={FILE_INPUT_ACCEPT}
       onChange={event => { onAttach(Array.from(event.target.files ?? [])); event.target.value = ''; }} />
   </>;
@@ -45,7 +45,7 @@ function QuestionAttachmentTile({ file, onOpen, onRemove }: {
     : attachment.numPages != null ? fmt(t('attach.pages'), { n: attachment.numPages }) : fileSizeLabel(attachment.size);
   const contents = <>
     <span className="question-attachment-art" aria-hidden="true">
-      {image ? <img src={image} alt="" /> : busy ? <Loader2 size={19} className="animate-spin" /> : <FileIdentity name={file.name} />}
+      {image ? <img src={image} alt="" /> : busy ? <Loader2 size={19} className="animate-spin" /> : <FileIdentity name={file.name} mime={file.type} />}
     </span>
     <span className="question-file-copy">
       <span className="question-attachment-name text-control">{file.name}</span>

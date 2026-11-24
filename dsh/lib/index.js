@@ -78,6 +78,13 @@ const APP_DIR = resolve(__dirname, '../dist-app')
 const { writeBackup, BackupRequestError } = require(resolve(__dirname, 'runtime', 'backup-write.cjs'))
 // the zstd container walk shared with the desktop shell (#80)
 const zstdFrames = require(resolve(__dirname, 'runtime', 'zstd-frames.cjs'))
+const { apiCatalogModel, apiProviderCatalog, isApiConnectionId, parseApiConnectionModelId } = (() => {
+  try { return require(resolve(__dirname, 'runtime', 'api-model-sources.mjs')) }
+  catch (error) {
+    if (error?.code !== 'MODULE_NOT_FOUND') throw error
+    return require(resolve(__dirname, '../../runtime/api-model-sources.mjs'))
+  }
+})()
 
 // The plugin's own version travels into the canvas's URL (?dv=), so the
 // update dialog and the release history know which release runs here, as
@@ -443,7 +450,7 @@ async function modelsPayload(ctx, ownProviders = []) {
   }
   models.push(...agents)
   // the person's own interfaces follow, under their own names; a harness id wins a collision
-  const own = ownModelEntries(ownProviders, new Set(models.map(m => m.id)))
+  const own = ownModelEntries(ownProviders, models)
   models.push(...own)
   const def = cat.default ? `${cat.default.provider}/${cat.default.model}` : null
   return {
@@ -478,29 +485,30 @@ function ownProvidersOf(list) {
       .slice(0, OWN_MODEL_CAP)
       .map(m => ({ id: m.id, ...(typeof m.vision === 'boolean' ? { vision: m.vision } : {}) }))
     if (models.length === 0) continue
-    out.push({ name, baseURL, apiKey: typeof p?.apiKey === 'string' ? p.apiKey : '', models })
+    const id = isApiConnectionId(p.id) ? p.id : undefined
+    const connectionName = typeof p.connectionName === 'string' ? p.connectionName : undefined
+    out.push({ id, name, connectionName, baseURL, apiKey: typeof p.apiKey === 'string' ? p.apiKey : '', models })
   }
   return out
 }
 
-/** Model entries for the picker: the model's short id and its interface's name, like the app shows them. */
-function ownModelEntries(providers, taken) {
-  const entries = []
-  for (const p of providers) {
-    for (const m of p.models) {
-      if (taken.has(m.id)) continue
-      taken.add(m.id)
-      const shortId = m.id.includes('/') ? m.id.split('/').slice(1).join('/') : m.id
-      entries.push({ id: m.id, name: `${shortId} (${p.name})`, provider: p.name, vision: m.vision })
-    }
-  }
-  return entries
+/** The person's connections remain separate even when the hosted model names collide. */
+function ownModelEntries(providers, hostedModels) {
+  const taken = new Set(hostedModels.map(model => model.id))
+  const hostedSources = new Set(hostedModels.filter(model => model.provider !== AGENT_GROUP).map(model => model.provider))
+  const { entries } = apiProviderCatalog(providers, () => model => ({ vision: model.vision }), hostedSources)
+  return Object.entries(entries).filter(([id]) => !taken.has(id)).map(([id, entry]) => apiCatalogModel(id, entry))
 }
 
-/** The interface a requested model belongs to, from the request's own list first, then the registered list. */
+/** Request connections take priority over the last catalog registration. */
 function ownTargetOf(requested, fromBody, registered) {
   if (typeof requested !== 'string' || !requested) return null
-  for (const p of [...fromBody, ...registered]) if (p.models.some(m => m.id === requested)) return { provider: p, model: requested }
+  const routed = parseApiConnectionModelId(requested)
+  const model = routed?.modelId ?? requested
+  for (const provider of [...fromBody, ...registered]) {
+    if (routed && provider.id !== routed.sourceId) continue
+    if (provider.models.some(candidate => candidate.id === model)) return { provider, model }
+  }
   return null
 }
 
@@ -556,7 +564,7 @@ async function ownRequest(target, body, stream, left) {
     error.upstreamStatus = res.status
     throw error
   }
-  const key = `${provider.baseURL} ${id}`
+  const key = `${provider.id ?? provider.baseURL} ${id}`
   if (!openrouter || !body?.fast || quietRefused.has(key)) return send(true)
   try {
     return await send(false)
@@ -1475,7 +1483,7 @@ export async function apply(ctx, config) {
             const left = new AbortController()
             res.on('close', () => { if (!res.writableFinished) left.abort() })
             try {
-              return sendJson(res, 200, { text: await ownCall(own, body, left.signal), model: own.model })
+              return sendJson(res, 200, { text: await ownCall(own, body, left.signal), model: body.model })
             } catch (error) {
               if (left.signal.aborted) return
               throw error
@@ -1493,6 +1501,7 @@ export async function apply(ctx, config) {
           res.end()
           return
         }
+        if (parseApiConnectionModelId(body?.model)) return sendJson(res, 503, { error: 'The model selected for this API connection is unavailable.' })
         const target = await targetOf(ctx, body?.model)
         const options = await callOf(ctx, body, target)
         if (path === '/claude') {

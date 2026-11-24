@@ -1,6 +1,6 @@
 import { useRef, useState, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
-import { ArrowUp } from 'lucide-react';
+import { Send } from 'lucide-react';
 import { useUiStore } from '../../lib/ui-store';
 import { useDismissableLayer } from '../../lib/use-dismissable-layer';
 import { canSteerAgentNode, steerAgentNode } from '../../lib/agents/agent-runtime';
@@ -71,7 +71,7 @@ export default function AgentInstructionInput({ nodeId, open, position, triggerR
         <button type="button" onClick={cancel}>{t('common.cancel')}</button>
         <button type="button" className="agent-instruction-send" data-agent-instruction-send
           disabled={sending || !draft.trim() || !canSteerAgentNode(nodeId)} onClick={() => void send()}>
-          <ArrowUp size={14} strokeWidth={1.75} />{t('common.send')}
+          <Send size={14} strokeWidth={1.75} />{t('common.send')}
         </button>
       </div>
     </div>, document.body,

@@ -331,6 +331,12 @@ export interface ThoughtData extends Record<string, unknown> {
   agentOptions?: AgentTurnOptions;
   /** Replayable native records aligned with answer versions, independent of display activity. */
   codexHistories?: (import('./lib/agents/codex-history').CodexNativeHistory | null | undefined)[];
+  /** Original desktop chat per answer version, including imported and interrupted turns. */
+  codexThreadIds?: (string | null)[];
+  /** Acknowledged native thread for the in-flight run. */
+  liveCodexThreadId?: string;
+  /** Display-only HTML captured when each answer was received, in response version order. */
+  codexVisuals?: (import('./lib/codex-visuals').CodexVisualSnapshot[] | null | undefined)[];
   webSearch?: boolean; // may this node's generation use web search? (snapshotted at ask time; undefined = legacy, follow global)
   scholarSearch?: boolean; // same for arXiv / Semantic Scholar tools
   /** may this node's generation recall past conversations and memories (the why layer)? snapshotted at ask time like the search switches */
@@ -347,6 +353,8 @@ export interface ThoughtData extends Record<string, unknown> {
       the OLD text (cleared on the first new chunk) — display shows the live
       thinking, not the stale answer. */
   restreaming?: boolean;
+  /** Transient pre-answer status reported by the tool or gateway. */
+  toolProgress?: { name: string; query?: string };
   /** The runtime session this node's last agent turn ran in (desktop agent lanes). */
   agentSession?: {
     runtime: AgentRuntime; sessionId: string | null; sessionFile: string | null; cwd: string;

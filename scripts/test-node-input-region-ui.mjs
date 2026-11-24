@@ -109,8 +109,11 @@ try {
     window.__ui.getState().setReleaseNotesOpen(false);
     window.__store.setState({ nodes, edges, history: [{ nodes, edges }], historyIndex: 0, selectedNodeId: null, selectedNodeIds: [] });
   });
-  await region('a').waitFor();
+  // The canvas fits the first mounted node before culling offscreen cards.
+  await page.locator('.react-flow__node[data-id="parent"]').waitFor();
+  await page.waitForTimeout(550);
   await setZoom(.95);
+  await region('a').waitFor();
   await region('a').locator('[data-context-sources-trigger="a"]').click();
   const portal = page.locator('[data-context-sources-popover="a"]');
   await portal.waitFor();
@@ -126,6 +129,10 @@ try {
   const inherited = row('a', 'inherited', 'parent');
   const local = row('a', 'local', 'a');
   assert.equal(await row('a','conversation','parent').count(), 1);
+  assert.equal(await row('a','conversation','parent').locator('.input-source-icon .lucide-message-circle-question-mark').count(), 1);
+  for (const source of [shared, local, inherited]) {
+    assert.equal(await source.locator('.input-source-icon .lucide-file-text').count(), 1);
+  }
   assert.equal(await region('a').locator('[data-input-source-kind="conversation"]').count(), 1);
   assert.match(await shared.innerText(), /用户访谈.pdf[\s\S]*画布文件/);
   assert.match(await inherited.innerText(), /调研补充.txt[\s\S]*继承自 研究问题[\s\S]*已纳入/);

@@ -26,6 +26,8 @@ npm run server   # LLM 代理运行在 :3001
 npm run dev      # Vite 应用运行在 :5173
 ```
 
+为避免提交时漏掉新文件，每次克隆后运行一次 `npm run hooks:install`。提交检查会列出未被忽略、尚未加入暂存区的文件，提醒先处理；它不会自动暂存文件。先用 `git status --short --untracked-files=all` 查看，再用 `git add` 加入需要提交的文件。本地数据和密钥应继续保持忽略。如果有意分批提交，可仅在该次提交时设置 `THOUGHTDAG_ALLOW_UNTRACKED=1`。安装脚本不会覆盖已有的自定义钩子。
+
 提交前，请运行与改动相关的检查：
 
 ```bash

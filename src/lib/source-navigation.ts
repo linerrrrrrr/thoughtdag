@@ -1,8 +1,26 @@
 import { toast, useUiStore } from './ui-store';
 import { t } from '../i18n';
 import { ensureCanvasWorkspace } from './canvas-workspace';
+import { codexThreadId } from './codex-thread-link';
 
 type SourceSession = { runner?: string; session?: string; cwd?: string | null };
+
+/** Let the OS resolve the documented desktop deep link on the user's device. */
+export async function openOriginalCodexThread(id: string): Promise<void> {
+  const threadId = codexThreadId(id);
+  if (!threadId) return;
+  try {
+    const url = `codex://threads/${threadId}`;
+    if (window.desktopSessions?.openCodexThread) {
+      if (await window.desktopSessions.openCodexThread(threadId)) return;
+    } else {
+      if (window.desktop) window.open(url, '_blank', 'noopener,noreferrer');
+      else window.location.assign(url);
+      return;
+    }
+  } catch { /* The app may not be installed on this device. */ }
+  toast('error', t('ctx.openCodexFailed'));
+}
 
 /** Open the recorded session while keeping Codex in the active canvas folder. */
 export async function openCanvasSession(runner: string, historicalCwd: string | null, sessionId: string): Promise<boolean> {

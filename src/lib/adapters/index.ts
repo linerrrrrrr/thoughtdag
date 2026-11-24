@@ -57,7 +57,10 @@ export async function anyRunnerSessionAsBranch(
   if (cc) return cc;
   const { codexSessionAsBranch } = await import('./codex-session');
   const codex = codexSessionAsBranch(text, anchorNode);
-  if (codex) return codex;
+  if (codex) {
+    const { captureImportedCodexVisuals } = await import('../codex-visual-host');
+    return { ...codex, nodes: await captureImportedCodexVisuals(codex.nodes) };
+  }
   const { dshSessionAsBranch } = await import('./dsh-session');
   const dsh = dshSessionAsBranch(text, anchorNode);
   if (dsh) return dsh;

@@ -417,8 +417,9 @@ export async function llmCallStream(
             reasoningFull += parsed.reasoning;
             cbs.onReasoning?.(parsed.reasoning, reasoningFull);
           }
-          if (parsed.tool?.query) {
-            cbs.onToolCall?.(parsed.tool.name, parsed.tool.query);
+          if (typeof parsed.tool?.name === 'string' || typeof parsed.tool?.query === 'string') {
+            const { name, query } = parsed.tool;
+            cbs.onToolCall?.(typeof name === 'string' ? name : '', typeof query === 'string' ? query : '');
           }
           if (parsed.gatewaySearch) {
             cbs.onGatewaySearch?.();

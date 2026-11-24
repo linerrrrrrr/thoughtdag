@@ -18,6 +18,10 @@
     "src/components/CanvasToolbarOverflowAction.tsx": {
       "[data-overflow-menu-action]": "portal"
     },
+    "src/components/CodexVisual.tsx": {
+      "html": "document-frame",
+      "iframe": "native-document"
+    },
     "src/components/ConversationLink.tsx": {
       ".file-preview-backdrop": "portal",
       "[data-file-menu]": "portal"

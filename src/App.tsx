@@ -17,9 +17,10 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import 'highlight.js/styles/github.css';
-import { ArrowRight, Brain, CircleHelp, Download, FileDown, Eye, FileText, FolderSync, Frame, Highlighter, History as HistoryIcon, ImageDown, Loader2, MessageCircleQuestion, Minimize2, MoreHorizontal, Paperclip, Redo2, Rewind, Search, Share2, Settings, SlidersHorizontal, SquareTerminal, Star, Stethoscope, StickyNote, Trash2, Undo2, Workflow } from 'lucide-react';
+import { ArrowRight, Brain, CircleHelp, Download, ExternalLink, FileDown, Eye, FolderSync, Frame, Highlighter, History as HistoryIcon, ImageDown, Loader2, MessageCircleQuestion, Minimize2, MoreHorizontal, Paperclip, Redo2, Rewind, Search, Share2, Settings, SlidersHorizontal, Star, Stethoscope, Trash2, Undo2, Workflow } from 'lucide-react';
 import './index.css';
-import { ListFilter } from 'lucide-react';
+import { nodeKindIcons } from './lib/content-icons';
+import { Link2Off, ListFilter } from 'lucide-react';
 import ThoughtNode from './components/ThoughtNode';
 import CanvasWheelZoom from './components/CanvasWheelZoom';
 import CanvasControls from './components/CanvasControls';
@@ -1589,13 +1590,13 @@ function Canvas() {
                 onClick={() => addStep('human')}
                 className="text-control border-2 border-dashed border-warm/60 text-warm hover:bg-warm/10 px-4 py-2.5 rounded-control transition-colors flex items-center gap-1.5"
               >
-                <MessageCircleQuestion size={15} strokeWidth={1.75} /> {t('paradigm.addHuman')}
+                <nodeKindIcons.human size={15} strokeWidth={1.75} /> {t('paradigm.addHuman')}
               </button>
               <button
                 onClick={() => addStep('prompt')}
                 className="text-control border-2 border-dashed border-accent/50 text-accent hover:bg-accent/10 px-4 py-2.5 rounded-control transition-colors flex items-center gap-1.5"
               >
-                <SquareTerminal size={15} strokeWidth={1.75} /> {t('paradigm.addPrompt')}
+                <nodeKindIcons.prompt size={15} strokeWidth={1.75} /> {t('paradigm.addPrompt')}
               </button>
             </div>
           </div>
@@ -1606,13 +1607,13 @@ function Canvas() {
           <div className="text-center max-w-[420px] px-6">
             {isViewerUnavailable ? (
               <>
-                <div data-type-surface="entry-display" className="viewer-error-symbol mb-3">🔗</div>
+                <div data-type-surface="entry-display" className="viewer-error-symbol mb-3"><Link2Off size="1em" strokeWidth={1.75} className="mx-auto" aria-hidden /></div>
                 <div className="text-title font-semibold text-ink mb-1.5">{t('viewer.unavailable')}</div>
                 <p className="text-control text-ink-muted">{t('viewer.unavailableHint')}</p>
               </>
             ) : viewerLoadError ? (
               <>
-                <div data-type-surface="entry-display" className="viewer-error-symbol mb-3">🔗</div>
+                <div data-type-surface="entry-display" className="viewer-error-symbol mb-3"><Link2Off size="1em" strokeWidth={1.75} className="mx-auto" aria-hidden /></div>
                 <div className="text-title font-semibold text-ink mb-1.5">{t('viewer.loadError')}</div>
                 <p className="text-control text-ink-muted">{t('viewer.loadErrorHint')}</p>
               </>
@@ -1656,7 +1657,7 @@ function Canvas() {
               data-tooltip={t('palette.askTitle')} aria-label={t('palette.askTitle')}
               data-cursor="draggable" className="w-9 h-9 rounded-control flex items-center justify-center text-accent hover:bg-accent/10 transition-colors"
             >
-              <MessageCircleQuestion size={17} strokeWidth={1.75} />
+              <nodeKindIcons.qa size={17} strokeWidth={1.75} />
             </button>
           )}
           <button
@@ -1665,7 +1666,7 @@ function Canvas() {
             data-tooltip={t('palette.noteTitle')} aria-label={t('palette.noteTitle')}
             className="w-9 h-9 rounded-control flex items-center justify-center text-amber-600 hover:bg-amber-500/10 transition-colors"
           >
-            <StickyNote size={17} strokeWidth={1.75} />
+            <nodeKindIcons.note size={17} strokeWidth={1.75} />
           </button>
           <button
             onPointerDown={(e) => paletteDrag(e, (screen) => spawnContentNode('file', flowPosAt(screen)))}
@@ -1673,7 +1674,7 @@ function Canvas() {
             data-tooltip={t('palette.fileTitle')} aria-label={t('palette.fileTitle')}
             className="w-9 h-9 rounded-control flex items-center justify-center text-ink-muted hover:bg-wash transition-colors"
           >
-            <Paperclip size={17} strokeWidth={1.75} />
+            <nodeKindIcons.file size={17} strokeWidth={1.75} />
           </button>
           <button
             onPointerDown={(e) => paletteDrag(e, (screen) => spawnFrame(flowPosAt(screen)))}
@@ -1681,7 +1682,7 @@ function Canvas() {
             data-tooltip={t('palette.frameTitle')} aria-label={t('palette.frameTitle')}
             className="w-9 h-9 rounded-control flex items-center justify-center text-ink-muted hover:bg-wash transition-colors"
           >
-            <Frame size={17} strokeWidth={1.75} />
+            <nodeKindIcons.frame size={17} strokeWidth={1.75} />
           </button>
         </div>
       )}
@@ -1695,20 +1696,20 @@ function Canvas() {
         <div className="canvas-toolbar-group canvas-toolbar-context">
         {isParadigm && (
           <>
-            <CanvasToolbarOverflowAction label={t('paradigm.addHuman')} icon={<MessageCircleQuestion size={14} />}>
+            <CanvasToolbarOverflowAction label={t('paradigm.addHuman')} icon={<nodeKindIcons.human size={14} />}>
             <button
               onClick={() => addStep('human')}
               className="bg-card border border-warm/40 rounded-control h-8 px-3 flex items-center gap-1.5 hover:bg-warm/10 transition-colors text-warm text-control font-medium"
             >
-              <MessageCircleQuestion size={14} strokeWidth={1.75} /> {t('paradigm.addHuman')}
+              <nodeKindIcons.human size={14} strokeWidth={1.75} /> {t('paradigm.addHuman')}
             </button>
             </CanvasToolbarOverflowAction>
-            <CanvasToolbarOverflowAction label={t('paradigm.addPrompt')} icon={<SquareTerminal size={14} />}>
+            <CanvasToolbarOverflowAction label={t('paradigm.addPrompt')} icon={<nodeKindIcons.prompt size={14} />}>
             <button
               onClick={() => addStep('prompt')}
               className="bg-card border border-accent/40 rounded-control h-8 px-3 flex items-center gap-1.5 hover:bg-accent/10 transition-colors text-accent text-control font-medium"
             >
-              <SquareTerminal size={14} strokeWidth={1.75} /> {t('paradigm.addPrompt')}
+              <nodeKindIcons.prompt size={14} strokeWidth={1.75} /> {t('paradigm.addPrompt')}
             </button>
             </CanvasToolbarOverflowAction>
             <CanvasToolbarOverflowAction label={t('paradigm.instantiate')} icon={<ArrowRight size={14} />}>
@@ -1717,7 +1718,7 @@ function Canvas() {
 
               className="bg-ink text-card rounded-control h-8 px-3 flex items-center gap-1.5 hover:bg-ink/85 transition-colors text-control font-medium"
             >
-              ▶ {t('paradigm.instantiate')}
+              <ArrowRight size={14} strokeWidth={1.75} aria-hidden /> {t('paradigm.instantiate')}
             </button>
             </CanvasToolbarOverflowAction>
           </>
@@ -1773,7 +1774,7 @@ function Canvas() {
             data-tooltip={t('viewer.openApp')} data-tooltip-icon-only aria-label={t('viewer.openApp')}
             className="canvas-toolbar-icon bg-ink text-card rounded-control h-8 px-3 flex items-center gap-1.5 hover:bg-ink/85 transition-colors text-control font-medium"
           >
-            <ArrowRight size={14} /><span className="canvas-toolbar-label">{t('viewer.openApp')}</span>
+            <ExternalLink size={14} strokeWidth={1.75} aria-hidden="true" /><span className="canvas-toolbar-label">{t('viewer.openApp')}</span>
           </a>
         </div>
       )}
@@ -1982,7 +1983,7 @@ function Canvas() {
                   className="w-full text-left px-3 py-2 text-control text-ink hover:bg-wash transition-colors flex items-center gap-2.5"
                   data-tooltip={t('toolbar.exportEventsTitle')}
                 >
-                  <FileText size={14} strokeWidth={1.75} className="text-ink-faint shrink-0" /> {t('toolbar.exportEvents')}
+                  <FileDown size={14} strokeWidth={1.75} className="text-ink-faint shrink-0" /> {t('toolbar.exportEvents')}
                 </button>
               )}
               {hasNodes && <div className="border-t border-line/60 my-1" />}
@@ -2025,8 +2026,8 @@ function Canvas() {
                 className="w-full text-left px-3 py-2 text-control text-ink hover:bg-wash transition-colors flex items-center gap-2.5"
                 data-open-github
               >
-                <Star size={14} strokeWidth={1.75} className="text-ink-faint shrink-0" /> {t('menu.github')}
-                {githubStars !== null && <span className="ml-auto text-control text-ink-faint tabular-nums" data-github-stars>★ {formatStars(githubStars)}</span>}
+                <ExternalLink size={14} strokeWidth={1.75} className="text-ink-faint shrink-0" aria-hidden="true" /> {t('menu.github')}
+                {githubStars !== null && <span className="ml-auto inline-flex items-center gap-1 text-control text-ink-faint tabular-nums" data-github-stars><Star size={12} strokeWidth={1.75} aria-hidden="true" />{formatStars(githubStars)}</span>}
               </a>
             </div>
           )}

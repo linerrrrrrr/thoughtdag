@@ -15,7 +15,7 @@ export default function FileAttachmentHeader({ attachment, onRemove, statusRef, 
   const extension = fileIdentity(attachment.name).extension.slice(1).toUpperCase();
   return <div className="material-file-row material-file-header nodrag nopan" data-file-header={attachment.id}
     onDoubleClick={event => event.stopPropagation()}>
-    <FileIdentity name={attachment.name} />
+    <FileIdentity name={attachment.name} mime={attachment.type} />
     <div className="material-file-details min-w-0 flex-1">
       <div className="material-file-name" data-tooltip={attachment.name} data-tooltip-overflow>{attachment.name}</div>
       <div className="material-file-meta">

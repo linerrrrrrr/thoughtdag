@@ -32,6 +32,7 @@ interface DesktopSessionsBridge {
   read: (rootKey: string, rel: string) => Promise<string>;
   openInCli: (runner: string, cwd: string | null, sessionId: string, mode: 'terminal') => Promise<{ opened: boolean; via: 'app' | 'terminal' | ''; command: string }>;
   codexThreadRead?: (threadId: string) => Promise<unknown | null>;
+  openCodexThread?: (threadId: string) => Promise<boolean>;
 }
 
 interface DesktopNavigationBridge {
@@ -41,6 +42,7 @@ interface DesktopNavigationBridge {
 
 /** Local paths a response mentions, opened on this machine. */
 interface DesktopLocalBridge {
+  codexVisual?(request: { path: string; threadId: string }): Promise<string | null>;
   open(path: string): Promise<{ ok: boolean; kind?: 'dir' | 'file'; opened?: 'viewer' | 'finder'; reason?: string }>;
   reveal?(path: string): Promise<{ ok: boolean; reason?: string }>;
   read?(path: string): Promise<{ ok: boolean; text?: string; truncated?: boolean; reason?: string }>;

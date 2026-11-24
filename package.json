@@ -17,6 +17,8 @@
     "cursor:check": "node scripts/check-cursors.mjs",
     "test:cursor-gate": "node scripts/test-cursor-registry.mjs && node scripts/test-cursor-gate.mjs",
     "lint": "eslint .",
+    "hooks:install": "node scripts/install-git-hooks.mjs",
+    "test:untracked-guard": "node scripts/test-untracked-guard.mjs",
     "smoke": "node scripts/smoke.mjs",
     "design:check": "node scripts/check-design-system.mjs",
     "design:sync": "node scripts/check-design-system.mjs --write",

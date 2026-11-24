@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { CircleCheck, CircleDashed, Loader2, RefreshCw, SquareTerminal } from 'lucide-react';
+import { CircleCheck, CircleDashed, Loader2, RefreshCw } from 'lucide-react';
+import { AgentSourceIcon } from '../../lib/ui-icons';
 import { useT, fmt } from '../../i18n';
 import { availableExecutionModels, ensureAgentsFresh, recheckAgents, useModels } from '../../lib/use-models';
 import { canRetryAgentHost } from '../../lib/agents/host';
@@ -52,7 +53,7 @@ export default function AgentConnectionSection() {
   return <div className="agent-connection" data-agent-connection-page>
     <div className="agent-connection-overview">
       <div className="agent-connection-runtime">
-        <span className="agent-connection-runtime-icon" aria-hidden="true"><SquareTerminal size={20} strokeWidth={1.75} /></span>
+        <span className="agent-connection-runtime-icon" aria-hidden="true"><AgentSourceIcon size={20} strokeWidth={1.75} /></span>
         <div className="min-w-0">
           <p className="text-title font-semibold text-ink">Codex</p>
           <div className="agent-connection-status text-control" role="status"

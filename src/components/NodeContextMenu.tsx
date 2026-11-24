@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useDismissableLayer } from '../lib/use-dismissable-layer';
 import { useInlineEditDismiss } from '../lib/use-inline-edit-dismiss';
 import { createPortal } from 'react-dom';
-import { Archive, ArchiveRestore, BookOpen, ClipboardCopy, Files, GitFork, Layers, Pencil, RefreshCw, StickyNote, Trash2 } from 'lucide-react';
+import { Archive, ArchiveRestore, BookOpen, ClipboardCopy, Copy, ExternalLink, Files, GitFork, Layers, Pencil, RefreshCw, StickyNote, Trash2 } from 'lucide-react';
 import { useStore } from '../store';
 import { useUiStore, confirmDialog, toast } from '../lib/ui-store';
 import { recapToNote } from '../lib/recap';
@@ -13,6 +13,8 @@ import { copyText } from '../lib/export';
 import { isImeComposing } from '../utils';
 import { NodeDetailControls } from './CanvasDetailControl';
 import { screenToUi, uiViewport } from '../lib/ui-scale';
+import { displayedCodexThreadId } from '../lib/codex-thread-link';
+import { openOriginalCodexThread } from '../lib/source-navigation';
 
 // Right-click on a node: the app's own context menu (same visual language
 // as the toolbar's ⋯ menu). The browser menu stays available where it is
@@ -46,12 +48,14 @@ export default function NodeContextMenu({ x, y, nodeId, onClose }: {
 
   if (!node) return null;
   const kind = node.data.stepKind;
+  const threadId = displayedCodexThreadId(node.data);
   const isContent = !!kind; // note / file / link / frame
   const hasResponse = !isContent && !!node.data.response && !node.data.isLoading;
   const nodeCode = node.data.nodeNumber ? `#${node.data.nodeNumber}` : '';
   const contentToCopy = isContent
     ? (kind === 'note' || kind === 'link' ? node.data.question : '')
     : node.data.response;
+  const CopyContentIcon = isContent ? ClipboardCopy : Copy;
 
   const item = 'w-full text-left px-3 py-2 text-control text-ink hover:bg-wash transition-colors flex items-center gap-2.5';
   const icon = 'text-ink-faint shrink-0';
@@ -102,6 +106,9 @@ export default function NodeContextMenu({ x, y, nodeId, onClose }: {
           <BookOpen size={14} strokeWidth={1.75} className={icon} /> {t('ctx.openPanel')}
         </button>
       )}
+      {threadId && <button type="button" className={item} onClick={run(() => void openOriginalCodexThread(threadId))}>
+        <ExternalLink size={14} strokeWidth={1.75} className={icon} /> {t('ctx.openCodexThread')}
+      </button>}
       {hasResponse && (
         <button className={item} onClick={run(() => { void useStore.getState().rerunNode(nodeId); })}>
           <RefreshCw size={14} strokeWidth={1.75} className={icon} /> {t('ctx.rerun')}
@@ -130,7 +137,7 @@ export default function NodeContextMenu({ x, y, nodeId, onClose }: {
       )}
       {contentToCopy && (
         <button className={item} onClick={copy(contentToCopy)}>
-          <ClipboardCopy size={14} strokeWidth={1.75} className={icon} /> {t(isContent ? 'ctx.copyContent' : 'actions.copyResponse')}
+          <CopyContentIcon size={14} strokeWidth={1.75} className={icon} /> {t(isContent ? 'ctx.copyContent' : 'actions.copyResponse')}
         </button>
       )}
       <button className={item} onClick={run(() => useStore.getState().duplicateNode(nodeId))}>

@@ -26,6 +26,8 @@ npm run server   # LLM proxy on :3001
 npm run dev      # Vite app on :5173
 ```
 
+To avoid accidentally leaving new files out of a commit, run `npm run hooks:install` once in each clone. The hook reports untracked files that are not ignored and asks you to stage or ignore them before committing; it never stages files for you. Review `git status --short --untracked-files=all`, then use `git add` for the files you intend to commit. Local data and secrets should stay ignored. For an intentional partial commit, set `THOUGHTDAG_ALLOW_UNTRACKED=1` for that commit only. The installer preserves existing custom hooks instead of replacing them.
+
 Before submitting, run the checks relevant to your change:
 
 ```bash

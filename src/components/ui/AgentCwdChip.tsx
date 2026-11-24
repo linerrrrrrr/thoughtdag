@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState, type RefObject } from 'react';
-import { ChevronDown, ChevronRight, Copy, FolderOpen } from 'lucide-react';
+import { ChevronDown, ChevronRight, ClipboardCopy, FolderOpen } from 'lucide-react';
 import { useT } from '../../i18n';
 import { ensureCanvasWorkspace } from '../../lib/canvas-workspace';
 import { copyText } from '../../lib/export';
@@ -48,7 +48,7 @@ export default function AgentCwdChip({ open, onOpenChange, triggerRef }: {
           </button>}
           <button type="button" onClick={() => void copyText(path).catch(() => toast('error', t('local.copyFailed')))}
             className="node-metadata-action inline-flex items-center gap-1.5">
-            <Copy size={14} aria-hidden="true" />{t('local.copyPath')}
+            <ClipboardCopy size={14} aria-hidden="true" />{t('local.copyPath')}
           </button>
         </div>
       </> : <p role="status" className="px-3 py-1.5 text-control text-ink-muted">

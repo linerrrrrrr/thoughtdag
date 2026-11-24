@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState, type AnchorHTMLAttributes } from 'react';
 import { createPortal } from 'react-dom';
 import { ClipboardCopy, ExternalLink, FileText, FolderOpen, X } from 'lucide-react';
+import { fileKindIcons } from '../lib/content-icons';
+import { fileIdentity } from '../lib/file-identity';
 import { useT, fmt } from '../i18n';
 import { localTargetOf, localFileHref, basenameOf, safeMarkdownUrl, type LocalTarget } from '../lib/local-target';
 import { openLocalPath, revealLocalPath as reveal } from '../lib/local-path';
@@ -12,6 +14,8 @@ import './ConversationLink.css';
 interface Preview { target: LocalTarget; text: string; truncated: boolean }
 
 function FilePreview({ value, onClose }: { value: Preview; onClose: () => void }) {
+  const identity = fileIdentity(value.target.path);
+  const Icon = fileKindIcons[identity.kind];
   const t = useT();
   const ref = useRef<HTMLDivElement>(null);
   const selected = useRef<HTMLSpanElement>(null);
@@ -23,7 +27,7 @@ function FilePreview({ value, onClose }: { value: Preview; onClose: () => void }
   return createPortal(<div data-type-surface="portal" className="file-preview-backdrop nodrag nopan" onClick={e => e.stopPropagation()} onPointerDown={e => e.stopPropagation()}>
     <div ref={ref} className="file-preview" role="dialog" aria-modal="true" aria-label={t('local.preview')} data-file-preview>
       <header>
-        <FileText size={17} />
+        <Icon size={17} />
         <div className="file-preview-heading"><strong>{basenameOf(value.target.path)}</strong><span data-tooltip={value.target.path} data-tooltip-overflow>{value.target.path}</span></div>
         <button type="button" data-tooltip={t('local.reveal')} aria-label={t('local.reveal')} onClick={() => void reveal(value.target.path)}><FolderOpen size={17} /></button>
         <button type="button" aria-label={t('common.close')} data-file-preview-close onClick={onClose}><X size={18} /></button>

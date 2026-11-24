@@ -5,13 +5,14 @@ import { useSessionDraft } from '../lib/use-session-draft';
 import { canHighlightConversation, useTextHighlighter } from '../lib/use-text-highlighter';
 import { attachmentHighlights, conversationHighlightTexts } from '../lib/highlight-match';
 import { useProjects } from '../store/projects';
-import { ChevronDown, ChevronRight, Crosshair, FileText, Link2, Loader2, Maximize2, PanelLeft, RefreshCw, ScanText, Send, Sparkles, StickyNote, X, ZoomIn, ZoomOut } from 'lucide-react';
+import { ChevronDown, ChevronRight, Crosshair, LocateFixed, Loader2, Maximize2, PanelLeft, RefreshCw, ScanText, Send, Sparkles, StickyNote, X, ZoomIn, ZoomOut } from 'lucide-react';
+import { fileIconFor, nodeKindIcons } from '../lib/content-icons';
 import type { Attachment, ThoughtNode } from '../types';
 import { useStore } from '../store';
 import { useUiStore, toast } from '../lib/ui-store';
 import { useModels } from '../lib/use-models';
 import { generateDigest, recognitionPageCount, recognizePdfPages, spawnContentNode, extractImage } from '../lib/content';
-import { Markdown, HighlightedMarkdown } from './Markdown';
+import { AnswerMarkdown, Markdown } from './Markdown';
 import { generateId, isImeComposing } from '../utils';
 import { useT, fmt } from '../i18n';
 import { isViewerMode } from '../lib/viewer';
@@ -809,11 +810,10 @@ function ReaderOverlay({ node, onLocate, dock, activeAttachment, conversationTur
     ?? (kind === 'link' ? (data.linkTitle || data.linkUrl || '') : '')
     ?? '';
   const noteTitle = kind === 'note' ? (data.question.split('\n')[0].replace(/^#+\s*/, '').slice(0, 48) || t('reader.empty')) : '';
-  const headerIcon = kind === 'note'
-    ? <StickyNote size={15} strokeWidth={1.75} className="text-amber-600 shrink-0" />
-    : kind === 'link'
-      ? <Link2 size={15} strokeWidth={1.75} className="text-accent shrink-0" />
-      : <FileText size={15} strokeWidth={1.75} className="text-ink-muted shrink-0" />;
+  const KindIcon = activeAttachment && kind === 'file' ? fileIconFor(activeAttachment.name, activeAttachment.type)
+    : nodeKindIcons[kind === 'question' || kind === 'response' ? 'qa' : kind];
+  const headerIcon = <KindIcon size={15} strokeWidth={1.75}
+    className={`shrink-0 ${kind === 'note' ? 'text-amber-600' : kind === 'link' ? 'text-accent' : 'text-ink-muted'}`} />;
   const fileFallbackTitle = kind === 'file' && !pdfAtt ? (attachments[0]?.name ?? '') : '';
   const numPages = pdfAtt?.numPages ?? htmlAtt?.numPages;
 
@@ -1076,7 +1076,7 @@ function ReaderOverlay({ node, onLocate, dock, activeAttachment, conversationTur
                   </button>
                   {digestNode && (
                     <button onClick={() => { if (!docked) close(); onLocate(digestNode.id); }} className="flex items-center gap-1 hover:text-accent transition-colors">
-                      <Crosshair size={11} strokeWidth={1.75} /> {t('reader.digestOnCanvas')}
+                      <LocateFixed size={11} strokeWidth={1.75} /> {t('reader.digestOnCanvas')}
                     </button>
                   )}
                 </div>
@@ -1113,7 +1113,9 @@ function ReaderOverlay({ node, onLocate, dock, activeAttachment, conversationTur
                       <div className="text-meta text-ink-faint font-mono text-center select-none pt-4 pb-1">— p.{s.page} —</div>
                     )}
                     <div className="markdown-body text-body text-ink" data-reader-highlight-content data-reading-attachment={s.attachmentId}>
-                      <Markdown highlights={s.highlights} preserveListNumbers={conversationTurn === 'question'}>{s.md}</Markdown>
+                      {kind === 'response'
+                        ? <AnswerMarkdown data={data} text={s.md} highlights={s.highlights} />
+                        : <Markdown highlights={s.highlights} preserveListNumbers={conversationTurn === 'question'}>{s.md}</Markdown>}
                     </div>
                   </div>
                 ))
@@ -1150,7 +1152,7 @@ function ReaderOverlay({ node, onLocate, dock, activeAttachment, conversationTur
                 data-tooltip={t('reader.locate')} aria-label={t('reader.locate')}
                 className="w-6 h-6 rounded-control text-ink-faint hover:text-accent hover:bg-wash flex items-center justify-center transition-colors shrink-0"
               >
-                <Crosshair size={13} strokeWidth={1.75} />
+                <LocateFixed size={13} strokeWidth={1.75} />
               </button>
               <button
                 onClick={() => setThreadId(null)}
@@ -1177,11 +1179,7 @@ function ReaderOverlay({ node, onLocate, dock, activeAttachment, conversationTur
                     <div className="markdown-body text-body text-ink" data-turn-answer={turn.id}
                       data-highlight-turn={canHighlightConversation(turn.data) ? 'response' : undefined}
                       data-highlighter-active={(railHighlighter.active && canHighlightConversation(turn.data)) || undefined}>
-                      {(turn.data.highlights?.length ?? 0) > 0 ? (
-                        <HighlightedMarkdown base={turn.data.agentSession?.cwd ?? turn.data.importSource?.cwd} content={turn.data.response} highlights={conversationHighlightTexts(turn.data.highlights, 'response')} />
-                      ) : (
-                        <Markdown base={turn.data.agentSession?.cwd ?? turn.data.importSource?.cwd}>{turn.data.response}</Markdown>
-                      )}
+                      <AnswerMarkdown data={turn.data} highlights={conversationHighlightTexts(turn.data.highlights, 'response')} />
                     </div>
                   )}
                 </div>
@@ -1261,7 +1259,7 @@ function ReaderOverlay({ node, onLocate, dock, activeAttachment, conversationTur
                     data-tooltip={t('reader.locate')} aria-label={t('reader.locate')}
                     className="w-4.5 h-4.5 rounded-control flex items-center justify-center text-ink-faint hover:text-accent shrink-0"
                   >
-                    <Crosshair size={11} strokeWidth={1.75} />
+                    <LocateFixed size={11} strokeWidth={1.75} />
                   </button>
                 </span>
               ))}

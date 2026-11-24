@@ -1,4 +1,5 @@
 import type { AgentActivityEntry, ThoughtData } from '../types';
+import { codexVersionThreadIds } from './codex-thread-link';
 
 /** Live (including a recovered interrupted run), otherwise the selected version. */
 export function activeAgentActivity(data: Pick<ThoughtData, 'agentActivity' | 'agentActivities' | 'responseIndex'>): AgentActivityEntry[] {
@@ -40,10 +41,14 @@ export function recoverInterruptedAgentRun(data: ThoughtData, stoppedText: strin
   const append = <T,>(values: (T | undefined | null)[] | undefined, value: T | undefined) =>
     [...Array.from({ length: count }, (_, index) => values?.[index]), value];
   const response = (!data.restreaming && data.response) || stoppedText;
+  const threadIds = codexVersionThreadIds(data);
   return {
     ...data,
     response,
     responses: [...data.responses, response],
+    codexThreadIds: threadIds || data.liveCodexThreadId
+      ? [...Array.from({ length: count }, (_, i) => threadIds?.[i] ?? null), data.liveCodexThreadId ?? null] : undefined,
+    liveCodexThreadId: undefined,
     responseIndex: count,
     questions: [...Array.from({ length: count }, (_, index) => data.questions?.[index] ?? data.question), data.question],
     agentActivities: append(data.agentActivities, settleAgentActivity(data.agentActivity, 'interrupted', now)),

@@ -1,6 +1,7 @@
 import { memo, useEffect, useMemo, useRef, useState, type MouseEvent, type PointerEvent, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
 import { Highlighter, Loader2, MessageSquare, MousePointer2, RefreshCw, Save, Trash2 } from 'lucide-react';
+import { nodeKindIcons } from '../lib/content-icons';
 import type { PDFDocumentProxy, PDFPageProxy, RenderTask } from 'pdfjs-dist';
 import type { Attachment, PdfAnnotation } from '../types';
 import { documentCopyText } from '../lib/document-copy';
@@ -426,7 +427,7 @@ const PdfOriginalPage = memo(function PdfOriginalPage({ doc, pdfjs, resource, pa
       </div>)}
       {anchors?.map(anchor => <div key={anchor.id}>{anchor.rects.map((rect, index) => <div key={index} className="pdf-document-thread-mark" style={{ ...areaStyle(rect), opacity: activeThreadId === anchor.id ? .25 : .12 }} />)}
         <button type="button" className="pdf-document-thread-pin" data-anchor-bubble={anchor.id} style={{ top: `${(anchor.rects[0]?.[1] ?? 0) * 100}%` }}
-          aria-label={anchor.question} onClick={event => { event.stopPropagation(); onAnchorClick?.(anchor.id); }}><MessageSquare size={13} /></button></div>)}
+          aria-label={anchor.question} onClick={event => { event.stopPropagation(); onAnchorClick?.(anchor.id); }}><nodeKindIcons.qa size={13} /></button></div>)}
     </div>
   </div>;
 });

@@ -1,16 +1,17 @@
 import { useState, useRef, useEffect } from 'react';
 import { describeModel } from '../../lib/use-models';
-import { AlertTriangle, RefreshCw, Pencil } from 'lucide-react';
+import { AlertTriangle, Brain, Loader2, RefreshCw, Pencil } from 'lucide-react';
 import { useStore } from '../../store';
 import { useUiStore } from '../../lib/ui-store';
 import { isImeComposing } from '../../utils';
-import { Markdown, HighlightedMarkdown } from '../Markdown';
+import { AnswerMarkdown } from '../Markdown';
 import { useT } from '../../i18n';
 import { isViewerMode } from '../../lib/viewer';
 import type { useTextHighlighter } from '../../lib/use-text-highlighter';
 import ReasoningDisclosure from '../ui/ReasoningDisclosure';
 import { ApprovalCard, DecisionsDisclosure } from '../ui/ApprovalCard';
 import { AgentTrace } from '../ui/AgentTrace';
+import ToolProgressLine from '../ui/ToolProgressLine';
 import { AgentActivityView } from '../ui/AgentActivityView';
 import { activeAgentActivity } from '../../lib/agent-activity';
 import { AgentRerunButton } from '../ui/AgentRerunButton';
@@ -116,7 +117,7 @@ export default function ResponseSection({
       el.removeEventListener('wheel', onWheel, { capture: true });
       el.removeEventListener('scroll', onScroll);
     };
-  }, [data.isLoading, data.response, data.reasoning]);
+  }, [data.isLoading, data.response, data.reasoning, data.toolProgress]);
 
   // Button-triggered (see ThoughtNode): double-click stays a text gesture.
   const startEditResponse = () => {
@@ -155,25 +156,28 @@ export default function ResponseSection({
       {!data.isLoading && activity.length > 0 && <AgentActivityView key={`${nodeId}:${data.responseIndex}`} entries={activity} base={data.agentSession?.cwd ?? data.importSource?.cwd} failed={data.generationFailed}
         questionHighlights={questionHighlights} penActive={highlighter.active} />}
       {data.isLoading && activity.length > 0 ? (
-        <AgentActivityView entries={activity} running base={data.agentSession?.cwd ?? data.importSource?.cwd} />
+        <AgentActivityView entries={activity} running base={data.agentSession?.cwd ?? data.importSource?.cwd} answerData={data} />
       ) : data.isLoading && data.agentTrace && data.agentTrace.length > 0 && (!data.response || data.restreaming) ? (
         <div className="py-1"><AgentTrace entries={data.agentTrace} /></div>
       ) : data.isLoading && (!data.response || data.restreaming) ? (
-        data.reasoning ? (
-          <div className="py-1">
-            <div className="text-control text-ink-faint mb-1">💭 {t('node.reasoningLive')}</div>
-            <div ref={streamRef} className="text-body text-ink-faint italic whitespace-pre-wrap break-words">
-              {data.reasoning.length > 4000 ? '…' + data.reasoning.slice(-4000) : data.reasoning}
-            </div>
+        data.toolProgress || data.reasoning ? (
+          <div ref={streamRef} className="py-1 flex flex-col gap-1.5">
+            {data.toolProgress && <ToolProgressLine progress={data.toolProgress} />}
+            {data.reasoning && <div>
+              <div className="flex items-center gap-1 text-control text-ink-faint mb-1"><Brain size={13} strokeWidth={1.75} aria-hidden />{t('node.reasoningLive')}</div>
+              <div className="text-body text-ink-faint italic whitespace-pre-wrap break-words">
+                {data.reasoning.length > 4000 ? '…' + data.reasoning.slice(-4000) : data.reasoning}
+              </div>
+            </div>}
           </div>
         ) : (
         <div className="flex items-center gap-2 text-body text-ink-muted">
-          <span className="animate-pulse text-accent">●</span> {t('common.thinking')}
+          <Loader2 size={14} className="animate-spin text-accent" aria-hidden /> {t('common.thinking')}
         </div>
         )
       ) : data.isLoading && data.response && !data.restreaming ? (
         <div ref={streamRef} className="focus-assistant-message markdown-body text-body text-ink">
-          <Markdown base={data.agentSession?.cwd ?? data.importSource?.cwd}>{data.response}</Markdown>
+          <AnswerMarkdown data={data} />
           <span className="inline-block w-2 h-4 bg-accent animate-pulse rounded-none ml-0.5 align-text-bottom" />
         </div>
       ) : editingHere ? (
@@ -198,11 +202,7 @@ export default function ResponseSection({
             <ReasoningDisclosure text={data.reasonings[data.responseIndex]!} />
           )}
           <div data-highlight-turn="response" data-cursor="text" className="focus-assistant-message markdown-body text-body text-ink" onClick={handleCitationClick} data-highlighter-active={highlighter.active || undefined}>
-            {highlightedTexts.size > 0 ? (
-              <HighlightedMarkdown base={data.agentSession?.cwd ?? data.importSource?.cwd} content={data.response} highlights={highlightedTexts} />
-            ) : (
-              <Markdown base={data.agentSession?.cwd ?? data.importSource?.cwd}>{data.response}</Markdown>
-            )}
+            <AnswerMarkdown data={data} highlights={highlightedTexts} />
           </div>
 
         </div>

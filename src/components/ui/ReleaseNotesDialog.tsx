@@ -1,3 +1,4 @@
+import { ExternalLink, Star } from 'lucide-react';
 import { useDismissableLayer } from '../../lib/use-dismissable-layer';
 import { useRef } from 'react';
 import { useI18n, useT } from '../../i18n';
@@ -59,9 +60,9 @@ export default function ReleaseNotesDialog() {
         <div className="sticky bottom-0 bg-card px-6 py-4 border-t border-line flex items-center justify-between gap-4">
           {/* the history's two doors back to the repository: the full notes, and the star */}
           <div className="flex items-center gap-2 text-control min-w-0 flex-wrap">
-            <a href={`${REPO_URL}/releases`} target="_blank" rel="noreferrer" className="text-ink-muted hover:text-ink hover:underline" data-release-notes-github>{t('releaseNotes.onGithub')}</a>
+            <a href={`${REPO_URL}/releases`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-ink-muted hover:text-ink hover:underline" data-release-notes-github>{t('releaseNotes.onGithub')}<ExternalLink size={13} strokeWidth={1.75} aria-hidden="true" /></a>
             <span className="text-ink-faint" aria-hidden>｜</span>
-            <a href={REPO_URL} target="_blank" rel="noreferrer" className="font-medium text-accent hover:underline whitespace-nowrap" data-release-notes-star>{t('whatsNew.starLink')} ⭐？</a>
+            <a href={REPO_URL} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-medium text-accent hover:underline whitespace-nowrap" data-release-notes-star><Star size={14} strokeWidth={1.75} aria-hidden="true" /><span>{t('whatsNew.starLink')}？</span></a>
           </div>
           <button
             onClick={() => setOpen(false)}

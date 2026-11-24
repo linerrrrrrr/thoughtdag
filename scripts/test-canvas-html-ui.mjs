@@ -105,7 +105,7 @@ try {
         highlights: [], highlightMode: 'off', tokenCount: 0, attachments: [], excludedAttachmentIds: [], includedAttachmentIds: [], ...data,
       } };
     }
-    const response = ['First paragraph about the finding.', 'Marked conclusion.', '- [ ] Review the source',
+    const response = ['First paragraph about the finding.', 'Marked conclusion.', '- [ ] Review the source\n- [x] Gather the evidence',
       '| Metric | Value |\n| --- | ---: |\n| Total | 18 |', '$$\\frac{a}{b}$$',
       '```js\nconst result = 18;\n```', '```mermaid\nflowchart LR\n A[Inputs] --> B[Result]\n```',
       'Evidence. '.repeat(150) + 'End of the complete answer.',
@@ -208,7 +208,9 @@ try {
     ] });
     useConnectionLayoutPreferences.getState().setSettings({ enabled: false });
     await createProject('阅读示例', 'paradigm');
-    window.__store.getState().setNodes([prompt, human, link, note, legacy]);
+    // The canvas centers the newest node. Keep that target in the visible group
+    // so the export consistently exercises the two virtualized materials.
+    window.__store.getState().setNodes([human, link, note, legacy, prompt]);
     window.__store.getState().setEdges([
       { id: 'review', source: prompt.id, target: human.id, data: { label: '复核' } },
       { id: 'source', source: link.id, target: human.id }, { id: 'notes', source: human.id, target: note.id },
@@ -329,6 +331,8 @@ try {
     await docked.waitFor();
   }
   await read(discussion);
+  assert.deepEqual(await reader.locator('[data-reading-answer] input[type="checkbox"]').evaluateAll(
+    boxes => boxes.map(box => [box.checked, box.disabled])), [[false, true], [true, true]]);
   await verifyDockAndExpand();
   assert.equal(await panel.locator(authoring).count(), 0);
   const listNumbers = list => {

@@ -1,5 +1,5 @@
 import { useEffect, useId, useState, type CSSProperties, type ReactNode } from 'react';
-import { AlignLeft, BookOpen, Check, ChevronDown, Copy, LoaderCircle, MoreHorizontal, Pencil, RotateCcw, Settings2, Trash2, Wrench } from 'lucide-react';
+import { AlignHorizontalJustifyStart, BookOpen, Check, ChevronDown, Copy, LoaderCircle, MoreHorizontal, Pencil, RotateCcw, Settings2, Trash2, Wrench } from 'lucide-react';
 
 type Language = 'zh' | 'en';
 type CopyPair = readonly [string, string];
@@ -120,7 +120,7 @@ function ToolSpecimen({ t }: { t: Translate }) {
             <label>{t('heightField')}<input type="number" min="1" defaultValue="320" aria-label={t('heightField')} /></label>
           </div>
         </fieldset>}
-        <fieldset className="canvas-layout-field"><legend>{t('arrange')}</legend><button type="button" className={plainAction} onClick={() => setNotice('sampleAction')}><AlignLeft aria-hidden="true" />{t('align')}</button></fieldset>
+        <fieldset className="canvas-layout-field"><legend>{t('arrange')}</legend><button type="button" className={plainAction} onClick={() => setNotice('sampleAction')}><AlignHorizontalJustifyStart aria-hidden="true" />{t('align')}</button></fieldset>
         <p className="ds-caption">{t('sampleSettings')}</p>
       </div>
       <footer className="ds-tool-footer"><button type="button" className={plainAction} onClick={() => setNotice('samplePreview')}>{t('preview')}</button><button type="button" className={primaryAction} onClick={() => setNotice('sampleApplied')}>{t('apply')}</button></footer>

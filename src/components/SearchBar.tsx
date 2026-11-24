@@ -2,7 +2,8 @@ import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useDismissableLayer } from '../lib/use-dismissable-layer';
 import { useCanvasToolCard } from '../lib/use-canvas-tool-card';
 import { useCanvasPanelPosition } from '../lib/use-canvas-panel-position';
-import { Archive, FileText, Frame, Link2, MessageSquare, Minimize2, Search, StickyNote, X } from 'lucide-react';
+import { Archive, Search, X } from 'lucide-react';
+import { nodeKindIcons } from '../lib/content-icons';
 import { useStore } from '../store';
 import { useUiStore } from '../lib/ui-store';
 import { searchCanvas, type SearchHit } from '../lib/canvas-search';
@@ -16,11 +17,6 @@ import './SearchBar.css';
 // BOTH a result list and a canvas filter: hits stay lit, the rest dims out,
 // so the search sharpens the map instead of teleporting past it. Picking a
 // result flies there, opens the panel, and scrolls to the first occurrence.
-
-const KIND_ICON = {
-  qa: MessageSquare, note: StickyNote, file: FileText,
-  link: Link2, frame: Frame, distill: Minimize2,
-} as const;
 
 const SHOW_LIMIT = 50;
 
@@ -133,7 +129,7 @@ export default function SearchBar({
         {matches.length > 0 && (
           <ul className="border-t border-line/60 min-h-0 max-h-72 overflow-y-auto py-1">
             {matches.slice(0, SHOW_LIMIT).map((m, i) => {
-              const Icon = KIND_ICON[m.kind];
+              const Icon = nodeKindIcons[m.kind];
               const node = nodes.find((n) => n.id === m.nodeId);
               const title = node?.data.question || '—';
               return (

@@ -101,7 +101,7 @@ function readingMarkdown(source: string, highlights: string[] = [], base?: strin
           ? <img loading="lazy" data-reading-image={url} alt={alt || url} />
           : <>{alt || (typeof src === 'string' ? src : '')}</>;
       },
-      input: ({ type, checked }) => type === 'checkbox' ? <span>{checked ? '☑' : '☐'}</span> : null,
+      input: ({ type, checked }) => type === 'checkbox' ? <input type="checkbox" checked={checked} disabled /> : null,
     }}>{text}</ReactMarkdown>;
 }
 

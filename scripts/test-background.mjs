@@ -22,9 +22,9 @@
 // Run: node scripts/test-background.mjs
 import { createServer } from 'node:http';
 import { spawn } from 'node:child_process';
-import { mkdtempSync, rmSync, copyFileSync, symlinkSync } from 'node:fs';
+import { mkdtempSync, rmSync, copyFileSync, cpSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, dirname } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { build } from 'esbuild';
 
@@ -41,7 +41,7 @@ let slowClosed = 0;
 const upstream = createServer((req, res) => {
   let raw = ''; req.on('data', (c) => { raw += c; }); req.on('end', () => {
     const body = JSON.parse(raw || '{}');
-    seen.push({ model: body.model, reasoning: body.reasoning?.enabled });
+    seen.push({ model: body.model, reasoning: body.reasoning?.enabled, path: req.url });
     const fail = (status, message) => { res.writeHead(status, { 'content-type': 'application/json' }); res.end(JSON.stringify({ error: { message, code: status } })); };
     if (body.model === 'mandatory/model' && body.reasoning?.enabled === false) return fail(400, 'Reasoning is mandatory for this endpoint and cannot be disabled.');
     if (body.model === 'broke/model') return fail(402, 'Insufficient credits');
@@ -99,6 +99,7 @@ async function quietSwitch(label, url, quietFailures) {
 const srvDir = join(tmp, 'srv');
 await import('node:fs').then((fs) => fs.mkdirSync(srvDir));
 copyFileSync(join(ROOT, 'server.mjs'), join(srvDir, 'server.mjs'));
+cpSync(join(ROOT, 'runtime'), join(srvDir, 'runtime'), { recursive: true });
 symlinkSync(join(ROOT, 'node_modules'), join(srvDir, 'node_modules'));
 const port = await freePort();
 const env = { ...process.env, PORT: String(port) };
@@ -116,6 +117,7 @@ const noop = () => {};
 const ctx = {
   effect: (fn) => fn(), inject: noop, on: noop,
   logger: { info: noop, warn: noop, error: noop, debug: noop },
+  sessionController: { modelCatalog: async () => ({ groups: [], default: null }) },
   webServer: { register: ({ path, handler }) => { if (path.endsWith('/api')) apiHandler = handler; return noop; } },
 };
 const plugin = await import(pathToFileURL(join(ROOT, 'dsh', 'lib', 'index.js')).href);
@@ -124,6 +126,23 @@ const host = createServer((req, res) => apiHandler(req, res));
 await new Promise((r) => host.listen(0, '127.0.0.1', r));
 try {
   await quietSwitch('plugin', `http://127.0.0.1:${host.address().port}/thoughtdag/api/claude`, 1);
+  const api = `http://127.0.0.1:${host.address().port}/thoughtdag/api`;
+  const shared = 'same/model';
+  const connections = ['alpha', 'beta'].map(id => ({ id, name: 'Shared', connectionName: id,
+    baseURL: `http://127.0.0.1:${upstream.address().port}/${id}/v1`, apiKey: 'test', models: [{ id: shared }] }));
+  const betaId = 'api-connection:beta:' + encodeURIComponent(shared);
+  const catalog = await post(`${api}/runtime-providers`, { providers: connections });
+  ok('plugin: same model on two API connections remains separately selectable', catalog.status === 200
+    && catalog.json.models.some(model => model.id === 'api-connection:alpha:' + encodeURIComponent(shared))
+    && catalog.json.models.some(model => model.id === betaId));
+  seen.length = 0;
+  const answer = await post(`${api}/claude`, { providers: connections, messages: [{ role: 'user', content: 'hello' }], model: betaId });
+  ok('plugin: the selected connection receives the request', answer.status === 200 && answer.json.model === betaId
+    && seen.length === 1 && seen[0].path.startsWith('/beta/') && seen[0].model === shared);
+  await post(`${api}/runtime-providers`, { providers: connections.slice(0, 1) });
+  seen.length = 0;
+  const missing = await post(`${api}/claude`, { providers: connections.slice(0, 1), messages: [{ role: 'user', content: 'hello' }], model: betaId });
+  ok('plugin: a missing selected connection does not fall back to another model', missing.status === 503 && seen.length === 0);
 } finally { host.close(); }
 
 // ── 1c. the hosted proxy (Cloudflare): names the model that answered ──
@@ -243,6 +262,7 @@ ok('an agent answer gets a written ladder from the next model when one refuses',
 const local = bg.buildLocalLadder('这里有时间维度吗？', '和 SolarisNet 的 LIF 相比，最根本的区别在于时间放在哪里。后面还有一句说明。', '和 SolarisNet 的 LIF 相比');
 ok('a local topic does not stop on a connective', bg.levelText(local, 0) === 'SolarisNet', bg.levelText(local, 0));
 
+if (dirname(resolve(tmp)) !== resolve(tmpdir()) || !basename(tmp).startsWith('tdag-bg-')) throw new Error('Unexpected test cleanup path');
 rmSync(tmp, { recursive: true, force: true });
 console.log(`\n${checks - failures}/${checks} passed`);
 process.exit(failures ? 1 : 0);

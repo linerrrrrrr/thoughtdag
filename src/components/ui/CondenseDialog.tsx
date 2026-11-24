@@ -1,7 +1,7 @@
 import { useDismissableLayer } from '../../lib/use-dismissable-layer';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Archive, Check, Files, Loader2, Minimize2, X } from 'lucide-react';
+import { Archive, Check, Files, Loader2, Minimize2, RefreshCw, X } from 'lucide-react';
 import { useUiStore, toast } from '../../lib/ui-store';
 import { useStore } from '../../store';
 import { useModels } from '../../lib/use-models';
@@ -131,9 +131,9 @@ export default function CondenseDialog({ onFocusSegment }: { onFocusSegment?: (n
                 onClick={() => setRefreshTick((v) => v + 1)}
 
                 data-condense-rescan
-                className="text-control text-ink-muted hover:text-accent px-2 py-1 rounded-tag hover:bg-wash transition-colors shrink-0"
+                className="inline-flex items-center gap-1 text-control text-ink-muted hover:text-accent px-2 py-1 rounded-tag hover:bg-wash transition-colors shrink-0"
               >
-                ⟳ {t('condense.rescan')}
+                <RefreshCw size={13} strokeWidth={1.75} aria-hidden />{t('condense.rescan')}
               </button>
             </div>
             <p className="text-control text-ink-faint mb-2" data-condense-scanline>

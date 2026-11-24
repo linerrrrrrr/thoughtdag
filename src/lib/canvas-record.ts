@@ -34,6 +34,7 @@ function slimNode(n: ThoughtNode): ThoughtNode {
     ? { ...history, items: [], capture: 'unavailable' as const, reason: 'Replay payloads are omitted from the lightweight canvas index.' } : history;
   return { ...n, data: { ...n.data, attachments,
     codexHistories: n.data.codexHistories?.map(slimHistory),
+    codexVisuals: undefined,
     agentSession: n.data.agentSession ? { ...n.data.agentSession, nativeHistory: slimHistory(n.data.agentSession.nativeHistory) ?? undefined } : undefined,
   } };
 }

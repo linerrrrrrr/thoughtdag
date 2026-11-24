@@ -35,6 +35,22 @@ version navigation, and version deletion. Failed or interrupted work retains
 its available output. These records are display data and do not enter the
 context compiled for subsequent questions.
 
+## Interactive previews and original chats
+
+When a Codex answer contains a Visualize file reference on its own line, the
+local host checks that the native conversation recorded it and reads the HTML
+from that conversation's workspace or visualization folder. Generation and
+session import save the available document with the answer version. An older
+canvas can recover a missing document when reopened on the source machine.
+Each recovered preview reflects the file at capture time. An unavailable
+original leaves a labeled placeholder in the answer.
+
+The canvas node, details panel, and full answer reader present the saved
+preview in an isolated frame. HTML controls can run their local interactions.
+The main Markdown renderer keeps its usual sanitization. The node context
+menu and the details panel's More menu can open the selected answer's
+original local chat through the registered desktop protocol.
+
 ## Protocol projection
 
 `runtime/agents/codex.cjs` projects notifications into `activity` snapshots.
@@ -171,6 +187,8 @@ node scripts/test-local-files.mjs
 node scripts/test-file-links-ui.mjs
 node scripts/test-codex-workbench-ui.mjs
 node scripts/test-codex-approval-transport.mjs
+node scripts/test-codex-visual-capture.mjs
+node scripts/test-source-navigation-backup.mjs
 ```
 
 ```bash
@@ -189,6 +207,10 @@ npm run dev -- --host 127.0.0.1 --port 5175 --strictPort
 npm run test:agent-activity-ui
 node scripts/test-codex-approval-ui.mjs
 ```
+
+Run `node scripts/test-codex-visual-ui.mjs` against a Vite server started with
+`--mode test` to exercise preview controls on the canvas, in details, and in
+the full reader using isolated browser storage.
 
 Set `APP_URL` and `CHROME_PATH` if the local server or Chromium executable is
 elsewhere. Screenshots and the check report are written under

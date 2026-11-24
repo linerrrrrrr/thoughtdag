@@ -104,8 +104,11 @@ function createLocalFiles({ shell, allowRemoteOrigin = false } = {}) {
     if (!mime) return null;
     return `data:${mime};base64,${(await fs.readFile(file.path)).toString('base64')}`;
   }
+  async function codexVisual(request) {
+    return require('./codex-visual.cjs').readCodexVisual(request);
+  }
   async function handle(req, res, sub, body) {
-    if (!/^\/local\/(open|reveal|read|image)$/.test(sub)) return false;
+    if (!/^\/local\/(open|reveal|read|image|codex-visual)$/.test(sub)) return false;
     const send = (code, payload) => { res.writeHead(code, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' }); res.end(JSON.stringify(payload)); return true; };
     // JSON POST plus an origin check blocks cross-site reads and launch requests.
     if (req.method !== 'POST' || !/^application\/json(?:;|$)/i.test(req.headers['content-type'] || '')) return send(405, { ok: false, reason: 'invalid' });
@@ -119,9 +122,12 @@ function createLocalFiles({ shell, allowRemoteOrigin = false } = {}) {
       } catch { /* invalid origin */ }
       if (!allowed) return send(403, { ok: false, reason: 'forbidden' });
     }
-    try { return send(200, await ({ open, reveal, read, image })[sub.slice(7)](body?.path)); }
+    try {
+      if (sub === '/local/codex-visual') return send(200, await codexVisual(body));
+      return send(200, await ({ open, reveal, read, image })[sub.slice(7)](body?.path));
+    }
     catch { return send(500, { ok: false, reason: 'error' }); }
   }
-  return { open, reveal, read, image, handle };
+  return { open, reveal, read, image, codexVisual, handle };
 }
 module.exports = { createLocalFiles, nativePath };

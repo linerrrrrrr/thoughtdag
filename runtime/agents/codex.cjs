@@ -21,6 +21,11 @@ const fsp = fs.promises;
 const RESPONSE_MS = 30 * 1000;
 const { createCodexLaunchResolver } = require('./codex-launch.cjs');
 const EXTRA_HOMES = [path.join(os.homedir(), '.codex', 'bin')];
+const CANVAS_VISUAL_INSTRUCTIONS = [
+  'This canvas can show interactive previews inside an answer. When the user requests an inline interactive preview, use the visualize skill if available.',
+  'Otherwise save a self-contained HTML fragment with local interaction to a new .html file in a writable task output folder under the current workspace.',
+  'Place \uE200visualize\uE202{"path":"<absolute path to that file>"}\uE201 on its own line in the final answer. Use a distinct filename for each revision.',
+].join(' ');
 
 /** The codex binary and the directories walked to find it (see where.cjs). */
 const findCodex = createCodexLaunchResolver({ extraHomes: EXTRA_HOMES });
@@ -524,7 +529,10 @@ function createCodexRuntime({ log } = {}) {
           let continued = false;
           let fresh = false;
           let injectedCount = 0;
-          const settings = { cwd, ...policy, ...(model ? { model } : {}), ...(typeof req.instructions === 'string' ? { developerInstructions: req.instructions } : {}) };
+          const instructions = typeof req.instructions === 'string' ? req.instructions : '';
+          const settings = { cwd, ...policy, ...(model ? { model } : {}),
+            ...(req.codexWorkspace ? { developerInstructions: [instructions, CANVAS_VISUAL_INSTRUCTIONS].filter(Boolean).join('\n\n') }
+              : typeof req.instructions === 'string' ? { developerInstructions: instructions } : {}) };
           let sandboxPolicy;
           const openThread = async (method, params) => {
             const response = await send(method, params);

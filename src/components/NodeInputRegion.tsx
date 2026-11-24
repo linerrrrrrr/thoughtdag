@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { ArrowDownToLine, Check, ChevronDown, ChevronRight, FileText, Link2Off, MessageSquare, Minus, Paperclip, X } from 'lucide-react';
+import { ArrowDownToLine, Check, ChevronDown, ChevronRight, Link2Off, Minus, X } from 'lucide-react';
+import { fileIconFor, nodeKindIcons } from '../lib/content-icons';
+import { canvasNodeKind } from '../lib/canvas-search';
 import { useStore } from '../store';
 import { fmt, useT } from '../i18n';
 import { useConnectionLayoutPreferences } from '../lib/connection-layout-preferences';
@@ -88,6 +90,7 @@ export default function NodeInputRegion({ nodeId, compact = false, readOnly = fa
     const { kind, owner, attachment, edge } = row;
     const sourceName = getNodeNameSource(owner.data, t('ctx.unnamedNode'));
     const name = attachment?.name || sourceName;
+    const Icon = attachment ? fileIconFor(attachment.name, attachment.type) : nodeKindIcons[canvasNodeKind(owner)];
     let origin = '';
     if (kind === 'material') origin = t(owner.data.stepKind === 'file' ? 'inputRegion.sharedFile' : 'inputRegion.material');
     if (kind === 'conversation' && edge?.data?.isCrossLink) origin = t('inputRegion.reference');
@@ -112,9 +115,7 @@ export default function NodeInputRegion({ nodeId, compact = false, readOnly = fa
         if (!event.currentTarget.contains(event.relatedTarget)) endTrace(nodeId, edge?.id);
       }}>
       <button type="button" className="input-source-open" aria-label={openLabel} data-tooltip={name} onClick={onOpen}>
-        <span className="input-source-icon" aria-hidden="true">{kind === 'conversation'
-          ? <MessageSquare size={14} strokeWidth={1.6} /> : kind === 'local' || kind === 'inherited'
-            ? <Paperclip size={14} strokeWidth={1.6} /> : <FileText size={14} strokeWidth={1.6} />}</span>
+        <span className="input-source-icon" aria-hidden="true"><Icon size={14} strokeWidth={1.75} /></span>
         <span className="input-source-copy">
         <span className="input-source-name" data-tooltip={name} data-tooltip-overflow>{name}</span>
         {origin && <span className="input-source-origin">{origin}</span>}

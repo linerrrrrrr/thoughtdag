@@ -48,6 +48,11 @@ export function scanNodes(nodes: ThoughtNode[]): SensitiveHit[] {
     for (const question of new Set(n.data.questions ?? [])) if (question !== n.data.question) scanText(question, label, hits);
     for (const reasoning of n.data.reasonings ?? []) scanText(reasoning ?? undefined, label, hits);
     if (n.data.reasoning && !n.data.reasonings?.includes(n.data.reasoning)) scanText(n.data.reasoning, label, hits);
+    if (Array.isArray(n.data.codexVisuals)) {
+      for (const version of n.data.codexVisuals) {
+        if (Array.isArray(version)) for (const visual of version) scanText(visual?.html, label, hits);
+      }
+    }
     for (const activity of [n.data.agentActivity, ...(n.data.agentActivities ?? [])]) {
       for (const entry of activity ?? []) {
         for (const text of [entry.title, entry.command, entry.text, entry.output]) scanText(text, label, hits);

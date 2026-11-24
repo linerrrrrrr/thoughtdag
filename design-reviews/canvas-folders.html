@@ -1,0 +1,610 @@
+<style>
+#fd-preview {
+  font: 14px/1.5 Inter, "Noto Sans SC", "Microsoft YaHei", "PingFang SC", sans-serif;
+  --fd-ink:light-dark(#202632,#e9edf4); --fd-muted:light-dark(#515e70,#bac3d2);
+  --fd-accent:light-dark(#6655d9,#b1a6ff); --fd-soft:light-dark(#eeecfc,#373249);
+  --fd-wash:light-dark(#ebeef3,#2b3240); --fd-card:light-dark(#fff,#222833);
+  --fd-paper:light-dark(#f4f5f7,#171b22); --fd-line:light-dark(#cdd3dd,#465164);
+  --fd-quiet-line:color-mix(in srgb,var(--fd-line) 65%,var(--fd-card));
+  --fd-dot:light-dark(#c8ced8,#39414d); --fd-shadow:0 6px 22px rgba(24,35,52,.11);
+  color:var(--fd-ink);
+}
+#fd-preview *, #fd-preview *::after, #fd-preview *::before { box-sizing:border-box; }
+#fd-preview [hidden] { display:none !important }
+#fd-preview .fd-stage { position:relative; min-height:510px; container-type:inline-size; isolation:isolate; background:var(--fd-paper); color:var(--fd-ink); overflow:clip; border:1px solid var(--fd-line); border-radius:14px; }
+#fd-preview .fd-stage :is(h1,h2,h3,h4,p,ul,ol) { margin:0; }
+:where(#fd-preview .fd-stage) button { font:inherit; color:inherit; background:none; border:0; padding:0; text-align:inherit; }
+#fd-preview .fd-stage button:focus-visible, #fd-preview .fd-stage input:focus-visible { outline:2px solid var(--fd-accent); outline-offset:1px; }
+#fd-preview .fd-stage .fd-btn, #fd-preview .fd-stage .fd-quiet, #fd-preview .fd-stage .fd-primary {
+  display:inline-flex; align-items:center; justify-content:center; gap:7px; min-height:32px; border-radius:6px; padding:4px 10px; white-space:nowrap;
+}
+#fd-preview .fd-stage .fd-btn { border:1px solid var(--fd-line); background:var(--fd-card); }
+#fd-preview .fd-stage .fd-primary { background:var(--fd-accent); color:light-dark(#fff,#191622); }
+#fd-preview .fd-stage :is(.fd-btn,.fd-quiet,.fd-row,.fd-new-folder):hover { background:var(--fd-wash); }
+#fd-preview .fd-icon, #fd-preview .fd-stage [data-lucide] { width:16px; height:16px; flex:none; display:inline-block; vertical-align:-3px; stroke-width:1.75px; }
+#fd-preview .fd-muted { color:var(--fd-muted); }
+#fd-preview .fd-stage .fd-style { color:var(--fd-accent); }
+#fd-preview .fd-header { position:absolute; z-index:2; left:16px; right:16px; top:16px; display:flex; align-items:flex-start; justify-content:space-between; gap:12px; pointer-events:none; }
+#fd-preview .fd-bar { display:flex; align-items:center; padding:6px; gap:5px; background:var(--fd-card); border:1px solid var(--fd-line); border-radius:14px; box-shadow:0 2px 7px #1823340d; pointer-events:auto; }
+#fd-preview .fd-bar .fd-trigger { max-width:190px; }
+#fd-preview .fd-bar .fd-trigger[aria-expanded=true] { color:var(--fd-accent); background:var(--fd-soft); }
+#fd-preview .fd-bar .fd-trigger span { overflow:hidden; text-overflow:ellipsis; }
+#fd-preview .fd-bar-item { display:inline-flex; align-items:center; gap:6px; color:var(--fd-muted); padding:4px 6px; white-space:nowrap; }
+#fd-preview .fd-bar-item .fd-icon { width:15px; height:15px; }
+#fd-preview .fd-bar .fd-bar-divider { width:1px; height:19px; margin:0 2px; background:var(--fd-quiet-line); }
+#fd-preview .fd-zoom { position:absolute; bottom:16px; left:16px; display:flex; gap:12px; align-items:center; background:var(--fd-card); color:var(--fd-muted); border:1px solid var(--fd-line); padding:6px 10px; border-radius:8px; font-size:12px; }
+#fd-preview .fd-zoom .fd-icon { width:14px; height:14px; }
+#fd-preview .fd-tree { position:absolute; top:72px; left:16px; width:min(335px,calc(100% - 32px)); border:1px solid var(--fd-line); border-radius:14px; background:var(--fd-card); box-shadow:var(--fd-shadow); z-index:3; }
+#fd-preview .fd-tree-head { display:flex; justify-content:space-between; align-items:center; gap:6px; padding:12px 14px 10px 16px; }
+#fd-preview .fd-tree-head h2 { font-size:16px; font-weight:600; color:var(--fd-ink); }
+#fd-preview .fd-stage .fd-new-folder { padding:5px 7px; display:flex; gap:6px; align-items:center; color:var(--fd-muted); border-radius:6px; font-size:13px; }
+#fd-preview .fd-tree-body { padding:0 7px 6px; max-height:345px; overflow-y:auto; }
+#fd-preview .fd-group-head, #fd-preview .fd-tree-line { display:flex; align-items:center; gap:4px; border-radius:6px; }
+#fd-preview .fd-stage .fd-group-toggle { min-width:0; flex:1; display:flex; align-items:center; gap:7px; min-height:39px; padding:4px 7px; border-radius:6px; font-weight:500; }
+#fd-preview .fd-group-toggle .fd-folder-count { color:var(--fd-muted); font-size:12px; font-weight:400; padding-left:1px; }
+#fd-preview .fd-group-toggle .fd-caret, #fd-preview .fd-caret { width:13px; height:13px; }
+#fd-preview .fd-stage .fd-group-export { min-height:28px; margin-right:3px; font-size:12px; padding:3px 7px; color:var(--fd-muted); gap:5px; }
+#fd-preview .fd-group-export .fd-icon { width:14px; height:14px; }
+#fd-preview .fd-children { margin:0 2px 5px 15px; padding-left:11px; border-left:1px solid var(--fd-line); }
+#fd-preview .fd-tree-line { position:relative; min-height:38px; margin-bottom:2px; padding-right:4px; }
+#fd-preview .fd-stage .fd-tree-line.is-current { color:var(--fd-accent); background:var(--fd-soft); }
+#fd-preview .fd-tree-line:not(.is-current):hover, #fd-preview .fd-group-toggle:hover { background:var(--fd-wash); }
+#fd-preview .fd-stage .fd-canvas-item { display:flex; align-items:center; gap:8px; flex:1; min-width:0; min-height:36px; padding:4px 8px; }
+#fd-preview .fd-name { overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+#fd-preview .fd-active-check { width:14px; height:14px; margin-left:auto; }
+#fd-preview .fd-stage .fd-move { display:inline-flex; align-items:center; min-height:30px; padding:5px; color:var(--fd-muted); border-radius:5px; opacity:0; }
+#fd-preview .fd-tree-line:hover .fd-move, #fd-preview .fd-tree-line:focus-within .fd-move { opacity:1; }
+#fd-preview .fd-root-canvas { border-top:1px solid var(--fd-quiet-line); margin-top:4px; padding:5px 0 0 11px; }
+#fd-preview .fd-root-label { font-size:12px; color:var(--fd-muted); padding:3px 1px; }
+#fd-preview .fd-tree-foot { border-top:1px solid var(--fd-quiet-line); padding:6px; display:flex; align-items:center; justify-content:space-between; gap:4px; }
+#fd-preview .fd-tree-foot .fd-quiet { font-size:13px; }
+#fd-preview .fd-scene { z-index:-1; }
+#fd-preview .fd-backdrop { position:absolute; inset:0; overflow:hidden; z-index:-1; background:radial-gradient(circle,var(--fd-dot) .8px,transparent 1px) 6px 4px/16px 16px,var(--fd-paper); }
+@container(min-width:800px) {
+  #fd-preview [data-mode="columns"]:has(.fd-cols) .fd-scene { transform:translateX(15%); }
+  #fd-preview [data-mode="columns"]:has(.fd-cols) :is(.fd-scene-note,.fd-scene-right,.fd-scene-edges path:nth-child(n+3)) { display:none; }
+}
+#fd-preview .fd-scene-alt { position:absolute; inset:0; z-index:-1; display:grid; place-content:center; justify-items:center; gap:12px; padding:70px 8px 10px 45%; background:radial-gradient(circle,var(--fd-dot) 1px,transparent 1px) 6px 4px/16px 16px,var(--fd-paper); }
+#fd-preview .fd-scene-alt .fd-thumb { width:min(330px,40cqw); height:150px; }
+#fd-preview .fd-scene-alt b { font-size:16px; }
+#fd-preview .fd-thumb { display:block; width:100%; height:100%; }
+#fd-preview .fd-scrim { position:absolute; inset:0; z-index:9; background:light-dark(#25314642,#090c1266); display:flex; align-items:center; justify-content:center; padding:12px; }
+#fd-preview .fd-dialog { width:min(378px,100%); min-width:0; max-height:100%; overflow:auto; background:var(--fd-card); border:1px solid var(--fd-line); box-shadow:var(--fd-shadow); border-radius:14px; padding:18px; }
+#fd-preview .fd-dialog-head { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+#fd-preview .fd-dialog-head h2 { font-size:18px; font-weight:600; }
+#fd-preview .fd-dialog .fd-package { margin:16px 0 6px; display:flex; align-items:center; gap:9px; font-weight:600; }
+#fd-preview .fd-files { list-style:none; padding:0 0 0 14px; border-left:1px solid var(--fd-line); margin-left:7px !important; }
+#fd-preview .fd-files li { padding:6px 0; display:flex; align-items:center; gap:7px; font-size:13px; overflow-wrap:anywhere; }
+#fd-preview .fd-dialog-foot { margin-top:16px; display:flex; justify-content:flex-end; gap:6px; }
+#fd-preview .fd-dialog label { display:grid; gap:6px; margin-top:16px; }
+#fd-preview .fd-dialog input { min-width:0; font:inherit; color:var(--fd-ink); border-radius:6px; border:1px solid var(--fd-line); background:var(--fd-paper); padding:7px 9px; }
+#fd-preview .fd-move-list { display:grid; gap:3px; margin-top:12px; }
+#fd-preview .fd-move-list .fd-quiet { justify-content:flex-start; }
+@container(max-width:760px) {
+  #fd-preview .fd-bar-caption { display:none; }
+  #fd-preview .fd-scene { min-width:840px; }
+}
+@container(max-width:540px) {
+  #fd-preview .fd-right-bar, #fd-preview .fd-model { display:none; }
+  #fd-preview .fd-header { left:12px; top:12px; }
+  #fd-preview .fd-tree { top:69px; left:12px; width:min(335px,calc(100% - 24px)); }
+  #fd-preview .fd-tree-body { max-height:330px; }
+  #fd-preview .fd-scene { min-width:720px; transform:translateX(-120px); }
+  #fd-preview .fd-stage:has(.fd-scrim) { min-height:470px; }
+}
+@media (hover:none) { #fd-preview .fd-stage .fd-move { opacity:1; } }
+</style>
+<div id="fd-preview" class="viz-carousel" lang="zh-CN" aria-label="三种画布目录设计" data-previous-label="上一方案" data-next-label="下一方案">
+  <section data-variant="折叠目录" aria-label="折叠目录"><div class="fd-stage" data-mode="tree"></div></section>
+  <section data-variant="双栏目录" aria-label="双栏目录" hidden><div class="fd-stage" data-mode="columns"></div></section>
+  <section data-variant="文件夹展架" aria-label="文件夹展架" hidden><div class="fd-stage" data-mode="shelf"></div></section>
+</div>
+<style>
+.fd-scene {
+  position: absolute; inset: 0; overflow: hidden; isolation: isolate;
+  background-color: var(--fd-paper);
+  background-image: radial-gradient(circle, var(--fd-dot) .8px, transparent .98px);
+  background-position: 6px 4px; background-size: 16px 16px;
+  font-family: Inter, "Microsoft YaHei", "PingFang SC", sans-serif;
+  color: var(--fd-ink); text-align: left; user-select: none; pointer-events: none;
+}
+.fd-scene *, .fd-scene *::before, .fd-scene *::after { box-sizing: border-box; }
+.fd-scene .fd-scene-edges { position: absolute; top: 0; left: 0; width: 100%; height: 480px; overflow: visible; }
+.fd-scene .fd-scene-card {
+  position: absolute; left: 50.3%; width: 27.7%; border: 1px solid var(--fd-line);
+  border-radius: 13px; background: var(--fd-card);
+  box-shadow: 0 2px 5px rgba(38,45,66,.05); font-size: 13px; line-height: 1.48;
+}
+.fd-scene .fd-scene-root { top: 112px; height: 188px; }
+.fd-scene .fd-scene-follow { top: 352px; min-height: 94px; }
+.fd-scene .fd-scene-notch {
+  position: absolute; width: 8px; height: 8px; background: var(--fd-card); border: 1.5px solid #968bdc;
+  border-radius: 50%; z-index: 1;
+}
+.fd-scene .fd-scene-root > .fd-scene-notch { bottom: -4.5px; left: calc(50% - 4px); }
+.fd-scene .fd-scene-root > .fd-scene-right { top: 74px; left: auto; right: -4.5px; }
+.fd-scene .fd-scene-follow > .fd-scene-notch { top: -4.5px; left: calc(50% - 4px); }
+.fd-scene .fd-scene-head {
+  display: flex; align-items: center; gap: 7px; height: 33px; padding: 0 12px;
+  border-bottom: 1px solid var(--fd-quiet-line); font-size: 12px; line-height: 1; color: var(--fd-muted);
+}
+.fd-scene .fd-scene-icon { width: 15px; height: 15px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.65; stroke-linecap: round; stroke-linejoin: round; }
+.fd-scene .fd-scene-head .fd-scene-message { color: #8271c8; }
+.fd-scene .fd-scene-head .fd-scene-tail { margin-left: auto; width: 15px; color: #7d8795; }
+.fd-scene .fd-scene-title {
+  display: flex; align-items: center; gap: 8px; padding: 8px 13px;
+  border-bottom: 1px solid var(--fd-quiet-line); background: var(--fd-paper); font-size: 14px; font-weight: 600;
+  color: var(--fd-ink);
+}
+.fd-scene .fd-scene-body { display: flex; flex-direction: column; align-items: flex-start; gap: 9px; padding: 10px 13px; }
+.fd-scene .fd-scene-q { align-self: flex-end; background: light-dark(#edf2fa,#263b58); color: light-dark(#3d506a,#e6eefb); padding: 6px 9px; border-radius: 7px 7px 3px 7px; }
+.fd-scene .fd-scene-a { margin: 0; line-height: 1.55; }
+.fd-scene .fd-scene-follow .fd-scene-title { border: 0; padding: 10px 13px 2px; background: transparent; }
+.fd-scene .fd-scene-excerpt { padding: 0 13px 10px; color: var(--fd-muted); font-size: 12px; }
+.fd-scene .fd-scene-note { left: 83.2%; top: 130px; width: 15.3%; min-height: 102px; border-color: light-dark(#dbceae,#655a40); background: light-dark(#fffcf5,#2c2922); }
+.fd-scene .fd-scene-note > .fd-scene-notch { top: 55px; left: -4.5px; border-color: #b5a47b; background: light-dark(#fffcf5,#2c2922); }
+.fd-scene .fd-scene-note .fd-scene-head { color: light-dark(#7c6a3b,#d5bb83); border-color: light-dark(#e9e1cd,#655a40); }
+.fd-scene .fd-scene-quote { padding: 10px 12px 12px; margin: 0; color: light-dark(#584e36,#d5bb83); font-size: 13px; line-height: 1.6; }
+</style>
+<template id="fd-scene-template">
+<div class="fd-scene" aria-label="访谈线索画布，访谈摘录与两轮对话">
+  <svg class="fd-scene-edges" viewBox="0 0 1000 480" preserveAspectRatio="none" fill="none" aria-hidden="true">
+    <path d="M641.5 300V346" stroke="#9488d0" stroke-width="2"/>
+    <path d="m637.5 341.5 4 6 4-6" stroke="#9488d0" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"/>
+    <path d="M832 189H785" stroke="#ac9c79" stroke-width="1.65" stroke-dasharray="5 4"/>
+    <path d="m791 185.5-6 3.5 6 3.5" stroke="#ac9c79" stroke-width="1.65" stroke-linejoin="round"/>
+  </svg>
+  <div class="fd-scene-card fd-scene-root">
+    <i class="fd-scene-notch"></i><i class="fd-scene-notch fd-scene-right"></i>
+    <div class="fd-scene-head">
+      <i data-lucide="message-square" class="fd-icon fd-scene-message" aria-hidden="true"></i>对话
+      <i data-lucide="ellipsis" class="fd-icon fd-scene-tail" aria-hidden="true"></i>
+    </div>
+    <div class="fd-scene-title">首张画布的起步阻力</div>
+    <div class="fd-scene-body"><div class="fd-scene-q">新用户最先卡在哪里？</div><p class="fd-scene-a">几位受访者打开空白画布后都停了下来，不知道第一步该放什么。</p></div>
+  </div>
+  <div class="fd-scene-card fd-scene-follow">
+    <i class="fd-scene-notch"></i>
+    <div class="fd-scene-head">
+      <i data-lucide="message-square" class="fd-icon fd-scene-message" aria-hidden="true"></i>追问
+    </div>
+    <div class="fd-scene-title">第一步需要什么提示？</div>
+    <div class="fd-scene-excerpt">用一句真实问题开始这张画布。</div>
+  </div>
+  <div class="fd-scene-card fd-scene-note">
+    <i class="fd-scene-notch"></i>
+    <div class="fd-scene-head">
+      <i data-lucide="sticky-note" class="fd-icon" aria-hidden="true"></i>访谈摘录
+    </div>
+    <p class="fd-scene-quote">“我有几条笔记，但不知道从哪条开始。”</p>
+  </div>
+</div></template>
+<style>
+.fd-cols {
+  position: absolute; top: 76px; left: 16px; z-index: 3; display: flex;
+  width: min(602px, calc(100% - 32px)); height: 346px;
+  max-height: calc(100% - 89px); overflow: hidden; isolation: isolate;
+  color: var(--fd-ink, #202632); background: var(--fd-card, white);
+  border: 1px solid var(--fd-line, #cdd3dd); border-radius: 14px;
+  box-shadow: 0 8px 28px rgb(35 43 57 / .12), 0 2px 5px rgb(35 43 57 / .06);
+  font-family: Inter, "Microsoft YaHei", "PingFang SC", sans-serif; font-size: 14px; text-align: left;
+}
+.fd-cols *, .fd-cols *::after, .fd-cols *::before { box-sizing: border-box; }
+.fd-cols button {
+  color: inherit; font: inherit; cursor: pointer; border: 0; background: transparent;
+  padding: 0; margin: 0; text-align: left;
+}
+.fd-cols button:focus-visible { outline: 2px solid var(--fd-accent,#6b5ce7); outline-offset: -2px; }
+.fd-cols button svg { width: 16px; height: 16px; flex-shrink: 0; }
+.fd-cols .fd-cols-side {
+  flex: 0 0 162px; min-width: 0; display: flex; flex-direction: column;
+  background: color-mix(in srgb,var(--fd-paper) 70%,var(--fd-card)); border-right: 1px solid var(--fd-line,#cdd3dd);
+}
+.fd-cols .fd-cols-side-head { display: flex; gap: 6px; align-items: center; justify-content: space-between; padding: 14px 11px 11px 16px; }
+.fd-cols .fd-cols-side-title { margin: 0; font-size: 15px; line-height: 22px; font-weight: 600; }
+.fd-cols .fd-cols-icon { display: inline-flex; justify-content: center; align-items: center; flex: 0 0 25px; width: 25px; height: 25px; border-radius: 5px; color: var(--fd-muted,#515e70); }
+.fd-cols .fd-cols-icon:hover { background: var(--fd-wash,#ebeef3); color: var(--fd-ink,#202632); }
+.fd-cols .fd-cols-folders { padding: 0 8px; overflow: auto; }
+.fd-cols .fd-cols-folder { display: flex; width: 100%; min-height: 34px; align-items: center; gap: 8px; padding: 5px 9px; margin: 2px 0; border-radius: 6px; }
+.fd-cols .fd-cols-folder svg { color: var(--fd-muted,#515e70); }
+.fd-cols .fd-cols-folder:hover, .fd-cols .fd-cols-new:hover { background: var(--fd-wash,#ebeef3); }
+.fd-cols .fd-cols-folder[aria-pressed="true"] { color: var(--fd-accent,#6b5ce7); background: var(--fd-soft); font-weight: 600; }
+.fd-cols .fd-cols-folder[aria-pressed="true"] svg { color: inherit; }
+.fd-cols .fd-cols-name, .fd-cols .fd-cols-row-title, .fd-cols .fd-cols-folder-title { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.fd-cols .fd-cols-quantity { margin-left: auto; color: var(--fd-muted,#515e70); font-size: 12px; font-variant-numeric: tabular-nums; font-weight: 400; }
+.fd-cols .fd-cols-folder[aria-pressed="true"] .fd-cols-quantity { color: var(--fd-accent,#6b5ce7); }
+.fd-cols .fd-cols-side-foot { margin-top: auto; padding: 9px 8px; border-top: 1px solid var(--fd-line,#cdd3dd); }
+.fd-cols .fd-cols-new { display: inline-flex; align-items: center; justify-content: flex-start; gap: 7px; min-height: 30px; padding: 4px 7px; border-radius: 6px; white-space: nowrap; }
+.fd-cols .fd-cols-new svg { width: 15px; height: 15px; }
+.fd-cols .fd-cols-main { display: flex; flex: 1; min-width: 0; min-height: 0; flex-direction: column; }
+.fd-cols .fd-cols-main-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 75px; padding: 13px 16px; border-bottom: 1px solid var(--fd-line,#cdd3dd); }
+.fd-cols .fd-cols-heading { min-width: 0; }
+.fd-cols .fd-cols-folder-title { margin: 0; font-size: 17px; line-height: 23px; font-weight: 600; }
+.fd-cols .fd-cols-count, .fd-cols .fd-cols-row-meta { color: var(--fd-muted,#515e70); font-size: 12px; line-height: 18px; font-weight: 400; }
+.fd-cols .fd-cols-count { margin-top: 2px; }
+.fd-cols .fd-cols-export { display: inline-flex; align-items: center; flex: none; gap: 7px; min-height: 32px; padding: 6px 9px; border: 1px solid var(--fd-line,#cdd3dd); border-radius: 6px; white-space: nowrap; font-size: 14px; line-height: 18px; font-weight: 500; }
+.fd-cols .fd-cols-export:hover { background: var(--fd-wash,#ebeef3); }
+.fd-cols .fd-cols-export svg { width: 15px; height: 15px; }
+.fd-cols .fd-cols-files { display: flex; flex: 1; min-height: 0; flex-direction: column; overflow: auto; padding: 4px 9px; }
+.fd-cols .fd-cols-row { display: flex; align-items: center; gap: 3px; flex-shrink: 0; min-height: 58px; border-bottom: 1px solid var(--fd-quiet-line); }
+.fd-cols .fd-cols-row:last-child { border-bottom: 0; }
+.fd-cols .fd-cols-open { display: flex; min-width: 0; flex: 1; align-items: center; gap: 10px; min-height: 51px; padding: 5px 6px; border-radius: 6px; }
+.fd-cols .fd-cols-open:hover { background: var(--fd-wash); }
+.fd-cols .fd-cols-thumb { flex: 0 0 44px; display: grid; place-items: center; width: 44px; height: 34px; border: 1px solid var(--fd-line); border-radius: 5px; background: var(--fd-paper); overflow: hidden; }
+.fd-cols .fd-cols-thumb svg { display: block; width: 100%; height: 100%; }
+.fd-cols .fd-cols-row-copy { min-width: 0; flex: 1; }
+.fd-cols .fd-cols-row-title { display: block; font-size: 14px; line-height: 21px; color: var(--fd-ink,#202632); font-weight: 500; }
+.fd-cols .fd-cols-active { width: 16px; height: 16px; flex: 0 0 16px; color: var(--fd-accent,#6b5ce7); }
+.fd-cols .fd-cols-row[aria-current="page"] .fd-cols-row-title { color: var(--fd-accent,#6b5ce7); }
+.fd-cols .fd-cols-main-foot { padding: 9px; border-top: 1px solid var(--fd-line,#cdd3dd); }
+.fd-cols .fd-cols-main-foot .fd-cols-new { color: var(--fd-accent,#6b5ce7); }
+.fd-cols .fd-cols-empty { margin: 20px 7px; color: var(--fd-muted,#515e70); }
+@container (max-width: 560px) {
+  .fd-cols { flex-direction: column; height: 370px; }
+  .fd-cols .fd-cols-side { position: relative; flex: 0 0 auto; border: none; border-bottom: 1px solid var(--fd-line,#cdd3dd); }
+  .fd-cols .fd-cols-side-head { padding: 5px 9px 1px 12px; min-height: 36px; }
+  .fd-cols .fd-cols-side-foot { border: 0; position: absolute; right: 42px; top: 3px; padding: 0; }
+  .fd-cols .fd-cols-side-foot .fd-cols-new { font-size: 12px; }
+  .fd-cols .fd-cols-folders { display: flex; align-items: center; gap: 4px; padding: 3px 8px 6px; overflow: auto; }
+  .fd-cols .fd-cols-folder { width: auto; flex: 0 0 auto; min-height: 29px; padding: 3px 7px; gap: 5px; margin: 0; font-size: 13px; }
+  .fd-cols .fd-cols-folder svg { width: 13px; height: 13px; }
+  .fd-cols .fd-cols-folder .fd-cols-name { max-width: 88px; }
+  .fd-cols .fd-cols-folder .fd-cols-quantity { display: none; }
+  .fd-cols .fd-cols-main-head { min-height: 58px; padding: 7px 12px; }
+  .fd-cols .fd-cols-folder-title { font-size: 15px; line-height: 20px; }
+  .fd-cols .fd-cols-row { min-height: 49px; }
+  .fd-cols .fd-cols-open { min-height: 45px; gap: 8px; }
+  .fd-cols .fd-cols-main-foot { padding: 4px 8px; }
+}
+</style>
+<script>
+window.fdRenderColumns = function (state, ui) {
+  const esc = (value) => ui.escape(String(value ?? ''));
+  const icon = ui.icon;
+  const selected = state.folders.find((folder) => folder.id === state.folder);
+  const folderId = selected ? selected.id : '';
+  const canvases = state.canvases.filter((canvas) => (canvas.folder || '') === folderId);
+  const action = (name, id) => `data-do="${esc(name)}" data-id="${esc(id)}"`;
+  const folderRow = (folder, unfiled = false) => {
+    const count = state.canvases.filter((canvas) => (canvas.folder || '') === folder.id).length;
+    const folderIcon = icon(unfiled ? 'inbox' : 'folder');
+    return `<button type="button" class="fd-cols-folder" ${action('folder', folder.id)} aria-pressed="${folderId === folder.id}">${folderIcon}<span class="fd-cols-name">${esc(folder.name)}</span><span class="fd-cols-quantity">${esc(count)}</span></button>`;
+  };
+  const canvasRow = (canvas) => {
+    const current = canvas.id === state.current;
+    return `<div class="fd-cols-row"${current ? ' aria-current="page"' : ''}>
+      <button type="button" class="fd-cols-open" ${action('canvas', canvas.id)} aria-label="打开画布「${esc(canvas.name)}」">
+        <span class="fd-cols-file-icon" aria-hidden="true">${icon('workflow')}</span>
+        <span class="fd-cols-row-copy"><span class="fd-cols-row-title">${esc(canvas.name)}</span><span class="fd-cols-row-meta">${esc(canvas.nodes)} 个节点 · ${esc(canvas.time)}</span></span>
+        ${current ? `<span class="fd-cols-active" aria-label="当前画布">${icon('check')}</span>` : ''}
+      </button>
+      <button type="button" class="fd-cols-icon" ${action('move', canvas.id)} aria-label="移动画布「${esc(canvas.name)}」" data-tooltip="移动画布">${icon('folder-input')}</button>
+    </div>`;
+  };
+  return `<section class="fd-cols" aria-label="画布目录">
+    <aside class="fd-cols-side">
+      <div class="fd-cols-side-head"><h2 class="fd-cols-side-title">画布目录</h2><button type="button" class="fd-cols-icon" data-do="close" aria-label="关闭目录">${icon('x')}</button></div>
+      <nav class="fd-cols-folders" aria-label="文件夹">${state.folders.map((folder) => folderRow(folder)).join('')}${folderRow({ id: '', name: '未归类' }, true)}</nav>
+      <div class="fd-cols-side-foot"><button type="button" class="fd-cols-new" data-do="new-folder">${icon('plus')}新建文件夹</button></div>
+    </aside>
+    <div class="fd-cols-main">
+      <div class="fd-cols-main-head"><div class="fd-cols-heading"><h3 class="fd-cols-folder-title">${esc(selected ? selected.name : '未归类')}</h3><div class="fd-cols-count">${esc(canvases.length)} 张画布</div></div>${selected ? `<button type="button" class="fd-cols-export" ${action('export', folderId)}>${icon('download')}导出文件夹</button>` : ''}</div>
+      <div class="fd-cols-files">${canvases.length ? canvases.map(canvasRow).join('') : '<p class="fd-cols-empty">暂无画布</p>'}</div>
+      <div class="fd-cols-main-foot"><button type="button" class="fd-cols-new" ${action('new-canvas', folderId)}>${icon('plus')}新建画布</button></div>
+    </div>
+  </section>`;
+};
+</script>
+<style>
+.fd-shelf-page {
+  box-sizing: border-box; width: 100%; min-height: 100%; padding: 22px clamp(14px, 4%, 44px) 24px;
+  background: var(--fd-paper); color: var(--fd-ink); container-type: inline-size; text-align: left;
+}
+.fd-shelf-page *, .fd-shelf-page *::before, .fd-shelf-page *::after { box-sizing: border-box; }
+.fd-shelf-page h2, .fd-shelf-page h3, .fd-shelf-page p { margin: 0; }
+.fd-shelf-page button { color: inherit; font-family: inherit; cursor: pointer; }
+.fd-shelf-page button:focus-visible { outline: 2px solid var(--fd-accent); outline-offset: 3px; }
+.fd-shelf-head, .fd-shelf-sectionbar, .fd-shelf-cardhead, .fd-shelf-cardfoot, .fd-shelf-crumbs,
+.fd-shelf-row, .fd-shelf-actions, .fd-shelf-sectiontitle { display: flex; align-items: center; }
+.fd-shelf-head, .fd-shelf-sectionbar, .fd-shelf-cardhead, .fd-shelf-cardfoot { justify-content: space-between; gap: 12px; }
+.fd-shelf-head { padding-bottom: 15px; border-bottom: 1px solid var(--fd-line); }
+.fd-shelf-head h2, .fd-shelf-head .fd-shelf-homelink {
+  color: var(--fd-ink); font-size: 23px; line-height: 1.25; font-weight: 650; letter-spacing: -.035em;
+}
+.fd-shelf-sectionbar { margin: 16px 0 8px; flex-wrap: wrap; }
+.fd-shelf-actions { flex-wrap: wrap; gap: 7px; }
+.fd-shelf-sectiontitle { min-width: 0; gap: 8px; }
+.fd-shelf-sectiontitle h3 { font-size: 15px; font-weight: 600; }
+.fd-shelf-sectiontitle small, .fd-shelf-count, .fd-shelf-meta { font-size: 12px; color: var(--fd-muted); }
+.fd-shelf-textbtn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  border: 0; border-radius: 6px; background: transparent; padding: 6px 8px; font-size: 13px; line-height: 1.35;
+}
+.fd-shelf-page .fd-shelf-textbtn:hover { color: var(--fd-accent); background: var(--fd-wash); }
+.fd-shelf-page .fd-shelf-textbtn .fd-icon, .fd-shelf-page .fd-btn .fd-icon { width: 15px; height: 15px; }
+.fd-shelf-grid, .fd-shelf-members { display: grid; gap: 18px; }
+.fd-shelf-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.fd-shelf-folder {
+  --fd-shelf-hue: color-mix(in srgb, var(--fd-accent) 49%, var(--fd-muted));
+  position: relative; margin-top: 11px; min-width: 0;
+  border: 1px solid color-mix(in srgb, var(--fd-shelf-hue) 36%, var(--fd-line)); border-radius: 0 12px 12px 12px;
+  background: color-mix(in srgb, var(--fd-shelf-hue) 6%, var(--fd-card));
+}
+.fd-shelf-folder:nth-child(even) { --fd-shelf-hue: var(--fd-muted); }
+.fd-shelf-tab {
+  position: absolute; left: -1px; top: -11px; width: 86px; height: 11px; border-radius: 7px 6px 0 0;
+  border: 1px solid color-mix(in srgb, var(--fd-shelf-hue) 36%, var(--fd-line)); border-bottom: 0;
+  background: color-mix(in srgb, var(--fd-shelf-hue) 6%, var(--fd-card));
+  transform: skew(24deg); transform-origin: left bottom; margin-left: 4px;
+}
+.fd-shelf-tab::after {
+  content: ''; position: absolute; left: -2px; bottom: -2px; width: 100%; height: 3px;
+  background: color-mix(in srgb, var(--fd-shelf-hue) 6%, var(--fd-card));
+}
+.fd-shelf-open { display: block; width: 100%; border: 0; background: transparent; padding: 17px 16px 0; text-align: left; }
+.fd-shelf-open:hover .fd-shelf-cardhead strong, .fd-shelf-member-open:hover strong, .fd-shelf-row:hover strong { color: var(--fd-accent); }
+.fd-shelf-cardhead strong { font-size: 18px; font-weight: 650; overflow-wrap: anywhere; }
+.fd-shelf-count { flex: none; white-space: nowrap; }
+.fd-shelf-samples { display: grid; grid-auto-columns: minmax(0, 1fr); grid-auto-flow: column; gap: 8px; margin-top: 12px; }
+.fd-shelf-sample, .fd-shelf-figure { display: block; min-width: 0; }
+.fd-shelf-thumb {
+  display: flex; align-items: center; justify-content: center; width: 100%; height: 56px;
+  border: 1px solid var(--fd-line); border-radius: 5px; background-color: var(--fd-card);
+  background-image: radial-gradient(color-mix(in srgb, var(--fd-muted) 31%, transparent) .65px, transparent .8px);
+  background-size: 7px 7px; background-position: 2px 2px; overflow: hidden;
+}
+.fd-shelf-thumb > svg { display: block; width: 91%; height: 85%; max-width: 100%; }
+.fd-shelf-sample .fd-shelf-thumb { height:73px; }
+.fd-cols-file-icon { color:var(--fd-muted); background:var(--fd-paper); border:1px solid var(--fd-quiet-line); border-radius:6px; width:33px; height:33px; display:grid; place-items:center; flex:none; }
+.fd-cols-row[aria-current="page"] .fd-cols-file-icon { color:var(--fd-accent); background:var(--fd-soft); }
+.fd-shelf-caption { display: block; font-size: 12px; line-height: 1.45; margin-top: 5px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.fd-shelf-empty { display: flex; align-items: center; min-height: 78px; color: var(--fd-muted); font-size: 13px; }
+.fd-shelf-cardfoot { margin: 10px 14px 12px; padding-top: 7px; border-top: 1px solid var(--fd-line); }
+.fd-shelf-page .fd-shelf-cardfoot .fd-shelf-textbtn { color: var(--fd-muted); padding-left: 2px; }
+.fd-shelf-cardfoot .fd-btn, .fd-shelf-actions .fd-btn { flex: none; }
+.fd-shelf-orphans { margin-top: 19px; }
+.fd-shelf-orphans .fd-shelf-sectionbar { margin: 0 0 7px; }
+.fd-shelf-rows { display: grid; }
+.fd-shelf-entry { display: flex; align-items: center; gap: 10px; border-top: 1px solid var(--fd-line); }
+.fd-shelf-row {
+  min-width: 0; flex: 1; gap: 10px; padding: 8px 6px 8px 0; border: 0;
+  background: transparent; text-align: left;
+}
+.fd-shelf-page .fd-shelf-move { flex: none; color: var(--fd-muted); white-space: nowrap; }
+.fd-shelf-row > .fd-shelf-thumb { width: 50px; height: 34px; flex: none; }
+.fd-shelf-row strong, .fd-shelf-member strong { font-size: 14px; font-weight: 550; min-width: 0; overflow-wrap: anywhere; }
+.fd-shelf-row > .fd-shelf-meta { margin-left: auto; text-align: right; }
+.fd-shelf-row > .fd-icon, .fd-shelf-crumbs > .fd-icon { width: 14px; height: 14px; flex: none; color: var(--fd-muted); }
+.fd-shelf-crumbs { min-width: 0; gap: 9px; }
+.fd-shelf-crumbs h2 { overflow-wrap: anywhere; }
+.fd-shelf-head .fd-shelf-homelink { border: 0; padding: 0; white-space: nowrap; background: none; font-weight: 500; font-size: 14px; color: var(--fd-muted); }
+.fd-shelf-members { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.fd-shelf-member { position: relative; min-width: 0; border: 1px solid var(--fd-line); background: var(--fd-card); border-radius: 9px; }
+.fd-shelf-member-open { display: block; width: 100%; min-height: 100%; border: 0; padding: 0; border-radius: inherit; overflow: hidden; background: transparent; text-align: left; }
+.fd-shelf-member .fd-shelf-move { position: absolute; right: 6px; bottom: 9px; }
+.fd-shelf-member .fd-shelf-thumb { height: 108px; border: 0; border-bottom: 1px solid var(--fd-line); border-radius: 0; }
+.fd-shelf-member .fd-shelf-figure { padding: 10px 64px 12px 12px; }
+.fd-shelf-member .fd-shelf-meta { display: block; margin-top: 3px; }
+.fd-shelf-active { display: inline-flex; margin-left: 6px; color: var(--fd-accent); font-size: 11px; font-weight: 500; }
+@container (max-width: 600px) {
+  .fd-shelf-grid, .fd-shelf-members { grid-template-columns: 1fr; gap: 12px; }
+  .fd-shelf-head { gap: 7px; }
+  .fd-shelf-head h2 { font-size: 20px; }
+  .fd-shelf-crumbs { gap: 4px; }
+  .fd-shelf-head > button { flex: none; }
+  .fd-shelf-open { padding: 13px 12px 0; }
+  .fd-shelf-cardfoot { margin: 9px 10px; }
+  .fd-shelf-member .fd-shelf-thumb { height: 90px; }
+  .fd-shelf-meta { font-size: 11px; }
+}
+</style>
+<script>
+window.fdRenderShelf = function(state, ui) {
+  const escape = value => ui.escape(String(value));
+  const icon = ui.icon;
+  const membersOf = folder => state.canvases.filter(canvas => canvas.folder === folder);
+  const thumb = canvas => `<span class="fd-shelf-thumb" aria-hidden="true">${ui.map(canvas.id)}</span>`;
+  const byline = canvas => `${escape(canvas.nodes)} 个节点 · ${escape(canvas.time)}`;
+  const current = canvas => canvas.id === state.current ? '<span class="fd-shelf-active">当前画布</span>' : '';
+  const returnButton = `<button type="button" class="fd-shelf-textbtn" data-do="close">${icon('arrow-left')}返回画布</button>`;
+  const folderExport = folder => `<button type="button" class="fd-btn" aria-label="导出文件夹「${escape(folder.name)}」" data-do="export" data-id="${escape(folder.id)}">${icon('download')}导出文件夹</button>`;
+  const move = canvas => `<button type="button" class="fd-shelf-textbtn fd-shelf-move" aria-label="移动画布「${escape(canvas.name)}」" title="移动画布「${escape(canvas.name)}」" data-do="move" data-id="${escape(canvas.id)}">${icon('folder-input')}移动</button>`;
+  const rootRow = canvas => `<div class="fd-shelf-entry"><button type="button" class="fd-shelf-row" data-do="canvas" data-id="${escape(canvas.id)}">
+    ${thumb(canvas)}<strong>${escape(canvas.name)}${current(canvas)}</strong><span class="fd-shelf-meta">${byline(canvas)}</span>${icon('chevron-right')}
+  </button>${move(canvas)}</div>`;
+  const memberCard = canvas => `<div class="fd-shelf-member"><button type="button" class="fd-shelf-member-open" data-do="canvas" data-id="${escape(canvas.id)}">
+    ${thumb(canvas)}<span class="fd-shelf-figure"><strong>${escape(canvas.name)}</strong>${current(canvas)}<span class="fd-shelf-meta">${byline(canvas)}</span></span>
+  </button>${move(canvas)}</div>`;
+  const cover = folder => {
+    const canvases = membersOf(folder.id);
+    const folderId = escape(folder.id);
+    const samples = canvases.slice(0, 3).map(canvas => `<span class="fd-shelf-sample">${thumb(canvas)}<span class="fd-shelf-caption">${escape(canvas.name)}</span></span>`).join('');
+    return `<article class="fd-shelf-folder" aria-label="${escape(folder.name)}"><span class="fd-shelf-tab" aria-hidden="true"></span>
+      <button type="button" class="fd-shelf-open" data-do="shelf-folder" data-id="${folderId}" aria-label="打开文件夹「${escape(folder.name)}」">
+        <span class="fd-shelf-cardhead"><strong>${escape(folder.name)}</strong><span class="fd-shelf-count">${canvases.length} 张画布</span></span>
+        ${samples ? `<span class="fd-shelf-samples">${samples}</span>` : '<span class="fd-shelf-empty">空文件夹</span>'}
+      </button>
+      <div class="fd-shelf-cardfoot"><button type="button" class="fd-shelf-textbtn" data-do="shelf-folder" data-id="${folderId}">打开文件夹${icon('chevron-right')}</button>${folderExport(folder)}</div>
+    </article>`;
+  };
+  const folder = state.folders.find(item => item.id === state.shelfFolder);
+  if (folder) {
+    const canvases = membersOf(folder.id);
+    return `<section class="fd-shelf-page"><header class="fd-shelf-head"><nav class="fd-shelf-crumbs" aria-label="文件夹路径">
+      <button type="button" class="fd-shelf-homelink" data-do="shelf-folder" data-id="">画布库</button>${icon('chevron-right')}<h2>${escape(folder.name)}</h2>
+      </nav>${returnButton}</header><div class="fd-shelf-sectionbar"><div class="fd-shelf-sectiontitle"><h3>文件夹内的画布</h3><small>${canvases.length}</small></div>
+      <div class="fd-shelf-actions"><button type="button" class="fd-shelf-textbtn" data-do="new-canvas" data-id="${escape(folder.id)}">${icon('plus')}新建画布</button>${folderExport(folder)}</div></div>
+      ${canvases.length ? `<div class="fd-shelf-members">${canvases.map(memberCard).join('')}</div>` : '<p class="fd-shelf-empty">空文件夹</p>'}</section>`;
+  }
+  const orphans = membersOf('');
+  return `<section class="fd-shelf-page"><header class="fd-shelf-head"><h2>画布库</h2>${returnButton}</header>
+    <div class="fd-shelf-sectionbar"><div class="fd-shelf-sectiontitle"><h3>文件夹</h3><small>${state.folders.length}</small></div>
+      <button type="button" class="fd-shelf-textbtn" data-do="new-folder">${icon('folder-plus')}新建文件夹</button></div>
+    <div class="fd-shelf-grid">${state.folders.map(cover).join('')}</div>
+    ${orphans.length ? `<section class="fd-shelf-orphans"><div class="fd-shelf-sectionbar"><div class="fd-shelf-sectiontitle"><h3>未归入文件夹</h3><small>${orphans.length}</small></div></div>
+      <div class="fd-shelf-rows">${orphans.map(rootRow).join('')}</div></section>` : ''}</section>`;
+};
+</script>
+<script>
+(function mountFolderPreview() {
+  const root = document.getElementById('fd-preview');
+  const originalScene = document.getElementById('fd-scene-template');
+  const escape = value => String(value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const icon = (name, classes = '') => `<i data-lucide="${name}" class="fd-icon ${classes}" aria-hidden="true"></i>`;
+  const seeds = [
+    ['interviews','research','访谈线索',8,'今天 10:42'],
+    ['journey','research','首次使用旅程',6,'昨天 16:20'],
+    ['findings','research','洞察与机会点',5,'周四 14:15'],
+    ['roadmap','planning','版本路线图',7,'昨天 11:05'],
+    ['priorities','planning','需求优先级',5,'周三 09:30'],
+    ['ideas','','灵感速记',4,'今天 09:18'],
+  ];
+  function miniature(id) {
+    const templates = {
+      interviews:[[22,43],[72,43],[122,20],[121,65],[172,20],[172,65],[213,8],[213,37]],
+      journey:[[25,32],[69,32],[114,32],[158,32],[203,32],[114,66]],
+      findings:[[28,20],[28,64],[87,43],[145,43],[202,43]],
+      roadmap:[[21,42],[72,42],[121,42],[121,14],[170,42],[170,69],[215,42]],
+      priorities:[[30,43],[91,16],[91,69],[147,43],[202,43]],
+      ideas:[[36,46],[110,46],[177,22],[177,65]]
+    };
+    const parents = {interviews:[0,1,1,2,3,4,4],journey:[0,1,2,3,2],findings:[-1,0,2,3],roadmap:[0,1,1,2,2,4],priorities:[0,0,1,3],ideas:[0,1,1]};
+    const points = templates[id] || [[118,43]];
+    const links = (parents[id] || []).flatMap((p,i)=>p < 0 ? [] : [[p,i+1]]);
+    if (id === 'findings') links.push([1,2]);
+    if (id === 'priorities') links.push([2,3]);
+    const paths = links.map(([a,b]) => {
+      const [x1,y1] = points[a], [x2,y2] = points[b], mid=(x1+x2)/2;
+      if(x1===x2) return `<path d="M${x1} ${y1}V${y2}"/>`;
+      return `<path d="M${x1+11} ${y1} C${mid} ${y1},${mid} ${y2},${x2-11} ${y2}"/>`;
+    }).join('');
+    const nodes = points.map(([x,y],i) => {
+      const color = i === 0 ? 'var(--fd-accent)' : i === points.length-1 ? 'light-dark(#b1935e,#b9a078)' : 'light-dark(#9daabf,#768597)';
+      const fill = i === 0 ? 'var(--fd-soft)' : i === points.length-1 ? 'light-dark(#fff7df,#383226)' : 'var(--fd-card)';
+      return `<g transform="translate(${x-11} ${y-6})"><rect width="22" height="12" rx="2.3" fill="${fill}" stroke="${color}" stroke-width="1.4"/><path d="M4 4h13m-13 3h8" stroke="${color}" stroke-width="1" opacity=".8"/></g>`;
+    }).join('');
+    return `<svg class="fd-thumb" viewBox="0 0 236 86" aria-hidden="true"><g fill="none" stroke="light-dark(#a69fc5,#9090ac)" stroke-width="1.8">${paths}</g>${nodes}</svg>`;
+  }
+  const ui = {icon, escape, map:miniature};
+  function toolbar(state) {
+    const active = state.canvases.find(c=>c.id===state.current);
+    const right = [['message-square','画布问答'],['search','搜索'],['sliders-horizontal','排版'],['settings','设置'],['ellipsis','更多']];
+    return `<div class="fd-header"><div class="fd-bar"><button type="button" data-do="toggle" class="fd-quiet fd-trigger" aria-expanded="${state.open}" aria-label="切换画布目录">${icon('folder-open')}<span>${escape(active.name)}</span>${icon('chevron-down','fd-caret')}</button><span class="fd-bar-divider fd-model"></span><span class="fd-bar-item fd-model" aria-hidden="true">${icon('cpu')}默认模型${icon('chevron-down','fd-caret')}</span></div><div class="fd-bar fd-right-bar" aria-hidden="true">${right.map(([i,t])=>`<span class="fd-bar-item">${icon(i)}<span class="fd-bar-caption">${t}</span></span>`).join('')}</div></div>`;
+  }
+  function tree(state) {
+    function row(canvas) {
+      const active = canvas.id===state.current;
+      const name = escape(canvas.name), id=escape(canvas.id);
+      return `<div class="fd-tree-line ${active?'is-current':''}"><button type="button" class="fd-canvas-item" data-do="canvas" data-id="${id}" ${active?'aria-current="page"':''}>${icon('workflow')}<span class="fd-name">${name}</span>${active?icon('check','fd-active-check'):''}</button><button type="button" class="fd-move" aria-label="移动画布「${name}」" data-tooltip="移到文件夹" data-do="move" data-id="${id}">${icon('folder-input')}</button></div>`;
+    }
+    const groups=state.folders.map(folder=>{
+      const members=state.canvases.filter(c=>c.folder===folder.id);
+      const expanded = state.expanded.has(folder.id), id=escape(folder.id);
+      return `<div class="fd-group-head"><button type="button" class="fd-group-toggle" aria-expanded="${expanded}" data-do="expand" data-id="${id}">${icon(expanded?'chevron-down':'chevron-right','fd-caret')}${icon(expanded?'folder-open':'folder')}<span class="fd-name">${escape(folder.name)}</span><span class="fd-folder-count">${members.length}</span></button><button type="button" class="fd-quiet fd-group-export" aria-label="导出文件夹「${escape(folder.name)}」" data-do="export" data-id="${id}">${icon('download')}导出文件夹</button></div>${expanded?`<div class="fd-children">${members.map(row).join('')||'<span class="fd-muted" style="padding-left:8px;font-size:12px">空文件夹</span>'}</div>`:''}`;
+    }).join('');
+    const free=state.canvases.filter(c=>!c.folder);
+    return `<section class="fd-tree" aria-label="画布目录"><header class="fd-tree-head"><h2>画布目录</h2><button type="button" class="fd-new-folder" data-do="new-folder">${icon('folder-plus')}新建文件夹</button></header><div class="fd-tree-body">${groups}${free.length?`<div class="fd-root-canvas"><div class="fd-root-label">未归类</div>${free.map(row).join('')}</div>`:''}</div><footer class="fd-tree-foot"><button type="button" class="fd-quiet fd-style" data-do="new-canvas" data-id="">${icon('plus')}新建画布</button><span class="fd-muted" style="padding:0 8px;font-size:12px">共 ${state.canvases.length} 张画布</span></footer></section>`;
+  }
+  function dialog(state) {
+    if (!state.dialog) return '';
+    const {type,id} = state.dialog;
+    const folder=state.folders.find(f=>f.id===id), canvas=state.canvases.find(c=>c.id===id);
+    let title='', body='';
+    if (type==='export') {
+      const files=state.canvases.filter(c=>c.folder===id);
+      title='整夹导出预览';
+      body=`<div class="fd-package">${icon('file-archive')}<span>${escape(folder.name)}.zip</span></div><p class="fd-muted" style="font-size:13px;margin-bottom:12px">包含此文件夹中的 ${files.length} 张画布</p><ul class="fd-files">${files.map(c=>`<li>${icon('file-json')}<span>${escape(c.name)}.thoughtdag.json</span></li>`).join('')}</ul><div class="fd-dialog-foot"><button type="button" class="fd-btn" data-do="dismiss">返回目录</button></div>`;
+    } else if (type==='move') {
+      title='移到文件夹';
+      const all=[...state.folders,{id:'',name:'未归类'}];
+      body=`<p class="fd-muted" style="margin-top:6px">画布「${escape(canvas.name)}」</p><div class="fd-move-list">${all.map(f=>`<button type="button" class="fd-quiet" data-do="move-to" data-id="${escape(f.id)}">${icon(f.id?'folder':'inbox')}${escape(f.name)}${f.id===canvas.folder?icon('check'):''}</button>`).join('')}</div>`;
+    } else {
+      const isFolder=type==='new-folder';
+      title=isFolder?'新建文件夹':'新建画布';
+      body=`<div><label>${isFolder?'文件夹名称':'画布名称'}<input name="name" required maxlength="64" autocomplete="off" placeholder="${isFolder?'输入文件夹名称':'输入画布名称'}"></label>${isFolder?'':`<p class="fd-muted" style="margin-top:6px;font-size:12px">保存到${folder?`「${escape(folder.name)}」`:'未归类'}</p>`}<div class="fd-dialog-foot"><button class="fd-quiet" type="button" data-do="dismiss">取消</button><button class="fd-primary" type="button" data-do="create">创建</button></div></div>`;
+    }
+    return `<div class="fd-scrim"><section class="fd-dialog" role="dialog" aria-modal="true" aria-label="${title}"><header class="fd-dialog-head"><h2>${title}</h2><button class="fd-quiet" type="button" data-do="dismiss" aria-label="关闭">${icon('x')}</button></header>${body}</section></div>`;
+  }
+  for (const stage of root.querySelectorAll('.fd-stage')) {
+    const mode=stage.dataset.mode;
+    const state={
+      folders:[{id:'research',name:'用户研究'},{id:'planning',name:'产品规划'}],
+      canvases:seeds.map(([id,folder,name,nodes,time])=>({id,folder,name,nodes,time})),
+      current:'interviews',folder:'research',shelfFolder:null, expanded:new Set(['research']),open:true,dialog:null
+    };
+    let opener=null, nameCounter=0;
+    function render() {
+      const current=state.canvases.find(c=>c.id===state.current);
+      const scene=current.id==='interviews'?originalScene.innerHTML:`<div class="fd-scene-alt">${current.nodes?miniature(current.id):''}<b>${escape(current.name)}</b>${current.nodes?'':'<span class="fd-muted">空白画布</span>'}</div>`;
+      const zoom=`<div class="fd-zoom" aria-hidden="true">${icon('minus')}75%${icon('plus')}${icon('scan')}</div>`;
+      const surface=mode==='shelf'&&state.open ? window.fdRenderShelf(state,ui) : `<div class="fd-backdrop">${scene}</div>${toolbar(state)}${zoom}${state.open?(mode==='tree'?tree(state):window.fdRenderColumns(state,ui)):''}`;
+      stage.innerHTML=surface + dialog(state);
+      stage.querySelectorAll('button').forEach(button=>button.classList.add('cursor-interaction'));
+      globalThis.lucide?.createIcons({attrs:{width:16,height:16}});
+    }
+    function restore() {
+      if (opener) Array.from(stage.querySelectorAll('button')).find(b=>b.dataset.do===opener.action && (b.dataset.id||'')===opener.id)?.focus();
+    }
+    function dismiss() { state.dialog=null; render(); restore(); }
+    stage.addEventListener('click', event=>{
+      if (event.target.classList.contains('fd-scrim')) { dismiss(); return; }
+      const button=event.target.closest('button[data-do]');
+      if(!button) {
+        if(mode==='tree' && state.open && !state.dialog && !event.target.closest('.fd-tree,.fd-bar')) { state.open=false; render(); }
+        return;
+      }
+      const action=button.dataset.do, id=button.dataset.id || '';
+      if(action==='dismiss') { dismiss(); return; }
+      if(action==='create') { createItem(); return; }
+      if(action==='toggle') state.open=!state.open;
+      if(action==='close') state.open=false;
+      if(action==='folder') state.folder=id;
+      if(action==='expand') { if(state.expanded.has(id)) state.expanded.delete(id); else state.expanded.add(id); }
+      if(action==='shelf-folder') state.shelfFolder=id || null;
+      if(action==='canvas') { state.current=id; state.open=mode==='columns'; }
+      if(['new-folder','new-canvas','export','move'].includes(action)) {
+        opener={action,id};
+        state.dialog={type:action,id};
+      }
+      if(action==='move-to' && state.dialog?.type==='move') {
+        state.canvases.find(c=>c.id===state.dialog.id).folder=id;
+        if(id) state.expanded.add(id);
+        state.dialog=null;
+      }
+      render();
+      if(state.dialog) (stage.querySelector('.fd-dialog input')||stage.querySelector('.fd-dialog button'))?.focus();
+      else if(!state.open) stage.querySelector('[data-do="toggle"]')?.focus();
+      else Array.from(stage.querySelectorAll('[data-do]')).find(b=>b.dataset.do===action&&(b.dataset.id||'')===id)?.focus();
+    });
+    function createItem() {
+      const input=stage.querySelector('.fd-dialog input'), name=input.value.trim();
+      if(!name){input.focus();return;}
+      const id=`draft-${++nameCounter}`;
+      if(state.dialog.type==='new-folder') {
+        state.folders.push({id,name});
+        state.expanded.add(id);
+        state.folder=id;
+      } else {
+        const folder=state.dialog.id;
+        state.canvases.push({id,name,folder,nodes:0,time:'刚刚'});
+        if(folder)state.expanded.add(folder);
+      }
+      dismiss();
+    }
+    stage.addEventListener('keydown',event=>{
+      if(event.isComposing || event.keyCode===229) return;
+      if(event.key==='Enter' && event.target.matches('.fd-dialog input')) { event.preventDefault(); createItem(); return; }
+      if(state.dialog && event.key==='Tab') {
+        const controls=[...stage.querySelectorAll('.fd-dialog input,.fd-dialog button')], first=controls[0], last=controls.at(-1);
+        if(event.shiftKey && document.activeElement===first){event.preventDefault();last.focus();}
+        else if(!event.shiftKey && document.activeElement===last){event.preventDefault();first.focus();}
+      }
+      if(event.key!=='Escape')return;
+      if(state.dialog) dismiss();
+      else if(state.open){state.open=false;render();stage.querySelector('[data-do="toggle"]')?.focus();}
+      event.stopPropagation();
+    });
+    render();
+  }
+})();
+</script>

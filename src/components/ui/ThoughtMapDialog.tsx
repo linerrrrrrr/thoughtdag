@@ -3,7 +3,7 @@ import { isConversationStart } from '../../lib/graph';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useDismissableLayer } from '../../lib/use-dismissable-layer';
 import { createPortal } from 'react-dom';
-import { ArrowLeft, ClipboardCopy, FileDown, Loader2, Sparkles, X } from 'lucide-react';
+import { ArrowLeft, ClipboardCopy, ImageDown, Loader2, Sparkles, X } from 'lucide-react';
 import { useStore } from '../../store';
 import { useUiStore, toast } from '../../lib/ui-store';
 import { useProjects } from '../../store/projects';
@@ -17,7 +17,7 @@ import { backgroundCall } from '../../lib/background-model';
 
 // The thought-map console, two rooms with one door between them. Room one
 // edits the PICTURE: knobs left, live artifact centre, a feed-size
-// thumbnail as the honesty check — and a single exit, FileDown. Room two
+// thumbnail as the honesty check — and a single exit, ImageDown. Room two
 // edits the WORDS: the caption (attribution included, one editable body)
 // and the platform doors. Zero-content principle: the artifact and the
 // caption carry shape, counts, and hand-approved lines only. The AI draft
@@ -495,7 +495,7 @@ export default function ThoughtMapDialog() {
               <div className="flex-1" />
               <button onClick={() => { void downloadPng().then((ok) => { if (ok) setStep('share'); }); }} disabled={busy} data-tmap-download aria-label={t('tmap.download')} data-tooltip={t('tmap.download')}
                 className="flex items-center justify-center gap-1.5 text-control font-semibold bg-action text-white hover:bg-action-strong rounded-control px-3 py-2.5 transition-colors disabled:opacity-50">
-                {busy ? <Loader2 size={13} className="animate-spin" /> : <FileDown size={13} strokeWidth={1.75} />}
+                {busy ? <Loader2 size={13} className="animate-spin" /> : <ImageDown size={13} strokeWidth={1.75} />}
                 {t('common.export')}
               </button>
             </div>
