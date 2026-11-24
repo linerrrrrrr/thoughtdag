@@ -2,14 +2,15 @@ import { useDismissableLayer } from '../../lib/use-dismissable-layer';
 import { useCanvasToolCard } from '../../lib/use-canvas-tool-card';
 import { useRef, useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Camera, ExternalLink, Loader2, Plus, Trash2, X, Pencil, Scale, Settings } from 'lucide-react';
+import { ExternalLink, Loader2, Plus, Trash2, X, Pencil } from 'lucide-react';
+import { ImageInputIcon, JudgeIcon, SettingsIcon } from '../../lib/ui-icons';
 import { startOpenRouterOAuth } from '../../lib/openrouter-oauth';
 import { useUiStore, toast } from '../../lib/ui-store';
 import { canvasTypographyDraftKey } from '../../lib/canvas-typography-preferences';
 import { useModels, setModelsCache } from '../../lib/use-models';
 import {
   PROVIDER_PRESETS, type ProviderPreset, type RuntimeModel, type RuntimeProvider,
-  guessVision, probeModels, pushProviders, saveProviders, storedProviders,
+  createRuntimeProviderId, guessVision, probeModels, pushProviders, saveProviders, storedProviders,
 } from '../../lib/runtime-providers';
 import { useT, fmt, useI18n } from '../../i18n';
 import JudgeSettings from './JudgeSettings';
@@ -42,12 +43,13 @@ export default function WorkspaceSettings() {
   // A credential draft stays in this mounted component and never enters persistent storage.
   const [anysearchDraft, setAnysearchDraft] = useState(() => useUiStore.getState().anysearchKey);
   const [adding, setAdding] = useState(false);
+  const [editingId, setEditingId] = useState<string>();
   // Landing quick-connect: open straight onto the recommended preset
   const presetHint = useUiStore((s) => s.apiKeyPresetHint);
   useEffect(() => {
     if (!open || !presetHint) return;
     const p = PROVIDER_PRESETS.find((x) => x.id === presetHint);
-    if (p) { setAdding(true); setPreset(p); setProbed(null); setPicked(new Map()); }
+    if (p) { setAdding(true); setEditingId(undefined); setKey(''); setCustomName(''); setPreset(p); setProbed(null); setPicked(new Map()); }
     useUiStore.getState().setApiKeyPresetHint(null);
   }, [open, presetHint]);
   // OAuth pickup: a freshly minted key opens the model-picking view — key
@@ -59,6 +61,8 @@ export default function WorkspaceSettings() {
     useUiStore.getState().setOauthMintedKey(null);
     const p = PROVIDER_PRESETS.find((x) => x.id === 'openrouter')!;
     setAdding(true);
+    setEditingId(undefined);
+    setCustomName('');
     setPreset(p);
     setKey(mintedKey);
     void doProbe(p.baseURL, mintedKey, undefined, true);
@@ -84,13 +88,13 @@ export default function WorkspaceSettings() {
 
   const apiModels = useMemo(() => (data?.models ?? []).filter(model => model.provider !== '__agent__' && modelExecutionKind(model.id) === 'api'), [data]);
   const serverModels = useMemo(
-    () => apiModels.filter((m) => !providers.some((p) => p.models.some((x) => x.id === m.id))),
+    () => apiModels.filter(m => !providers.some(p => m.sourceId ? p.id === m.sourceId : p.models.some(x => x.id === m.id))),
     [apiModels, providers],
   );
   const visionCount = apiVisionModels(apiModels).length;
 
   const resetAdd = () => {
-    setAdding(false); setProbed(null); setPicked(new Map()); setKey(''); setCustomURL(''); setCustomName(''); setFilter(''); setError('');
+    setAdding(false); setEditingId(undefined); setProbed(null); setPicked(new Map()); setKey(''); setCustomURL(''); setCustomName(''); setFilter(''); setError('');
   };
   const layerRef = useRef<HTMLDivElement>(null);
   const openerRef = useRef<HTMLElement | null>(null);
@@ -145,7 +149,9 @@ export default function WorkspaceSettings() {
     const match = PROVIDER_PRESETS.find((x) => x.baseURL === p.baseURL && (!x.region || x.region === lang))
       ?? PROVIDER_PRESETS.find((x) => x.baseURL === p.baseURL);
     setPreset(match ?? PROVIDER_PRESETS.find((x) => x.id === 'custom')!);
-    if (!match) { setCustomURL(p.baseURL); setCustomName(p.name); }
+    setEditingId(p.id);
+    setCustomName(match ? p.connectionName ?? '' : p.name);
+    if (!match) setCustomURL(p.baseURL);
     setKey(p.apiKey);
     setAdding(true);
     await doProbe(p.baseURL, p.apiKey, p.models);
@@ -227,9 +233,11 @@ export default function WorkspaceSettings() {
       return { id, ...(vision ? { vision } : {}), ...(cl ? { contextLength: cl } : {}) };
     });
     if (!baseURL || models.length === 0) return;
-    const next = [...providers.filter((p) => p.baseURL !== baseURL), {
-      preset: preset.id, name, baseURL, apiKey: key.trim(), models,
-    }];
+    const connection: RuntimeProvider = {
+      id: editingId ?? createRuntimeProviderId(), preset: preset.id, name, baseURL, apiKey: key.trim(), models,
+      ...(preset.id !== 'custom' && customName.trim() ? { connectionName: customName.trim() } : {}),
+    };
+    const next = editingId ? providers.map(p => p.id === editingId ? connection : p) : [...providers, connection];
     if (await commit(next)) {
       toast('success', fmt(t('provider.added'), { n: models.length, name }));
       resetAdd();
@@ -237,8 +245,8 @@ export default function WorkspaceSettings() {
     }
   };
 
-  const remove = async (baseURL: string) => {
-    await commit(providers.filter((p) => p.baseURL !== baseURL));
+  const remove = async (id: string) => {
+    await commit(providers.filter(p => p.id !== id));
   };
 
   const shown = (probed?.filter((m) => !filter || m.id.toLowerCase().includes(filter.toLowerCase())) ?? [])
@@ -260,7 +268,7 @@ export default function WorkspaceSettings() {
         data-connection-page={apiPage ? 'api' : section === 'agents' ? 'agents' : undefined}>
         <div className="workspace-settings-layout">
           <h2 id="workspace-settings-title" className="settings-identity text-heading font-semibold">
-            <Settings size={20} strokeWidth={1.75} aria-hidden="true" />
+            <SettingsIcon size={20} strokeWidth={1.75} aria-hidden="true" />
             {t('settings.title')}
           </h2>
           <button type="button" onClick={closeSettings} aria-label={t('common.close')}
@@ -306,19 +314,22 @@ export default function WorkspaceSettings() {
                   )}
 
                   {providers.map((p) => (
-                    <div key={p.baseURL} className="border border-line rounded-content px-3 py-2.5 bg-surface flex items-start gap-2">
+                    <div key={p.id} className="border border-line rounded-content px-3 py-2.5 bg-surface flex items-start gap-2">
                       <div className="flex-1 min-w-0">
-                        <div className="text-control text-ink font-medium">{p.name}</div>
+                        <div className="text-control text-ink font-medium">{p.connectionName ? `${p.name} · ${p.connectionName}` : apiModels.find(m => m.sourceId === p.id)?.sourceLabel ?? p.name}</div>
                         <div className="text-control text-ink-faint mt-0.5 font-mono truncate">{p.baseURL}</div>
                         <div className="text-control text-ink-muted mt-1">
                           {fmt(t('provider.modelCount'), { n: p.models.length })}
-                          {p.models.some((m) => m.vision) && <span> · 📷 {p.models.filter((m) => m.vision).length}</span>}
+                          {p.models.some((m) => m.vision) && <> · <span className="inline-flex items-center gap-1" data-tooltip={t('provider.visionYes')}>
+                            <ImageInputIcon size={13} strokeWidth={1.75} aria-hidden />
+                            <span className="sr-only">{t('provider.visionYes')} </span>{p.models.filter((m) => m.vision).length}
+                          </span></>}
                         </div>
                       </div>
                       <button onClick={() => void refresh(p)} disabled={busy}  aria-label={t('provider.refreshTitle')} className="text-ink-faint hover:text-accent w-6 h-6 rounded-control flex items-center justify-center transition-colors shrink-0" data-provider-refresh>
                         <Pencil size={13} strokeWidth={1.75} />
                       </button>
-                      <button onClick={() => void remove(p.baseURL)} disabled={busy} aria-label={t('actions.deleteProvider')} className="w-6 h-6 rounded-control flex items-center justify-center transition-colors shrink-0 object-action-danger" data-icon-only>
+                      <button onClick={() => void remove(p.id)} disabled={busy} aria-label={t('actions.deleteProvider')} className="w-6 h-6 rounded-control flex items-center justify-center transition-colors shrink-0 object-action-danger" data-icon-only>
                         <Trash2 size={13} strokeWidth={1.75} />
                       </button>
                     </div>
@@ -333,7 +344,7 @@ export default function WorkspaceSettings() {
 
                   {justAdded && !judgeConfigured(judgeCfg) && (
                     <p className="text-control text-ink-muted flex items-center gap-2" data-judge-next>
-                      <Scale size={12} strokeWidth={1.75} className="shrink-0 text-accent" />
+                      <JudgeIcon size={12} strokeWidth={1.75} className="shrink-0 text-accent" aria-hidden />
                       <span>{t('provider.nextJudge')}</span>
                       <button onClick={() => setOpen(true, 'judge')} className="text-accent hover:underline" data-judge-open>{t('judge.goConfigure')}</button>
                     </p>
@@ -349,11 +360,9 @@ export default function WorkspaceSettings() {
                           key={p.id}
                           autoFocus={preset.id === p.id}
                           onClick={() => {
-                            // A provider for this endpoint already exists: adding
-                            // again would save a fresh entry over it (and an empty
-                            // key field would wipe the stored key) — edit instead.
-                            const existing = providers.find((x) => x.baseURL === p.baseURL);
-                            if (existing) { void refresh(existing); return; }
+                            if (preset.id === p.id) return;
+                            setEditingId(undefined);
+                            setKey(''); setCustomName(''); setCustomURL('');
                             setPreset(p); setProbed(null); setPicked(new Map()); setError('');
                           }}
                           aria-pressed={preset.id === p.id}
@@ -366,7 +375,7 @@ export default function WorkspaceSettings() {
                     </div>
                   </div>
 
-                  {preset.id === 'custom' && (<>
+                  {preset.id === 'custom' && (
                     <div>
                       <label htmlFor="settings-api-url" className="settings-field-caption settings-field-title">{t('provider.baseURL')}</label>
                       <input id="settings-api-url" value={customURL} onChange={(e) => setCustomURL(e.target.value)} placeholder="https://…/v1"
@@ -374,12 +383,13 @@ export default function WorkspaceSettings() {
                         className="w-full bg-wash text-control text-ink font-mono rounded-control px-3 py-2 focus:outline-none focus:ring-1 focus:ring-accent/40 placeholder-ink-faint" data-provider-url />
                       <p id="settings-api-url-hint" className="settings-field-hint">{t('provider.baseURLHint')}</p>
                     </div>
-                    <div>
-                      <label htmlFor="settings-api-name" className="settings-field-caption settings-field-title">{t('provider.displayName')}</label>
-                      <input id="settings-api-name" value={customName} onChange={(e) => setCustomName(e.target.value)} placeholder={t('provider.customName')}
-                        className="w-full bg-wash text-control text-ink rounded-control px-3 py-2 focus:outline-none focus:ring-1 focus:ring-accent/40 placeholder-ink-faint" />
-                    </div>
-                  </>)}
+                  )}
+                  <div>
+                    <label htmlFor="settings-api-name" className="settings-field-caption settings-field-title">{t('provider.displayName')}</label>
+                    <input id="settings-api-name" value={customName} onChange={e => setCustomName(e.target.value)}
+                      placeholder={preset.id === 'custom' ? t('provider.customName') : preset.name}
+                      className="w-full bg-wash text-control text-ink rounded-control px-3 py-2 focus:outline-none focus:ring-1 focus:ring-accent/40 placeholder-ink-faint" />
+                  </div>
 
                   {preset.id === 'openrouter' && !probed && (
                     <div className="border border-accent/30 bg-accent/5 rounded-content px-3 py-2.5 flex flex-col items-stretch gap-2.5" data-provider-oauth-row>
@@ -447,14 +457,18 @@ export default function WorkspaceSettings() {
                               </span>
                             ) : null}
                             {m.vision != null ? (
-                              m.vision && <span data-tooltip={t('provider.visionYes')}>📷</span>
+                              m.vision && <span data-tooltip={t('provider.visionYes')}>
+                                <ImageInputIcon size={13} strokeWidth={1.75} aria-hidden />
+                                <span className="sr-only">{t('provider.visionYes')}</span>
+                              </span>
                             ) : picked.has(m.id) && (
                               <button
                                 onClick={(e) => { e.preventDefault(); const next = new Map(picked); next.set(m.id, !next.get(m.id)); setPicked(next); }}
                                 data-tooltip={t('provider.visionToggle')} aria-label={t('provider.visionToggle')}
+                                aria-pressed={!!picked.get(m.id)}
                                 className={`flex items-center gap-0.5 text-control px-1.5 py-0.5 rounded-tag transition-colors ${picked.get(m.id) ? 'bg-accent/10 text-accent' : 'bg-wash text-ink-faint'}`}
                               >
-                                <Camera size={11} strokeWidth={1.75} />
+                                <ImageInputIcon size={13} strokeWidth={1.75} aria-hidden />
                               </button>
                             )}
                           </label>

@@ -42,6 +42,25 @@ const panel = () => page.locator('[data-model-picker-panel]');
 const nodeData = () => page.evaluate(id => window.__store.getState().nodes.find(node => node.id === id).data, id);
 const settle = () => page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
 const check = label => console.log(`PASS ${label}`);
+const moveAnchorTo = async (anchor, heightFraction) => {
+  await settle();
+  await anchor.evaluate((button, fraction) => {
+    const rect = button.getBoundingClientRect(), view = window.__rf.getViewport();
+    const targetY = window.innerHeight * fraction;
+    return window.__rf.setViewport({ ...view, y: view.y + targetY - rect.top - rect.height / 2 }, { duration: 0 });
+  }, heightFraction);
+  await settle();
+};
+const assertSide = async (anchor, side) => {
+  await settle();
+  const a = await anchor.boundingBox(), p = await panel().boundingBox();
+  assert.ok(a && p);
+  const height = page.viewportSize().height;
+  assert.equal(height - a.y - a.height >= a.y ? 'below' : 'above', side, 'Fixture anchor must be on the intended half of the screen.');
+  const gap = side === 'below' ? p.y - a.y - a.height : a.y - p.y - p.height;
+  const scale = await page.evaluate(() => parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--ui-scale')));
+  assert.ok(Math.abs(gap - 6 * scale) < 2, `Expected menu ${side} the opener: ${JSON.stringify({ a, p, gap })}`);
+};
 const assertAnchored = async anchor => {
   await page.waitForFunction(el => {
     const menu = document.querySelector('[data-model-picker-panel]');
@@ -49,7 +68,8 @@ const assertAnchored = async anchor => {
     const a = el.getBoundingClientRect(), p = menu.getBoundingClientRect();
     const scale = Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--ui-scale'));
     const gap = 6 * scale, inset = 8 * scale;
-    const expectedRight = Math.max(p.width + inset, Math.min(a.right, window.innerWidth - inset));
+    const anchorRight = menu.querySelector('[data-agent-model-options]') ? (a.left + a.right + p.width) / 2 : a.right;
+    const expectedRight = Math.max(p.width + inset, Math.min(anchorRight, window.innerWidth - inset));
     return Math.abs(p.right - expectedRight) < 2
       && (Math.abs(p.top - a.bottom - gap) < 2 || Math.abs(a.top - p.bottom - gap) < 2);
   }, await anchor.elementHandle(), { timeout: 3000 });
@@ -57,7 +77,8 @@ const assertAnchored = async anchor => {
   assert.ok(a && p);
   assert.ok(p.x >= -1 && p.y >= -1 && p.x + p.width <= viewport.width + 1 && p.y + p.height <= viewport.height + 1,
     `Menu must stay in the viewport: ${JSON.stringify({ a, p, viewport })}`);
-  const expectedRight = Math.max(p.width + 6, Math.min(a.x + a.width, viewport.width - 6));
+  const anchorRight = await panel().locator('[data-agent-model-options]').count() ? a.x + (a.width + p.width) / 2 : a.x + a.width;
+  const expectedRight = Math.max(p.width + 6, Math.min(anchorRight, viewport.width - 6));
   assert.ok(Math.abs(p.x + p.width - expectedRight) < 2, `Menu must follow its trigger horizontally: ${JSON.stringify({ a, p })}`);
   const belowGap = p.y - (a.y + a.height), aboveGap = a.y - (p.y + p.height);
   assert.ok(Math.abs(belowGap - 4.5) < 2 || Math.abs(aboveGap - 4.5) < 2,
@@ -85,6 +106,16 @@ try {
     window.__rf.setViewport({ x: 100, y: 150, zoom: 1 }, { duration: 0 });
   }, { id, catalog });
   await trigger().waitFor();
+  const defaultPicker = page.locator('[data-project-switcher] [data-model-picker-trigger]');
+  const iconShape = locator => locator.locator('svg').first().innerHTML();
+  assert.equal(await iconShape(trigger()), await iconShape(defaultPicker), 'Local and default model selectors share the model icon.');
+  await defaultPicker.click();
+  for (const [kind, source] of [['api', 'Test API'], ['codex', 'Codex']]) {
+    const option = picker().locator(`[data-node-execution-option="${kind}"]`);
+    const sourceRow = panel().locator(`[data-model-source="${source}"]`);
+    assert.equal(await iconShape(option), await iconShape(sourceRow), `The compact ${kind} selector matches its catalog source.`);
+  }
+  await page.keyboard.press('Escape');
   await page.waitForTimeout(400);
   await page.evaluate(() => window.__rf.setViewport({ x: 100, y: 150, zoom: 1 }, { duration: 0 }));
   await card().locator('[data-canvas-question-editor]').fill('Unsent draft');
@@ -155,17 +186,48 @@ try {
   }))] };
   await page.evaluate(installNodeAgentCatalog, longCatalog.models);
   await page.evaluate(async () => (await window.__importLive('/src/lib/use-models.ts')).recheckAgents());
-  await panel().locator('[data-agent-model-list]').click();
+  const list = panel().locator('[data-agent-model-list]');
   const lastLong = panel().getByRole('button', { name: 'test-model-24', exact: true });
   await lastLong.waitFor({ state: 'attached' });
-  assert.equal(await panel().evaluate(el => el.scrollHeight > el.clientHeight), true);
-  const menuBox = await panel().boundingBox();
+  await assertSide(trigger(), 'above');
+  assert.equal(await list.evaluate(el => el.scrollHeight > el.clientHeight), true);
+  const menuBox = await list.boundingBox();
   const zoomBefore = await page.evaluate(() => window.__rf.getViewport().zoom);
   await page.mouse.move(menuBox.x + menuBox.width / 2, menuBox.y + menuBox.height / 2);
   await page.mouse.wheel(0, 400);
   await page.waitForTimeout(150);
-  assert.ok(await panel().evaluate(el => el.scrollTop) > 0, 'Wheel should scroll the menu.');
+  assert.ok(await list.evaluate(el => el.scrollTop) > 0, 'Wheel should scroll the catalog.');
   assert.equal(await page.evaluate(() => window.__rf.getViewport().zoom), zoomBefore);
+  await page.keyboard.press('Escape');
+  await page.evaluate(() => window.__rf.setViewport({ x: 100, y: 150, zoom: 1 }, { duration: 0 }));
+  for (const [fraction, side] of [[0.35, 'below'], [0.65, 'above']]) {
+    for (const lane of ['api', 'codex']) {
+      const opener = picker().locator(`[data-node-execution-option="${lane}"]`);
+      await moveAnchorTo(opener, fraction);
+      await opener.click();
+      const source = panel().locator(`[data-draft-source-list="${lane}"] [data-draft-model-source]`);
+      await source.waitFor();
+      await assertSide(opener, side);
+      await source.click();
+      await panel().locator('[data-draft-model-list]').waitFor();
+      assert.equal(await panel().locator('[data-agent-model-options]').count(), lane === 'codex' ? 1 : 0);
+      await assertSide(opener, side);
+      await panel().locator('[data-draft-source-back]').click();
+      await source.waitFor();
+      await assertSide(opener, side);
+      await page.keyboard.press('Escape');
+    }
+  }
+  await moveAnchorTo(trigger(), 0.5);
+  await trigger().click();
+  const centered = await trigger().boundingBox();
+  assert.equal(centered.y + centered.height / 2, page.viewportSize().height / 2, 'The direct opener is exactly centered.');
+  await assertSide(trigger(), 'below');
+  await page.keyboard.press('Escape');
+  check('API and Agent source lists, model lists and parameters stay on the side with more room through forward and back navigation.');
+  await page.evaluate(() => window.__rf.setViewport({ x: 100, y: 150, zoom: 1 }, { duration: 0 }));
+  await trigger().click();
+  const { p: nodeOptions } = await assertAnchored(trigger());
   await lastLong.scrollIntoViewIfNeeded();
   const previousEffort = await page.evaluate(() => window.__ui.getState().agentEffort);
   await lastLong.click();
@@ -174,6 +236,10 @@ try {
   await panel().getByRole('slider').press('End');
   await panel().locator('[data-agent-fast]').click();
   assert.deepEqual((await nodeData()).agentOptions, { effort: 'high', fast: true });
+  assert.equal(await iconShape(trigger()), await iconShape(defaultPicker), 'Fast mode preserves the model icon.');
+  assert.equal(await trigger().locator('.lucide-zap').isVisible(), true, 'Fast mode has its own indicator.');
+  await settle();
+  assert.equal((await panel().boundingBox()).x, nodeOptions.x, 'Editing model options keeps the panel fixed within the node.');
   await page.keyboard.press('Escape');
   assert.equal(await panel().count(), 0);
   assert.equal(await page.evaluate(() => window.__ui.getState().agentEffort), previousEffort);
@@ -190,11 +256,12 @@ try {
   const reader = page.locator('[data-focus-panel]');
   const readerTrigger = reader.locator('[data-node-execution-picker] [data-model-picker-trigger]');
   await readerTrigger.click();
-  await assertAnchored(readerTrigger);
+  const { p: readerOptions } = await assertAnchored(readerTrigger);
   assert.equal(await panel().getByRole('slider').getAttribute('aria-valuetext'), 'High');
-  assert.equal(await panel().locator('[data-agent-fast]').getAttribute('aria-pressed'), 'true');
-  await panel().locator('[data-agent-model-list]').click();
+  assert.equal(await panel().getByRole('switch').getAttribute('aria-checked'), 'true');
   await panel().getByRole('button', { name: 'test-model-1', exact: true }).click();
+  await settle();
+  assert.equal((await panel().boundingBox()).x, readerOptions.x, 'Changing the model keeps the reader panel in place.');
   assert.equal((await nodeData()).agentOptions, undefined);
   assert.equal(await panel().locator('[data-agent-fast]').count(), 0);
   assert.equal((await nodeData()).model, 'codex/codex/test-model-1');

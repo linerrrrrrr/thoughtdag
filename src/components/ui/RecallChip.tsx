@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import { useDismissableLayer } from '../../lib/use-dismissable-layer';
 import { createPortal } from 'react-dom';
 import { useUiStore, confirmDialog, toast } from '../../lib/ui-store';
@@ -7,7 +7,7 @@ import { RECALL_SCALES, reachEstimate, type RecallReach, type RecallScale } from
 import { judgeConfigured } from '../../lib/judge';
 import { whyBridge } from '../../lib/why-bridge';
 import { useT, fmt } from '../../i18n';
-import { uiRect, uiViewport } from '../../lib/ui-scale';
+import { followAnchoredMenu } from '../../lib/anchored-menu';
 
 // Recall, as a quiet chip beside the two search icons: its name, and when on,
 // its reach. The chip opens a small menu: the switch, the reach, the amount.
@@ -36,12 +36,14 @@ export default function RecallChip({ nodeId }: { nodeId?: string } = {}) {
     if (!nodeId) { setOverride(p); return; }
     useStore.setState((s) => ({ nodes: s.nodes.map((n) => (n.id === nodeId ? { ...n, data: { ...n.data, ...(p.enabled !== undefined ? { recall: p.enabled } : {}), ...(p.reach ? { recallReach: p.reach } : {}), ...(p.scale ? { recallScale: p.scale } : {}) } } : n)) }));
   };
-  // the menu is a portal on the body, placed by the chip's rect at open time: inside a card it would
-  // otherwise sit in the node's stacking context, under the next card
-  const [open, setOpen] = useState<{ left: number; bottom: number } | null>(null);
+  const [open, setOpen] = useState(false);
   const root = useRef<HTMLDivElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
   const menu = useRef<HTMLDivElement>(null);
-  useDismissableLayer({ dismissOnFocusOutside: true, open: !!open, refs: [root, menu], onDismiss: () => setOpen(null) });
+  useDismissableLayer({ dismissOnFocusOutside: true, open, refs: [root, menu], onDismiss: () => setOpen(false) });
+  useLayoutEffect(() => {
+    if (open && trigger.current && menu.current) return followAnchoredMenu(trigger.current, menu.current, 'end', 8);
+  }, [open]);
   const reachLabel = (r: RecallReach) => t(r === 'light' ? 'recall.reachLight' : r === 'deep' ? 'recall.reachDeep' : 'recall.reachFullShort');
   const scaleLabel = (s: RecallScale) => t(s === 'lean' ? 'recall.scaleLean' : s === 'standard' ? 'recall.scaleStandard' : 'recall.scaleGenerous');
   const pickReach = async (r: RecallReach) => {
@@ -64,7 +66,7 @@ export default function RecallChip({ nodeId }: { nodeId?: string } = {}) {
   const setDefault = () => {
     setEnabled(on); setReachDefault(reach); setScaleDefault(scale); setOverride(null);
     toast('success', t('recall.menuDefaultDone'), 3000);
-    setOpen(null);
+    setOpen(false);
   };
   const seg = (key: string, active: boolean, disabled: boolean, label: string, onClick: () => void, title?: string) => (
     // greyed, not disabled: a disabled button gets no hover, and the hover is where the reason lives
@@ -73,14 +75,13 @@ export default function RecallChip({ nodeId }: { nodeId?: string } = {}) {
   return (
     <div ref={root} className="relative shrink-0">
       <button
-        type="button"
+        type="button" ref={trigger}
         // inside a card the click must not select the node (that opens the panel and swaps the composer away)
         onClick={(e) => {
           e.stopPropagation();
-          const r = uiRect(e.currentTarget), viewport = uiViewport();
-          setOpen((v) => (v ? null : { left: Math.max(8, Math.min(r.right - 296, viewport.width - 304)), bottom: viewport.height - r.top + 8 }));
+          setOpen(value => !value);
         }}
-        aria-expanded={!!open}
+        aria-expanded={open}
 
         className={`h-8 px-2.5 rounded-control flex items-center gap-1.5 text-control font-medium transition-colors ${on ? 'text-accent bg-accent/15 ring-1 ring-accent/40 hover:bg-accent/25' : 'text-ink-muted opacity-60 hover:opacity-100 hover:bg-line'}`}
         data-recall-toggle
@@ -92,7 +93,7 @@ export default function RecallChip({ nodeId }: { nodeId?: string } = {}) {
       </button>
       {open && createPortal(
         // mousedown is swallowed AND defaulted away: inside a question editor the textarea must keep its focus (its blur closes the editor)
-        <div ref={menu} style={{ position: 'fixed', left: open.left, bottom: open.bottom }} className="w-[296px] rounded-overlay border border-line bg-card shadow-lg p-3 z-[90] text-control space-y-2.5" data-type-surface="portal" data-recall-menu data-recall-menu-scope={nodeId ? 'node' : 'ask'} onClick={(e) => e.stopPropagation()} onMouseDown={(e) => { e.stopPropagation(); e.preventDefault(); }}>
+        <div ref={menu} className="fixed w-[296px] max-w-[calc(100*var(--ui-vw)-16px)] max-h-(--menu-available-height) overflow-y-auto overscroll-contain rounded-overlay border border-line bg-card shadow-lg p-3 z-[90] text-control space-y-2.5" data-type-surface="portal" data-recall-menu data-recall-menu-scope={nodeId ? 'node' : 'ask'} onClick={(e) => e.stopPropagation()} onMouseDown={(e) => { e.stopPropagation(); e.preventDefault(); }}>
           <div className="flex items-center justify-between gap-3">
             <span className="text-ink font-medium">{t('recall.menuOn')}</span>
             <button type="button" role="switch" aria-checked={on} onClick={() => apply({ enabled: !on })} className={`relative w-9 h-5 rounded-control transition-colors shrink-0 ${on ? 'bg-accent' : 'bg-line-strong'}`} data-recall-menu-switch>

@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { Archive, ArchiveRestore, Check, ChevronDown, Dna, FolderOpen, Loader2, Minimize2, Pencil, Plus, RefreshCw, Trash2, Upload } from 'lucide-react';
+import { lazy, Suspense, useEffect, useRef, useState, type ReactNode } from 'react';
+import { Archive, ArchiveRestore, Check, ChevronDown, ChevronRight, Dna, FolderOpen, Loader2, Minimize2, PanelsTopLeft, Pencil, Plus, RefreshCw, Trash2, FileUp } from 'lucide-react';
 import HarnessViewSwitch from './ui/HarnessViewSwitch';
 import { useProjects, switchProject, createProject, renameProject, deleteProject, setProjectArchived, refreshProjectIndex } from '../store/projects';
 import { useI18n } from '../i18n';
@@ -13,6 +13,8 @@ import { useDismissableLayer } from '../lib/use-dismissable-layer';
 import { useInlineEditDismiss } from '../lib/use-inline-edit-dismiss';
 import { useCanvasToolCard } from '../lib/use-canvas-tool-card';
 import { useCanvasPanelPosition } from '../lib/use-canvas-panel-position';
+
+const CanvasLibrary = lazy(() => import('./CanvasLibrary'));
 
 function relativeTime(ts: number): string {
   const diff = Date.now() - ts;
@@ -53,6 +55,9 @@ export default function ProjectSwitcher({ onSwitched, children }: { onSwitched: 
   const activeIsParadigm = projects.find((p) => p.id === activeId)?.kind === 'paradigm';
   const [requestedOpen, setOpen] = useState(false);
   const open = useCanvasToolCard('projects', requestedOpen, () => setOpen(false));
+  const [libraryRequested, setLibraryRequested] = useState(false);
+  const libraryOpen = useCanvasToolCard('canvas-library', libraryRequested, () => setLibraryRequested(false));
+  const triggerRef = useRef<HTMLButtonElement>(null);
   useEffect(() => { if (open) void refreshProjectIndex().catch(() => undefined); }, [open]);
   const panelPosition = useCanvasPanelPosition(open, 'left');
   // Windows and Linux shells: keep running in the tray when the window
@@ -104,6 +109,10 @@ export default function ProjectSwitcher({ onSwitched, children }: { onSwitched: 
     await switchProject(id);
     onSwitched();
   };
+  const openLibrary = () => {
+    setOpen(false);
+    setLibraryRequested(true);
+  };
 
   return (
     // z-20: the open dropdown must cover the content palette below (both
@@ -111,10 +120,12 @@ export default function ProjectSwitcher({ onSwitched, children }: { onSwitched: 
     <div ref={rootRef} className="relative z-20 min-w-0 max-w-full" data-project-switcher>
       <div className="canvas-toolbar canvas-toolbar-main">
         <button
-          onClick={() => setOpen(!open)}
+          ref={triggerRef}
+          onClick={event => { if (event.detail <= 1) setOpen(!open); }}
+          onDoubleClick={openLibrary}
           data-tooltip={active?.name} data-tooltip-overflow data-tooltip-icon-only aria-label={active?.name} aria-expanded={open}
           disabled={switching}
-          className="canvas-toolbar-button canvas-project-button disabled:opacity-60"
+          className="canvas-toolbar-button canvas-project-button touch-manipulation disabled:opacity-60"
         >
           {switching
             ? <Loader2 size={16} strokeWidth={1.75} className="animate-spin shrink-0 text-accent" />
@@ -131,6 +142,7 @@ export default function ProjectSwitcher({ onSwitched, children }: { onSwitched: 
 
       {open && (
         <div className="canvas-tool-panel canvas-tool-menu py-1.5 animate-fade-in" style={panelPosition} data-project-menu>
+          <div className="px-3 pt-1 pb-0.5 text-meta text-ink-muted">{t('library.recentCanvases')}</div>
           <div className="max-h-[320px] overflow-y-auto">
             {sorted.map((p) => (
               <div
@@ -211,6 +223,12 @@ export default function ProjectSwitcher({ onSwitched, children }: { onSwitched: 
           </div>
 
           <div className="border-t border-line mt-1 pt-1">
+            <button type="button" data-open-canvas-library aria-haspopup="dialog" data-tooltip={t('library.shortcutHint')}
+              className="w-full text-left px-3 py-2 text-control font-medium text-accent hover:bg-wash flex items-center gap-2"
+              onClick={openLibrary}>
+              <PanelsTopLeft size={15} strokeWidth={1.75} /> {t('library.open')}
+              <ChevronRight size={14} strokeWidth={1.75} className="ml-auto" />
+            </button>
             <button
               onClick={() => { setOpen(false); void createProject().then(onSwitched); }}
               className="w-full text-left px-3 py-2 text-control text-accent hover:bg-wash transition-colors flex items-center gap-2"
@@ -221,7 +239,7 @@ export default function ProjectSwitcher({ onSwitched, children }: { onSwitched: 
               onClick={() => importFileRef.current?.click()}
               className="w-full text-left px-3 py-2 text-control text-ink-muted hover:bg-wash transition-colors flex items-center gap-2"
             >
-              <Upload size={15} strokeWidth={1.75} /> {t('switcher.importBackup')}
+              <FileUp size={15} strokeWidth={1.75} /> {t('switcher.importBackup')}
             </button>
             {window.desktop && (
               <button
@@ -273,6 +291,11 @@ export default function ProjectSwitcher({ onSwitched, children }: { onSwitched: 
             />
           </div>
         </div>
+      )}
+      {libraryOpen && (
+        <Suspense fallback={null}>
+          <CanvasLibrary onClose={() => setLibraryRequested(false)} onSwitched={onSwitched} triggerRef={triggerRef} />
+        </Suspense>
       )}
       {chatImport && (
         <ImportChatModal

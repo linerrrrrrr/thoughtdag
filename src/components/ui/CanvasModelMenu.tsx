@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from 'react';
-import { ChevronRight, RefreshCw, Settings2 } from 'lucide-react';
+import { ChevronRight, RefreshCw } from 'lucide-react';
+import { SettingsIcon } from '../../lib/ui-icons';
 import { useT } from '../../i18n';
 import { toast } from '../../lib/ui-store';
 import { refreshModelCatalog } from '../../lib/use-models';
@@ -27,7 +28,7 @@ export default function CanvasModelMenu({ models, onSettings }: { models: ReactN
     <div className="shrink-0 border-t border-line p-2">
       <button type="button" onClick={onSettings} data-model-settings-entry
         className="flex min-h-8 w-full items-center gap-2 rounded-control px-2 py-1 text-left text-control text-ink-muted hover:bg-wash hover:text-ink">
-        <Settings2 size={15} strokeWidth={1.75} aria-hidden="true" />
+        <SettingsIcon size={15} strokeWidth={1.75} aria-hidden="true" />
         <span className="flex-1">{t('settingsAI.modelSettings')}</span>
         <ChevronRight size={14} aria-hidden="true" />
       </button>

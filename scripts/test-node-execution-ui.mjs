@@ -22,8 +22,9 @@ let runtimeOnline = true;
 let codexQueries = 0;
 let releaseCatalog;
 const catalogGate = new Promise(resolve => { releaseCatalog = resolve; });
-const catalog = { default: 'api-test', models: [
-  { id: 'api-test', name: 'API test model', provider: 'Test API', vision: false },
+const apiModel = 'api-connection:work:api-test';
+const catalog = { default: apiModel, models: [
+  { id: apiModel, modelId: 'api-test', sourceId: 'work', name: 'API test model', provider: 'Test API', vision: false },
   { id: 'codex/codex/test-model', name: 'Codex · test-model', provider: '__agent__', vision: false },
   { id: 'pi/local/legacy-model', name: 'Pi · legacy-model', provider: '__agent__', vision: false },
 ] };
@@ -74,6 +75,12 @@ try {
     useUiStore.getState().setTutorialOpen(false);
     useUiStore.getState().setReleaseNotesOpen(false);
     useUiStore.getState().setPanelOpen(false);
+    window.__nodeExecutionSends = [];
+    window.__originalEditQuestion = window.__store.getState().editQuestion;
+    window.__store.setState({ editQuestion: (nodeId, question) => {
+      const { executionKind, model } = window.__store.getState().nodes.find(node => node.id === nodeId).data;
+      window.__nodeExecutionSends.push({ nodeId, question, executionKind, model });
+    } });
     window.__store.getState().setNodes([{ id, type: 'thought', width: 520, dragHandle: '.drag-handle', position: { x: 0, y: 0 }, data: {
       executionKind: 'api', question: '', response: '', responses: [], responseIndex: -1,
       isCollapsed: false, isEditing: true, questionEditor: 'canvas', isEditingResponse: false, isLoading: false,
@@ -97,37 +104,45 @@ try {
   });
   await codexOption.click();
   await firstCatalogRequest;
-  await picker().getByRole('status').waitFor();
-  assert.equal(await card().locator('[data-ask-submit]').isDisabled(), true);
-  await canvasInput.press('Enter');
+  await panel.waitFor();
+  assert.equal((await data()).executionKind, 'api', 'Browsing Agent connections cannot change the target.');
   assert.equal((await data()).question, '');
-  assert.equal(await picker().locator('[data-model-picker-trigger]').count(), 0);
   releaseCatalog();
-  await picker().locator('[data-model-picker-trigger]').waitFor();
+  await panel.getByRole('button', { name: /Codex/i }).click();
   assert.equal(await card().locator('[data-ask-submit]').isEnabled(), true);
   assert.equal(await canvasInput.inputValue(), draft);
   assert.deepEqual((await data()).attachments, [image]);
   assert.equal(await card().locator('[data-question-attachment="screenshot"] img').isVisible(), true);
-  pass('An API draft with image.png shows Agent before discovery. Selecting it verifies the HTTP catalog, preserves the prompt and image, and enables sending once ready.');
+  pass('Browsing Agent discovers runtimes without committing. Choosing Codex keeps the prompt and attachment and enables sending.');
   assert.equal((await data()).executionKind, 'codex');
-  await picker().locator('[data-model-picker-trigger]').click();
   await panel.waitFor({ state: 'visible' });
   await panel.getByText('test-model', { exact: true }).waitFor({ state: 'visible' });
   assert.ok((await panel.textContent()).includes('test-model'));
   assert.ok(!(await panel.textContent()).includes('API test model'));
   assert.ok(!(await panel.textContent()).includes('legacy-model'));
   await page.keyboard.press('Escape');
+  await panel.getByRole('button', { name: /Codex/i }).waitFor();
+  await page.keyboard.press('Escape');
   assert.equal(await panel.count(), 0);
   assert.equal((await data()).question, '');
   pass('Codex type filters the catalog; Escape closes only the model menu without sending.');
+  assert.deepEqual(await page.evaluate(() => window.__nodeExecutionSends), []);
+  await card().locator('[data-ask-submit]').click();
+  assert.deepEqual(await page.evaluate(() => window.__nodeExecutionSends.splice(0)), [
+    { nodeId: id, question: draft, executionKind: 'codex', model: 'codex/codex/test-model' },
+  ]);
+  await canvasInput.fill(draft);
   await page.evaluate(() => window.__ui.getState().setSelectedModel('api-test'));
   assert.equal((await data()).executionKind, 'codex');
   await picker().locator('[data-node-execution-option="api"]').click();
-  await picker().locator('[data-model-picker-trigger]').click();
+  assert.equal((await data()).executionKind, 'codex');
+  await panel.getByRole('button', { name: /Test API/i }).click();
   await panel.waitFor({ state: 'visible' });
   await panel.getByText('API test model', { exact: true }).waitFor({ state: 'visible' });
   assert.ok((await panel.textContent()).includes('API test model'));
   assert.ok(!(await panel.textContent()).includes('test-model'));
+  await panel.locator('[data-draft-source-back]').getByText('API', { exact: true }).click();
+  await panel.getByRole('button', { name: /Test API/i }).waitFor();
   await page.keyboard.press('Escape');
   pass('API type filters agent models and explicit node type survives global selection changes.');
   await page.evaluate(() => window.__store.getState().undo());
@@ -156,6 +171,7 @@ try {
   await settle();
   await picker().locator('[data-model-picker-trigger]').click();
   await panel.locator('[data-node-model-empty]').waitFor();
+  assert.equal(await card().locator('[data-ask-submit]').isDisabled(), true);
   assert.ok((await panel.textContent()).includes('API'));
   await page.keyboard.press('Escape');
   pass('Missing API models show a setup action instead of silently using Codex.');
@@ -164,7 +180,7 @@ try {
   await page.evaluate(async () => { document.documentElement.dataset.theme = 'light'; (await window.__importLive('/src/i18n/index.ts')).useI18n.getState().setLang('zh'); window.__rf.setViewport({ x: 100, y: 150, zoom: 1 }, { duration: 0 }); });
   await settle();
   await page.waitForTimeout(500);
-  assert.equal(await picker().locator('[data-node-execution-option="api"]').innerText(), 'API 聊天');
+  assert.match(await picker().locator('[data-node-execution-option="api"]').innerText(), /API.*Test API/);
   await page.screenshot({ path: `${out}/light-zh.png`, animations: 'disabled' });
   await page.evaluate(async () => { document.documentElement.dataset.theme = 'dark'; (await window.__importLive('/src/i18n/index.ts')).useI18n.getState().setLang('en'); });
   await page.setViewportSize({ width: 900, height: 800 });
@@ -174,28 +190,26 @@ try {
   await page.screenshot({ path: `${out}/dark-en-zoom80.png`, animations: 'disabled' });
   await page.setViewportSize({ width: 1500, height: 1000 });
   await page.evaluate(async id => {
-    window.__nodeExecutionSends = [];
-    window.__originalEditQuestion = window.__store.getState().editQuestion;
-    window.__store.setState({ editQuestion: (nodeId, question) => { window.__nodeExecutionSends.push({ nodeId, question, executionKind: window.__store.getState().nodes.find(n => n.id === nodeId).data.executionKind }); } });
     window.__store.setState(s => ({ nodes: s.nodes.map(n => n.id === id ? { ...n, data: { ...n.data, isEditing: true, questionEditor: 'panel' } } : n), selectedNodeId: id, selectedNodeIds: [id] }));
     window.__ui.getState().setPanelOpen(true, id);
   }, id);
   const focus = page.locator('[data-focus-panel]');
   const focusPicker = focus.locator('[data-node-execution-picker]');
-  await focusPicker.locator('[data-node-execution-option="codex"]').click();
   await focus.locator('[data-conversation-question] textarea').fill('Panel draft stays here');
-  await focusPicker.locator('[data-model-picker-trigger]').click();
+  await focusPicker.locator('[data-node-execution-option="codex"]').click();
+  await panel.getByRole('button', { name: /Codex/i }).click();
   runtimeOnline = false;
   await recheck();
-  await panel.waitFor({ state: 'detached' });
+  await panel.locator('[data-node-model-empty]').waitFor();
+  await page.keyboard.press('Escape');
   assert.equal(await focusPicker.locator('[data-node-execution-option="codex"]').getAttribute('aria-pressed'), 'true');
-  assert.equal(await focusPicker.locator('[data-model-picker-trigger]').count(), 0);
   assert.equal(await focus.locator('[data-question-send]').isDisabled(), true);
   await focus.locator('[data-conversation-question] textarea').press('Control+Enter');
   assert.equal(await page.evaluate(() => window.__nodeExecutionSends.length), 0);
   assert.equal((await data()).executionKind, 'codex');
   assert.equal(await focus.locator('[data-conversation-question] textarea').inputValue(), 'Panel draft stays here');
-  await focusPicker.getByRole('button', { name: 'Agent connection', exact: true }).click();
+  await focusPicker.locator('[data-node-execution-option="codex"]').click();
+  await panel.locator('[data-draft-manage-connections]').click();
   await page.locator('[data-agent-connection-status="disconnected"]').waitFor();
   runtimeOnline = true;
   await page.locator('[data-agent-connect]').click();
@@ -206,14 +220,15 @@ try {
   assert.equal(await focus.locator('[data-conversation-question] textarea').inputValue(), 'Panel draft stays here');
   assert.deepEqual((await data()).attachments, [image]);
   await focusPicker.locator('[data-node-execution-option="api"]').click();
-  await focusPicker.locator('[data-model-picker-trigger]').click();
+  await panel.getByRole('button', { name: /Test API/i }).click();
   await panel.getByText('API test model', { exact: true }).waitFor();
+  await panel.locator('[data-draft-source-back]').press('Space');
+  await panel.getByRole('button', { name: /Test API/i }).waitFor();
   await page.keyboard.press('Escape');
   assert.equal((await data()).executionKind, 'api');
   pass('After losing the runtime, Agent stays selected, sending is disabled, and reconnecting from the editor restores models and the draft with its attachment.');
   assert.equal(await focus.count(), 1);
   assert.equal(await focus.locator('[data-conversation-question] textarea').inputValue(), 'Panel draft stays here');
-  await focusPicker.locator('[data-node-execution-option="api"]').click();
   const questionInput = focus.locator('[data-conversation-question] textarea');
   await questionInput.fill('Panel line one');
   await questionInput.press('End');
@@ -231,9 +246,9 @@ try {
   await questionInput.fill('Meta send');
   await questionInput.press('Meta+Enter');
   assert.deepEqual(await page.evaluate(() => window.__nodeExecutionSends), [
-    { nodeId: id, question: 'Panel line one\nx', executionKind: 'api' },
-    { nodeId: id, question: 'Ctrl send', executionKind: 'api' },
-    { nodeId: id, question: 'Meta send', executionKind: 'api' },
+    { nodeId: id, question: 'Panel line one\nx', executionKind: 'api', model: apiModel },
+    { nodeId: id, question: 'Ctrl send', executionKind: 'api', model: apiModel },
+    { nodeId: id, question: 'Meta send', executionKind: 'api', model: apiModel },
   ]);
   await questionInput.fill('Keep on Escape');
   await questionInput.press('Escape');

@@ -1,7 +1,8 @@
 import type { ContextMessage, ImageAttachment, StreamCallbacks } from './api';
 import type { Reference } from '../types';
 import { API_BASE } from './constants';
-import { storedProviders, type RuntimeProvider } from './runtime-providers';
+import { storedProviderForModel, type RuntimeProvider } from './runtime-providers';
+import { parseApiConnectionModelId } from '../../runtime/api-model-sources.mjs';
 
 // Direct browser→gateway streaming. On the Workers deployment the proxy has
 // a small per-request CPU allowance; big contexts + thinking models exhaust
@@ -36,12 +37,8 @@ const isOpenRouterURL = (baseURL: string) => /openrouter\.ai/i.test(baseURL);
     have no tools — their toggles hide in the UI (directWithoutSearch). */
 export function directProvider(modelId?: string): RuntimeProvider | null {
   if (!isWorkerBackend || !modelId) return null;
-  for (const p of storedProviders()) {
-    if (!DIRECT_CORS_OK.test(p.baseURL)) continue;
-    if (!p.apiKey) continue;
-    if (p.models.some((m) => m.id === modelId)) return p;
-  }
-  return null;
+  const provider = storedProviderForModel(modelId)?.provider;
+  return provider?.apiKey && DIRECT_CORS_OK.test(provider.baseURL) ? provider : null;
 }
 
 /** True when this model's requests bypass the proxy on a gateway that cannot
@@ -199,6 +196,7 @@ export async function directLlmStream(
   callbacks?: StreamCallbacks,
   webSearch?: boolean,
 ): Promise<string> {
+  const upstreamId = parseApiConnectionModelId(modelId)?.modelId ?? modelId;
   const body = toOpenAiMessages(contextMessages, images);
   // `:online` is an OpenRouter model-id suffix; other gateways 404 on it.
   const useOnline = isOpenRouterURL(provider.baseURL) && webSearch !== false;
@@ -213,16 +211,16 @@ export async function directLlmStream(
 
   try {
     let pass = await streamOnePass(
-      provider, useOnline ? `${modelId}:online` : modelId, body, onText, onReasoning, citations, signal);
+      provider, useOnline ? `${upstreamId}:online` : upstreamId, body, onText, onReasoning, citations, signal);
 
     // :online sometimes closes with zero text (thinking models most of all):
     // retry once with the plain model so the user always gets an answer.
     if (useOnline && full.length === 0) {
-      pass = await streamOnePass(provider, modelId, body, onText, onReasoning, citations, signal);
+      pass = await streamOnePass(provider, upstreamId, body, onText, onReasoning, citations, signal);
     }
 
     if (full.length === 0) {
-      throw new Error(`Model produced no text (finish: ${pass.finishReason}, model: ${modelId}${useOnline ? ' via :online' : ''})`);
+      throw new Error(`Model produced no text (finish: ${pass.finishReason}, model: ${upstreamId}${useOnline ? ' via :online' : ''})`);
     }
     if (citations.size > 0) callbacks?.onSources?.([...citations.values()]);
     return full;
@@ -248,7 +246,7 @@ export async function directLlmCall(
         'Content-Type': 'application/json',
         'X-Title': 'ThoughtDAG',
       },
-      body: JSON.stringify({ model: modelId, messages: toOpenAiMessages(contextMessages, images) }),
+      body: JSON.stringify({ model: parseApiConnectionModelId(modelId)?.modelId ?? modelId, messages: toOpenAiMessages(contextMessages, images) }),
       signal,
     });
     if (!res.ok) {

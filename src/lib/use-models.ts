@@ -3,9 +3,10 @@ import { useSyncExternalStore } from 'react';
 import { API_BASE } from './constants';
 import { storedProviders, pushProviders, refreshStoredProviders } from './runtime-providers';
 import { agentCatalog, AGENT_PROVIDER, AGENT_RUNTIMES, agentTarget, isAgentModel, runtimeOf, type RuntimeStatus } from './agents/agent-runtime';
-import { displayModelName } from './model-sources';
-import { modelMatchesExecution, type NodeExecutionKind } from './node-execution';
-import type { AgentRuntime } from '../types';
+import { catalogModel, displayModelName } from './model-sources';
+import { parseApiConnectionModelId } from '../../runtime/api-model-sources.mjs';
+import { modelMatchesExecution, nodeExecutionKind, resolveNodeModel, type NodeExecutionKind } from './node-execution';
+import type { AgentRuntime, ThoughtData } from '../types';
 import { t, fmt } from '../i18n';
 import { canRetryAgentHost, ensureAgentHost } from './agents/host';
 
@@ -13,6 +14,11 @@ export interface ModelInfo {
   id: string;
   name: string;
   provider: string;
+  sourceId?: string;
+  sourceLabel?: string;
+  connectionName?: string;
+  modelId?: string;
+  sourceDefault?: boolean;
   vision: boolean;
   /** agent models: the effort levels this runtime accepts for the model, in its own words (read from the CLI) */
   efforts?: string[];
@@ -91,11 +97,13 @@ const RETIRED_MODEL_IDS: Record<string, string> = {
     → itself; same family under a different provider → the local id; a
     retired id → its successor; otherwise null (not reachable here). */
 export function reconcileModelId(pinned: string, models: ModelInfo[]): string | null {
-  if (models.some((m) => m.id === pinned)) return pinned;
+  const exact = catalogModel(models, pinned);
+  if (exact) return exact.id;
+  if (parseApiConnectionModelId(pinned)) return null;
   const base = modelBasename(pinned);
   const successor = RETIRED_MODEL_IDS[base];
-  const match = models.find((m) => modelBasename(m.id) === base)
-    ?? (successor ? models.find((m) => modelBasename(m.id) === successor) : undefined);
+  const match = models.find((m) => modelBasename(m.modelId ?? m.id) === base)
+    ?? (successor ? models.find((m) => modelBasename(m.modelId ?? m.id) === successor) : undefined);
   return match ? match.id : null;
 }
 
@@ -109,6 +117,15 @@ export function availableExecutionModels(data: ModelData | null, kind: NodeExecu
     if (!modelMatchesExecution(model.id, kind)) return false;
     const runtime = runtimeOf(model.id);
     return !runtime || (hasAgentsBridge() && data.runtimes?.[runtime]?.installed === true);
+  }) ?? [];
+}
+
+/** Offer API connections and the installed local runtimes that can start a new turn. */
+export function draftExecutionModels(data: ModelData | null): ModelInfo[] {
+  return data?.models.filter(model => {
+    const runtime = runtimeOf(model.id);
+    return runtime ? hasAgentsBridge() && data.runtimes?.[runtime]?.installed === true
+      : model.provider !== AGENT_PROVIDER && modelMatchesExecution(model.id, 'api');
   }) ?? [];
 }
 
@@ -142,7 +159,10 @@ function withResolvedNames(models: ModelInfo[]): ModelInfo[] {
 export function describeModel(id: string | null | undefined, effort?: string | null, opts?: { /** omit the resolved alias on compact cards */ compact?: boolean }): string {
   if (!id) return '';
   const target = agentTarget(id);
-  if (!target) return id.split('/').pop() ?? id;
+  if (!target) {
+    const raw = parseApiConnectionModelId(id)?.modelId ?? id;
+    return raw.split('/').pop() ?? raw;
+  }
   let remembered: ModelInfo[] = [];
   try { remembered = JSON.parse(appSettings.getItem(AGENT_CACHE_KEY) ?? '[]'); } catch { remembered = []; }
   const entry = remembered.find((m) => m && m.id === id);
@@ -247,4 +267,18 @@ const noModels = () => null;
 
 export function useModels(enabled = true): ModelData | null {
   return useSyncExternalStore(enabled ? subscribeModels : skipSubscription, enabled ? getCachedModels : noModels, noModels);
+}
+
+/** Both composers gate a pinned connection against that connection's current catalog. */
+export function useDraftModelUnavailable(draft?: Partial<ThoughtData>): boolean {
+  const kind = nodeExecutionKind(draft);
+  const pinned = draft?.model;
+  const checkApi = !!parseApiConnectionModelId(pinned);
+  const runtime = kind === 'codex' ? 'codex' : runtimeOf(pinned ?? (draft && resolveNodeModel(draft)));
+  const data = useModels(!!draft && (checkApi || !!runtime));
+  if (checkApi) return !data?.models.some(model => model.id === pinned);
+  if (!runtime) return false;
+  const available = availableExecutionModels(data, kind);
+  if (pinned && !pinned.endsWith('/default')) return !available.some(model => model.id === pinned);
+  return !available.some(model => runtimeOf(model.id) === runtime);
 }

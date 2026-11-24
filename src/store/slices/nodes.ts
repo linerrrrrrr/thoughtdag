@@ -22,6 +22,7 @@ import { resolveRulerHandle, remapOverviewRulerHandle } from '../../lib/overview
 import { canvasLayoutInputKey, planCanvasLayout } from '../../lib/canvas-layout';
 import { questionHeightRatio } from '../../lib/conversation-split';
 import { getCachedModels } from '../../lib/use-models';
+import { runtimeOf } from '../../lib/agents/agent-runtime';
 import { modelExecutionKind, modelMatchesExecution, nodeExecutionKind, resolveNodeModel, supportedAgentOptions } from '../../lib/node-execution';
 
 /** Do not propagate retired metadata when copying older saved documents. */
@@ -564,7 +565,8 @@ export const createNodeSlice: StateCreator<StoreState, [], [], NodeSlice> = (set
     set((state) => ({
       nodes: state.nodes.map((n) =>
         n.id === nodeId ? { ...n, data: { ...n.data, model,
-          ...(kind !== nodeExecutionKind(n.data) ? { agentSession: undefined } : {}),
+          ...(kind !== nodeExecutionKind(n.data) || (model && n.data.agentSession && runtimeOf(model) !== n.data.agentSession.runtime)
+            ? { agentSession: undefined } : {}),
           executionKind: kind === 'legacy-agent' ? undefined : kind,
           agentOptions: kind === 'codex' ? supportedAgentOptions(n.data.agentOptions, modelInfo) : undefined,
         } } : n

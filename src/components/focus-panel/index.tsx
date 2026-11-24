@@ -22,7 +22,6 @@ import HeaderActions from './HeaderActions';
 import { useDismissableLayer } from '../../lib/use-dismissable-layer';
 import { handleCanvasPanelKeyDown } from '../../lib/canvas-shortcuts';
 import { getNodeNameSource } from '../../lib/node-display-name';
-import { nodeExecutionKind } from '../../lib/node-execution';
 import NodeMetadataEditor from '../NodeMetadataEditor';
 import ConversationSplit from '../ConversationSplit';
 import './FocusPanel.css';
@@ -199,7 +198,7 @@ export default function FocusPanel({ nodeId, onFocusNode, snapshotNode }: { node
                 isEditing={data.isEditing && data.questionEditor === 'panel'}
                 isHuman={data.stepKind === 'human'}
                 awaiting={!!awaiting}
-                needsAgentModel={!isViewerMode && awaiting === 'ask' && nodeExecutionKind(data) === 'codex'}
+                executionDraft={!isViewerMode && awaiting === 'ask' ? data : undefined}
                 generationFailed={data.generationFailed && !data.isLoading}
                 placeholder={awaiting ? (data.instruction || t('node.askPlaceholder')) : undefined}
               />

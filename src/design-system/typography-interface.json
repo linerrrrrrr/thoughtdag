@@ -12,6 +12,9 @@
     "src/components/CanvasDetailControl.tsx": {
       "[data-canvas-detail-panel]": "portal"
     },
+    "src/components/CanvasLibrary.tsx": {
+      "[data-canvas-library]": "portal"
+    },
     "src/components/CanvasToolbarOverflowAction.tsx": {
       "[data-overflow-menu-action]": "portal"
     },

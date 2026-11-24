@@ -1,5 +1,6 @@
 import { useId, useState } from 'react';
-import { Cable, Check, ChevronDown, Image, Loader2, SquareTerminal } from 'lucide-react';
+import { Check, ChevronDown, Loader2 } from 'lucide-react';
+import { AgentSourceIcon, ApiSourceIcon, ImageInputIcon } from '../../lib/ui-icons';
 import { useT } from '../../i18n';
 import { groupBySource, modelName } from '../../lib/model-sources';
 import type { ModelInfo } from '../../lib/use-models';
@@ -13,7 +14,7 @@ interface CanvasModelListProps {
 
 function VisionIcon({ kind, label }: { kind: 'source' | 'model'; label: string }) {
   return <span data-model-vision={kind} data-tooltip={label} className="shrink-0 text-ink-faint">
-    <Image size={13} strokeWidth={1.75} aria-hidden="true" />
+    <ImageInputIcon size={13} strokeWidth={1.75} aria-hidden="true" />
     <span className="sr-only">{label}</span>
   </span>;
 }
@@ -33,7 +34,7 @@ export default function CanvasModelList({ models, activeId, pending, onPick }: C
     {sources.map((source, index) => {
       const expanded = expandedKey === source.key;
       const allVision = source.models.every(model => model.vision);
-      const Icon = source.agent ? SquareTerminal : Cable;
+      const Icon = source.agent ? AgentSourceIcon : ApiSourceIcon;
       const groupId = `${panelId}-${index}`;
       return <div key={source.key} className="py-1">
         <button type="button" data-model-source={source.label} aria-expanded={expanded}
@@ -41,7 +42,7 @@ export default function CanvasModelList({ models, activeId, pending, onPick }: C
           className={`${rowClass} px-2 font-medium text-ink-muted hover:bg-wash`}>
           <Icon size={15} strokeWidth={1.75} className="shrink-0 text-ink-faint" aria-hidden="true" />
           <span className="sr-only">{source.agent ? 'Agent' : 'API'}</span>
-          <span className="min-w-0 [overflow-wrap:anywhere]">{source.label}</span>
+          <span className="min-w-0 [overflow-wrap:anywhere]">{[source.label, source.detail].filter(Boolean).join(' · ')}</span>
           <span className="mr-auto text-meta font-normal tabular-nums text-ink-faint">{source.models.length}</span>
           {allVision && <VisionIcon kind="source" label={t('model.catalogSourceVision')} />}
           <ChevronDown size={13} strokeWidth={1.75} aria-hidden="true"

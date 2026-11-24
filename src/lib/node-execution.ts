@@ -1,6 +1,6 @@
 import type { AgentTurnOptions, ThoughtData } from '../types';
 
-/** Legacy agent documents keep their original runtime; only API and Codex are new choices. */
+/** Other agent runtimes, including imported sessions, are identified by the model's runtime prefix. */
 export type NodeExecutionKind = 'api' | 'codex' | 'legacy-agent';
 type NodeData = Partial<ThoughtData> | undefined;
 type ModelChoice = { id: string };

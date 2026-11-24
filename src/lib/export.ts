@@ -1,10 +1,9 @@
 import { appSettings } from './disk-storage';
-import { set as idbSet } from './disk-storage';
+import { set as idbSet, del as idbDel } from './disk-storage';
 import { useStore, stripTransient } from '../store';
 import { getModelsOnce, reconcileModelId } from './use-models';
-import { useProjects, projectStorageKey, adoptImportedProject } from '../store/projects';
+import { useProjects, projectStorageKey, adoptImportedProject, switchProject } from '../store/projects';
 import { detectFormat, listConversations, type ImportableConversation } from './import-chat';
-import { isParadigmFile } from './paradigm';
 import { getContextPath } from './graph';
 import { savedDocxRulerEdges } from './docx-ruler-data';
 import { normalizeConversationEdge } from './normalize-graph';
@@ -12,8 +11,9 @@ import { countTokens } from '../utils';
 import { confirmDialog, toast, useUiStore } from './ui-store';
 import { inlineVaultedContent, internNodes } from './attachment-vault';
 import { t, fmt } from '../i18n';
-import type { ThoughtNode, ThoughtEdge } from '../types';
-import type { ProjectMeta } from '../store/projects';
+import type { ThoughtNode } from '../types';
+import type { ProjectMeta, ProjectPlacement } from '../store/projects';
+import type { PersistedState } from '../store/types';
 
 export const EXPORT_FORMAT_VERSION = 1;
 // Must match the main store's persist `version` — a mismatched envelope
@@ -24,11 +24,11 @@ function sanitizeFilename(name: string): string {
   return name.replace(/[\\/:*?"<>|]/g, '_').trim() || 'canvas';
 }
 
-export function downloadFile(filename: string, content: string, mime: string): void {
-  const url = URL.createObjectURL(new Blob([content], { type: mime }));
+export function downloadFile(filename: string, content: string | Blob, mime: string): void {
+  const url = URL.createObjectURL(content instanceof Blob ? content : new Blob([content], { type: mime }));
   const a = Object.assign(document.createElement('a'), { href: url, download: filename });
   a.click();
-  URL.revokeObjectURL(url);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 export async function copyText(text: string, { notify = true } = {}): Promise<void> {
@@ -76,26 +76,19 @@ export async function exportActiveProjectHtml(): Promise<void> {
 }
 
 // ─── Whole-canvas JSON backup ───────────────────────────────────
-export async function exportActiveProjectJson(opts?: { sharedReadonly?: boolean }): Promise<void> {
-  const { nodes: gateNodes } = useStore.getState();
-  // exit gate — an exported file travels; local AUTO backups skip this
-  // (they never leave the machine and must never be interrupted)
-  const { confirmIfSensitive } = await import('./sensitive-scan');
-  if (!await confirmIfSensitive(gateNodes)) return;
-  appSettings.setItem('thoughtdag.lastBackupAt', String(Date.now()));
-  const { nodes: rawNodes, edges, events, lastNodeNumber } = useStore.getState();
-  // A backup file must be self-contained: pull vaulted payloads back inline
+export async function buildCanvasBackup(project: Pick<ProjectMeta, 'name' | 'instantiatedFrom'> & { id: string | null }, graph: PersistedState,
+  opts?: { sharedReadonly?: boolean; paradigm?: boolean }) {
+  const { nodes: rawNodes, edges, events, lastNodeNumber } = graph;
   const nodes = await inlineVaultedContent(rawNodes);
-  const { projects, activeId } = useProjects.getState();
-  const name = activeProjectName();
-  const payload = JSON.stringify({
+  return {
     version: EXPORT_FORMAT_VERSION,
-    name,
-    projectId: activeId,
+    ...(opts?.paradigm && { kind: 'thoughtdag-paradigm' }),
+    name: project.name,
+    projectId: project.id,
     exportedAt: new Date().toISOString(),
     // paradigm provenance lives in project meta, not the graph — without
     // this line a backup round-trip would silently drop it
-    instantiatedFrom: projects.find((p) => p.id === activeId)?.instantiatedFrom,
+    instantiatedFrom: project.instantiatedFrom,
     // a courtesy flag, not a lock: the importing side asks before turning
     // this into an editable copy (a file in someone's hands is theirs)
     ...(opts?.sharedReadonly ? { sharedReadonly: true } : {}),
@@ -103,9 +96,18 @@ export async function exportActiveProjectJson(opts?: { sharedReadonly?: boolean 
     lastNodeNumber,
     edges: savedDocxRulerEdges(rawNodes, edges).map(normalizeConversationEdge),
     events,
-  });
-  downloadFile(`${sanitizeFilename(name)}.thoughtdag.json`, payload, 'application/json');
-  toast('success', fmt(t('toast.exported'), { name }));
+  };
+}
+
+export async function exportActiveProjectJson(opts?: { sharedReadonly?: boolean }): Promise<void> {
+  // The read-only viewer has a graph but no local catalog entry.
+  const project = activeProject() ?? { id: null, name: 'canvas' };
+  const payload = await buildCanvasBackup(project, useStore.getState(), opts);
+  const { confirmIfSensitive } = await import('./sensitive-scan');
+  if (!await confirmIfSensitive(payload.nodes)) return;
+  appSettings.setItem('thoughtdag.lastBackupAt', String(Date.now()));
+  downloadFile(`${sanitizeFilename(project.name)}.thoughtdag.json`, JSON.stringify(payload), 'application/json');
+  toast('success', fmt(t('toast.exported'), { name: project.name }));
 }
 
 /**
@@ -114,12 +116,12 @@ export async function exportActiveProjectJson(opts?: { sharedReadonly?: boolean 
  * the caller can show a picker.
  */
 export async function exportActiveParadigm(): Promise<void> {
-  const { nodes: rawNodes, edges, lastNodeNumber } = useStore.getState();
-  const nodes = await inlineVaultedContent(rawNodes);
-  const name = activeProjectName();
-  const payload = JSON.stringify({ kind: 'thoughtdag-paradigm', version: 1, name, lastNodeNumber, nodes: stripTransient(nodes), edges: savedDocxRulerEdges(rawNodes, edges).map(normalizeConversationEdge) });
-  downloadFile(`${sanitizeFilename(name)}.paradigm.json`, payload, 'application/json');
-  toast('success', fmt(t('toast.exported'), { name }));
+  const project = activeProject() ?? { id: null, name: 'canvas' };
+  const payload = await buildCanvasBackup(project, useStore.getState(), { paradigm: true });
+  const { confirmIfSensitive } = await import('./sensitive-scan');
+  if (!await confirmIfSensitive(payload.nodes)) return;
+  downloadFile(`${sanitizeFilename(project.name)}.paradigm.json`, JSON.stringify(payload), 'application/json');
+  toast('success', fmt(t('toast.exported'), { name: project.name }));
 }
 
 export async function parseImportFile(file: File): Promise<
@@ -138,17 +140,9 @@ export async function parseImportFile(file: File): Promise<
     toast('error', t('toast.importFailedJson'));
     return { kind: 'error' };
   }
-  if (isParadigmFile(parsed)) {
-    const id = crypto.randomUUID();
-    const reconciled = await internNodes(await reconcileImportedModels(parsed.nodes));
-    await idbSet(projectStorageKey(id), JSON.stringify({ state: { nodes: stripTransient(reconciled), lastNodeNumber: parsed.lastNodeNumber, edges: parsed.edges.map(normalizeConversationEdge) }, version: PERSIST_VERSION }));
-    await adoptImportedProject(id, parsed.name || 'Paradigm', 'paradigm');
-    toast('success', fmt(t('toast.imported'), { name: parsed.name, n: parsed.nodes.length }));
-    return { kind: 'own', ok: true };
-  }
   // The manifest also carries nodes/edges arrays, but they are audit
   // records, not canvas nodes — importing them would build a broken canvas.
-  if ((parsed as { format?: string })?.format === 'thoughtdag-manifest') {
+  if ((parsed as { format?: string } | null)?.format === 'thoughtdag-manifest') {
     toast('error', t('toast.importManifest'), 9000);
     return { kind: 'error' };
   }
@@ -171,8 +165,8 @@ function looksLikeCanvasNodes(nodes: unknown[]): boolean {
   return nodes.every((n) => {
     const node = n as Partial<ThoughtNode>;
     return !!node && typeof node.id === 'string'
-      && !!node.position && typeof node.position.x === 'number' && typeof node.position.y === 'number'
-      && !!node.data && typeof node.data === 'object';
+      && !!node.position && Number.isFinite(node.position.x) && Number.isFinite(node.position.y)
+      && !!node.data && typeof node.data === 'object' && !Array.isArray(node.data);
   });
 }
 
@@ -208,7 +202,7 @@ export async function importChatConversations(convs: ImportableConversation[]): 
     Same family here → remap to the local id; unreachable → keep the pin
     (the author's intent survives a round-trip) and warn — generation
     falls back honestly at run time. */
-async function reconcileImportedModels(nodes: ThoughtNode[]): Promise<ThoughtNode[]> {
+async function reconcileImportedModels(nodes: ThoughtNode[], notify = true): Promise<ThoughtNode[]> {
   const data = await getModelsOnce();
   if (!data || data.models.length === 0) return nodes;
   const remapped = new Set<string>();
@@ -222,26 +216,38 @@ async function reconcileImportedModels(nodes: ThoughtNode[]): Promise<ThoughtNod
     missing.add(pin);
     return n;
   });
-  if (remapped.size) toast('info', fmt(t('import.modelsRemapped'), { list: [...remapped].join('，') }), 9000);
-  if (missing.size) toast('info', fmt(t('import.modelsMissing'), { list: [...missing].join('，') }), 10000);
+  if (notify && remapped.size) toast('info', fmt(t('import.modelsRemapped'), { list: [...remapped].join('，') }), 9000);
+  if (notify && missing.size) toast('info', fmt(t('import.modelsMissing'), { list: [...missing].join('，') }), 10000);
   return out;
 }
 
-export async function importProjectFromFile(file: File, pre?: unknown): Promise<boolean> {
-  let parsed: { name?: string; nodes?: ThoughtNode[]; edges?: ThoughtEdge[]; events?: unknown[]; lastNodeNumber?: number; instantiatedFrom?: ProjectMeta['instantiatedFrom']; sharedReadonly?: boolean };
+export type CanvasImportResult = 'imported' | 'cancelled' | { error: string };
+
+export async function importNativeCanvas(file: File, options?: ProjectPlacement & { quiet?: boolean }, pre?: unknown): Promise<CanvasImportResult> {
+  type Backup = PersistedState & { name?: string; kind?: string; format?: string; version?: number; sharedReadonly?: boolean; instantiatedFrom?: ProjectMeta['instantiatedFrom'] };
+  const invalid = (message: string) => {
+    if (!options?.quiet) toast('error', message, 9000);
+    return { error: message };
+  };
+  let parsed: Backup;
   try {
-    parsed = (pre ?? JSON.parse(await file.text())) as typeof parsed;
+    parsed = (pre ?? JSON.parse((await file.text()).replace(/^\uFEFF/, ''))) as Backup;
   } catch {
-    toast('error', t('toast.importFailedJson'));
-    return false;
+    return invalid(t('toast.importFailedJson'));
   }
-  if (!Array.isArray(parsed.nodes) || !Array.isArray(parsed.edges)) {
-    toast('error', t('toast.importFailedMissing'));
-    return false;
+  if (!parsed || !Array.isArray(parsed.nodes) || !Array.isArray(parsed.edges)) {
+    return invalid(t('toast.importFailedMissing'));
   }
-  if (parsed.nodes.length > 0 && !looksLikeCanvasNodes(parsed.nodes)) {
-    toast('error', t('toast.importFailedShape'), 9000);
-    return false;
+  if (parsed.version !== undefined && parsed.version !== EXPORT_FORMAT_VERSION) {
+    return invalid(t('library.invalidCanvasVersion'));
+  }
+  const paradigm = parsed.kind === 'thoughtdag-paradigm';
+  if (parsed.format !== undefined || (parsed.kind !== undefined && !paradigm) ||
+      parsed.edges.some(edge => !edge || typeof edge.source !== 'string' || typeof edge.target !== 'string')) {
+    return invalid(t('library.invalidCanvasFile'));
+  }
+  if (!looksLikeCanvasNodes(parsed.nodes)) {
+    return invalid(t('toast.importFailedShape'));
   }
   if (parsed.sharedReadonly) {
     const ok = await confirmDialog({
@@ -249,19 +255,29 @@ export async function importProjectFromFile(file: File, pre?: unknown): Promise<
       message: t('import.readonlyConfirm'),
       confirmLabel: t('common.confirm'),
     });
-    if (!ok) return false;
+    if (!ok) return 'cancelled';
   }
   const id = crypto.randomUUID();
-  const reconciled = await internNodes(await reconcileImportedModels(parsed.nodes));
+  const reconciled = await internNodes(await reconcileImportedModels(parsed.nodes, !options?.quiet));
   // Write in the zustand-persist envelope format so rehydration accepts it.
   await idbSet(projectStorageKey(id), JSON.stringify({
     state: { nodes: stripTransient(reconciled), lastNodeNumber: parsed.lastNodeNumber, edges: parsed.edges.map(normalizeConversationEdge), ...(Array.isArray(parsed.events) ? { events: parsed.events } : {}) },
     version: PERSIST_VERSION,
   }));
-  const name = parsed.name?.trim() || file.name.replace(/\.thoughtdag\.json$|\.json$/i, '') || 'Imported canvas';
-  await adoptImportedProject(id, name, 'chat', { instantiatedFrom: parsed.instantiatedFrom });
-  toast('success', fmt(t('toast.imported'), { name, n: parsed.nodes.length }));
-  return true;
+  const name = (typeof parsed.name === 'string' && parsed.name.trim()) || file.name.replace(/(?:\.(?:thoughtdag|paradigm))?\.json$/i, '') || 'Imported canvas';
+  try {
+    await adoptImportedProject(id, name, paradigm ? 'paradigm' : 'chat', { instantiatedFrom: parsed.instantiatedFrom }, { ...options, activate: false });
+  } catch (error) {
+    await idbDel(projectStorageKey(id));
+    throw error;
+  }
+  if (options?.activate !== false) await switchProject(id);
+  if (!options?.quiet) toast('success', fmt(t('toast.imported'), { name, n: parsed.nodes.length }));
+  return 'imported';
+}
+
+export async function importProjectFromFile(file: File, pre?: unknown): Promise<boolean> {
+  return (await importNativeCanvas(file, undefined, pre)) === 'imported';
 }
 
 // ─── Event-log CSV export (research measurement layer) ──────────

@@ -13,6 +13,7 @@
 
 import { streamText, generateText, tool, stepCountIs } from 'ai';
 import { z } from 'zod';
+import { apiCatalogModel, apiProviderCatalog, parseApiConnectionModelId } from '../../runtime/api-model-sources.mjs';
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 
 // No output cap is sent: providers apply their own defaults, and a cap
@@ -21,48 +22,33 @@ const isOpenRouter = (baseURL) => /openrouter\.ai/i.test(String(baseURL));
 
 // ── per-request provider registry (mirror of server.mjs providerEntries) ──
 function providerEntries(providers) {
-  const out = {};
-  for (const p of (Array.isArray(providers) ? providers : []).slice(0, 12)) {
-    const baseURL = String(p.baseURL ?? '').replace(/\/$/, '');
-    if (!baseURL) continue;
-    const name = String(p.name || 'Custom').slice(0, 40);
+  return apiProviderCatalog(providers, (provider, baseURL, name) => {
     const make = createOpenAICompatible({
       name: name.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
-      apiKey: p.apiKey || 'none',
+      apiKey: provider.apiKey || 'none',
       baseURL,
     });
     const extra = isOpenRouter(baseURL)
       ? { providerOptions: { openrouter: { reasoning: { enabled: true } } } }
       : {};
-    const models = (Array.isArray(p.models) ? p.models : [])
-      .map((m) => (typeof m === 'string' ? { id: m } : m))
-      .filter((m) => m && m.id).slice(0, 60);
-    for (const m of models) {
-      if (out[m.id]) continue;
-      const shortId = m.id.includes('/') ? m.id.split('/').slice(1).join('/') : m.id;
-      out[m.id] = {
-        // three states (mirror of server.mjs): false reroutes, undefined
-        // ships images optimistically for the client's capability learning
-        name: `${shortId} (${name})`, provider: name, vision: m.vision,
-        model: () => make(m.id), ...extra,
-        // OpenRouter's :online variant makes the GATEWAY search the web —
-        // same key, no extra configuration
-        ...(isOpenRouter(baseURL) ? { online: () => make(`${m.id}:online`) } : {}),
-      };
-    }
-  }
-  return out;
+    return model => ({
+      vision: model.vision,
+      model: () => make(model.id), ...extra,
+      ...(isOpenRouter(baseURL) ? { online: () => make(`${model.id}:online`) } : {}),
+    });
+  });
 }
 
 function resolveModel(modelId, hasImages, providers) {
-  const reg = providerEntries(providers);
-  const pickedId = reg[modelId] ? modelId : Object.keys(reg)[0];
+  const { entries: reg, aliases } = providerEntries(providers);
+  const routed = parseApiConnectionModelId(modelId);
+  const pickedId = routed ? modelId : aliases.get(modelId) ?? Object.keys(reg)[0];
   const entry = reg[pickedId];
   if (!entry) return null;
   // vision reroute carries its provenance (mirror of server.mjs) — only a
   // DECLARED text-only model reroutes; unknown ships images optimistically
   if (hasImages && entry.vision === false) {
-    const found = Object.entries(reg).find(([, m]) => m.vision);
+    const found = Object.entries(reg).find(([, m]) => m.vision && (!routed || m.sourceId === routed.sourceId));
     if (found) return { entry: found[1], id: found[0], reroutedFrom: pickedId };
   }
   return { entry, id: pickedId };
@@ -261,7 +247,10 @@ const json = (obj, status = 200) =>
 async function handleStream(body) {
   const { messages, model: modelId, images, webSearch, scholarSearch, searchEngine, anysearchKey, providers } = body;
   const resolved = resolveModel(modelId, images && images.length > 0, providers);
-  if (!resolved) return json({ error: 'No model configured. Add an API key first.' }, 503);
+  if (!resolved) {
+    const error = parseApiConnectionModelId(modelId) ? 'The model selected for this API connection is unavailable.' : 'No model configured. Add an API key first.';
+    return json({ error }, 503);
+  }
   const { entry, id: actualModelId, reroutedFrom } = resolved;
 
   const enc = new TextEncoder();
@@ -467,7 +456,10 @@ async function handleStream(body) {
 async function handleClaude(body) {
   const { messages, model: modelId, images, providers } = body;
   const resolved = resolveModel(modelId, images && images.length > 0, providers);
-  if (!resolved) return json({ error: 'No model configured. Add an API key first.' }, 503);
+  if (!resolved) {
+    const error = parseApiConnectionModelId(modelId) ? 'The model selected for this API connection is unavailable.' : 'No model configured. Add an API key first.';
+    return json({ error }, 503);
+  }
   const { entry, id: actualModelId } = resolved;
   try {
     const prompt = toSdkPrompt(messages, images);
@@ -513,8 +505,8 @@ async function handleProbeModels(body) {
 }
 
 function modelsPayloadFor(providers, anysearchKey) {
-  const overlay = providerEntries(providers);
-  const models = Object.entries(overlay).map(([id, m]) => ({ id, name: m.name, provider: m.provider, vision: m.vision }));
+  const { entries: overlay } = providerEntries(providers);
+  const models = Object.entries(overlay).map(([id, entry]) => apiCatalogModel(id, entry));
   return {
     models,
     default: models[0]?.id ?? null,

@@ -30,8 +30,7 @@ import NodeResizeControls from './NodeResizeControls';
 import { isConversationStart } from '../lib/graph';
 import { getNodeDisplayName, getNodeNameSource } from '../lib/node-display-name';
 import { displayModelName } from '../lib/model-sources';
-import { nodeExecutionKind } from '../lib/node-execution';
-import { availableExecutionModels, useModels } from '../lib/use-models';
+import { useDraftModelUnavailable } from '../lib/use-models';
 import NodeMetadataEditor from './NodeMetadataEditor';
 import NodeTokenUsage from './NodeTokenUsage';
 import NodeContextSources from './NodeContextSources';
@@ -121,9 +120,7 @@ export default function ThoughtNode({ id, data, selected }: NodeProps<ThoughtNod
   const canvasConnectionLayout = useContext(CanvasConnectionLayout);
   const connectionLayout = isParadigmNode ? undefined : canvasConnectionLayout;
   const isAwaitingAsk = awaiting === 'ask';
-  const needsAgentModel = !isViewerMode && isAwaitingAsk && nodeExecutionKind(data) === 'codex';
-  const models = useModels(needsAgentModel);
-  const agentUnavailable = needsAgentModel && !availableExecutionModels(models, 'codex').length;
+  const modelUnavailable = useDraftModelUnavailable(!isViewerMode && isAwaitingAsk ? data : undefined);
   const isFailedQuestion = awaiting === 'failed';
   const isQuestionComposer = isAwaitingAsk || isFailedQuestion;
   const questionEditActive = data.isEditing && data.questionEditor !== 'panel';
@@ -317,7 +314,7 @@ export default function ThoughtNode({ id, data, selected }: NodeProps<ThoughtNod
     ignoreFocusOutside: isGeometryControl,
   });
   const handleEditSubmit = () => {
-    if (!editValue.trim() || agentUnavailable || nodeFilesPending(id) || condenseGuard()) return;
+    if (!editValue.trim() || modelUnavailable || nodeFilesPending(id) || condenseGuard()) return;
     useUiStore.getState().setDraft(questionEditKey, '');
     // Successful answers stay intact on an unchanged revision; a failed
     // attempt can explicitly resend the same question.
@@ -641,7 +638,7 @@ export default function ThoughtNode({ id, data, selected }: NodeProps<ThoughtNod
                   </div>
                   <NodeExecutionPicker nodeId={id} />
                   <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={handleEditSubmit}
-                    disabled={!editValue.trim() || filesPending || agentUnavailable} aria-label={t('common.send')}
+                    disabled={!editValue.trim() || filesPending || modelUnavailable} aria-label={t('common.send')}
                     className="node-ask-send" data-ask-submit>
                     <Send size={16} strokeWidth={1.75} />
                   </button>

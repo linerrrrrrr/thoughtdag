@@ -11,7 +11,19 @@ const executablePath = process.env.CHROME_PATH ?? [
   'C:/Program Files/Google/Chrome/Application/chrome.exe', '/usr/bin/chromium',
 ].find(existsSync);
 const browser = await chromium.launch({ executablePath });
-const apiModel = 'fixture-api';
+const apiName = 'fixture-api';
+const apiSources = [
+  { id: 'fixture-work', label: 'Work connection', exclusive: 'only-work' },
+  { id: 'fixture-team', label: 'Team connection', exclusive: 'only-team' },
+];
+const apiModel = 'api-connection:fixture-team:' + apiName;
+const catalog = {
+  default: 'api-connection:fixture-work:' + apiName,
+  models: apiSources.flatMap(source => [apiName, source.exclusive].map(modelId => ({
+    id: 'api-connection:' + source.id + ':' + modelId, sourceId: source.id,
+    provider: 'Test API', sourceLabel: source.label, modelId, name: modelId, vision: false,
+  }))),
+};
 const agentModel = 'codex/codex/codex-fixture-agent';
 
 async function checkFirstQuestion(kind, width, lang) {
@@ -23,6 +35,12 @@ async function checkFirstQuestion(kind, width, lang) {
   const apiSends = [], errors = [];
   page.on('pageerror', error => errors.push(error.message));
   await page.addInitScript(initNodePickerFixture);
+  await page.addInitScript(providers => {
+    localStorage.setItem('thoughtdag.providers', JSON.stringify(providers));
+  }, apiSources.map(source => ({
+    id: source.id, preset: 'custom', name: 'Test API', baseURL: 'https://' + source.id + '.invalid/v1',
+    apiKey: '', models: [{ id: apiName }, { id: source.exclusive }],
+  })));
   await page.addInitScript(() => {
     window.fixtureAgentOnline = false;
     window.fixtureAgentSends = [];
@@ -30,8 +48,13 @@ async function checkFirstQuestion(kind, width, lang) {
     let listener;
     window.desktopAgents = {
       models: async runtime => {
+        if (window.fixtureAgentOnline && runtime === 'claude-code') {
+          return { installed: true, models: [{ provider: 'anthropic', id: 'sonnet', name: 'Sonnet', vision: true }], default: 'anthropic/sonnet' };
+        }
         const installed = window.fixtureAgentOnline && runtime === 'codex';
-        const models = installed ? [{ provider: 'codex', id: 'codex-fixture-agent', name: 'codex-fixture-agent', efforts: ['low', 'high', 'ultra'], defaultEffort: 'low', supportsFast: true }] : [];
+        const models = installed ? ['codex-fixture-agent', 'codex-mini'].map(id => ({
+          provider: 'codex', id, name: id, efforts: ['low', 'high', 'xhigh', 'ultra'], defaultEffort: 'low', supportsFast: true,
+        })) : [];
         return { installed, models, default: installed ? 'codex/codex-fixture-agent' : null };
       },
       canvasWorkspace: async () => 'D:/fixture-workspace',
@@ -50,9 +73,7 @@ async function checkFirstQuestion(kind, width, lang) {
     const request = route.request();
     const url = new URL(request.url());
     if (url.pathname === '/__thoughtdag_storage') return route.fulfill({ status: 404 });
-    if (url.pathname === '/api/models') return route.fulfill({ json: {
-      default: apiModel, models: [{ id: apiModel, name: apiModel, provider: 'Test API', vision: false }],
-    } });
+    if (url.pathname === '/api/models' || url.pathname === '/api/runtime-providers') return route.fulfill({ json: catalog });
     if (url.pathname === '/api/stream' && request.method() === 'POST') {
       apiSends.push(request.postDataJSON());
       return route.fulfill({ contentType: 'text/event-stream', body: 'data: {"text":"Fixture answer"}\n\ndata: [DONE]\n\n' });
@@ -79,43 +100,93 @@ async function checkFirstQuestion(kind, width, lang) {
     const question = 'First question using ' + kind;
     const input = landing.getByRole('textbox');
     const send = landing.locator('.landing-send');
+    const panel = page.locator('[data-model-picker-panel]');
+    const trigger = picker.locator('[data-model-picker-trigger]');
+    const scale = await page.evaluate(() => parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--ui-scale')));
+    const checkMenuSide = async (opener, menu, expectedGap) => {
+      const anchor = await opener.boundingBox();
+      const popup = await menu.boundingBox();
+      const opensBelow = page.viewportSize().height - anchor.y - anchor.height >= anchor.y;
+      const gap = opensBelow ? popup.y - anchor.y - anchor.height : anchor.y - popup.y - popup.height;
+      assert.ok(Math.abs(gap - expectedGap * scale) < 1, 'The menu stays attached to the opening button on the side with more space.');
+    };
     await input.fill(question);
+    const recall = landing.locator('[data-recall-toggle]');
+    await recall.click();
+    await checkMenuSide(recall, page.locator('[data-recall-menu]'), 8);
+    await page.keyboard.press('Escape');
+    const beforeDiscovery = await send.isDisabled();
     await option('codex').click();
-    assert.equal(await send.isDisabled(), true, 'An offline Agent cannot send the first question.');
+    await panel.waitFor();
+    assert.equal(await send.isDisabled(), beforeDiscovery, 'Browsing disconnected Agents preserves the current draft target.');
     assert.equal(await input.inputValue(), question);
+    await page.keyboard.press('Escape');
     await page.evaluate(async () => {
       window.fixtureAgentOnline = true;
       await (await window.__importLive('/src/lib/use-models.ts')).recheckAgents();
     });
 
     await option(kind).click();
+    await checkMenuSide(option(kind), panel, 6);
+    if (kind === 'codex') {
+      await panel.getByRole('button', { name: /Claude Code/i }).click();
+      await panel.getByRole('button', { name: 'Sonnet', exact: true }).waitFor();
+      assert.equal(await panel.getByRole('slider').count(), 0);
+      assert.equal(await panel.getByRole('switch').count(), 0);
+      await panel.locator('[data-draft-source-back]').click();
+    }
+    const sourceName = kind === 'api' ? 'Team connection' : 'Codex';
+    const source = panel.getByRole('button', { name: new RegExp(sourceName, 'i') });
+    await source.click();
+    await checkMenuSide(option(kind), panel, 6);
     assert.equal(await option(kind).getAttribute('aria-pressed'), 'true');
-    const trigger = picker.locator('[data-model-picker-trigger]');
-    await trigger.click();
-    const panel = page.locator('[data-model-picker-panel]');
-    const modelOption = panel.getByRole('button', { name: kind === 'api' ? apiModel : 'fixture-agent', exact: true });
-    const modelList = panel.locator('[data-agent-model-list]');
+    const modelOption = panel.getByRole('button', { name: kind === 'api' ? apiName : 'fixture-agent', exact: true });
+    if (kind === 'api') {
+      assert.equal(await panel.getByRole('button', { name: 'only-work', exact: true }).count(), 0);
+      await panel.getByRole('button', { name: 'only-team', exact: true }).waitFor();
+      const back = panel.locator('[data-draft-source-back]');
+      for (const target of ['label', 'arrow', 'keyboard']) {
+        if (target === 'label') await back.getByText('API', { exact: true }).click();
+        else if (target === 'arrow') await back.locator('svg').click();
+        else await back.press('Enter');
+        await source.waitFor();
+        await source.click();
+      }
+    }
     if (kind === 'codex') {
       assert.equal(await panel.getByRole('slider').getAttribute('aria-valuetext'), 'Low');
       const popup = await panel.boundingBox();
-      const anchor = await trigger.boundingBox();
-      assert.ok(popup.y + popup.height < anchor.y, 'The options open above the composer when they fit.');
-      assert.equal(await panel.locator('[data-agent-fast]').getAttribute('aria-pressed'), 'false');
-      await modelList.click();
-      await modelOption.waitFor();
-      await page.keyboard.press('Escape');
-      await modelList.waitFor();
-    } else {
-      await modelOption.waitFor();
+      assert.equal(await panel.getByRole('switch').getAttribute('aria-checked'), 'false');
+      const listBox = await panel.locator('[data-agent-model-list]').boundingBox();
+      const sliderBox = await panel.getByRole('slider').boundingBox();
+      assert.ok(listBox.x + listBox.width <= sliderBox.x, 'Models and reasoning occupy separate columns at every width.');
+      assert.ok(popup.x >= 0 && popup.x + popup.width <= width + 1, 'The complete picker fits on screen.');
     }
+    await modelOption.waitFor();
+    await page.keyboard.press('Escape');
+    await source.waitFor();
     await page.keyboard.press('Escape');
     await panel.waitFor({ state: 'hidden' });
     assert.equal(await input.inputValue(), question);
     await trigger.click();
-    if (kind === 'codex') await modelList.click();
     await modelOption.click();
     if (kind === 'codex') {
+      const panelLeft = () => panel.evaluate(async el => {
+        await new Promise(requestAnimationFrame);
+        return el.getBoundingClientRect().left;
+      });
+      const openedLeft = await panelLeft();
+      const originalWidth = (await trigger.boundingBox()).width;
+      await panel.getByRole('button', { name: 'mini', exact: true }).click();
+      assert.ok((await trigger.boundingBox()).width < originalWidth, 'The shorter model changes the trigger width.');
+      assert.equal(await panelLeft(), openedLeft, 'Changing models keeps the open panel in place.');
+      await modelOption.click();
       const slider = panel.getByRole('slider');
+      await panel.getByRole('button', { name: 'XHigh', exact: true }).click();
+      assert.equal(await slider.getAttribute('aria-valuetext'), 'XHigh');
+      assert.equal(await panelLeft(), openedLeft, 'Changing the thinking effort keeps the open panel in place.');
+      assert.equal(await panel.locator('[data-agent-effort-label]').innerText(), 'XHigh');
+      assert.equal(await panel.getByText(/^(Low|Ultra)$/).count(), 0, 'The range has no endpoint captions.');
       await slider.press('End');
       assert.equal(await slider.getAttribute('aria-valuetext'), 'Ultra');
       await panel.locator('[data-agent-effort-reset]').click();
@@ -124,7 +195,16 @@ async function checkFirstQuestion(kind, width, lang) {
       assert.equal(await slider.getAttribute('aria-valuetext'), 'High');
       const fast = panel.locator('[data-agent-fast]');
       await fast.press('Space');
-      assert.equal(await fast.getAttribute('aria-pressed'), 'true');
+      assert.equal(await fast.getAttribute('aria-checked'), 'true');
+      assert.equal(await panelLeft(), openedLeft, 'Adding the Fast icon keeps the open panel in place.');
+      if (width === 1440) {
+        await page.setViewportSize({ width: 960, height: 900 });
+        const resizedLeft = await panelLeft();
+        await page.keyboard.press('Escape');
+        await trigger.click();
+        assert.equal(await panelLeft(), resizedLeft, 'Resizing aligns the panel as a fresh opening would.');
+        await page.setViewportSize({ width, height: 900 });
+      }
       if (process.env.LANDING_SCREENSHOT_DIR) {
         await page.screenshot({ path: process.env.LANDING_SCREENSHOT_DIR + '/agent-options-' + width + '.png' });
       }
@@ -132,7 +212,16 @@ async function checkFirstQuestion(kind, width, lang) {
       assert.match(await trigger.getAttribute('aria-label'), /fixture-agent · High/);
       assert.doesNotMatch(await trigger.innerText(), /codex-/i);
     } else {
-      assert.equal((await trigger.innerText()).trim(), apiModel);
+      assert.equal((await trigger.innerText()).trim(), apiName);
+      const switchCatalog = next => page.evaluate(async data => {
+        (await window.__importLive('/src/lib/use-models.ts')).setModelsCache(data);
+      }, next);
+      await switchCatalog({ ...catalog, models: catalog.models.filter(model => model.sourceId !== 'fixture-team') });
+      assert.equal(await send.isDisabled(), true, 'An identically named model on another connection cannot replace the chosen route.');
+      await input.press('Enter');
+      assert.deepEqual(apiSends, []);
+      await switchCatalog(catalog);
+      assert.equal(await send.isEnabled(), true);
     }
     const composer = await landing.locator('.landing-composer').boundingBox();
     const execution = await picker.boundingBox();
@@ -184,6 +273,9 @@ async function checkFirstQuestion(kind, width, lang) {
       agentSends: kind === 'api' ? [] : [{ runtime: 'codex', model: 'codex-fixture-agent', effort: 'high', fast: true }],
     });
     assert.deepEqual(apiSends.map(request => request.model), kind === 'api' ? [apiModel] : []);
+    if (kind === 'api') {
+      assert.deepEqual(apiSends[0].providers.map(provider => provider.id), apiSources.map(source => source.id));
+    }
     assert.deepEqual(errors, []);
     console.log('PASS', kind, width, lang, 'first-question selection, draft, layout and dispatch');
   } catch (error) {

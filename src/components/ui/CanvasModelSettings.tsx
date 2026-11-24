@@ -46,7 +46,7 @@ export function DefaultModelSettings() {
       }}>
       {!active && <option value="" disabled>{t(models.length ? 'settingsAI.chooseModel' : 'model.none')}</option>}
       {active && !models.some(model => model.id === active) && <option value={active} disabled>{displayModelName(active)}</option>}
-      {sources.map(source => <optgroup key={source.key} label={source.label}>
+      {sources.map(source => <optgroup key={source.key} label={[source.label, source.detail].filter(Boolean).join(' · ')}>
         {source.models.map(model => <option key={model.id} value={model.id}>{modelName(model, source)}</option>)}
       </optgroup>)}
     </select>

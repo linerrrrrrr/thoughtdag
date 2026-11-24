@@ -89,7 +89,13 @@ export async function agentCatalog(): Promise<{ models: ModelInfo[]; runtimes: P
     const note = r as { searched?: string[]; error?: string } | null;
     runtimes[runtime] = { installed: !!r?.installed, ...(note?.searched ? { searched: note.searched } : {}), ...(note?.error ? { error: note.error } : {}) };
     if (!r?.installed) return; // not installed, or it did not answer: it stays out of the list
-    for (const m of r.models ?? []) models.push({ id: `${def.prefix}${m.provider}/${m.id}`, name: `${def.label} · ${m.name}`, provider: AGENT_PROVIDER, vision: m.vision, efforts: m.efforts ?? [], defaultEffort: m.defaultEffort ?? null, supportsFast: m.supportsFast, defaultFast: m.defaultFast });
+    for (const m of r.models ?? []) {
+      const localId = `${m.provider}/${m.id}`;
+      const id = def.prefix + localId;
+      models.push({ id, name: `${def.label} · ${m.name}`, provider: AGENT_PROVIDER, vision: m.vision,
+        sourceDefault: r.default === id || r.default === localId || r.default === m.id,
+        efforts: m.efforts ?? [], defaultEffort: m.defaultEffort ?? null, supportsFast: m.supportsFast, defaultFast: m.defaultFast });
+    }
   });
   return { models, runtimes };
 }

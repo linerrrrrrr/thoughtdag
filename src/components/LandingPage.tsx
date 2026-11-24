@@ -1,19 +1,20 @@
 import { useEffect, useRef, useState } from 'react';
-import { ArrowRight, ArrowUp, BookOpen, CircleHelp, KeyRound, Loader2 } from 'lucide-react';
-import type { Attachment } from '../types';
+import { ArrowRight, BookOpen, CircleHelp, KeyRound, Loader2, Send } from 'lucide-react';
+import type { AgentTurnOptions, Attachment } from '../types';
 import { useI18n, useT } from '../i18n';
 import { FILE_INPUT_ACCEPT } from '../lib/attachments';
 import { clipboardFilePaste } from '../lib/clipboard-files';
 import type { PendingAttachmentFile } from '../lib/node-file-import';
-import { availableExecutionModels, ensureAgentsFresh, useModels } from '../lib/use-models';
-import { defaultModelId } from '../lib/model-sources';
+import { draftExecutionModels, ensureAgentsFresh, useModels } from '../lib/use-models';
+import { catalogModel, defaultModelId } from '../lib/model-sources';
+import { runtimeOf } from '../lib/agents/agent-runtime';
 import { modelExecutionKind, supportedAgentOptions } from '../lib/node-execution';
 import type { AddQuestionOptions } from '../store/types';
 import { startOpenRouterOAuth } from '../lib/openrouter-oauth';
 import { useUiStore } from '../lib/ui-store';
 import { isImeComposing } from '../utils';
 import SearchToggles from './ui/SearchToggles';
-import ModelPicker from './ui/ModelPicker';
+import { DraftExecutionPicker } from './ui/ModelPicker';
 import LandingExample from './LandingExample';
 import { QuestionAttachmentTray, QuestionFilePicker } from './QuestionAttachments';
 import './LandingPage.css';
@@ -43,42 +44,24 @@ export default function LandingPage({
   // Agent discovery is lazy. Keep a saved agent selected while its catalog loads.
   const defaultModel = selectedModel && modelExecutionKind(selectedModel) !== 'api'
     ? selectedModel : defaultModelId(models, selectedModel);
-  const [choice, setChoice] = useState<AddQuestionOptions['execution']>();
-  const kind = choice?.executionKind ?? modelExecutionKind(defaultModel);
-  const choices = availableExecutionModels(models, kind);
-  const inheritedModel = choices.find(model => model.id === defaultModel)?.id ?? choices[0]?.id;
-  const pinnedModel = choices.find(model => model.id === choice?.model)?.id;
-  const model = pinnedModel ?? inheritedModel;
-  const legacy = kind === 'legacy-agent';
+  const [choice, setChoice] = useState<{ model: string; agentOptions?: AgentTurnOptions }>();
+  const choices = draftExecutionModels(models);
+  const inheritedModel = defaultModel ?? choices.find(candidate => modelExecutionKind(candidate.id) === 'api')?.id;
+  const model = choice?.model ?? inheritedModel ?? undefined;
+  const kind = modelExecutionKind(model);
+  const active = catalogModel(choices, model);
   useEffect(() => {
-    if (kind === 'codex') void ensureAgentsFresh();
-  }, [kind]);
+    if (runtimeOf(model)) void ensureAgentsFresh();
+  }, [model]);
   const documentInput = useRef<HTMLInputElement>(null);
   const extracting = pendingFiles.length > 0 || attachments.some(file => file.isExtracting);
-  const canSend = !!question.trim() && !extracting && (legacy || !!model);
+  const canSend = !!question.trim() && !extracting && (!!active || (kind === 'legacy-agent' && !runtimeOf(model)));
   const submit = () => {
-    if (canSend) onSubmit(legacy ? undefined : { executionKind: kind, model, agentOptions: supportedAgentOptions(choice?.agentOptions, choices.find(candidate => candidate.id === model)) });
+    if (!canSend || !model) return;
+    if (kind === 'legacy-agent') onSubmit({ model });
+    else onSubmit({ executionKind: kind, model: active?.id ?? model,
+      agentOptions: kind === 'codex' ? supportedAgentOptions(choice?.agentOptions, active) : undefined });
   };
-
-  let modelControl;
-  if (legacy) {
-    modelControl = <span className="truncate text-control text-ink-muted">{defaultModel}</span>;
-  } else if (choices.length) {
-    modelControl = <ModelPicker key={kind} compact value={pinnedModel} execution={{
-        kind, models: choices, inheritedModel, agentOptions: choice?.agentOptions,
-        onAgentOptionsChange: agentOptions => setChoice({ executionKind: kind, model: pinnedModel, agentOptions }),
-      }}
-      onChange={id => setChoice({ executionKind: kind, model: id,
-        agentOptions: supportedAgentOptions(choice?.agentOptions, choices.find(candidate => candidate.id === (id ?? inheritedModel))),
-      })} />;
-  } else if (kind === 'codex' && models?.agentsPending) {
-    modelControl = <span className="text-control text-ink-muted" role="status">{t('connection.checking')}</span>;
-  } else {
-    modelControl = <button type="button" className="landing-connect text-control"
-      onClick={() => useUiStore.getState().setApiKeyModalOpen(true, kind === 'api' ? 'providers' : 'agents')}>
-      {t(kind === 'api' ? 'connection.api' : 'connection.agent')}
-    </button>;
-  }
 
   return (
     <main className="landing-page" data-landing-page aria-labelledby="landing-title">
@@ -112,24 +95,20 @@ export default function LandingPage({
             />
             <div className="landing-composer-tools">
               <QuestionFilePicker onAttach={onAttach} />
-              <SearchToggles draftExecution={{ kind, model: legacy ? defaultModel : model }} />
+              <SearchToggles draftExecution={{ kind, model }} />
             </div>
             <div className="landing-composer-actions">
               <div className="landing-execution" data-landing-execution>
-                <div className="landing-execution-options" role="group" aria-label={t('nodeExecution.type')}>
-                  {(['api', 'codex'] as const).map(option => (
-                    <button key={option} type="button" className="text-control" data-node-execution-option={option}
-                      aria-pressed={option === 'api' ? kind === 'api' : kind !== 'api'}
-                      onClick={() => { if (kind !== option) setChoice({ executionKind: option }); }}>
-                      {t(option === 'api' ? 'nodeExecution.api' : 'settings.agents')}
-                    </button>
-                  ))}
-                </div>
-                {modelControl}
+                <DraftExecutionPicker variant="landing" kind={kind} models={choices}
+                  value={choice?.model} inheritedModel={inheritedModel ?? undefined} agentOptions={choice?.agentOptions}
+                  onPick={id => setChoice(previous => ({ model: id,
+                    agentOptions: modelExecutionKind(id) === 'codex'
+                      ? supportedAgentOptions(previous?.agentOptions, catalogModel(choices, id)) : undefined }))}
+                  onAgentOptionsChange={agentOptions => { if (model) setChoice({ model, agentOptions }); }} />
               </div>
               <button type="button" className="landing-send text-control" onClick={submit} disabled={!canSend}>
                 {extracting ? t('landing.extracting') : t('landing.send')}
-                {extracting ? <Loader2 size={16} className="animate-spin" aria-hidden /> : <ArrowUp size={16} aria-hidden />}
+                {extracting ? <Loader2 size={16} className="animate-spin" aria-hidden /> : <Send size={16} strokeWidth={1.75} aria-hidden />}
               </button>
             </div>
           </div>

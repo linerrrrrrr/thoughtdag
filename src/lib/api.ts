@@ -3,7 +3,7 @@ import { isAgentModel, agentCallStream } from './agents/agent-runtime';
 import { toast, useUiStore } from './ui-store';
 import { getModelsOnce } from './use-models';
 import { t, fmt } from '../i18n';
-import { storedProviders, storedVision, learnVision, pushProviders } from './runtime-providers';
+import { storedProviders, storedProviderForModel, learnVision, pushProviders } from './runtime-providers';
 import { setModelsCache } from './use-models';
 import { directProvider, directLlmStream, directLlmCall } from './direct-llm';
 import { errorText } from './error-text';
@@ -269,7 +269,7 @@ export interface ToolPrefs {
  *  OpenRouter interface searches as `:online`, without tools); browser-direct
  *  lanes carry none; the proxy declares a tool group whenever it is on. */
 export function declaresTools(modelId: string | undefined, prefs: ToolPrefs): boolean {
-  if (IN_HARNESS) return !!prefs.web && !storedProviders().some((p) => p.models.some((m) => m.id === modelId));
+  if (IN_HARNESS) return !!prefs.web && !(modelId && storedProviderForModel(modelId));
   if (directProvider(modelId)) return false;
   return !!(prefs.web || prefs.scholar || prefs.mcp);
 }
@@ -330,10 +330,10 @@ export async function llmCallStream(
   // failure gets one pixel-free retry, and only THAT retry succeeding pins
   // the blame on the images (differential diagnosis — a transient error
   // never mislabels). Server-.env and gateway models keep their own paths.
-  const declared = modelId ? storedVision(modelId) : undefined;
-  const isStored = !!modelId && storedProviders().some((p) => p.models.some((m) => m.id === modelId));
-  if (images?.length && modelId && isStored && declared !== false) {
-    const short = modelId.split('/').pop() ?? modelId;
+  const storedModel = modelId ? storedProviderForModel(modelId)?.model : undefined;
+  const declared = storedModel?.vision;
+  if (images?.length && modelId && storedModel && declared !== false) {
+    const short = storedModel.id.split('/').pop() ?? storedModel.id;
     const learn = (vision: boolean, toastKey: 'toast.visionLearnedTrue' | 'toast.visionLearnedFalse') => {
       if (!learnVision(modelId, vision)) return;
       void pushProviders(storedProviders()).then(setModelsCache).catch(() => {});

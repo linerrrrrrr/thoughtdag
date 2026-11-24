@@ -47,7 +47,7 @@ export function scanNodes(nodes: ThoughtNode[]): SensitiveHit[] {
     if (!n.data.responses?.includes(n.data.response)) scanText(n.data.response, label, hits);
     for (const question of new Set(n.data.questions ?? [])) if (question !== n.data.question) scanText(question, label, hits);
     for (const reasoning of n.data.reasonings ?? []) scanText(reasoning ?? undefined, label, hits);
-    if (n.data.isLoading) scanText(n.data.reasoning, label, hits);
+    if (n.data.reasoning && !n.data.reasonings?.includes(n.data.reasoning)) scanText(n.data.reasoning, label, hits);
     for (const activity of [n.data.agentActivity, ...(n.data.agentActivities ?? [])]) {
       for (const entry of activity ?? []) {
         for (const text of [entry.title, entry.command, entry.text, entry.output]) scanText(text, label, hits);
@@ -65,7 +65,10 @@ export function scanNodes(nodes: ThoughtNode[]): SensitiveHit[] {
 /** The gate itself: true = clear to leave the machine. Silent when the
  *  scan finds nothing — the dialog only ever appears with evidence. */
 export async function confirmIfSensitive(nodes: ThoughtNode[]): Promise<boolean> {
-  const hits = scanNodes(nodes);
+  return confirmSensitiveHits(scanNodes(nodes));
+}
+
+export async function confirmSensitiveHits(hits: SensitiveHit[]): Promise<boolean> {
   if (hits.length === 0) return true;
   const shown = hits.slice(0, 5).map((h) => `· ${h.where} — ${h.kind}（${h.sample}）`).join('\n');
   const more = hits.length > 5 ? `\n${fmt(t('sensitive.more'), { n: hits.length - 5 })}` : '';

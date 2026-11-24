@@ -99,7 +99,8 @@ export interface NodeSlice {
 export interface AddQuestionOptions {
   parentId?: string;
   /** The execution choice for this question takes precedence over inherited settings. */
-  execution?: { executionKind: 'api' | 'codex'; model?: string; agentOptions?: AgentTurnOptions };
+  execution?: { executionKind: 'api' | 'codex'; model?: string; agentOptions?: AgentTurnOptions }
+    | { executionKind?: undefined; model: string; agentOptions?: undefined };
   initialAttachments?: Attachment[];
   excludeAllInheritedAttachments?: boolean;
   /** @-mentioned node ids: any not already in the new node's context get a

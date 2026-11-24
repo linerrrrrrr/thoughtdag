@@ -1,4 +1,5 @@
 import express from 'express';
+import { apiCatalogModel, apiProviderCatalog, parseApiConnectionModelId } from './runtime/api-model-sources.mjs';
 import cors from 'cors';
 import { streamText, generateText, tool, stepCountIs, smoothStream } from 'ai';
 import { z } from 'zod';
@@ -205,11 +206,14 @@ const RETIRED_MODEL_IDS = { 'deepseek-v4-flash': 'deepseek-flash', 'deepseek-v4-
 
 function resolveModel(modelId, hasImages, reqProviders) {
   // per-request overlay from browser-supplied providers; .env wins on collision
-  const reg = reqProviders?.length ? { ...providerEntries(reqProviders), ...modelRegistry } : modelRegistry;
+  const { entries, aliases } = providerEntries(reqProviders);
+  const reg = { ...entries, ...modelRegistry };
   const fallbackId = modelRegistry[DEFAULT_MODEL] ? DEFAULT_MODEL : Object.keys(reg)[0];
+  const routed = parseApiConnectionModelId(modelId);
   const successor = RETIRED_MODEL_IDS[modelId];
-  const pickedId = reg[modelId] ? modelId : successor && reg[successor] ? successor : fallbackId;
-  const entry = reg[pickedId];
+  const pickedId = routed || Object.hasOwn(modelRegistry, modelId) ? modelId
+    : aliases.get(modelId) ?? (Object.hasOwn(modelRegistry, successor) ? successor : aliases.get(successor)) ?? fallbackId;
+  const entry = Object.hasOwn(reg, pickedId) ? reg[pickedId] : undefined;
   if (!entry) return null; // empty registry: no .env key and no request providers
   // Vision reroute is never silent: the caller gets who actually answers
   // (reroutedFrom), streams it to the client, and can fall back to the
@@ -221,7 +225,7 @@ function resolveModel(modelId, hasImages, reqProviders) {
     if (entry.visionFallback && reg[entry.visionFallback]) {
       return { entry: reg[entry.visionFallback], id: entry.visionFallback, reroutedFrom: pickedId };
     }
-    const found = Object.entries(reg).find(([, m]) => m.vision);
+    const found = Object.entries(reg).find(([, m]) => m.vision && (!routed || m.sourceId === routed.sourceId));
     if (found) return { entry: found[1], id: found[0], reroutedFrom: pickedId };
   }
   return { entry, id: pickedId };
@@ -826,12 +830,8 @@ app.get('/api/tools', (req, res) => {
 });
 
 function modelsPayload() {
-  const models = Object.entries(modelRegistry).map(([id, m]) => ({
-    id,
-    name: m.name,
-    provider: m.provider,
-    vision: m.vision,
-  }));
+  const models = Object.entries(modelRegistry).map(([id, entry]) =>
+    apiCatalogModel(id, { ...entry, modelId: id, sourceId: `env:${entry.provider}` }));
   return {
     models,
     default: DEFAULT_MODEL ?? null,
@@ -898,37 +898,22 @@ app.post('/api/probe-models', async (req, res) => {
 
 /** Build a per-request registry overlay from browser-supplied providers. */
 function providerEntries(providers) {
-  const out = {};
-  for (const p of (Array.isArray(providers) ? providers : []).slice(0, 12)) {
-    const baseURL = String(p.baseURL ?? '').replace(/\/$/, '');
-    if (!baseURL) continue;
-    const name = String(p.name || 'Custom').slice(0, 40);
+  const envSources = new Set(Object.values(modelRegistry).map(entry => entry.provider));
+  return apiProviderCatalog(providers, (provider, baseURL, name) => {
     const make = createOpenAICompatible({
       name: name.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
-      apiKey: p.apiKey || 'none',
+      apiKey: provider.apiKey || 'none',
       baseURL,
     });
     const extra = isOpenRouter(baseURL)
       ? { providerOptions: { openrouter: { reasoning: { enabled: true } } } }
       : {};
-    const models = (Array.isArray(p.models) ? p.models : [])
-      .map((m) => (typeof m === 'string' ? { id: m } : m))
-      .filter((m) => m && m.id).slice(0, 60);
-    for (const m of models) {
-      if (out[m.id]) continue;
-      const shortId = m.id.includes('/') ? m.id.split('/').slice(1).join('/') : m.id;
-      out[m.id] = {
-        name: `${shortId} (${name})`, provider: name,
-        // three states, kept honest: true = send images, false = reroute,
-        // undefined = nobody knows — send optimistically and let the
-        // client's lazy capability learning record the verdict
-        vision: m.vision ?? (openRouterCaps?.has(m.id) ? openRouterCaps.get(m.id).includes('image') : undefined),
-        model: () => make(m.id), ...extra,
-        ...(isOpenRouter(baseURL) ? { online: () => make(`${m.id}:online`) } : {}),
-      };
-    }
-  }
-  return out;
+    return model => ({
+      vision: model.vision ?? (openRouterCaps?.has(model.id) ? openRouterCaps.get(model.id).includes('image') : undefined),
+      model: () => make(model.id), ...extra,
+      ...(isOpenRouter(baseURL) ? { online: () => make(`${model.id}:online`) } : {}),
+    });
+  }, envSources);
 }
 
 // OpenRouter's PUBLIC model-capability list — shared metadata, not user
@@ -946,11 +931,11 @@ async function loadOpenRouterCaps() {
 /** Stateless echo: the model list this provider set would serve (.env models included). */
 async function modelsPayloadFor(providers) {
   if ((providers ?? []).some((p) => isOpenRouter(p?.baseURL))) await loadOpenRouterCaps();
-  const overlay = providerEntries(providers);
+  const { entries: overlay } = providerEntries(providers);
   const base = modelsPayload();
   const extra = Object.entries(overlay)
     .filter(([id]) => !modelRegistry[id]) // .env wins on collision
-    .map(([id, m]) => ({ id, name: m.name, provider: m.provider, vision: m.vision }));
+    .map(([id, entry]) => apiCatalogModel(id, entry));
   const models = [...base.models, ...extra];
   return {
     ...base,
@@ -1032,7 +1017,11 @@ async function generateForBackground(entry, id, args, fast) {
 app.post('/api/claude', async (req, res) => {
   const { messages, model: modelId, images, providers, fast } = req.body;
   const resolved = resolveModel(modelId || DEFAULT_MODEL, images && images.length > 0, providers);
-  if (!resolved) { res.status(503).json({ error: 'No model configured. Add an API key first.' }); return; }
+  if (!resolved) {
+    const error = parseApiConnectionModelId(modelId) ? 'The model selected for this API connection is unavailable.' : 'No model configured. Add an API key first.';
+    res.status(503).json({ error });
+    return;
+  }
   const { entry, id: actualModelId } = resolved;
   // a caller that gave up (a background call's deadline, a closed page) stops the upstream call with it:
   // nothing would read the answer, and it would still be billed
@@ -1052,7 +1041,7 @@ app.post('/api/claude', async (req, res) => {
   } catch (err) {
     if (left.signal.aborted) return;
     console.error('Generate error:', err);
-    res.status(500).json({ error: `[${actualModelId}] ${err.message}` });
+    res.status(500).json({ error: `[${entry.modelId ?? actualModelId}] ${err.message}` });
   }
 });
 
@@ -1061,7 +1050,11 @@ app.post('/api/claude', async (req, res) => {
 app.post('/api/stream', async (req, res) => {
   const { messages, model: modelId, images, webSearch, scholarSearch, mcpTools, searchEngine, providers, anysearchKey } = req.body;
   const resolved = resolveModel(modelId || DEFAULT_MODEL, images && images.length > 0, providers);
-  if (!resolved) { res.status(503).json({ error: 'No model configured. Add an API key first.' }); return; }
+  if (!resolved) {
+    const error = parseApiConnectionModelId(modelId) ? 'The model selected for this API connection is unavailable.' : 'No model configured. Add an API key first.';
+    res.status(503).json({ error });
+    return;
+  }
   const { entry, id: actualModelId, reroutedFrom } = resolved;
 
   res.writeHead(200, {
@@ -1246,7 +1239,7 @@ app.post('/api/stream', async (req, res) => {
 
     if (emittedChars === 0) {
       const fr = await result.finishReason.catch(() => 'unknown');
-      res.write(`data: ${JSON.stringify({ error: `Model produced no text (finish: ${fr}, model: ${actualModelId}${gatewayOnline ? ' via :online' : ''})` })}\n\n`);
+      res.write(`data: ${JSON.stringify({ error: `Model produced no text (finish: ${fr}, model: ${entry.modelId ?? actualModelId}${gatewayOnline ? ' via :online' : ''})` })}\n\n`);
     }
     if (sources.length > 0) {
       res.write(`data: ${JSON.stringify({ sources })}\n\n`);
@@ -1295,9 +1288,9 @@ app.post('/api/stream', async (req, res) => {
     }
     let message = err.message || 'LLM request failed';
     if (/context.{0,20}(length|window)|maximum.{0,20}tokens|too (long|many tokens)|input.{0,10}too large|max_new_tokens|input validation error/i.test(message)) {
-      message = `Context exceeds the window of the model that actually ran (${actualModelId}). Prune upstream: collapse nodes to summaries, archive dead ends, or switch a reference edge back to quote depth. (${message})`;
+      message = `Context exceeds the window of the model that actually ran (${entry.modelId ?? actualModelId}). Prune upstream: collapse nodes to summaries, archive dead ends, or switch a reference edge back to quote depth. (${message})`;
     } else {
-      message = `[${actualModelId}] ${message}`;
+      message = `[${entry.modelId ?? actualModelId}] ${message}`;
     }
     res.write(`data: ${JSON.stringify({ error: message })}\n\n`);
     res.write('data: [DONE]\n\n');

@@ -1,12 +1,12 @@
 import { useRef } from 'react';
-import type { Attachment } from '../../types';
+import type { Attachment, ThoughtData } from '../../types';
 import { Check, Pencil, Send, X } from 'lucide-react';
 import { useStore } from '../../store';
 import { isImeComposing } from '../../utils';
 import { useT } from '../../i18n';
 import { isViewerMode } from '../../lib/viewer';
 import { toast, useUiStore } from '../../lib/ui-store';
-import { availableExecutionModels, useModels } from '../../lib/use-models';
+import { useDraftModelUnavailable } from '../../lib/use-models';
 import SearchToggles from '../ui/SearchToggles';
 import NodeExecutionPicker from '../ui/NodeExecutionPicker';
 import { Markdown } from '../Markdown';
@@ -30,7 +30,7 @@ export default function QuestionSection({
   isEditing,
   isHuman,
   awaiting,
-  needsAgentModel,
+  executionDraft,
   generationFailed,
   placeholder,
   base,
@@ -49,7 +49,7 @@ export default function QuestionSection({
   /** Node accepts its own question: the box stays open before a successful answer
       (same rule as the canvas card) and click-away keeps the draft. */
   awaiting?: boolean;
-  needsAgentModel: boolean;
+  executionDraft?: Partial<ThoughtData>;
   /** A failed attempt may explicitly resend the same question. */
   generationFailed?: boolean;
   placeholder?: string;
@@ -59,8 +59,7 @@ export default function QuestionSection({
   const setEditing = useStore((s) => s.setEditing);
   const t = useT();
   const filesPending = useNodeFilesPending(nodeId);
-  const models = useModels(needsAgentModel);
-  const agentUnavailable = needsAgentModel && !availableExecutionModels(models, 'codex').length;
+  const modelUnavailable = useDraftModelUnavailable(executionDraft);
 
   const draftKey = `question-edit:${nodeId}`;
   const [editValue, setEditValue] = useSessionDraft(draftKey, question);
@@ -94,7 +93,7 @@ export default function QuestionSection({
   };
 
   const handleEditSubmit = () => {
-    if (!editValue.trim() || agentUnavailable || nodeFilesPending(nodeId) || condenseGuard()) return;
+    if (!editValue.trim() || modelUnavailable || nodeFilesPending(nodeId) || condenseGuard()) return;
     useUiStore.getState().setDraft(draftKey, '');
     // Only a failed attempt may resend an unchanged question.
     if (!generationFailed && editValue.trim() === question) { setEditing(nodeId, false); return; }
@@ -148,7 +147,7 @@ export default function QuestionSection({
                 <SearchToggles nodeId={generationFailed ? nodeId : undefined} executionNodeId={nodeId} size={15} />
               </div>}
               <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={handleEditSubmit}
-                disabled={!editValue.trim() || filesPending || agentUnavailable} data-question-send
+                disabled={!editValue.trim() || filesPending || modelUnavailable} data-question-send
                 className="text-control bg-action hover:bg-action-strong disabled:opacity-30 when-unavailable text-white px-3.5 py-1.5 rounded-control transition-colors flex items-center gap-1.5">
                 {isHuman ? <Check size={12} strokeWidth={2.25} /> : <Send size={14} strokeWidth={1.75} />}
                 {t(isHuman ? 'common.confirm' : 'common.send')}

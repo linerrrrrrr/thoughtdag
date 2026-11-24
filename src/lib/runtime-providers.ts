@@ -1,4 +1,5 @@
 import { appSettings } from './disk-storage';
+import { isApiConnectionId, parseApiConnectionModelId } from '../../runtime/api-model-sources.mjs';
 import { API_BASE } from './constants';
 import { errorText } from './error-text';
 import type { ModelData } from './use-models';
@@ -13,6 +14,8 @@ import type { ModelData } from './use-models';
 
 export interface RuntimeModel { id: string; vision?: boolean; created?: number; contextLength?: number }
 export interface RuntimeProvider {
+  id: string;
+  connectionName?: string;
   preset: string; // preset id or 'custom'
   name: string;   // display name (also the provider tag on models)
   baseURL: string;
@@ -81,18 +84,46 @@ const LS_KEY = 'thoughtdag.providers';
 const LEGACY_KEY = 'thoughtdag.openrouterKey';
 const LEGACY_MODELS = 'thoughtdag.openrouterModels';
 
-/** Stored providers, migrating the legacy single-OpenRouter-key format. */
+export function createRuntimeProviderId(): string {
+  if (typeof crypto.randomUUID === 'function') return crypto.randomUUID();
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
+/** Stored providers, migrating earlier records to stable connection identities. */
 export function storedProviders(): RuntimeProvider[] {
+  let records: unknown;
   try {
     const raw = appSettings.getItem(LS_KEY);
-    if (raw) return JSON.parse(raw) as RuntimeProvider[];
+    records = raw ? JSON.parse(raw) : null;
   } catch { /* fall through to legacy/empty */ }
+  if (Array.isArray(records)) {
+    const ids = new Set<string>();
+    const providers: RuntimeProvider[] = [];
+    const updated = records.map((record: unknown) => {
+      if (!record || typeof record !== 'object' || !('baseURL' in record) || typeof record.baseURL !== 'string'
+        || !('models' in record) || !Array.isArray(record.models)) return record;
+      const saved = record as Omit<RuntimeProvider, 'id'> & { id?: unknown };
+      const id = isApiConnectionId(saved.id) && !ids.has(saved.id) ? saved.id : createRuntimeProviderId();
+      ids.add(id);
+      const provider = saved.id === id ? saved as RuntimeProvider : { ...saved, id };
+      providers.push(provider);
+      return provider;
+    });
+    if (updated.some((provider, index) => provider !== records[index])) {
+      try { appSettings.setItem(LS_KEY, JSON.stringify(updated)); } catch { /* the current list is still usable */ }
+    }
+    return providers;
+  }
   const legacyKey = appSettings.getItem(LEGACY_KEY);
   if (legacyKey) {
     const models = (appSettings.getItem(LEGACY_MODELS) ?? '')
       .split(',').map((s) => s.trim()).filter(Boolean);
     const migrated: RuntimeProvider[] = [{
-      preset: 'openrouter', name: 'OpenRouter',
+      id: createRuntimeProviderId(), preset: 'openrouter', name: 'OpenRouter',
       baseURL: 'https://openrouter.ai/api/v1', apiKey: legacyKey,
       models: (models.length > 0 ? models : PROVIDER_PRESETS.find((p) => p.id === 'openrouter')!.recommend!).map((id) => ({ id })),
     }];
@@ -108,32 +139,30 @@ export function saveProviders(providers: RuntimeProvider[]): void {
   appSettings.setItem(LS_KEY, JSON.stringify(providers));
 }
 
-/** The stored (user-side) vision state of a model: true/false when declared
- *  by metadata, hint or hand, undefined when nobody knows. The merged
- *  catalog cannot answer this — the proxy registers unknown as true. */
-export function storedVision(modelId: string): boolean | undefined {
-  for (const p of storedProviders()) {
-    const m = p.models.find((x) => x.id === modelId);
-    if (m) return m.vision;
+/** The connection and upstream model a picker identity addresses. */
+export function storedProviderForModel(modelId: string, providers = storedProviders()) {
+  const routed = parseApiConnectionModelId(modelId);
+  for (const provider of providers) {
+    if (routed && provider.id !== routed.sourceId) continue;
+    const model = provider.models.find(model => model.id === (routed?.modelId ?? modelId));
+    if (model) return { provider, model };
   }
   return undefined;
 }
 
-/** Lazy capability learning: the first real image request IS the probe, and
- *  its verdict is written back here. Returns true when a stored model
- *  actually changed. */
+/** The stored (user-side) vision state: undefined while untested. */
+export function storedVision(modelId: string): boolean | undefined {
+  return storedProviderForModel(modelId)?.model.vision;
+}
+
+/** Keep a learned capability on the connection that actually ran the model. */
 export function learnVision(modelId: string, vision: boolean): boolean {
   const providers = storedProviders();
-  let hit = false;
-  for (const p of providers) {
-    const m = p.models.find((x) => x.id === modelId);
-    if (m && m.vision !== vision) {
-      m.vision = vision;
-      hit = true;
-    }
-  }
-  if (hit) saveProviders(providers);
-  return hit;
+  const selected = storedProviderForModel(modelId, providers);
+  if (!selected || selected.model.vision === vision) return false;
+  selected.model.vision = vision;
+  saveProviders(providers);
+  return true;
 }
 
 /** Register the full provider set on the proxy; returns the refreshed model list. */
@@ -204,14 +233,9 @@ export function idWindowHint(modelId: string): number | undefined {
     coding endpoints): a window the id itself names is the vendor's own
     promise and wins upward, never downward. */
 export function contextLengthFor(modelId: string): number | undefined {
-  for (const p of storedProviders()) {
-    const m = p.models.find((x) => x.id === modelId);
-    if (m?.contextLength) {
-      const hint = idWindowHint(modelId);
-      return hint && hint > m.contextLength ? hint : m.contextLength;
-    }
-  }
-  return undefined;
+  const selected = storedProviderForModel(modelId)?.model;
+  if (!selected?.contextLength) return undefined;
+  return Math.max(selected.contextLength, idWindowHint(selected.id) ?? 0);
 }
 
 /** Re-probe every stored provider: picked models kept, metadata updated,

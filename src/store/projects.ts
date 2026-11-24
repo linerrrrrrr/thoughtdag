@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { get as idbGet, set as idbSet, del as idbDel, diskStorageNamespace, updateStoredValue } from '../lib/disk-storage';
+import { get as idbGet, set as idbSet, del as idbDel, updateStoredValue } from '../lib/disk-storage';
 import { useStore } from './index';
 import type { StoreState } from './types';
 import { activeAbortControllers } from './streaming';
@@ -21,6 +21,9 @@ const LEGACY_KEY = 'thoughtdag';
 
 export const projectStorageKey = (id: string) => `thoughtdag:project:${id}`;
 
+export interface ProjectFolder { id: string; name: string }
+export interface ProjectPlacement { folderId?: string | null; activate?: boolean }
+
 export interface ProjectMeta {
   id: string;
   name: string;
@@ -39,7 +42,7 @@ export interface ProjectMeta {
   /** Archived = hidden from the dropdown and Recent work, data untouched.
       Tidying and destroying are different verbs. */
   archived?: boolean;
-
+  folderId?: string;
 }
 
 /** Archive/restore a canvas. Archiving the ACTIVE canvas switches away
@@ -61,24 +64,26 @@ export async function markInstantiatedFrom(projectId: string, paradigmName: stri
 
 interface ProjectsState {
   projects: ProjectMeta[];
+  folders: ProjectFolder[];
   activeId: string | null;
   switching: boolean;
 }
 
 export const useProjects = create<ProjectsState>(() => ({
   projects: [],
+  folders: [],
   activeId: null,
   switching: false,
 }));
 
-type ProjectIndex = { projects: ProjectMeta[]; activeId: string };
+type ProjectIndex = { projects: ProjectMeta[]; folders?: ProjectFolder[]; activeId: string };
 
 async function editIndex(change: (index: ProjectIndex) => ProjectIndex): Promise<ProjectIndex> {
   const saved = await updateStoredValue<ProjectIndex>(META_KEY, current => {
     if (!current) throw new Error('Canvas catalog is unavailable');
     return change(current);
   });
-  useProjects.setState({ projects: saved.projects });
+  useProjects.setState({ projects: saved.projects, folders: saved.folders ?? [] });
   return saved;
 }
 
@@ -89,11 +94,13 @@ function patchProject(id: string, patch: Partial<ProjectMeta>) {
 }
 
 export async function refreshProjectIndex(): Promise<void> {
-  if (diskStorageNamespace() === 'browser' || !useProjects.getState().activeId) return;
+  if (!useProjects.getState().activeId) return;
   const before = useProjects.getState().projects;
   const index = await idbGet<ProjectIndex>(META_KEY);
   // A local edit may have finished while the read was in flight.
-  if (index && before === useProjects.getState().projects) useProjects.setState({ projects: index.projects });
+  if (index && before === useProjects.getState().projects) {
+    useProjects.setState({ projects: index.projects, folders: index.folders ?? [] });
+  }
 }
 
 export async function prepareCanvasFolders(projects: ReadonlyArray<Pick<ProjectMeta, 'id'>> = useProjects.getState().projects): Promise<void> {
@@ -121,16 +128,17 @@ export function bootProjects(): Promise<void> {
       const now = Date.now();
       if (legacy) await idbSet(projectStorageKey(id), legacy);
       meta = await updateStoredValue<ProjectIndex>(META_KEY, current => current?.projects.length ? current : {
-        projects: [{ id, name: 'My Canvas', createdAt: now, updatedAt: now }], activeId: id,
+        projects: [{ id, name: 'My Canvas', createdAt: now, updatedAt: now }], folders: current?.folders ?? [], activeId: id,
       });
       if (legacy) await idbDel(meta.activeId === id ? LEGACY_KEY : projectStorageKey(id));
     }
     if (!meta.projects.some((p) => p.id === meta.activeId)) {
       meta.activeId = meta.projects[0].id;
     }
-    useProjects.setState({ projects: meta.projects, activeId: meta.activeId });
+    useProjects.setState({ projects: meta.projects, folders: meta.folders ?? [], activeId: meta.activeId });
     useStore.persist.setOptions({ name: projectStorageKey(meta.activeId) });
     await useStore.persist.rehydrate(); // fires onFinishHydration → App gate opens
+
     await prepareCanvasFolders(meta.projects);
     window.addEventListener('focus', () => { void refreshProjectIndex().catch(() => undefined); });
   })().catch(async (e) => {
@@ -170,7 +178,7 @@ export async function switchProject(id: string): Promise<void> {
     await drainGenerations();
     await flushPendingWrites();
     const saved = await editIndex(index => index.projects.some(p => p.id === id) ? {
-      activeId: id, projects: index.projects.map(p => p.id === id && p.archived ? { ...p, archived: false } : p),
+      ...index, activeId: id, projects: index.projects.map(p => p.id === id && p.archived ? { ...p, archived: false } : p),
     } : index);
     if (!saved.projects.some(p => p.id === id)) return;
     resetMemoryWriteCaps(); // a canvas visit is one memory session (#47)
@@ -182,6 +190,7 @@ export async function switchProject(id: string): Promise<void> {
     // a canvas the user just switched to is back in the working set —
     // whether opened from the canvas menu or a source link.
     useProjects.setState({ activeId: id });
+
   } finally {
     suppressTouch = false;
     useProjects.setState({ switching: false });
@@ -189,10 +198,35 @@ export async function switchProject(id: string): Promise<void> {
 }
 
 // ─── CRUD ───────────────────────────────────────────────────────
-export async function createProject(name = 'Untitled', kind: 'chat' | 'paradigm' = 'chat'): Promise<string> {
+export async function createProject(name = 'Untitled', kind: 'chat' | 'paradigm' = 'chat', options?: ProjectPlacement): Promise<string> {
   const id = crypto.randomUUID();
-  await registerProject(id, name, kind);
+  await registerProject(id, name, kind, undefined, options);
   return id;
+}
+
+export async function createProjectFolder(name: string): Promise<string> {
+  const folder = { id: crypto.randomUUID(), name: name.trim() };
+  if (!folder.name) throw new Error(t('library.actionFailed'));
+  await editIndex(index => ({ ...index, folders: [...(index.folders ?? []), folder] }));
+  return folder.id;
+}
+
+function checkFolder(index: ProjectIndex, folderId: string | null | undefined) {
+  if (folderId != null && !index.folders?.some(folder => folder.id === folderId)) throw new Error(t('library.actionFailed'));
+}
+
+export async function moveProjectToFolder(id: string, folderId: string | null): Promise<void> {
+  await editIndex(index => {
+    checkFolder(index, folderId);
+    if (!index.projects.some(project => project.id === id)) throw new Error(t('library.actionFailed'));
+    return { ...index, projects: index.projects.map(project => {
+      if (project.id !== id) return project;
+      const moved = { ...project };
+      if (folderId === null) delete moved.folderId;
+      else moved.folderId = folderId;
+      return moved;
+    }) };
+  });
 }
 
 export async function setProjectAgentCwd(id: string, cwd: string | undefined): Promise<void> {
@@ -219,7 +253,7 @@ export async function deleteProject(id: string): Promise<void> {
   await idbDel(projectStorageKey(id));
   await editIndex(index => {
     const remaining = index.projects.filter(p => p.id !== id);
-    return { projects: remaining, activeId: index.activeId === id ? remaining[0]?.id ?? '' : index.activeId };
+    return { ...index, projects: remaining, activeId: index.activeId === id ? remaining[0]?.id ?? '' : index.activeId };
   });
   // the why layer's copy goes with it (desktop only; a no-op elsewhere)
   void import('../lib/canvas-record').then((m) => m.removeCanvasRecord(id)).catch(() => undefined);
@@ -231,13 +265,17 @@ async function registerProject(
   name: string,
   kind: 'chat' | 'paradigm' = 'chat',
   extras?: Partial<Pick<ProjectMeta, 'instantiatedFrom'>>,
+  options?: ProjectPlacement,
 ): Promise<void> {
   const now = Date.now();
-  await editIndex(index => ({
-    ...index, projects: [...index.projects, { id, name, createdAt: now, updatedAt: now, kind, ...extras }],
-  }));
+  await editIndex(index => {
+    checkFolder(index, options?.folderId);
+    return { ...index, projects: [...index.projects, {
+      id, name, createdAt: now, updatedAt: now, kind, ...extras, ...(options?.folderId && { folderId: options.folderId }),
+    }] };
+  });
   await prepareCanvasFolders([{ id }]);
-  await switchProject(id);
+  if (options?.activate !== false) await switchProject(id);
 }
 
 export const adoptImportedProject = registerProject;
